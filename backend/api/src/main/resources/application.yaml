@@ -1,11 +1,19 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/queenkho_db?useSSL=false
-    username: root
-    password: password_cua_ban
+    # Cú pháp kết nối chuẩn cho SQL Server
+    url: jdbc:sqlserver://localhost:1433;databaseName=queenkho_db;encrypt=true;trustServerCertificate=true;
+    username: sa               # Tài khoản đăng nhập SQL Server của bạn (mặc định là sa)
+    password: MatKhauCuaBan    # Mật khẩu tài khoản sa của bạn
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  
   jpa:
     hibernate:
-      ddl-auto: update # Tự động tạo bảng từ Entity trong quá trình dev
-    show-sql: true
+      ddl-auto: update         # Tự động tạo bảng từ Entity khi chạy app
+    show-sql: true             # In các câu lệnh SQL ra terminal để dễ debug
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.SQLServerDialect
+        format_sql: true
+
 server:
-  port: 8080 # Backend chạy cổng 8080
+  port: 8080

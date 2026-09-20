@@ -6,7 +6,7 @@ Frontend: ReactJS (Vite + JavaScript + ESLint), Tailwind CSS v3, React Router DO
 Backend: Spring Boot 3.x, Java 17 LTS, Spring Data JPA, Maven.
 Database: MySQL / PostgreSQL (14 thực thể theo bản ERD chuẩn).
 Repository: GitHub QueenKho
-I. CẤU TRÚC THƯ MỤC CHUẨN (MONOREPO)
+I. CẤU TRÚC THƯ MỤC CHUẨN (MONOREPO)cd
 code
 Text
 QueenKho-System/

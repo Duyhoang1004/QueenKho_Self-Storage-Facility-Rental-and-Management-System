@@ -1,15 +1,35 @@
+import { Routes, Route } from 'react-router-dom';
+import CustomerLayout from './layouts/CustomerLayout';
+import HomePage from './pages/home/HomePage';
+
 export default function App() {
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center p-6">
-      <div className="bg-surface p-8 rounded-xl shadow-lg border border-gray-300 text-center">
-        <h1 className="text-3xl font-bold text-brand mb-2">
-          Hệ Thống Kho QueenKho
-        </h1>
-        <p className="text-gray-600">Tailwind CSS v3 đã hoạt động thành công!</p>
-        <button className="mt-4 bg-brand hover:bg-brand-hover text-white font-semibold px-6 py-2 rounded-lg">
-          Bắt đầu dự án
-        </button>
-      </div>
-    </div>
+    <Routes>
+      {/* ========== Customer Portal ========== */}
+      <Route element={<CustomerLayout />}>
+        <Route path="/" element={<HomePage />} />
+
+        {/* 
+          Các thành viên thêm route module của mình ở đây:
+          
+          <Route path="/tim-va-dat-kho" element={<SearchPage />} />
+          <Route path="/kho-cua-toi" element={<MyStoragePage />} />
+          <Route path="/thanh-toan" element={<PaymentPage />} />
+          <Route path="/ho-tro" element={<SupportPage />} />
+        */}
+      </Route>
+
+      {/* 
+        ========== Các layout khác sẽ thêm sau ==========
+        
+        <Route element={<StaffLayout />}>
+          ...
+        </Route>
+
+        <Route element={<ManagerLayout />}>
+          ...
+        </Route>
+      */}
+    </Routes>
   );
 }

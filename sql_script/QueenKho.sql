@@ -238,5 +238,23 @@ INSERT INTO roles (name, description) VALUES
     ('ADMIN', N'Quản trị hệ thống');
 GO
 
+DECLARE @adminRoleId INT = (SELECT id FROM roles WHERE name = 'ADMIN');
+DECLARE @adminPasswordHash NVARCHAR(255) = '$2a$10$nQFr4xsMQX.CWH6KiTfGT.buKenOQN3nbZxi9.iSOsGczCizsoIPy';
+
+IF EXISTS (SELECT 1 FROM users WHERE email = 'admin@queenkho.com')
+BEGIN
+    UPDATE users
+    SET password_hash = @adminPasswordHash,
+        role_id = @adminRoleId,
+        status = 'ACTIVE'
+    WHERE email = 'admin@queenkho.com';
+END
+ELSE
+BEGIN
+    INSERT INTO users (facility_id, role_id, email, password_hash, full_name, phone, status)
+    VALUES (NULL, @adminRoleId, 'admin@queenkho.com', @adminPasswordHash, N'Administrator', '0900000000', 'ACTIVE');
+END
+GO
+
 
 Select * from roles

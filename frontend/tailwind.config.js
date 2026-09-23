@@ -7,6 +7,20 @@ export default {
   theme: {
     extend: {
       colors: {
+        // ==========================================
+        // 1. CÁC BÍ DANH TIỆN ÍCH (Cho Login, Register & Các Flow)
+        // ==========================================
+        "brand": "#0b3d66",             // Xanh Navy QueenKho (trùng primary-container)
+        "brand-hover": "#002746",       // Xanh Navy đậm khi hover
+        "action": "#0051d5",            // Xanh dương hành động / nút bấm (trùng secondary)
+        "action-hover": "#003ea8",      // Hover nút bấm (trùng on-secondary-fixed-variant)
+        "page": "#f9f9ff",              // Nền trang xám mát (trùng background)
+        "surface": "#ffffff",           // Nền thẻ trắng nổi bật
+        "ink": "#141b2b",               // Màu chữ đen đậm tiêu đề (trùng on-surface)
+
+        // ==========================================
+        // 2. NGUYÊN BẢN TOKENS MATERIAL DESIGN 3 CỦA TEAM
+        // ==========================================
         "background": "#f9f9ff",
         "on-background": "#141b2b",
         "on-primary-fixed-variant": "#1d4973",
@@ -35,7 +49,6 @@ export default {
         "on-tertiary-container": "#17bb83",
         "tertiary-fixed": "#6ffbbe",
         "surface-container-low": "#f1f3ff",
-        "surface": "#f9f9ff",
         "on-secondary-fixed-variant": "#003ea8",
         "tertiary-container": "#00442d",
         "outline-variant": "#c2c7cf",
@@ -59,7 +72,7 @@ export default {
         DEFAULT: "0.125rem",
         lg: "0.25rem",
         xl: "0.5rem",
-        full: "0.75rem",
+        full: "9999px", // Sửa thành 9999px để avatar và loading spinner luôn tròn trịa
       },
       spacing: {
         "space-xl": "2rem",

@@ -1,0 +1,19 @@
+import api from './api'
+
+export async function login(credentials) {
+  const response = await api.post('/auth/login', credentials)
+  return response.data
+}
+
+export function saveSession(loginResponse, emailInput = '') {
+  const { token, userId, fullName, role } = loginResponse
+  const email = loginResponse.email || emailInput
+
+  localStorage.setItem('accessToken', token)
+  localStorage.setItem('user', JSON.stringify({ userId, fullName, email, role }))
+}
+
+export function clearSession() {
+  localStorage.removeItem('accessToken')
+  localStorage.removeItem('user')
+}

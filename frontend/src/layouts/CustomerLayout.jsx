@@ -13,9 +13,9 @@ const customerMenuItems = [
 
 // Mock user data - sẽ thay bằng dữ liệu thật từ API sau khi có Authentication
 const mockUser = {
-  name: 'Thu Trang',
-  initials: 'TT',
-  email: 'thutrang@gmail.com',
+  name: 'Duy Hoàng',
+  initials: 'DH',
+  email: 'duyhoang100406@gmail.com',
   role: 'Khách Hàng',
 };
 

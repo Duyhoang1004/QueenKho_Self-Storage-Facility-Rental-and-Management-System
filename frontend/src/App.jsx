@@ -2,11 +2,13 @@ import { Routes, Route } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
+import RegisterPage from './pages/register/RegisterPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
       {/* ========== Customer Portal ========== */}
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />

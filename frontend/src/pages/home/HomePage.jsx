@@ -64,6 +64,11 @@ const quickActions = [
 ];
 
 export default function HomePage() {
+  // Đọc thông tin user từ localStorage
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  const displayName = user?.fullName || 'Khách';
+
   // Lấy giờ hiện tại để hiển thị lời chào phù hợp
   const currentHour = new Date().getHours();
   let greeting = 'Xin chào';
@@ -91,7 +96,7 @@ export default function HomePage() {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-space-sm">
           <div className="flex flex-col gap-1">
             <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight">
-              {greeting}, Thu Trang 👋
+              {greeting}, {displayName} 👋
             </h1>
             <p className="font-body-md text-body-md text-on-surface-variant capitalize">
               {today}

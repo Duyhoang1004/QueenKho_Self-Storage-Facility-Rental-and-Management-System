@@ -31,6 +31,28 @@ public class AuthService {
         return new LoginResponse(token, user.getRole().getName(), user.getId(), user.getFullName());
 
     }
+
+    @Autowired
+    private com.queenkho.api.repository.RoleRepository roleRepository;
+
+    public void register(com.queenkho.api.dto.RegisterRequest request) {
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new RuntimeException("Email này đã được sử dụng");
+        }
+
+        com.queenkho.api.entity.Role customerRole = roleRepository.findByName("CUSTOMER")
+                .orElseThrow(() -> new RuntimeException("Lỗi hệ thống: Không tìm thấy Role Customer"));
+
+        User newUser = new User();
+        newUser.setEmail(request.getEmail());
+        newUser.setFullName(request.getFullName());
+        newUser.setPhone(request.getPhone());
+        newUser.setPassword(passwordEncoder.encode(request.getPassword()));
+        newUser.setRole(customerRole);
+        newUser.setStatus("ACTIVE");
+
+        userRepository.save(newUser);
+    }
 }
 
 

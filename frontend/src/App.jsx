@@ -3,6 +3,9 @@ import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
+import CreateReservationPage from './pages/reservation/CreateReservationPage';
+import PaymentQRPage from './pages/reservation/PaymentQRPage';
+import ReservationConfirmationPage from './pages/reservation/ReservationConfirmationPage';
 
 export default function App() {
   return (
@@ -12,6 +15,10 @@ export default function App() {
       {/* ========== Customer Portal ========== */}
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/booking" element={<CreateReservationPage />} />
+        <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
+        <Route path="/booking/payment" element={<PaymentQRPage />} />
+        <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
         {/* 
           Các thành viên thêm route module của mình ở đây:
           

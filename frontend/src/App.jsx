@@ -4,14 +4,14 @@ import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
 
-// Import của bạn frontend_UC12_UC13
-import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
-import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
-
-// Import của bạn nhánh main
+// Import cho chức năng Đặt chỗ (UC-10)
 import CreateReservationPage from './pages/reservation/CreateReservationPage';
 import PaymentQRPage from './pages/reservation/PaymentQRPage';
 import ReservationConfirmationPage from './pages/reservation/ReservationConfirmationPage';
+
+// Import cho chức năng Lịch sử & Quản lý Đặt chỗ (UC-12, UC-13)
+import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
+import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
 
 export default function App() {
   return (
@@ -23,15 +23,14 @@ export default function App() {
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
         
-        {/* Route của nhánh frontend_UC12_UC13 */}
+        {/* Chức năng Quản lý kho của tôi (UC-12) */}
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
         
-        {/* Route của nhánh main */}
+        {/* Chức năng Tìm và Đặt kho (UC-10) */}
         <Route path="/booking" element={<CreateReservationPage />} />
         <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
         <Route path="/booking/payment" element={<PaymentQRPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
-
       </Route>
 
       {/* ========== UC-13: FM Pending Reservations (tạm standalone, chưa có ManagerLayout) ========== */}
@@ -39,6 +38,14 @@ export default function App() {
 
       {/* 
         ========== Các layout khác sẽ thêm sau ==========
+        
+        <Route element={<StaffLayout />}>
+          ...
+        </Route>
+
+        <Route element={<ManagerLayout />}>
+          ...
+        </Route>
       */}
     </Routes>
   );

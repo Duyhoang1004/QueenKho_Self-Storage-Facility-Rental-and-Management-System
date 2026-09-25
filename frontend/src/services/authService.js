@@ -22,3 +22,13 @@ export function clearSession() {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('user')
 }
+
+export async function getMyReservations(customerId) {
+  const response = await api.get('/reservations/my', { params: { customerId } })
+  return response.data
+}
+
+export async function getPendingReservations(facilityId) {
+  const response = await api.get('/reservations/pending', { params: { facilityId } })
+  return response.data
+}

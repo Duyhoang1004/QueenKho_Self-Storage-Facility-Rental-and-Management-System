@@ -3,6 +3,8 @@ import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
+import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
+import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
 
 export default function App() {
   return (
@@ -12,6 +14,7 @@ export default function App() {
       {/* ========== Customer Portal ========== */}
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
+        <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
         {/* 
           Các thành viên thêm route module của mình ở đây:
           
@@ -21,7 +24,8 @@ export default function App() {
           <Route path="/ho-tro" element={<SupportPage />} />
         */}
       </Route>
-
+      {/* ========== UC-13: FM Pending Reservations (tạm standalone, chưa có ManagerLayout) ========== */}
+      <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
       {/* 
         ========== Các layout khác sẽ thêm sau ==========
         

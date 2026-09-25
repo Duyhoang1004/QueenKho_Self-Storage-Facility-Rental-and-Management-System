@@ -26,4 +26,14 @@ public class AuthController {
             return ResponseEntity.status(401).body(e.getMessage());
         }
     }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> registerUser(@jakarta.validation.Valid @RequestBody com.queenkho.api.dto.RegisterRequest request) {
+        try {
+            authService.register(request);
+            return ResponseEntity.ok("Đăng ký tài khoản thành công!");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }

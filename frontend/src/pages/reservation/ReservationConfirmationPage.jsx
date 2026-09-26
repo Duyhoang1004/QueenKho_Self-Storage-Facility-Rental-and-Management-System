@@ -2,19 +2,30 @@ import { useLocation, useNavigate } from 'react-router-dom'
 
 // Format tien VND
 function formatVND(amount) {
-  return amount?.toLocaleString('vi-VN') + 'đ'
+  return Number(amount || 0).toLocaleString('vi-VN') + 'đ'
 }
 
 export default function ReservationConfirmationPage() {
   const navigate = useNavigate()
   const { state } = useLocation()
 
-  // Nhan du lieu tu trang dat kho truyen sang qua navigate state
-  const reservation = state?.reservation || {}
-  const customerInfo = state?.customerInfo || {}
-  const selectedMonths = state?.selectedMonths || 3
-  const startDate = state?.startDate || ''
-  const depositAmount = reservation.depositAmount || 500000
+  // Hosted Checkout lam mat navigate state, nen doc lai du lieu da luu truoc khi sang SePay.
+  let savedContext = {}
+  try {
+    savedContext = JSON.parse(sessionStorage.getItem('queenkhoPaymentContext') || '{}')
+  } catch {
+    savedContext = {}
+  }
+
+  const paymentContext = state || savedContext
+  const reservation = paymentContext.reservation || {}
+  const customerInfo = paymentContext.customerInfo || {}
+  const selectedMonths = paymentContext.selectedMonths || reservation.durationMonths || 1
+  const startDate = paymentContext.startDate || reservation.startDate || ''
+  const totalPayment = paymentContext.totalPayment || 0
+  const depositAmount = paymentContext.deposit || reservation.depositAmount || 0
+  const storage = paymentContext.storage || {}
+  const reservationCode = reservation.reservationCode || 'RES-000000'
 
   // Format ngay hien thi
   const now = new Date()
@@ -49,12 +60,12 @@ export default function ReservationConfirmationPage() {
             Đặt chỗ tự động
           </p>
           <h1 className="text-headline-md font-headline-md text-on-surface text-center">
-            ĐẶT CHỖ THÀNH CÔNG • CHỜ THANH TOÁN ĐẶT CỌC
+            THANH TOÁN THÀNH CÔNG • ĐẶT CHỖ ĐÃ XÁC NHẬN
           </h1>
           <p className="text-body-sm font-body-sm text-on-surface-variant mt-2 text-center">
             Đơn đặt chỗ{' '}
-            <span className="font-semibold text-on-surface">#{reservation.reservationCode}</span>{' '}
-            đã được tạo thành công vào lúc {timeStr}.
+            <span className="font-semibold text-on-surface">#{reservationCode}</span>{' '}
+            đã thanh toán thành công vào lúc {timeStr}.
           </p>
         </div>
 
@@ -63,13 +74,13 @@ export default function ReservationConfirmationPage() {
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <p className="text-title-md font-title-md text-on-surface mb-1">
-                Bước tiếp theo:{' '}
-                <span className="text-secondary">Thanh toán đặt cọc</span>
+                Thanh toán:{' '}
+                <span className="text-secondary">Đã hoàn tất</span>
               </p>
               <p className="text-body-sm font-body-sm text-on-surface-variant">
-                Vui lòng hoàn tất thanh toán tiền cọc{' '}
-                <span className="font-semibold text-on-surface">{formatVND(depositAmount)}</span>{' '}
-                để giữ chỗ khoang lưu trữ. Sau khi cọc xong, quản lý cơ sở sẽ gán ô kho và gửi thông báo qua Zalo.
+                Hệ thống đã ghi nhận khoản thanh toán đợt 1{' '}
+                <span className="font-semibold text-on-surface">{formatVND(totalPayment)}</span>.
+                {' '}Quản lý cơ sở sẽ gán ô kho và gửi thông báo cho bạn.
               </p>
               <div className="flex items-center gap-4 mt-2">
                 <span className="text-body-sm font-body-sm text-[#10B981] flex items-center gap-1">
@@ -92,21 +103,21 @@ export default function ReservationConfirmationPage() {
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">location_on</span>
               <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Cơ sở hoạt động</span>
             </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">Tân Bình, TP.HCM</p>
+            <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.branch || 'QueenKho Tân Bình'}</p>
           </div>
           <div className="bg-surface-container-low rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">straighten</span>
               <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Kích thước khoang</span>
             </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">6.0 m² • 16.2 m³</p>
+            <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.area || 6.0} m² • {storage.dimension || '16.2 m³'}</p>
           </div>
           <div className="bg-surface-container-low rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">payments</span>
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Tiền cọc cần nộp</span>
+              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Đã thanh toán</span>
             </div>
-            <p className="text-body-md font-body-md text-secondary font-semibold">{formatVND(depositAmount)}</p>
+            <p className="text-body-md font-body-md text-secondary font-semibold">{formatVND(totalPayment)}</p>
           </div>
         </div>
 
@@ -125,10 +136,10 @@ export default function ReservationConfirmationPage() {
               <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Mã đặt chỗ</p>
               <div className="flex items-center gap-2">
                 <span className="text-title-md font-title-md text-secondary font-bold">
-                  #{reservation.reservationCode || 'RES-000000'}
+                  #{reservationCode}
                 </span>
                 <button
-                  onClick={() => navigator.clipboard.writeText(reservation.reservationCode || '')}
+                  onClick={() => navigator.clipboard.writeText(reservationCode)}
                   className="text-on-surface-variant hover:text-secondary transition-colors cursor-pointer"
                   title="Sao chép"
                 >
@@ -139,8 +150,8 @@ export default function ReservationConfirmationPage() {
 
             <div>
               <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Loại kho đăng ký</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">Khoang Tiêu Chuẩn</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">6.0 m² diện tích sàn • 16.2 m³ thể tích</p>
+              <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.name || 'Khoang Tiêu Chuẩn'}</p>
+              <p className="text-body-sm font-body-sm text-on-surface-variant">{storage.area || 6.0} m² diện tích sàn • {storage.dimension || '16.2 m³'}</p>
             </div>
 
             <div>
@@ -164,19 +175,20 @@ export default function ReservationConfirmationPage() {
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Tiền cọc cần nộp</p>
+              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Thanh toán đợt 1</p>
               <div className="flex items-center gap-2">
-                <p className="text-body-md font-body-md text-on-surface font-semibold">{formatVND(depositAmount)}</p>
-                <span className="text-label-sm font-label-sm text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full">
-                  Chờ thanh toán
+                <p className="text-body-md font-body-md text-on-surface font-semibold">{formatVND(totalPayment)}</p>
+                <span className="text-label-sm font-label-sm text-[#10B981] bg-[#ECFDF5] px-2 py-0.5 rounded-full">
+                  Đã thanh toán
                 </span>
               </div>
+              <p className="text-label-sm font-label-sm text-on-surface-variant mt-1">Trong đó tiền cọc: {formatVND(depositAmount)}</p>
             </div>
 
             <div>
               <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Cơ sở lưu trữ</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">QueenKho Tân Bình</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">120 Cộng Hòa, P.13, Tân Bình, TP.HCM</p>
+              <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.branch || 'QueenKho Tân Bình'}</p>
+              <p className="text-body-sm font-body-sm text-on-surface-variant">{storage.address || '142 Cộng Hòa, P.13'}</p>
             </div>
 
             <div>

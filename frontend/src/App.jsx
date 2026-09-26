@@ -6,7 +6,6 @@ import RegisterPage from './pages/register/RegisterPage';
 
 // Import cho chức năng Đặt chỗ (UC-10)
 import CreateReservationPage from './pages/reservation/CreateReservationPage';
-import PaymentQRPage from './pages/reservation/PaymentQRPage';
 import ReservationConfirmationPage from './pages/reservation/ReservationConfirmationPage';
 
 // Import cho chức năng Lịch sử & Quản lý Đặt chỗ (UC-12, UC-13)
@@ -29,7 +28,6 @@ export default function App() {
         {/* Chức năng Tìm và Đặt kho (UC-10) */}
         <Route path="/booking" element={<CreateReservationPage />} />
         <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
-        <Route path="/booking/payment" element={<PaymentQRPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
       </Route>
 

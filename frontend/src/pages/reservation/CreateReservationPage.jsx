@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
+import { createSepayPayment } from '../../services/sepayService'
 
 // Du lieu mock - thay bang API that sau khi UC-09 hoan thanh
 const MOCK_UNIT = {
@@ -30,7 +30,6 @@ function formatVND(amount) {
 }
 
 export default function CreateReservationPage() {
-  const navigate = useNavigate()
   const [selectedMonths, setSelectedMonths] = useState(3)
   const [startDate, setStartDate] = useState('')
   const [agreed, setAgreed] = useState(false)
@@ -52,6 +51,11 @@ export default function CreateReservationPage() {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     setStartDate(tomorrow.toISOString().split('T')[0])
+
+    const paymentResult = new URLSearchParams(window.location.search).get('payment')
+    if (paymentResult === 'failed') {
+      setError('Thanh toán thất bại hoặc đã bị hủy. Vui lòng thử lại.')
+    }
   }, [])
 
   // Tinh tien dong
@@ -87,16 +91,19 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
       })
-      navigate('/booking/payment', {
-        state: {
-          reservation: response,
-          customerInfo,
-          selectedMonths,
-          startDate,
-        },
-      })
+      const payment = await createSepayPayment(response.id)
+      sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
+        reservation: response,
+        customerInfo,
+        selectedMonths,
+        startDate,
+        totalPayment: Number(payment.amount || totalPayment),
+        deposit: Number(payment.depositAmount || deposit),
+        storage: MOCK_UNIT,
+      }))
+      window.location.href = payment.payUrl
     } catch (err) {
-      setError(err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -112,7 +119,7 @@ export default function CreateReservationPage() {
           Hoàn Tất Đặt Chỗ & Khai Báo Thông Tin
         </h1>
         <p className="text-body-md font-body-md text-on-surface-variant mt-1">
-          Xác nhận thông tin hợp đồng điện tử và giữ chỗ khoang lưu trữ chỉ trong 2 phút.
+          Xác nhận thông tin hợp đồng điện tử và tiếp tục thanh toán đặt kho.
         </p>
       </div>
 

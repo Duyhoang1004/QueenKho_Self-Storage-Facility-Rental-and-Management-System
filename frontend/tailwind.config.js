@@ -54,6 +54,11 @@ export default {
         "on-tertiary-fixed": "#002113",
         "tertiary": "#002c1b",
         "surface-container-high": "#e1e8fd",
+        "brand": "#002746",
+        "action": "#0051d5",
+        "page": "#f9f9ff",
+        "ink": "#141b2b",
+        "success": "#17bb83",
       },
       borderRadius: {
         DEFAULT: "0.125rem",

@@ -3,12 +3,12 @@ import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-d
 import { clearSession } from '../services/authService';
 
 const managerMenuItems = [
-  { path: '/manager', icon: 'dashboard', label: 'Báº£ng Ä‘iá»u khiá»ƒn cÆ¡ sá»Ÿ' },
-  { path: '/manager/assign', icon: 'assignment_turned_in', label: 'Duyá»‡t & GÃ¡n Ã´ kho', badge: '3 Ä‘Æ¡n má»›i' },
-  { path: '/manager/storage', icon: 'grid_view', label: 'Quáº£n lÃ½ danh má»¥c kho' },
-  { path: '/manager/staff', icon: 'badge', label: 'PhÃ¢n cÃ´ng nhÃ¢n viÃªn' },
-  { path: '/manager/customers', icon: 'history_edu', label: 'KhÃ¡ch hÃ ng & Há»£p Ä‘á»“ng' },
-  { path: '/manager/reports', icon: 'bar_chart', label: 'BÃ¡o cÃ¡o cÆ¡ sá»Ÿ' },
+  { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
+  { path: '/manager/assign', icon: 'assignment_turned_in', label: 'Duyệt & Gán ô kho', badge: '3 đơn mới' },
+  { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
+  { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },
+  { path: '/manager/customers', icon: 'history_edu', label: 'Khách hàng & Hợp đồng' },
+  { path: '/manager/reports', icon: 'bar_chart', label: 'Báo cáo cơ sở' },
 ];
 
 export default function ManagerLayout() {
@@ -35,13 +35,13 @@ export default function ManagerLayout() {
               <span className="material-symbols-outlined text-[24px]">warehouse</span>
             </div>
             <div className="flex flex-col">
-              <span className="font-title-md text-title-md text-on-primary tracking-tight uppercase leading-none">KHO VIá»†T</span>
-              <span className="font-label-sm text-label-sm text-on-primary-container tracking-wider uppercase mt-1">Há»† THá»NG KHO Tá»° QUáº¢N</span>
+              <span className="font-title-md text-title-md text-on-primary tracking-tight uppercase leading-none">KHO VIỆT</span>
+              <span className="font-label-sm text-label-sm text-on-primary-container tracking-wider uppercase mt-1">HỆ THỐNG KHO TỰ QUẢN</span>
             </div>
           </div>
           
           <div className="px-space-md pt-space-md pb-space-2xs">
-            <span className="font-label-sm text-label-sm uppercase tracking-wider text-on-primary-container/70 px-space-sm">Quáº£n trá»‹ cÆ¡ sá»Ÿ</span>
+            <span className="font-label-sm text-label-sm uppercase tracking-wider text-on-primary-container/70 px-space-sm">Quản trị cơ sở</span>
           </div>
           
           <nav className="flex flex-col gap-1 px-space-sm">
@@ -76,10 +76,10 @@ export default function ManagerLayout() {
           <div className="bg-primary rounded-xl p-space-sm text-on-primary flex flex-col gap-1.5 border border-primary-container">
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-2 h-2 rounded-full bg-tertiary-fixed animate-pulse"></span>
-              <span className="font-label-sm text-label-sm text-primary-fixed">Há»‡ thá»‘ng trá»±c tuyáº¿n</span>
+              <span className="font-label-sm text-label-sm text-primary-fixed">Hệ thống trực tuyến</span>
             </div>
-            <div className="font-body-sm text-body-sm text-surface-container-high">Hotline ká»¹ thuáº­t:</div>
-            <div className="font-title-md text-title-md text-on-primary tracking-wide">1900 6868 (PhÃ­m 2)</div>
+            <div className="font-body-sm text-body-sm text-surface-container-high">Hotline kỹ thuật:</div>
+            <div className="font-title-md text-title-md text-on-primary tracking-wide">1900 6868 (Phím 2)</div>
           </div>
         </div>
       </aside>
@@ -88,11 +88,11 @@ export default function ManagerLayout() {
         {/* Header */}
         <header className="fixed top-0 left-[260px] right-0 h-16 bg-surface-container-lowest border-b border-outline-variant/50 z-40 flex items-center justify-between px-space-lg">
           <div className="flex items-center gap-2 text-on-surface-variant font-label-md text-label-md">
-            <span className="hover:text-on-surface cursor-pointer">Kho Viá»‡t</span>
+            <span className="hover:text-on-surface cursor-pointer">Kho Việt</span>
             <span className="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
-            <span className="hover:text-on-surface cursor-pointer">CÆ¡ sá»Ÿ TÃ¢n BÃ¬nh</span>
+            <span className="hover:text-on-surface cursor-pointer">Cơ sở Tân Bình</span>
             <span className="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
-            <span className="text-on-surface font-title-md text-title-md">Äiá»u phá»‘i váº­n hÃ nh</span>
+            <span className="text-on-surface font-title-md text-title-md">Điều phối vận hành</span>
           </div>
           
           <div className="flex items-center gap-space-md">
@@ -106,13 +106,13 @@ export default function ManagerLayout() {
               </button>
             </div>
             
-            <div className="flex items-center gap-space-sm pl-space-xs cursor-pointer" onClick={handleLogout} title="ÄÄƒng xuáº¥t">
+            <div className="flex items-center gap-space-sm pl-space-xs cursor-pointer" onClick={handleLogout} title="Đăng xuất">
               <div className="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-title-md text-title-md">
                 {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'M'}
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-label-lg text-label-lg text-on-surface leading-tight">{currentUser.fullName}</span>
-                <span className="font-label-sm text-label-sm text-on-surface-variant leading-tight">Quáº£n lÃ½ CÆ¡ sá»Ÿ TÃ¢n BÃ¬nh</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant leading-tight">Quản lý Cơ sở Tân Bình</span>
               </div>
             </div>
           </div>
@@ -126,5 +126,3 @@ export default function ManagerLayout() {
     </div>
   );
 }
-
-

@@ -4,11 +4,11 @@ import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
 
-// Import cho chá»©c nÄƒng Äáº·t chá»— (UC-10)
+// Import cho chức năng Đặt chỗ (UC-10)
 import CreateReservationPage from './pages/reservation/CreateReservationPage';
 import ReservationConfirmationPage from './pages/reservation/ReservationConfirmationPage';
 
-// Import cho chá»©c nÄƒng Lá»‹ch sá»­ & Quáº£n lÃ½ Äáº·t chá»— (UC-12, UC-13)
+// Import cho chức năng Lịch sử & Quản lý Đặt chỗ (UC-12, UC-13)
 import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
 import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
 
@@ -28,20 +28,20 @@ export default function App() {
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
         
-        {/* Chá»©c nÄƒng Quáº£n lÃ½ kho cá»§a tÃ´i (UC-12) */}
+        {/* Chức năng Quản lý kho của tôi (UC-12) */}
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
         
-        {/* Chá»©c nÄƒng TÃ¬m vÃ  Äáº·t kho (UC-10) */}
+        {/* Chức năng Tìm và Đặt kho (UC-10) */}
         <Route path="/booking" element={<CreateReservationPage />} />
         <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
       </Route>
 
-      {/* ========== UC-13: FM Pending Reservations (táº¡m standalone, chÆ°a cÃ³ ManagerLayout) ========== */}
+      {/* ========== UC-13: FM Pending Reservations (tạm standalone, chưa có ManagerLayout) ========== */}
       <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
 
       {/* 
-        ========== CÃ¡c layout khÃ¡c sáº½ thÃªm sau ==========
+        ========== Các layout khác sẽ thêm sau ==========
         
         <Route element={<StaffLayout />}>
           ...
@@ -61,4 +61,3 @@ export default function App() {
     </Routes>
   );
 }
-

@@ -2,12 +2,12 @@
 import { getMyReservations } from '../../services/authService'
 
 const statusLabel = {
-  PENDING: 'Chá» xá»­ lÃ½',
-  DEPOSIT_PAID: 'ÄÃ£ Ä‘áº·t cá»c',
-  UNIT_ASSIGNED: 'ÄÃ£ gÃ¡n Ã´ kho',
-  CANCELLED: 'ÄÃ£ há»§y',
-  EXPIRED: 'Háº¿t háº¡n',
-  COMPLETED: 'HoÃ n táº¥t',
+  PENDING: 'Chờ xử lý',
+  DEPOSIT_PAID: 'Đã đặt cọc',
+  UNIT_ASSIGNED: 'Đã gán ô kho',
+  CANCELLED: 'Đã hủy',
+  EXPIRED: 'Hết hạn',
+  COMPLETED: 'Hoàn tất',
 }
 
 const statusClass = {
@@ -27,27 +27,27 @@ export default function MyReservationsPage() {
   useEffect(() => {
     const user = JSON.parse(sessionStorage.getItem('user') || '{}')
     if (!user.userId) {
-      setError('Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ xem Ä‘Æ¡n Ä‘áº·t chá»—.')
+      setError('Bạn cần đăng nhập để xem đơn đặt chỗ.')
       setLoading(false)
       return
     }
     getMyReservations(user.userId)
       .then(setReservations)
-      .catch(() => setError('KhÃ´ng táº£i Ä‘Æ°á»£c danh sÃ¡ch Ä‘Æ¡n Ä‘áº·t chá»—.'))
+      .catch(() => setError('Không tải được danh sách đơn đặt chỗ.'))
       .finally(() => setLoading(false))
   }, [])
 
   return (
     <div className="max-w-[1180px] w-full mx-auto px-margin py-space-lg">
       <h1 className="font-headline-md text-headline-md text-on-surface mb-space-md">
-        ÄÆ¡n Ä‘áº·t chá»— cá»§a tÃ´i
+        Đơn đặt chỗ của tôi
       </h1>
 
-      {loading && <p className="text-on-surface-variant">Äang táº£i...</p>}
+      {loading && <p className="text-on-surface-variant">Đang tải...</p>}
       {error && <p className="text-error">{error}</p>}
 
       {!loading && !error && reservations.length === 0 && (
-        <p className="text-on-surface-variant">Báº¡n chÆ°a cÃ³ Ä‘Æ¡n Ä‘áº·t chá»— nÃ o.</p>
+        <p className="text-on-surface-variant">Bạn chưa có đơn đặt chỗ nào.</p>
       )}
 
       {!loading && reservations.length > 0 && (
@@ -55,13 +55,13 @@ export default function MyReservationsPage() {
           <table className="w-full text-left">
             <thead className="bg-[#F4F6F8] text-on-surface-variant text-sm">
               <tr>
-                <th className="px-4 py-3">MÃ£ Ä‘Æ¡n</th>
-                <th className="px-4 py-3">CÆ¡ sá»Ÿ</th>
-                <th className="px-4 py-3">Loáº¡i kho</th>
-                <th className="px-4 py-3">Báº¯t Ä‘áº§u</th>
-                <th className="px-4 py-3">Sá»‘ thÃ¡ng</th>
-                <th className="px-4 py-3">Tiá»n cá»c</th>
-                <th className="px-4 py-3">Tráº¡ng thÃ¡i</th>
+                <th className="px-4 py-3">Mã đơn</th>
+                <th className="px-4 py-3">Cơ sở</th>
+                <th className="px-4 py-3">Loại kho</th>
+                <th className="px-4 py-3">Bắt đầu</th>
+                <th className="px-4 py-3">Số tháng</th>
+                <th className="px-4 py-3">Tiền cọc</th>
+                <th className="px-4 py-3">Trạng thái</th>
               </tr>
             </thead>
             <tbody>
@@ -70,9 +70,9 @@ export default function MyReservationsPage() {
                   <td className="px-4 py-3 font-medium">{r.reservationCode}</td>
                   <td className="px-4 py-3">{r.facilityName}</td>
                   <td className="px-4 py-3">{r.unitTypeName}</td>
-                  <td className="px-4 py-3">{r.startDate ?? 'â€”'}</td>
+                  <td className="px-4 py-3">{r.startDate ?? '—'}</td>
                   <td className="px-4 py-3">{r.durationMonths}</td>
-                  <td className="px-4 py-3">{r.depositAmount.toLocaleString('vi-VN')}â‚«</td>
+                  <td className="px-4 py-3">{r.depositAmount.toLocaleString('vi-VN')}₫</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${statusClass[r.status] || 'bg-gray-100 text-gray-600'}`}>
                       {statusLabel[r.status] || r.status}

@@ -40,9 +40,9 @@ export default function LoginPage() {
   }
 
   const validate = () => {
-    if (!form.email.trim()) return 'Vui lÃ²ng nháº­p email.'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Email khÃ´ng Ä‘Ãºng Ä‘á»‹nh dáº¡ng.'
-    if (!form.password) return 'Vui lÃ²ng nháº­p máº­t kháº©u.'
+    if (!form.email.trim()) return 'Vui lòng nhập email.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Email không đúng định dạng.'
+    if (!form.password) return 'Vui lòng nhập mật khẩu.'
     return ''
   }
 
@@ -76,13 +76,13 @@ export default function LoginPage() {
       const errorCode = requestError.response?.data?.error
 
       if (status === 401 || errorCode === 'INVALID_CREDENTIALS') {
-        setError('Email hoáº·c máº­t kháº©u khÃ´ng Ä‘Ãºng.')
+        setError('Email hoặc mật khẩu không đúng.')
       } else if (errorCode === 'ACCOUNT_LOCKED') {
-        setError('TÃ i khoáº£n Ä‘Ã£ bá»‹ khÃ³a. Vui lÃ²ng liÃªn há»‡ há»— trá»£.')
+        setError('Tài khoản đã bị khóa. Vui lòng liên hệ hỗ trợ.')
       } else if (errorCode === 'ACCOUNT_DISABLED') {
-        setError('TÃ i khoáº£n Ä‘Ã£ bá»‹ vÃ´ hiá»‡u hÃ³a.')
+        setError('Tài khoản đã bị vô hiệu hóa.')
       } else {
-        setError(requestError.response?.data?.message || 'KhÃ´ng thá»ƒ káº¿t ná»‘i Ä‘áº¿n há»‡ thá»‘ng. Vui lÃ²ng thá»­ láº¡i.')
+        setError(requestError.response?.data?.message || 'Không thể kết nối đến hệ thống. Vui lòng thử lại.')
       }
     } finally {
       setLoading(false)
@@ -105,14 +105,14 @@ export default function LoginPage() {
 
         <div className="relative my-auto max-w-xl py-16">
           <h1 className="text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
-            Quáº£n lÃ½ kho lÆ°u trá»¯
+            Quản lý kho lưu trữ
           </h1>
           <p className="mt-5 max-w-lg text-base leading-7 text-blue-100 xl:text-lg">
-            ThuÃª vÃ  quáº£n lÃ½ kho lÆ°u trá»¯ hiá»‡u quáº£.
+            Thuê và quản lý kho lưu trữ hiệu quả.
           </p>
         </div>
 
-        <p className="relative text-xs text-blue-200">Â© 2026 QueenKho. All rights reserved.</p>
+        <p className="relative text-xs text-blue-200">© 2026 QueenKho. All rights reserved.</p>
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10 lg:px-14 xl:px-24">
@@ -126,10 +126,10 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-action">ChÃ o má»«ng trá»Ÿ láº¡i</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">ÄÄƒng nháº­p tÃ i khoáº£n</h2>
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-action">Chào mừng trở lại</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Đăng nhập tài khoản</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              Nháº­p thÃ´ng tin cá»§a báº¡n Ä‘á»ƒ tiáº¿p tá»¥c sá»­ dá»¥ng QueenKho.
+              Nhập thông tin của bạn để tiếp tục sử dụng QueenKho.
             </p>
           </div>
 
@@ -150,7 +150,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Máº­t kháº©u</label>
+              <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Mật khẩu</label>
               <div className="relative">
                 <input
                   id="password"
@@ -158,7 +158,7 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Nháº­p máº­t kháº©u"
+                  placeholder="Nhập mật khẩu"
                   autoComplete="current-password"
                   disabled={loading}
                   className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
@@ -167,7 +167,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
                   className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-400 transition hover:text-action"
-                  aria-label={showPassword ? 'áº¨n máº­t kháº©u' : 'Hiá»‡n máº­t kháº©u'}
+                  aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 >
                   <EyeIcon open={showPassword} />
                 </button>
@@ -186,13 +186,13 @@ export default function LoginPage() {
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-action px-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-brand focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {loading ? 'Äang Ä‘Äƒng nháº­p...' : 'ÄÄƒng nháº­p'}
+              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </button>
             
             <p className="mt-6 text-center text-sm text-slate-500">
-              ChÆ°a cÃ³ tÃ i khoáº£n?{' '}
+              Chưa có tài khoản?{' '}
               <Link to="/register" className="font-semibold text-action transition hover:text-brand">
-                ÄÄƒng kÃ½ ngay
+                Đăng ký ngay
               </Link>
             </p>
           </form>
@@ -201,4 +201,3 @@ export default function LoginPage() {
     </main>
   )
 }
-

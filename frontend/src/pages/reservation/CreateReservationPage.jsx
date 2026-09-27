@@ -5,28 +5,28 @@ import { createSepayPayment } from '../../services/sepayService'
 // Du lieu mock - thay bang API that sau khi UC-09 hoan thanh
 const MOCK_UNIT = {
   code: 'TB-104',
-  name: 'Khoang TiÃªu Chuáº©n',
+  name: 'Khoang Tiêu Chuẩn',
   area: 6.0,
-  floor: 'Táº§ng trá»‡t',
-  branch: 'QueenKho TÃ¢n BÃ¬nh',
-  address: '142 Cá»™ng HÃ²a, P.13',
-  dimension: '2.5m Ã— 2.4m Ã— 2.7m (Thá»ƒ tÃ­ch 16.2 mÂ³)',
+  floor: 'Tầng trệt',
+  branch: 'QueenKho Tân Bình',
+  address: '142 Cộng Hòa, P.13',
+  dimension: '2.5m × 2.4m × 2.7m (Thể tích 16.2 m³)',
   pricePerMonth: 1850000,
   facilityId: 1,
   unitTypeId: 1,
 }
 
 const DURATION_OPTIONS = [
-  { months: 1, label: '1 ThÃ¡ng', sub: 'TiÃªu chuáº©n', note: 'GiÃ¡ chuáº©n', discount: 0 },
-  { months: 3, label: '3 ThÃ¡ng', sub: 'Phá»• biáº¿n nháº¥t', note: 'Tiáº¿t kiá»‡m 5%', discount: 5, popular: true },
-  { months: 6, label: '6 ThÃ¡ng', sub: 'Trung háº¡n', note: 'Tiáº¿t kiá»‡m 10%', discount: 10 },
-  { months: 12, label: '12 ThÃ¡ng', sub: 'DÃ i háº¡n', note: 'Tiáº¿t kiá»‡m 15%', discount: 15 },
+  { months: 1, label: '1 Tháng', sub: 'Tiêu chuẩn', note: 'Giá chuẩn', discount: 0 },
+  { months: 3, label: '3 Tháng', sub: 'Phổ biến nhất', note: 'Tiết kiệm 5%', discount: 5, popular: true },
+  { months: 6, label: '6 Tháng', sub: 'Trung hạn', note: 'Tiết kiệm 10%', discount: 10 },
+  { months: 12, label: '12 Tháng', sub: 'Dài hạn', note: 'Tiết kiệm 15%', discount: 15 },
 ]
 
 const VOUCHER_DISCOUNT = 100000
 
 function formatVND(amount) {
-  return amount.toLocaleString('vi-VN') + 'Ä‘'
+  return amount.toLocaleString('vi-VN') + 'đ'
 }
 
 export default function CreateReservationPage() {
@@ -54,7 +54,7 @@ export default function CreateReservationPage() {
 
     const paymentResult = new URLSearchParams(window.location.search).get('payment')
     if (paymentResult === 'failed') {
-      setError('Thanh toÃ¡n tháº¥t báº¡i hoáº·c Ä‘Ã£ bá»‹ há»§y. Vui lÃ²ng thá»­ láº¡i.')
+      setError('Thanh toán thất bại hoặc đã bị hủy. Vui lòng thử lại.')
     }
   }, [])
 
@@ -69,15 +69,15 @@ export default function CreateReservationPage() {
   const handleSubmit = async () => {
     // Validate
     if (!agreed) {
-      setError('Báº¡n cáº§n Ä‘á»“ng Ã½ vá»›i cam káº¿t lÆ°u trá»¯ trÆ°á»›c khi tiáº¿p tá»¥c.')
+      setError('Bạn cần đồng ý với cam kết lưu trữ trước khi tiếp tục.')
       return
     }
     if (!startDate) {
-      setError('Vui lÃ²ng chá»n ngÃ y báº¯t Ä‘áº§u nháº­n kho.')
+      setError('Vui lòng chọn ngày bắt đầu nhận kho.')
       return
     }
     if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email || !customerInfo.address) {
-      setError('Vui lÃ²ng Ä‘iá»n Ä‘áº§y Ä‘á»§ thÃ´ng tin khÃ¡ch hÃ ng.')
+      setError('Vui lòng điền đầy đủ thông tin khách hàng.')
       return
     }
 
@@ -103,7 +103,7 @@ export default function CreateReservationPage() {
       }))
       window.location.href = payment.payUrl
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.message || 'CÃ³ lá»—i xáº£y ra. Vui lÃ²ng thá»­ láº¡i.')
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -116,10 +116,10 @@ export default function CreateReservationPage() {
       {/* Tieu de trang */}
       <div className="mb-6">
         <h1 className="text-headline-md font-headline-md text-on-surface">
-          HoÃ n Táº¥t Äáº·t Chá»— & Khai BÃ¡o ThÃ´ng Tin
+          Hoàn Tất Đặt Chỗ & Khai Báo Thông Tin
         </h1>
         <p className="text-body-md font-body-md text-on-surface-variant mt-1">
-          XÃ¡c nháº­n thÃ´ng tin há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ vÃ  tiáº¿p tá»¥c thanh toÃ¡n Ä‘áº·t kho.
+          Xác nhận thông tin hợp đồng điện tử và tiếp tục thanh toán đặt kho.
         </p>
       </div>
 
@@ -135,10 +135,10 @@ export default function CreateReservationPage() {
                 <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold">
                   1
                 </div>
-                <span className="text-title-md font-title-md text-on-surface">ThÃ´ng tin Ä‘áº·t kho</span>
+                <span className="text-title-md font-title-md text-on-surface">Thông tin đặt kho</span>
               </div>
               <span className="text-label-md font-label-md text-[#10B981] bg-[#ECFDF5] px-2.5 py-1 rounded-full">
-                Khoang tá»± quáº£n 24/7
+                Khoang tự quản 24/7
               </span>
             </div>
 
@@ -149,24 +149,24 @@ export default function CreateReservationPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-title-md font-title-md text-on-surface">
-                    {MOCK_UNIT.name} ({MOCK_UNIT.area} mÂ²)
+                    {MOCK_UNIT.name} ({MOCK_UNIT.area} m²)
                   </span>
                   <span className="text-label-sm font-label-sm bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-0.5 rounded-full">
                     {MOCK_UNIT.floor}
                   </span>
                 </div>
                 <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">
-                  Chi nhÃ¡nh: {MOCK_UNIT.branch} ({MOCK_UNIT.address})
+                  Chi nhánh: {MOCK_UNIT.branch} ({MOCK_UNIT.address})
                 </p>
                 <p className="text-body-sm font-body-sm text-on-surface-variant">
-                  KÃ­ch thÆ°á»›c: {MOCK_UNIT.dimension}
+                  Kích thước: {MOCK_UNIT.dimension}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-label-sm font-label-sm text-on-surface-variant mb-0.5">ÄÆ¡n giÃ¡ chuáº©n:</div>
+                <div className="text-label-sm font-label-sm text-on-surface-variant mb-0.5">Đơn giá chuẩn:</div>
                 <div className="text-title-md font-title-md text-on-surface">
                   {formatVND(MOCK_UNIT.pricePerMonth)}
-                  <span className="text-body-sm text-on-surface-variant">/thÃ¡ng</span>
+                  <span className="text-body-sm text-on-surface-variant">/tháng</span>
                 </div>
                 <div className="text-label-sm font-label-sm text-on-surface-variant mt-1">{MOCK_UNIT.code}</div>
               </div>
@@ -180,15 +180,15 @@ export default function CreateReservationPage() {
                 <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold">
                   2
                 </div>
-                <span className="text-title-md font-title-md text-on-surface">Thá»i háº¡n thuÃª & NgÃ y nháº­n kho</span>
+                <span className="text-title-md font-title-md text-on-surface">Thời hạn thuê & Ngày nhận kho</span>
               </div>
               <span className="text-label-md font-label-md text-secondary bg-secondary-fixed px-2.5 py-1 rounded-full">
-                Linh hoáº¡t gia háº¡n
+                Linh hoạt gia hạn
               </span>
             </div>
 
             <p className="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider mb-3">
-              Thá»i háº¡n cam káº¿t thuÃª tá»‘i thiá»ƒu
+              Thời hạn cam kết thuê tối thiểu
             </p>
 
             <div className="grid grid-cols-4 gap-3 mb-5">
@@ -205,7 +205,7 @@ export default function CreateReservationPage() {
                   {/* Badge giam gia */}
                   {opt.popular && (
                     <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-label-sm font-label-sm bg-[#D97706] text-white px-2 py-0.5 rounded-full whitespace-nowrap">
-                      Giáº£m 5%
+                      Giảm 5%
                     </span>
                   )}
                   {!opt.popular && opt.discount > 0 && (
@@ -226,7 +226,7 @@ export default function CreateReservationPage() {
                   </div>
                   {selectedMonths === opt.months && opt.discount > 0 && (
                     <div className="text-label-sm font-label-sm text-on-primary/80 mt-1">
-                      Tiáº¿t kiá»‡m {formatVND(Math.round(MOCK_UNIT.pricePerMonth * opt.months * opt.discount / 100))}
+                      Tiết kiệm {formatVND(Math.round(MOCK_UNIT.pricePerMonth * opt.months * opt.discount / 100))}
                     </div>
                   )}
                 </button>
@@ -235,7 +235,7 @@ export default function CreateReservationPage() {
 
             <div>
               <label className="text-body-md font-body-md text-on-surface mb-2 block">
-                NgÃ y báº¯t Ä‘áº§u nháº­n kho <span className="text-error">*</span>
+                Ngày bắt đầu nhận kho <span className="text-error">*</span>
               </label>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">
@@ -250,7 +250,7 @@ export default function CreateReservationPage() {
                 />
               </div>
               <p className="text-body-sm font-body-sm text-on-surface-variant mt-2">
-                ðŸ• Há»— trá»£ dá»i ngÃ y nháº­n tá»‘i Ä‘a 3 ngÃ y trÆ°á»›c khi kÃ­ch hoáº¡t khÃ´ng phá»¥ phÃ­.
+                🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
               </p>
             </div>
           </div>
@@ -262,21 +262,21 @@ export default function CreateReservationPage() {
                 <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold">
                   3
                 </div>
-                <span className="text-title-md font-title-md text-on-surface">ThÃ´ng tin khÃ¡ch hÃ ng</span>
+                <span className="text-title-md font-title-md text-on-surface">Thông tin khách hàng</span>
               </div>
-              <span className="text-label-sm font-label-sm text-error">* Báº¯t buá»™c cho há»£p Ä‘á»“ng Ä‘iá»‡n tá»­</span>
+              <span className="text-label-sm font-label-sm text-error">* Bắt buộc cho hợp đồng điện tử</span>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-body-sm font-body-sm text-on-surface-variant mb-1.5 block">
-                  Há» vÃ  TÃªn cÃ¡ nhÃ¢n / Doanh nghiá»‡p <span className="text-error">*</span>
+                  Họ và Tên cá nhân / Doanh nghiệp <span className="text-error">*</span>
                 </label>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">person</span>
                   <input
                     type="text"
-                    placeholder="Nguyá»…n Thu Trang"
+                    placeholder="Nguyễn Thu Trang"
                     value={customerInfo.fullName}
                     onChange={(e) => setCustomerInfo({ ...customerInfo, fullName: e.target.value })}
                     className="w-full pl-10 pr-4 py-2.5 border border-outline-variant rounded-xl text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary"
@@ -286,7 +286,7 @@ export default function CreateReservationPage() {
 
               <div>
                 <label className="text-body-sm font-body-sm text-on-surface-variant mb-1.5 block">
-                  Sá»‘ Ä‘iá»‡n thoáº¡i / Zalo <span className="text-error">*</span>
+                  Số điện thoại / Zalo <span className="text-error">*</span>
                 </label>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">phone</span>
@@ -302,7 +302,7 @@ export default function CreateReservationPage() {
 
               <div>
                 <label className="text-body-sm font-body-sm text-on-surface-variant mb-1.5 block">
-                  Sá»‘ CCCD / Passport <span className="text-error">*</span>
+                  Số CCCD / Passport <span className="text-error">*</span>
                 </label>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">badge</span>
@@ -315,13 +315,13 @@ export default function CreateReservationPage() {
                   />
                 </div>
                 <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">
-                  Cáº¥p quyá»n má»Ÿ khÃ³a SmartLock Ä‘iá»‡n tá»­
+                  Cấp quyền mở khóa SmartLock điện tử
                 </p>
               </div>
 
               <div>
                 <label className="text-body-sm font-body-sm text-on-surface-variant mb-1.5 block">
-                  Email nháº­n há»£p Ä‘á»“ng & hÃ³a Ä‘Æ¡n <span className="text-error">*</span>
+                  Email nhận hợp đồng & hóa đơn <span className="text-error">*</span>
                 </label>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">mail</span>
@@ -337,13 +337,13 @@ export default function CreateReservationPage() {
 
               <div className="col-span-2">
                 <label className="text-body-sm font-body-sm text-on-surface-variant mb-1.5 block">
-                  Äá»‹a chá»‰ thÆ°á»ng trÃº / Trá»¥ sá»Ÿ ghi nháº­n há»£p Ä‘á»“ng <span className="text-error">*</span>
+                  Địa chỉ thường trú / Trụ sở ghi nhận hợp đồng <span className="text-error">*</span>
                 </label>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">location_on</span>
                   <input
                     type="text"
-                    placeholder="PhÆ°á»ng 13, Quáº­n TÃ¢n BÃ¬nh, TP. Há»“ ChÃ­ Minh"
+                    placeholder="Phường 13, Quận Tân Bình, TP. Hồ Chí Minh"
                     value={customerInfo.address}
                     onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
                     className="w-full pl-10 pr-4 py-2.5 border border-outline-variant rounded-xl text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary"
@@ -362,11 +362,11 @@ export default function CreateReservationPage() {
                 className="mt-0.5 w-4 h-4 accent-secondary cursor-pointer"
               />
               <label htmlFor="agreed" className="text-body-sm font-body-sm text-on-surface-variant cursor-pointer">
-                TÃ´i cam káº¿t{' '}
+                Tôi cam kết{' '}
                 <span className="font-semibold text-error">
-                  khÃ´ng lÆ°u trá»¯ cháº¥t dá»… chÃ¡y ná»•, hÃ ng láº­u, hÃ³a cháº¥t Ä‘á»™c háº¡i hoáº·c hÃ ng cáº¥m
+                  không lưu trữ chất dễ cháy nổ, hàng lậu, hóa chất độc hại hoặc hàng cấm
                 </span>{' '}
-                theo quy Ä‘á»‹nh cá»§a phÃ¡p luáº­t vÃ  ná»™i quy QueenKho.
+                theo quy định của pháp luật và nội quy QueenKho.
               </label>
             </div>
           </div>
@@ -387,9 +387,9 @@ export default function CreateReservationPage() {
             <div className="bg-primary px-5 py-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-title-md font-title-md text-on-primary">Chi Tiáº¿t Thanh ToÃ¡n & Äáº·t Cá»c</p>
+                  <p className="text-title-md font-title-md text-on-primary">Chi Tiết Thanh Toán & Đặt Cọc</p>
                   <p className="text-label-sm font-label-sm text-on-primary/70 mt-0.5">
-                    MÃ£ giao dá»‹ch táº¡m: QK-{MOCK_UNIT.code}-8924
+                    Mã giao dịch tạm: QK-{MOCK_UNIT.code}-8924
                   </p>
                 </div>
                 <span className="material-symbols-outlined text-on-primary/60 text-[20px]">receipt_long</span>
@@ -398,14 +398,14 @@ export default function CreateReservationPage() {
 
             {/* Goi lua chon */}
             <div className="bg-primary/90 px-5 py-2 flex items-center justify-between">
-              <span className="text-label-sm font-label-sm text-on-primary/70 uppercase">GÃ³i lá»±a chá»n</span>
+              <span className="text-label-sm font-label-sm text-on-primary/70 uppercase">Gói lựa chọn</span>
               <span className="text-label-sm font-label-sm bg-secondary text-on-secondary px-2 py-0.5 rounded-full">
                 {MOCK_UNIT.branch.replace('QueenKho ', '')}
               </span>
             </div>
             <div className="bg-primary/80 px-5 py-2">
               <span className="text-body-sm font-body-sm text-on-primary/90">
-                {MOCK_UNIT.name} {MOCK_UNIT.area} mÂ² â€¢ GÃ³i {selectedMonths} ThÃ¡ng
+                {MOCK_UNIT.name} {MOCK_UNIT.area} m² • Gói {selectedMonths} Tháng
               </span>
             </div>
 
@@ -413,9 +413,9 @@ export default function CreateReservationPage() {
             <div className="bg-white px-5 py-4 flex flex-col gap-3">
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-body-sm font-body-sm text-on-surface">Tiá»n thuÃª kho ({selectedMonths} thÃ¡ng)</p>
+                  <p className="text-body-sm font-body-sm text-on-surface">Tiền thuê kho ({selectedMonths} tháng)</p>
                   <p className="text-label-sm font-label-sm text-on-surface-variant">
-                    {formatVND(MOCK_UNIT.pricePerMonth)} Ã— {selectedMonths}
+                    {formatVND(MOCK_UNIT.pricePerMonth)} × {selectedMonths}
                   </p>
                 </div>
                 <span className="text-body-md font-body-md text-on-surface">{formatVND(baseTotal)}</span>
@@ -426,7 +426,7 @@ export default function CreateReservationPage() {
                   <div className="flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[16px]">local_offer</span>
                     <span className="text-body-sm font-body-sm">
-                      Chiáº¿t kháº¥u Æ°u Ä‘Ã£i gÃ³i {selectedMonths}T (-{selectedOption.discount}%)
+                      Chiết khấu ưu đãi gói {selectedMonths}T (-{selectedOption.discount}%)
                     </span>
                   </div>
                   <span className="text-body-md font-body-md">-{formatVND(discountAmount)}</span>
@@ -435,16 +435,16 @@ export default function CreateReservationPage() {
 
               <div className="flex justify-between items-center border-t border-surface-container pt-2">
                 <span className="text-body-sm font-body-sm text-on-surface-variant">
-                  Tiá»n thuÃª kho thá»±c tráº£ ({selectedMonths} thÃ¡ng):
+                  Tiền thuê kho thực trả ({selectedMonths} tháng):
                 </span>
                 <span className="text-body-md font-body-md text-on-surface">{formatVND(netRent)}</span>
               </div>
 
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-body-sm font-body-sm text-on-surface">Tiá»n cá»c an toÃ n (1 thÃ¡ng)</p>
+                  <p className="text-body-sm font-body-sm text-on-surface">Tiền cọc an toàn (1 tháng)</p>
                   <p className="text-label-sm font-label-sm text-on-surface-variant">
-                    * HoÃ n tráº£ 100% khi thanh lÃ½ há»£p Ä‘á»“ng.
+                    * Hoàn trả 100% khi thanh lý hợp đồng.
                   </p>
                 </div>
                 <span className="text-body-md font-body-md text-on-surface">{formatVND(deposit)}</span>
@@ -453,34 +453,34 @@ export default function CreateReservationPage() {
               <div className="flex justify-between items-center text-[#10B981]">
                 <div className="flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[16px]">redeem</span>
-                  <span className="text-body-sm font-body-sm">Chiáº¿t kháº¥u voucher khÃ¡ch má»›i</span>
+                  <span className="text-body-sm font-body-sm">Chiết khấu voucher khách mới</span>
                 </div>
                 <span className="text-body-md font-body-md">-{formatVND(VOUCHER_DISCOUNT)}</span>
               </div>
 
               <div className="flex justify-between items-center">
                 <span className="text-body-sm font-body-sm text-on-surface-variant">
-                  PhÃ­ dá»‹ch vá»¥ & quáº£n lÃ½ pháº§n má»m
+                  Phí dịch vụ & quản lý phần mềm
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-label-sm font-label-sm text-on-surface-variant line-through">150.000Ä‘</span>
-                  <span className="text-label-sm font-label-sm text-[#10B981] font-semibold">Miá»…n phÃ­ (0Ä‘)</span>
+                  <span className="text-label-sm font-label-sm text-on-surface-variant line-through">150.000đ</span>
+                  <span className="text-label-sm font-label-sm text-[#10B981] font-semibold">Miễn phí (0đ)</span>
                 </div>
               </div>
 
               {/* Tong tien */}
               <div className="border-t-2 border-primary pt-3">
                 <p className="text-title-md font-title-md text-on-surface font-bold">
-                  Tá»”NG Cá»˜NG THANH TOÃN Äá»¢T 1
+                  TỔNG CỘNG THANH TOÁN ĐỢT 1
                 </p>
                 <p className="text-label-sm font-label-sm text-on-surface-variant mt-0.5">
-                  ({formatVND(netRent)} thuÃª {selectedMonths}T + {formatVND(deposit)} cá»c - {formatVND(VOUCHER_DISCOUNT)} voucher)
+                  ({formatVND(netRent)} thuê {selectedMonths}T + {formatVND(deposit)} cọc - {formatVND(VOUCHER_DISCOUNT)} voucher)
                 </p>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-headline-md font-headline-md text-primary">{formatVND(totalPayment)}</span>
                   {selectedOption.discount > 0 && (
                     <span className="text-label-sm font-label-sm bg-[#ECFDF5] text-[#10B981] px-2 py-1 rounded-full">
-                      Tiáº¿t kiá»‡m {formatVND(discountAmount + VOUCHER_DISCOUNT)}
+                      Tiết kiệm {formatVND(discountAmount + VOUCHER_DISCOUNT)}
                     </span>
                   )}
                 </div>
@@ -493,16 +493,16 @@ export default function CreateReservationPage() {
                 className="w-full bg-primary text-on-primary py-3.5 rounded-xl text-title-md font-title-md flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-60 cursor-pointer mt-1"
               >
                 <span className="material-symbols-outlined text-[18px]">lock</span>
-                {loading ? 'Äang xá»­ lÃ½...' : `Thanh toÃ¡n Ä‘á»£t 1: ${formatVND(totalPayment)}`}
+                {loading ? 'Đang xử lý...' : `Thanh toán đợt 1: ${formatVND(totalPayment)}`}
               </button>
 
               <p className="text-label-sm font-label-sm text-on-surface-variant text-center">
-                Napas 247 â€¢ VietQR â€¢ HoÃ n cá»c tá»± Ä‘á»™ng 100%
+                Napas 247 • VietQR • Hoàn cọc tự động 100%
               </p>
 
               <div className="flex justify-between items-center text-label-sm font-label-sm text-on-surface-variant border-t border-surface-container pt-2">
-                <span>Cáº§n há»— trá»£ hoÃ¡ Ä‘Æ¡n VAT doanh nghiá»‡p?</span>
-                <button className="text-secondary font-semibold cursor-pointer">Gá»i CSKH â†’</button>
+                <span>Cần hỗ trợ hoá đơn VAT doanh nghiệp?</span>
+                <button className="text-secondary font-semibold cursor-pointer">Gọi CSKH →</button>
               </div>
             </div>
           </div>
@@ -512,4 +512,3 @@ export default function CreateReservationPage() {
     </div>
   )
 }
-

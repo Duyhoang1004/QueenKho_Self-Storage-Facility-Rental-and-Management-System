@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -6,11 +6,11 @@ import { clearSession } from '../services/authService';
 
 // Menu items cho Customer portal
 const customerMenuItems = [
-  { icon: 'home', label: 'Trang chủ', path: '/' },
-  { icon: 'search', label: 'Tìm & Đặt Kho', path: '/tim-va-dat-kho' },
-  { icon: 'inventory_2', label: 'Kho của tôi', path: '/kho-cua-toi' },
-  { icon: 'payments', label: 'Thanh toán', path: '/thanh-toan' },
-  { icon: 'contact_support', label: 'Hỗ trợ', path: '/ho-tro' },
+  { icon: 'home', label: 'Trang chá»§', path: '/' },
+  { icon: 'search', label: 'TÃ¬m & Äáº·t Kho', path: '/tim-va-dat-kho' },
+  { icon: 'inventory_2', label: 'Kho cá»§a tÃ´i', path: '/kho-cua-toi' },
+  { icon: 'payments', label: 'Thanh toÃ¡n', path: '/thanh-toan' },
+  { icon: 'contact_support', label: 'Há»— trá»£', path: '/ho-tro' },
 ];
 
 export default function CustomerLayout() {
@@ -18,7 +18,7 @@ export default function CustomerLayout() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
+    const userStr = sessionStorage.getItem('user');
     if (!userStr) {
       navigate('/login', { replace: true });
       return;
@@ -26,17 +26,17 @@ export default function CustomerLayout() {
 
     const user = JSON.parse(userStr);
     
-    // Kiểm tra phân quyền, nếu không phải Khách hàng thì đẩy về trang phù hợp
+    // Kiá»ƒm tra phÃ¢n quyá»n, náº¿u khÃ´ng pháº£i KhÃ¡ch hÃ ng thÃ¬ Ä‘áº©y vá» trang phÃ¹ há»£p
     if (user.role !== 'CUSTOMER') {
-      // Giả sử sau này có staff thì đẩy về /staff, admin đẩy về /admin
-      // Tạm thời nếu sai quyền thì báo lỗi hoặc đẩy ra đăng nhập
-      alert('Bạn không có quyền truy cập trang này!');
+      // Giáº£ sá»­ sau nÃ y cÃ³ staff thÃ¬ Ä‘áº©y vá» /staff, admin Ä‘áº©y vá» /admin
+      // Táº¡m thá»i náº¿u sai quyá»n thÃ¬ bÃ¡o lá»—i hoáº·c Ä‘áº©y ra Ä‘Äƒng nháº­p
+      alert('Báº¡n khÃ´ng cÃ³ quyá»n truy cáº­p trang nÃ y!');
       clearSession();
       navigate('/login', { replace: true });
       return;
     }
 
-    // Tạo chữ viết tắt từ tên thật
+    // Táº¡o chá»¯ viáº¿t táº¯t tá»« tÃªn tháº­t
     const names = user.fullName ? user.fullName.split(' ') : ['K', 'H'];
     let initials = '';
     if (names.length >= 2) {
@@ -47,9 +47,9 @@ export default function CustomerLayout() {
 
     setCurrentUser({
       ...user,
-      name: user.fullName, // Map từ fullName sang name để Sidebar dùng
+      name: user.fullName, // Map tá»« fullName sang name Ä‘á»ƒ Sidebar dÃ¹ng
       initials: initials || 'KH',
-      role: 'Khách Hàng' // Hiển thị tiếng Việt trên UI
+      role: 'KhÃ¡ch HÃ ng' // Hiá»ƒn thá»‹ tiáº¿ng Viá»‡t trÃªn UI
     });
   }, [navigate]);
 
@@ -58,7 +58,7 @@ export default function CustomerLayout() {
     navigate('/login', { replace: true });
   };
 
-  if (!currentUser) return null; // Hoặc hiển thị một spinner loading
+  if (!currentUser) return null; // Hoáº·c hiá»ƒn thá»‹ má»™t spinner loading
 
   return (
     <div>
@@ -70,7 +70,7 @@ export default function CustomerLayout() {
       />
       <div className="pl-[260px]">
         <Header
-          portalName="Cổng Khách Hàng"
+          portalName="Cá»•ng KhÃ¡ch HÃ ng"
           user={currentUser}
           onLogout={handleLogout}
         />
@@ -81,3 +81,4 @@ export default function CustomerLayout() {
     </div>
   );
 }
+

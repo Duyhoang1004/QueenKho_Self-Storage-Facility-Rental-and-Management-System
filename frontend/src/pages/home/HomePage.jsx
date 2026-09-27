@@ -1,10 +1,10 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 
-// Mock data - sẽ thay bằng API thật sau
+// Mock data - sáº½ thay báº±ng API tháº­t sau
 const stats = [
   {
     icon: 'inventory_2',
-    label: 'Kho đang thuê',
+    label: 'Kho Ä‘ang thuÃª',
     value: '2',
     unit: 'khoang',
     color: 'text-primary',
@@ -12,16 +12,16 @@ const stats = [
   },
   {
     icon: 'event_upcoming',
-    label: 'HĐ sắp hết hạn',
+    label: 'HÄ sáº¯p háº¿t háº¡n',
     value: '1',
-    unit: 'hợp đồng',
+    unit: 'há»£p Ä‘á»“ng',
     color: 'text-[#D97706]',
     bgColor: 'bg-[#FFFBEB]',
   },
   {
     icon: 'receipt_long',
-    label: 'Chờ thanh toán',
-    value: '850.000₫',
+    label: 'Chá» thanh toÃ¡n',
+    value: '850.000â‚«',
     unit: '',
     color: 'text-error',
     bgColor: 'bg-error-container',
@@ -31,32 +31,32 @@ const stats = [
 const quickActions = [
   {
     icon: 'search',
-    title: 'Tìm & Đặt Kho',
-    description: 'Tìm kiếm và thuê khoang lưu trữ phù hợp',
+    title: 'TÃ¬m & Äáº·t Kho',
+    description: 'TÃ¬m kiáº¿m vÃ  thuÃª khoang lÆ°u trá»¯ phÃ¹ há»£p',
     path: '/tim-va-dat-kho',
     color: 'text-secondary',
     bgColor: 'bg-secondary-fixed',
   },
   {
     icon: 'inventory_2',
-    title: 'Kho của tôi',
-    description: 'Quản lý các khoang kho đang thuê',
+    title: 'Kho cá»§a tÃ´i',
+    description: 'Quáº£n lÃ½ cÃ¡c khoang kho Ä‘ang thuÃª',
     path: '/kho-cua-toi',
     color: 'text-primary',
     bgColor: 'bg-primary-fixed',
   },
   {
     icon: 'payments',
-    title: 'Thanh toán',
-    description: 'Xem và thanh toán hóa đơn hàng tháng',
+    title: 'Thanh toÃ¡n',
+    description: 'Xem vÃ  thanh toÃ¡n hÃ³a Ä‘Æ¡n hÃ ng thÃ¡ng',
     path: '/thanh-toan',
     color: 'text-[#10B981]',
     bgColor: 'bg-[#ECFDF5]',
   },
   {
     icon: 'contact_support',
-    title: 'Hỗ trợ',
-    description: 'Liên hệ tư vấn và hỗ trợ kỹ thuật',
+    title: 'Há»— trá»£',
+    description: 'LiÃªn há»‡ tÆ° váº¥n vÃ  há»— trá»£ ká»¹ thuáº­t',
     path: '/ho-tro',
     color: 'text-[#8B5CF6]',
     bgColor: 'bg-[#F5F3FF]',
@@ -64,17 +64,17 @@ const quickActions = [
 ];
 
 export default function HomePage() {
-  // Đọc thông tin user từ localStorage
-  const userStr = localStorage.getItem('user');
+  // Äá»c thÃ´ng tin user tá»« sessionStorage
+  const userStr = sessionStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
-  const displayName = user?.fullName || 'Khách';
+  const displayName = user?.fullName || 'KhÃ¡ch';
 
-  // Lấy giờ hiện tại để hiển thị lời chào phù hợp
+  // Láº¥y giá» hiá»‡n táº¡i Ä‘á»ƒ hiá»ƒn thá»‹ lá»i chÃ o phÃ¹ há»£p
   const currentHour = new Date().getHours();
-  let greeting = 'Xin chào';
-  if (currentHour < 12) greeting = 'Chào buổi sáng';
-  else if (currentHour < 18) greeting = 'Chào buổi chiều';
-  else greeting = 'Chào buổi tối';
+  let greeting = 'Xin chÃ o';
+  if (currentHour < 12) greeting = 'ChÃ o buá»•i sÃ¡ng';
+  else if (currentHour < 18) greeting = 'ChÃ o buá»•i chiá»u';
+  else greeting = 'ChÃ o buá»•i tá»‘i';
 
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
@@ -89,14 +89,14 @@ export default function HomePage() {
 
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 font-code-sm text-code-sm text-outline">
-          <span className="text-on-surface font-semibold">Trang chủ</span>
+          <span className="text-on-surface font-semibold">Trang chá»§</span>
         </div>
 
         {/* Welcome Section */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-space-sm">
           <div className="flex flex-col gap-1">
             <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight">
-              {greeting}, {displayName} 👋
+              {greeting}, {displayName} ðŸ‘‹
             </h1>
             <p className="font-body-md text-body-md text-on-surface-variant capitalize">
               {today}
@@ -107,7 +107,7 @@ export default function HomePage() {
               verified_user
             </span>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Bảo vệ 3 lớp • Giám sát CCTV thời gian thực
+              Báº£o vá»‡ 3 lá»›p â€¢ GiÃ¡m sÃ¡t CCTV thá»i gian thá»±c
             </span>
           </div>
         </div>
@@ -151,7 +151,7 @@ export default function HomePage() {
         {/* Quick Actions */}
         <div>
           <h2 className="font-headline-sm text-headline-sm text-on-surface mb-space-md">
-            Truy cập nhanh
+            Truy cáº­p nhanh
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
             {quickActions.map((action) => (
@@ -203,10 +203,10 @@ export default function HomePage() {
             </div>
             <div>
               <h4 className="font-title-md text-title-md text-on-surface">
-                Ưu đãi đặc biệt tháng này
+                Æ¯u Ä‘Ã£i Ä‘áº·c biá»‡t thÃ¡ng nÃ y
               </h4>
               <p className="font-body-sm text-body-sm text-on-surface-variant">
-                Chiết khấu 10% cho kỳ thanh toán từ 6 tháng trở lên. Áp dụng cho tất cả loại khoang.
+                Chiáº¿t kháº¥u 10% cho ká»³ thanh toÃ¡n tá»« 6 thÃ¡ng trá»Ÿ lÃªn. Ãp dá»¥ng cho táº¥t cáº£ loáº¡i khoang.
               </p>
             </div>
           </div>
@@ -224,3 +224,4 @@ export default function HomePage() {
     </div>
   );
 }
+

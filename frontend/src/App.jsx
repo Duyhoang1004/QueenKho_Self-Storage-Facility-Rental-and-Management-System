@@ -1,16 +1,22 @@
-import { Routes, Route } from 'react-router-dom';
+﻿import { Routes, Route } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
 
-// Import cho chức năng Đặt chỗ (UC-10)
+// Import cho chá»©c nÄƒng Äáº·t chá»— (UC-10)
 import CreateReservationPage from './pages/reservation/CreateReservationPage';
 import ReservationConfirmationPage from './pages/reservation/ReservationConfirmationPage';
 
-// Import cho chức năng Lịch sử & Quản lý Đặt chỗ (UC-12, UC-13)
+// Import cho chá»©c nÄƒng Lá»‹ch sá»­ & Quáº£n lÃ½ Äáº·t chá»— (UC-12, UC-13)
 import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
 import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
+
+// Import Manager Pages
+import ManagerLayout from './layouts/ManagerLayout';
+import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
+import StorageManagementPage from './pages/manager/StorageManagementPage';
+import AssignmentPage from './pages/manager/AssignmentPage';
 
 export default function App() {
   return (
@@ -22,20 +28,20 @@ export default function App() {
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
         
-        {/* Chức năng Quản lý kho của tôi (UC-12) */}
+        {/* Chá»©c nÄƒng Quáº£n lÃ½ kho cá»§a tÃ´i (UC-12) */}
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
         
-        {/* Chức năng Tìm và Đặt kho (UC-10) */}
+        {/* Chá»©c nÄƒng TÃ¬m vÃ  Äáº·t kho (UC-10) */}
         <Route path="/booking" element={<CreateReservationPage />} />
         <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
       </Route>
 
-      {/* ========== UC-13: FM Pending Reservations (tạm standalone, chưa có ManagerLayout) ========== */}
+      {/* ========== UC-13: FM Pending Reservations (táº¡m standalone, chÆ°a cÃ³ ManagerLayout) ========== */}
       <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
 
       {/* 
-        ========== Các layout khác sẽ thêm sau ==========
+        ========== CÃ¡c layout khÃ¡c sáº½ thÃªm sau ==========
         
         <Route element={<StaffLayout />}>
           ...
@@ -45,6 +51,14 @@ export default function App() {
           ...
         </Route>
       */}
+          {/* ========== Manager Portal ========== */}
+      <Route element={<ManagerLayout />}>
+        <Route path="/manager" element={<ManagerDashboardPage />} />
+        <Route path="/manager/storage" element={<StorageManagementPage />} />
+        <Route path="/manager/assign" element={<AssignmentPage />} />
+      </Route>
+
     </Routes>
   );
 }
+

@@ -136,3 +136,7 @@ SELECT 'unit_types', COUNT(*) FROM unit_types
 UNION ALL
 SELECT 'storage_units', COUNT(*) FROM storage_units;
 GO
+
+
+SELECT u.id, u.email, r.name AS role, u.facility_id
+   FROM users u JOIN roles r ON r.id = u.role_id;

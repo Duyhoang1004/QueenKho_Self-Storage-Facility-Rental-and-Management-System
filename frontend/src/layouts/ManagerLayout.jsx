@@ -5,6 +5,7 @@ import { clearSession } from '../services/authService';
 const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
   { path: '/manager/assign', icon: 'assignment_turned_in', label: 'Duyệt & Gán ô kho', badge: '3 đơn mới' },
+  { path: '/manager/pending', icon: 'pending_actions', label: 'Đơn chờ gán ô' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
   { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },
   { path: '/manager/customers', icon: 'history_edu', label: 'Khách hàng & Hợp đồng' },

@@ -13,6 +13,8 @@ import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.queenkho.api.repository.FacilityRepository;
+import com.queenkho.api.repository.UnitTypeRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -28,6 +30,13 @@ public class ReservationService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private FacilityRepository facilityRepository;
+
+    @Autowired
+    private UnitTypeRepository unitTypeRepository;
+
+        // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
@@ -37,24 +46,42 @@ public class ReservationService {
                 r.getReservationCode(),
                 r.getFacility().getName(),
                 r.getUnitType().getName(),
+                r.getStorageUnitId(),
                 r.getStartDate(),
                 r.getDurationMonths(),
                 r.getDepositAmount(),
-                r.getStatus()
+                r.getStatus(),
+                r.getCreatedAt()
             ))
             .toList();
     }
 
+    // UC-13: FM xem các đơn đã đặt cọc nhưng chưa được gán ô kho.
+    // Truyền facilityId trực tiếp, hoặc managerId để hệ thống tự lấy cơ sở của quản lý đó.
     @Transactional(readOnly = true)
-    public List<PendingReservationResponse> getPendingReservations(Integer facilityId) {
+    public List<PendingReservationResponse> getPendingReservations(Integer facilityId, Integer managerId) {
+        Integer targetFacilityId = facilityId;
+        if (targetFacilityId == null && managerId != null) {
+            User manager = userRepository.findById(managerId)
+                .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại"));
+            targetFacilityId = manager.getFacilityId();
+        }
+        if (targetFacilityId == null) {
+            throw new IllegalArgumentException("Tài khoản chưa được gán cơ sở nên không xem được đơn chờ gán ô");
+        }
+
         return reservationRepository
-            .findByFacility_IdAndStatusAndStorageUnitIdIsNull(facilityId, "DEPOSIT_PAID")
+            .findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(targetFacilityId, "DEPOSIT_PAID")
             .stream()
             .map(r -> new PendingReservationResponse(
                 r.getId(),
                 r.getReservationCode(),
                 r.getCustomer().getFullName(),
+                r.getCustomer().getPhone(),
                 r.getUnitType().getName(),
+                r.getStartDate(),
+                r.getDurationMonths(),
+                r.getDepositAmount(),
                 r.getCreatedAt()
             ))
             .toList();
@@ -74,17 +101,22 @@ public class ReservationService {
         User customer = userRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
 
-        Facility facility = new Facility();
-        facility.setId(request.getFacilityId());
+        if (request.getFacilityId() == null || request.getUnitTypeId() == null) {
+            throw new IllegalArgumentException("Vui lòng chọn cơ sở và loại kho");
+        }
 
-        UnitType unitType = new UnitType();
-        unitType.setId(request.getUnitTypeId());
+        // Lấy cơ sở và loại kho thật từ DB (không tạo object rỗng chỉ có id)
+        Facility facility = facilityRepository.findById(request.getFacilityId())
+                .orElseThrow(() -> new IllegalArgumentException("Cơ sở không tồn tại"));
+
+        UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
+                .orElseThrow(() -> new IllegalArgumentException("Loại kho không tồn tại"));
 
         // Sinh ma don ngau nhien
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 
-        // Tien dat coc theo du lieu mau (500.000 VND)
-        BigDecimal depositAmount = new BigDecimal("500000");
+        // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng thanh toán SePay)
+        BigDecimal depositAmount = unitType.getBasePriceMonthly();
 
         // Khoi tao va luu don dat cho
         Reservation reservation = new Reservation();
@@ -112,4 +144,4 @@ public class ReservationService {
                 "Tạo đơn đặt chỗ thành công"
         );
     }
-}
+}

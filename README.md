@@ -32,7 +32,12 @@ Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời 
     *   Trang chủ (HomePage).
     *   Tìm kiếm và khám phá danh mục kho, xem tình trạng ô trống (UC-09: Search & Landing Page).
     *   Quy trình đặt chỗ kho (UC-10: Booking).
-    *   Quản lý kho của tôi (UC-12: My Reservations).
+    *    Quản lý kho của tôi (UC-12: My Reservations).
+        *   Hiển thị danh sách các đơn đặt chỗ của khách hàng.
+        *   Hiển thị thông tin cơ sở, loại kho, ô kho, ngày bắt đầu, số tháng và tiền cọc.
+        *   Phân loại đơn theo trạng thái: Chờ thanh toán, Đã đặt cọc, Đã gán ô và Đã đóng.
+        *   Hiển thị thống kê tổng số đơn, đơn chờ thanh toán cọc, đơn đã đặt cọc chờ gán ô và đơn đã được gán ô.
+        *   Cho phép khách hàng theo dõi trạng thái đơn đặt chỗ từ lúc tạo đơn đến khi được gán ô kho.
 *   **Cổng Thanh Toán:**
     *   Tích hợp thành công Hosted Checkout qua SePay.
     *   Trang xác nhận thành công sau khi hoàn tất thanh toán.

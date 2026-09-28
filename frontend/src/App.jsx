@@ -1,8 +1,12 @@
-﻿import { Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
+
+// Import cho chức năng Tìm kiếm & Khám phá kho (UC-09)
+import SearchLandingPage from './pages/search/SearchLandingPage';
+import SearchResultsPage from './pages/search/SearchResultsPage';
 
 // Import cho chức năng Đặt chỗ (UC-10)
 import CreateReservationPage from './pages/reservation/CreateReservationPage';
@@ -28,36 +32,27 @@ export default function App() {
       <Route element={<CustomerLayout />}>
         <Route path="/" element={<HomePage />} />
         
-        {/* Chức năng Quản lý kho của tôi (UC-12) */}
-        <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
-        
-        {/* Chức năng Tìm và Đặt kho (UC-10) */}
+        {/* UC-09: Tìm kiếm & Khám phá kho (Landing Page) */}
+        <Route path="/tim-va-dat-kho" element={<SearchLandingPage />} />
+        <Route path="/tim-va-dat-kho/ket-qua" element={<SearchResultsPage />} />
+
+        {/* UC-10: Đặt chỗ kho */}
         <Route path="/booking" element={<CreateReservationPage />} />
-        <Route path="/tim-va-dat-kho" element={<CreateReservationPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />
+
+        {/* UC-12: Quản lý kho của tôi */}
+        <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
       </Route>
 
-      {/* ========== UC-13: FM Pending Reservations (tạm standalone, chưa có ManagerLayout) ========== */}
+      {/* ========== UC-13: FM Pending Reservations (tạm standalone) ========== */}
       <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
 
-      {/* 
-        ========== Các layout khác sẽ thêm sau ==========
-        
-        <Route element={<StaffLayout />}>
-          ...
-        </Route>
-
-        <Route element={<ManagerLayout />}>
-          ...
-        </Route>
-      */}
-          {/* ========== Manager Portal ========== */}
+      {/* ========== Manager Portal ========== */}
       <Route element={<ManagerLayout />}>
         <Route path="/manager" element={<ManagerDashboardPage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/assign" element={<AssignmentPage />} />
       </Route>
-
     </Routes>
   );
 }

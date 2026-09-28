@@ -30,8 +30,9 @@ Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời 
 *   **Luồng Xác thực (Authentication):** Đăng ký, Đăng nhập (Mã hóa mật khẩu BCrypt, tự động rẽ nhánh Layout theo Role).
 *   **Trang Khách Hàng (Customer Portal):**
     *   Trang chủ (HomePage).
+    *   Tìm kiếm và khám phá danh mục kho, xem tình trạng ô trống (UC-09: Search & Landing Page).
+    *   Quy trình đặt chỗ kho (UC-10: Booking).
     *   Quản lý kho của tôi (UC-12: My Reservations).
-    *   Quy trình tìm và đặt kho (UC-10: Booking).
 *   **Cổng Thanh Toán:**
     *   Tích hợp thành công Hosted Checkout qua SePay.
     *   Trang xác nhận thành công sau khi hoàn tất thanh toán.

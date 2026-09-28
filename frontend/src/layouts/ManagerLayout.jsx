@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { clearSession } from '../services/authService';
 
@@ -19,7 +19,8 @@ export default function ManagerLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
-  if (currentUser.role !== 'MANAGER' && currentUser.role !== 'ADMIN') return <Navigate to="/login" replace />;
+  const isManagerRole = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(currentUser.role);
+  if (!isManagerRole) return <Navigate to="/login" replace />;
 
   const handleLogout = () => {
     clearSession();

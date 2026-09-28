@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { confirmPaymentAfterCheckout } from '../../services/sepayService'
 
 // Format tien VND
 function formatVND(amount) {
@@ -40,6 +42,20 @@ export default function ReservationConfirmationPage() {
 
   const startDateObj = startDate ? new Date(startDate) : new Date()
   const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
+
+  // Tu dong xac nhan don hang sang DEPOSIT_PAID khi SePay chuyen huong ve trang nay
+  useEffect(() => {
+    const resId = reservation.id
+    if (resId) {
+      confirmPaymentAfterCheckout(resId, totalPayment)
+        .then(() => {
+          console.log('[QueenKho] Đã tự động cập nhật đơn sang DEPOSIT_PAID cho đơn #', resId)
+        })
+        .catch((err) => {
+          console.warn('[QueenKho] Lỗi khi tự động cập nhật thanh toán:', err)
+        })
+    }
+  }, [reservation.id, totalPayment])
 
   return (
     <div className="p-6 max-w-3xl mx-auto">

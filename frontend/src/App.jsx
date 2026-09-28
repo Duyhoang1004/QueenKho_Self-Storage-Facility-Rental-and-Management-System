@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+﻿import { Routes, Route } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
@@ -44,14 +44,14 @@ export default function App() {
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
       </Route>
 
-      {/* ========== UC-13: FM Pending Reservations (tạm standalone) ========== */}
-      <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
-
       {/* ========== Manager Portal ========== */}
       <Route element={<ManagerLayout />}>
         <Route path="/manager" element={<ManagerDashboardPage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/assign" element={<AssignmentPage />} />
+
+        {/* UC-13: Danh sách đơn chờ gán ô kho */}
+        <Route path="/manager/pending" element={<PendingReservationsPage />} />
       </Route>
     </Routes>
   );

@@ -1,15 +1,14 @@
 package com.queenkho.api.dto;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class AssignUnitRequest {
     private String storageUnitId;
-    private String notes;
+    private String note;
 }
+

@@ -48,4 +48,25 @@ public class ReservationController {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }
     }
+
+    // UC-14: Lấy danh sách kho trống
+    @GetMapping("/{reservationId}/available-units")
+    public ResponseEntity<?> getAvailableUnits(@PathVariable Integer reservationId) {
+        try {
+            return ResponseEntity.ok(reservationService.getAvailableUnitsForReservation(reservationId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        }
+    }
+
+    // UC-14: Gán kho và tạo hợp đồng
+    @PostMapping("/{reservationId}/assign")
+    public ResponseEntity<?> assignStorageUnit(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.AssignUnitRequest request) {
+        try {
+            reservationService.assignStorageUnit(reservationId, request);
+            return ResponseEntity.ok(Map.of("message", "Gán kho và tạo hợp đồng thành công"));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        }
+    }
 }

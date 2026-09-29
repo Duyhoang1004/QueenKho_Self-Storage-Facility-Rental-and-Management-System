@@ -20,7 +20,7 @@ import PendingReservationsPage from './pages/my_reservation/PendingReservationsP
 import ManagerLayout from './layouts/ManagerLayout';
 import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
 import StorageManagementPage from './pages/manager/StorageManagementPage';
-import AssignmentPage from './pages/manager/AssignmentPage';
+
 
 export default function App() {
   return (
@@ -45,13 +45,13 @@ export default function App() {
       </Route>
 
       {/* ========== UC-13: FM Pending Reservations (tạm standalone) ========== */}
-      <Route path="/fm/pending-reservations" element={<PendingReservationsPage />} />
+      
 
       {/* ========== Manager Portal ========== */}
       <Route element={<ManagerLayout />}>
         <Route path="/manager" element={<ManagerDashboardPage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
-        <Route path="/manager/assign" element={<AssignmentPage />} />
+        <Route path="/manager/pending" element={<PendingReservationsPage />} />
       </Route>
     </Routes>
   );

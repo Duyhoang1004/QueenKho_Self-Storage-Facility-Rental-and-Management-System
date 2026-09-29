@@ -9,6 +9,9 @@ import java.util.List;
 
 public interface StorageUnitRepository extends JpaRepository<StorageUnit, String> {
 
+       List<StorageUnit> findByFacility_IdAndUnitType_IdAndStatus(Integer facilityId, Integer unitTypeId, String status);
+
+List<StorageUnit> findByFacility_IdAndStatus(Integer facilityId, String status);
     int countByFacility_IdAndStatus(Integer facilityId, String status);
 
     int countByFacility_IdAndUnitType_IdAndStatus(Integer facilityId, Integer unitTypeId, String status);

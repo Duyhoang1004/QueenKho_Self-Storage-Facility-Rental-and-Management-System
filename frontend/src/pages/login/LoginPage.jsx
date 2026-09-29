@@ -66,7 +66,7 @@ export default function LoginPage() {
 
       saveSession(response, form.email.trim())
       const role = response.role
-      if (role === 'MANAGER' || role === 'ADMIN') {
+      if (role === 'FACILITY_MANAGER' || role === 'MANAGER' || role === 'ADMIN') {
         navigate('/manager', { replace: true })
       } else {
         navigate('/', { replace: true })

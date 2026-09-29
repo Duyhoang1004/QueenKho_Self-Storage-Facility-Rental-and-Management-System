@@ -221,6 +221,48 @@ public class SepayPGController {
         return Map.of("success", true);
     }
 
+    @PostMapping("/confirm-dev")
+    @Transactional
+    public Map<String, Object> confirmDevPayment(@RequestBody Map<String, Object> body) {
+        Object resIdObj = body.get("reservationId");
+        if (resIdObj == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reservationId is required");
+        }
+        Integer reservationId = Integer.valueOf(String.valueOf(resIdObj));
+        Map<String, Object> reservation = findReservation(reservationId);
+
+        String currentStatus = text(reservation, "status");
+        if ("DEPOSIT_PAID".equalsIgnoreCase(currentStatus)
+                || "UNIT_ASSIGNED".equalsIgnoreCase(currentStatus)) {
+            return Map.of("success", true, "message", "Đã thanh toán trước đó", "status", currentStatus);
+        }
+
+        BigDecimal depositAmount = (BigDecimal) reservation.get("base_price_monthly");
+        BigDecimal expectedAmount = calculateFirstPayment(reservation);
+
+        jdbcTemplate.update(
+                "UPDATE reservations "
+                        + "SET status = 'DEPOSIT_PAID', deposit_amount = ?, "
+                        + "total_deposit_paid = ? WHERE id = ?",
+                depositAmount,
+                depositAmount,
+                reservationId);
+
+        String transactionCode = "DEV-TXN-" + reservationId + "-" + System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO payment_transactions "
+                        + "(transaction_code, user_id, reservation_id, "
+                        + "contract_id, payment_type, payment_method, amount, "
+                        + "status, paid_at) "
+                        + "VALUES (?, ?, ?, NULL, 'DEPOSIT', 'VIETQR', ?, 'SUCCESS', SYSDATETIME())",
+                transactionCode,
+                reservation.get("customer_id"),
+                reservationId,
+                expectedAmount);
+
+        return Map.of("success", true, "status", "DEPOSIT_PAID", "message", "Xác nhận đặt cọc thành công");
+    }
+
     private void insertSuccessfulPayment(
             String transactionCode,
             Integer reservationId,

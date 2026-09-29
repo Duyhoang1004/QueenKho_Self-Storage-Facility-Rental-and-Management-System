@@ -36,7 +36,10 @@ public class ReservationService {
     @Autowired
     private UnitTypeRepository unitTypeRepository;
 
-        // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
+    @Autowired
+    private com.queenkho.api.repository.StorageUnitRepository storageUnitRepository;
+
+    // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
@@ -143,5 +146,64 @@ public class ReservationService {
                 saved.getDurationMonths(),
                 "Tạo đơn đặt chỗ thành công"
         );
+    }
+
+    // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán
+    @Transactional(readOnly = true)
+    public List<com.queenkho.api.dto.StorageUnitResponse> getAvailableUnitsForReservation(Integer reservationId) {
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Đơn đặt chỗ không tồn tại"));
+
+        Integer facilityId = reservation.getFacility().getId();
+        Integer unitTypeId = reservation.getUnitType().getId();
+
+        List<com.queenkho.api.entity.StorageUnit> units = storageUnitRepository
+                .findByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, "AVAILABLE");
+        if (units.isEmpty()) {
+            units = storageUnitRepository.findByFacility_IdAndStatus(facilityId, "AVAILABLE");
+        }
+
+        return units.stream()
+                .map(su -> new com.queenkho.api.dto.StorageUnitResponse(
+                        su.getId(),
+                        su.getUnitType().getName(),
+                        su.getUnitType().getAreaSqm(),
+                        su.getFloor(),
+                        su.getZone(),
+                        su.getRoomNumber(),
+                        su.getStatus()
+                ))
+                .toList();
+    }
+
+    // UC-14: Quản lý xác nhận gán ô kho thực tế
+    @Transactional
+    public void assignStorageUnit(Integer reservationId, com.queenkho.api.dto.AssignUnitRequest request) {
+        if (request == null || request.getStorageUnitId() == null || request.getStorageUnitId().isBlank()) {
+            throw new IllegalArgumentException("Vui lòng chọn ô kho thực tế");
+        }
+
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Đơn đặt chỗ không tồn tại"));
+
+        if (!"DEPOSIT_PAID".equalsIgnoreCase(reservation.getStatus())) {
+            throw new IllegalStateException("Đơn đặt chỗ chưa thanh toán cọc hoặc đã được gán ô");
+        }
+
+        com.queenkho.api.entity.StorageUnit storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
+                .orElseThrow(() -> new IllegalArgumentException("Ô kho không tồn tại"));
+
+        if (!"AVAILABLE".equalsIgnoreCase(storageUnit.getStatus())) {
+            throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
+        }
+
+        // Cập nhật ô kho
+        storageUnit.setStatus("OCCUPIED");
+        storageUnitRepository.save(storageUnit);
+
+        // Cập nhật đơn đặt chỗ
+        reservation.setStorageUnitId(storageUnit.getId());
+        reservation.setStatus("UNIT_ASSIGNED");
+        reservationRepository.save(reservation);
     }
 }

@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { getPendingReservations } from '../../services/reservationService'
+import AssignUnitModal from '../../components/AssignUnitModal'
 
 const cardStyle = {
   backgroundColor: 'rgb(255, 255, 255)',
@@ -57,12 +57,16 @@ function readUserId() {
 }
 
 export default function PendingReservationsPage() {
-  const navigate = useNavigate()
   const userId = readUserId()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(Boolean(userId))
   const [error, setError] = useState(userId ? '' : 'Bạn cần đăng nhập để xem danh sách đơn chờ gán ô.')
   const [reloadKey, setReloadKey] = useState(0)
+
+  // State cho Pop-up Gán ô kho (Modal)
+  const [selectedReservation, setSelectedReservation] = useState(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [toast, setToast] = useState(null)
 
   useEffect(() => {
     if (!userId) return
@@ -94,11 +98,21 @@ export default function PendingReservationsPage() {
     setReloadKey((k) => k + 1)
   }
 
-  // Chuyển sang màn hình Duyệt & Gán ô kho (UC-14), kèm đơn được chọn
-  const goToAssign = (item) => {
-    navigate('/manager/assign', {
-      state: { reservationId: item.id, reservationCode: item.reservationCode },
+  // Mở popup gán ô kho thực tế (Stitch modal)
+  const openAssign = (item) => {
+    setSelectedReservation(item)
+    setIsModalOpen(true)
+  }
+
+  const handleAssignSuccess = (unitId, code) => {
+    setToast({
+      title: 'Gán ô kho thành công!',
+      desc: `Đã phân bổ ô ${unitId} cho đơn ${code} & kích hoạt trạng thái gán kho.`,
     })
+    reload()
+    setTimeout(() => {
+      setToast(null)
+    }, 4500)
   }
 
   return (
@@ -119,6 +133,7 @@ export default function PendingReservationsPage() {
               </h1>
               <p className="font-body-md text-body-md text-on-surface-variant mt-1">
                 Các đơn khách đã thanh toán cọc nhưng chưa được gán ô kho thực tế. Đơn cũ nhất được xếp trước.
+                Các đơn khách hàng đã đặt đang chờ gán ô kho thực tế. Đơn cũ nhất được xếp trước.
               </p>
             </div>
           </div>
@@ -173,12 +188,15 @@ export default function PendingReservationsPage() {
                     <tr className="bg-surface-container-low/50 text-outline text-label-sm font-label-sm uppercase tracking-wider">
                       <th className="py-3.5 px-space-md">Mã đặt cọc</th>
                       <th className="py-3.5 px-space-md">Ngày cọc</th>
+                      <th className="py-3.5 px-space-md">Mã đơn</th>
+                      <th className="py-3.5 px-space-md">Ngày đặt</th>
                       <th className="py-3.5 px-space-md">Khách hàng</th>
                       <th className="py-3.5 px-space-md">Số điện thoại</th>
                       <th className="py-3.5 px-space-md">Loại kho đã chọn</th>
                       <th className="py-3.5 px-space-md">Chu kỳ thuê</th>
                       <th className="py-3.5 px-space-md">Ngày hẹn nhận kho</th>
                       <th className="py-3.5 px-space-md">Tiền cọc đã thu</th>
+                      <th className="py-3.5 px-space-md">Tiền cọc</th>
                       <th className="py-3.5 px-space-md text-right pr-space-lg">Thao tác</th>
                     </tr>
                   </thead>
@@ -225,7 +243,7 @@ export default function PendingReservationsPage() {
                           <td className="py-4 px-4 align-middle text-right pr-space-lg">
                             <button
                               type="button"
-                              onClick={() => goToAssign(r)}
+                              onClick={() => openAssign(r)}
                               className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg font-label-lg text-label-lg shadow-sm transition-all active:scale-95"
                             >
                               <span className="material-symbols-outlined text-[18px]">domain_verification</span>
@@ -245,6 +263,27 @@ export default function PendingReservationsPage() {
           )}
         </div>
       </div>
+
+      {/* Pop-up Modal Phân Bổ Ô Kho Thực Tế (Stitch Design) */}
+      <AssignUnitModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        reservation={selectedReservation}
+        onSuccess={handleAssignSuccess}
+      />
+
+      {/* Toast Notification khi Gán Kho Thành Công */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 transform transition-all duration-300 flex items-center gap-3 bg-primary text-on-primary px-space-lg py-space-md rounded-xl shadow-2xl">
+          <div className="w-8 h-8 rounded-full bg-tertiary-container flex items-center justify-center text-on-tertiary-container">
+            <span className="material-symbols-outlined text-[20px]">check</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="font-title-md text-body-md font-semibold text-on-primary">{toast.title}</span>
+            <span className="font-body-sm text-label-sm text-surface-container-high">{toast.desc}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

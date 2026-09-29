@@ -1,19 +1,26 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
 import { createSepayPayment } from '../../services/sepayService'
+import { getFacilityAvailability } from '../../services/facilityService'
 
-// Du lieu mock - thay bang API that sau khi UC-09 hoan thanh
-const MOCK_UNIT = {
-  code: 'TB-104',
-  name: 'Khoang Tiêu Chuẩn',
-  area: 6.0,
-  floor: 'Tầng trệt',
-  branch: 'QueenKho Tân Bình',
-  address: '142 Cộng Hòa, P.13',
-  dimension: '2.5m × 2.4m × 2.7m (Thể tích 16.2 m³)',
-  pricePerMonth: 1850000,
-  facilityId: 1,
-  unitTypeId: 1,
+// Gom dữ liệu cơ sở + loại kho (lấy từ API UC-09) thành 1 object dùng cho giao diện và trang xác nhận
+function buildUnit(availability, unitTypeId) {
+  const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
+  if (!slot) return null
+  const facility = availability.facility
+  return {
+    facilityId: facility.id,
+    unitTypeId: slot.unitTypeId,
+    name: slot.unitTypeName,
+    area: Number(slot.areaSqm),
+    dimension: slot.dimensions,
+    pricePerMonth: Number(slot.basePriceMonthly),
+    availableCount: slot.availableCount,
+    branch: facility.name,
+    address: facility.address,
+    hotline: facility.hotline,
+  }
 }
 
 const DURATION_OPTIONS = [
@@ -30,6 +37,16 @@ function formatVND(amount) {
 }
 
 export default function CreateReservationPage() {
+  // Trang tìm kiếm chuyển sang đây dạng /booking?facilityId=..&unitTypeId=..
+  const [searchParams] = useSearchParams()
+  const facilityId = Number(searchParams.get('facilityId'))
+  const unitTypeId = Number(searchParams.get('unitTypeId'))
+  const hasParams = facilityId > 0 && unitTypeId > 0
+
+  const [unit, setUnit] = useState(null)
+  const [unitLoading, setUnitLoading] = useState(hasParams)
+  const [unitError, setUnitError] = useState('')
+
   const [selectedMonths, setSelectedMonths] = useState(3)
   const [startDate, setStartDate] = useState('')
   const [agreed, setAgreed] = useState(false)
@@ -46,6 +63,30 @@ export default function CreateReservationPage() {
     address: '',
   })
 
+  // Tải thông tin cơ sở + loại kho mà khách đã chọn
+  useEffect(() => {
+    if (!hasParams) return
+
+    let cancelled = false
+    getFacilityAvailability(facilityId)
+      .then((data) => {
+        if (cancelled) return
+        const found = buildUnit(data, unitTypeId)
+        if (found) setUnit(found)
+        else setUnitError('Cơ sở này không có loại kho bạn đã chọn.')
+      })
+      .catch(() => {
+        if (!cancelled) setUnitError('Không tải được thông tin kho. Vui lòng thử lại.')
+      })
+      .finally(() => {
+        if (!cancelled) setUnitLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [hasParams, facilityId, unitTypeId])
+
   // Mac dinh ngay bat dau la ngay mai
   useEffect(() => {
     const tomorrow = new Date()
@@ -58,12 +99,33 @@ export default function CreateReservationPage() {
     }
   }, [])
 
+  if (!hasParams || unitLoading || unitError || !unit) {
+    const message = !hasParams
+      ? 'Bạn chưa chọn kho. Vui lòng chọn cơ sở và loại kho trước khi đặt chỗ.'
+      : unitLoading
+        ? 'Đang tải thông tin kho...'
+        : unitError || 'Không tìm thấy thông tin kho.'
+    return (
+      <div className="p-6 max-w-3xl mx-auto flex flex-col items-start gap-4">
+        <p className={unitLoading ? 'text-on-surface-variant' : 'text-error'}>{message}</p>
+        {!unitLoading && (
+          <Link
+            to="/tim-va-dat-kho"
+            className="px-4 py-2 bg-secondary text-on-secondary rounded font-title-md text-title-md hover:opacity-90"
+          >
+            Tìm & chọn kho
+          </Link>
+        )}
+      </div>
+    )
+  }
+
   // Tinh tien dong
   const selectedOption = DURATION_OPTIONS.find(o => o.months === selectedMonths)
-  const baseTotal = MOCK_UNIT.pricePerMonth * selectedMonths
+  const baseTotal = unit.pricePerMonth * selectedMonths
   const discountAmount = Math.round(baseTotal * (selectedOption.discount / 100))
   const netRent = baseTotal - discountAmount
-  const deposit = MOCK_UNIT.pricePerMonth
+  const deposit = unit.pricePerMonth
   const totalPayment = netRent + deposit - VOUCHER_DISCOUNT
 
   const handleSubmit = async () => {
@@ -86,8 +148,8 @@ export default function CreateReservationPage() {
       setError('')
       const response = await createReservation({
         customerId: sessionUser.userId ?? 1,   // Fallback id=1 khi chua dang nhap (test)
-        facilityId: MOCK_UNIT.facilityId,
-        unitTypeId: MOCK_UNIT.unitTypeId,
+        facilityId: unit.facilityId,
+        unitTypeId: unit.unitTypeId,
         startDate,
         durationMonths: selectedMonths,
       })
@@ -99,7 +161,7 @@ export default function CreateReservationPage() {
         startDate,
         totalPayment: Number(payment.amount || totalPayment),
         deposit: Number(payment.depositAmount || deposit),
-        storage: MOCK_UNIT,
+        storage: unit,
       }))
       window.location.href = payment.payUrl
     } catch (err) {
@@ -149,26 +211,26 @@ export default function CreateReservationPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-title-md font-title-md text-on-surface">
-                    {MOCK_UNIT.name} ({MOCK_UNIT.area} m²)
+                    {unit.name} ({unit.area} m²)
                   </span>
                   <span className="text-label-sm font-label-sm bg-secondary-fixed text-on-secondary-fixed-variant px-2 py-0.5 rounded-full">
-                    {MOCK_UNIT.floor}
+                    	Còn {unit.availableCount} ô trống
                   </span>
                 </div>
                 <p className="text-body-sm font-body-sm text-on-surface-variant mt-1">
-                  Chi nhánh: {MOCK_UNIT.branch} ({MOCK_UNIT.address})
+                  Chi nhánh: {unit.branch} ({unit.address})
                 </p>
                 <p className="text-body-sm font-body-sm text-on-surface-variant">
-                  Kích thước: {MOCK_UNIT.dimension}
+                  Kích thước: {unit.dimension}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-label-sm font-label-sm text-on-surface-variant mb-0.5">Đơn giá chuẩn:</div>
                 <div className="text-title-md font-title-md text-on-surface">
-                  {formatVND(MOCK_UNIT.pricePerMonth)}
+                  {formatVND(unit.pricePerMonth)}
                   <span className="text-body-sm text-on-surface-variant">/tháng</span>
                 </div>
-                <div className="text-label-sm font-label-sm text-on-surface-variant mt-1">{MOCK_UNIT.code}</div>
+
               </div>
             </div>
           </div>
@@ -226,7 +288,7 @@ export default function CreateReservationPage() {
                   </div>
                   {selectedMonths === opt.months && opt.discount > 0 && (
                     <div className="text-label-sm font-label-sm text-on-primary/80 mt-1">
-                      Tiết kiệm {formatVND(Math.round(MOCK_UNIT.pricePerMonth * opt.months * opt.discount / 100))}
+                      Tiết kiệm {formatVND(Math.round(unit.pricePerMonth * opt.months * opt.discount / 100))}
                     </div>
                   )}
                 </button>
@@ -389,7 +451,7 @@ export default function CreateReservationPage() {
                 <div>
                   <p className="text-title-md font-title-md text-on-primary">Chi Tiết Thanh Toán & Đặt Cọc</p>
                   <p className="text-label-sm font-label-sm text-on-primary/70 mt-0.5">
-                    Mã giao dịch tạm: QK-{MOCK_UNIT.code}-8924
+                    Mã đơn sẽ được cấp sau khi xác nhận đặt chỗ
                   </p>
                 </div>
                 <span className="material-symbols-outlined text-on-primary/60 text-[20px]">receipt_long</span>
@@ -400,12 +462,12 @@ export default function CreateReservationPage() {
             <div className="bg-primary/90 px-5 py-2 flex items-center justify-between">
               <span className="text-label-sm font-label-sm text-on-primary/70 uppercase">Gói lựa chọn</span>
               <span className="text-label-sm font-label-sm bg-secondary text-on-secondary px-2 py-0.5 rounded-full">
-                {MOCK_UNIT.branch.replace('QueenKho ', '')}
+                {unit.branch.replace('QueenKho ', '')}
               </span>
             </div>
             <div className="bg-primary/80 px-5 py-2">
               <span className="text-body-sm font-body-sm text-on-primary/90">
-                {MOCK_UNIT.name} {MOCK_UNIT.area} m² • Gói {selectedMonths} Tháng
+                {unit.name} {unit.area} m² • Gói {selectedMonths} Tháng
               </span>
             </div>
 
@@ -415,7 +477,7 @@ export default function CreateReservationPage() {
                 <div>
                   <p className="text-body-sm font-body-sm text-on-surface">Tiền thuê kho ({selectedMonths} tháng)</p>
                   <p className="text-label-sm font-label-sm text-on-surface-variant">
-                    {formatVND(MOCK_UNIT.pricePerMonth)} × {selectedMonths}
+                    {formatVND(unit.pricePerMonth)} × {selectedMonths}
                   </p>
                 </div>
                 <span className="text-body-md font-body-md text-on-surface">{formatVND(baseTotal)}</span>

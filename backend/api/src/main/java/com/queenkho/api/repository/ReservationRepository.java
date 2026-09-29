@@ -11,7 +11,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
 
     List<Reservation> findByCustomer_IdOrderByCreatedAtDesc(Integer customerId);
 
-    List<Reservation> findByFacility_IdAndStatusAndStorageUnitIdIsNull(
+        // UC-13: đơn đã cọc nhưng chưa gán ô, cũ nhất xếp trước (hàng đợi xử lý)
+    List<Reservation> findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(
         Integer facilityId, String status);
 
     // UC-09: Đếm reservations đang pending (chưa gán ô) cho 1 facility + unitType

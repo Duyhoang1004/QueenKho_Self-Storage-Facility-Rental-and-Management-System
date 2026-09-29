@@ -1,10 +1,11 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { clearSession } from '../services/authService';
 
 const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
   { path: '/manager/assign', icon: 'assignment_turned_in', label: 'Duyệt & Gán ô kho', badge: '3 đơn mới' },
+  { path: '/manager/pending', icon: 'pending_actions', label: 'Đơn chờ gán ô' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
   { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },
   { path: '/manager/customers', icon: 'history_edu', label: 'Khách hàng & Hợp đồng' },
@@ -18,7 +19,8 @@ export default function ManagerLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
-  if (currentUser.role !== 'MANAGER' && currentUser.role !== 'ADMIN') return <Navigate to="/login" replace />;
+  const isManagerRole = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(currentUser.role);
+  if (!isManagerRole) return <Navigate to="/login" replace />;
 
   const handleLogout = () => {
     clearSession();

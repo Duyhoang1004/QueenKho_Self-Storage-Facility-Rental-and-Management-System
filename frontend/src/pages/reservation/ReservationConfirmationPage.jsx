@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { confirmPaymentAfterCheckout } from '../../services/sepayService'
 
 // Format tien VND
 function formatVND(amount) {
@@ -26,6 +28,13 @@ export default function ReservationConfirmationPage() {
   const depositAmount = paymentContext.deposit || reservation.depositAmount || 0
   const storage = paymentContext.storage || {}
   const reservationCode = reservation.reservationCode || 'RES-000000'
+  const branch = storage.branch || '—'
+  const address = storage.address || '—'
+  const unitName = storage.name || '—'
+  const area = storage.area ?? '—'
+  const dimension = storage.dimension || '—'
+  const hotline = storage.hotline || '1900 6868'
+
 
   // Format ngay hien thi
   const now = new Date()
@@ -33,6 +42,20 @@ export default function ReservationConfirmationPage() {
 
   const startDateObj = startDate ? new Date(startDate) : new Date()
   const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
+
+  // Tu dong xac nhan don hang sang DEPOSIT_PAID khi SePay chuyen huong ve trang nay
+  useEffect(() => {
+    const resId = reservation.id
+    if (resId) {
+      confirmPaymentAfterCheckout(resId, totalPayment)
+        .then(() => {
+          console.log('[QueenKho] Đã tự động cập nhật đơn sang DEPOSIT_PAID cho đơn #', resId)
+        })
+        .catch((err) => {
+          console.warn('[QueenKho] Lỗi khi tự động cập nhật thanh toán:', err)
+        })
+    }
+  }, [reservation.id, totalPayment])
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -103,14 +126,14 @@ export default function ReservationConfirmationPage() {
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">location_on</span>
               <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Cơ sở hoạt động</span>
             </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.branch || 'QueenKho Tân Bình'}</p>
+            <p className="text-body-md font-body-md text-on-surface font-semibold">{branch}</p>
           </div>
           <div className="bg-surface-container-low rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">straighten</span>
               <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Kích thước khoang</span>
             </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.area || 6.0} m² • {storage.dimension || '16.2 m³'}</p>
+            <p className="text-body-md font-body-md text-on-surface font-semibold">{area} m² • {dimension}</p>
           </div>
           <div className="bg-surface-container-low rounded-xl p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -150,8 +173,8 @@ export default function ReservationConfirmationPage() {
 
             <div>
               <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Loại kho đăng ký</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.name || 'Khoang Tiêu Chuẩn'}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">{storage.area || 6.0} m² diện tích sàn • {storage.dimension || '16.2 m³'}</p>
+              <p className="text-body-md font-body-md text-on-surface font-semibold">{unitName}</p>
+              <p className="text-body-sm font-body-sm text-on-surface-variant">{area} m² diện tích sàn • {dimension}</p>
             </div>
 
             <div>
@@ -187,8 +210,8 @@ export default function ReservationConfirmationPage() {
 
             <div>
               <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Cơ sở lưu trữ</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{storage.branch || 'QueenKho Tân Bình'}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">{storage.address || '142 Cộng Hòa, P.13'}</p>
+              <p className="text-body-md font-body-md text-on-surface font-semibold">{branch}</p>
+              <p className="text-body-sm font-body-sm text-on-surface-variant">{address}</p>
             </div>
 
             <div>
@@ -230,7 +253,7 @@ export default function ReservationConfirmationPage() {
             Tải phiếu biên nhận PDF
           </button>
           <button
-            onClick={() => navigate('/my-storage')}
+            onClick={() => navigate('/kho-cua-toi')}
             className="bg-primary text-on-primary px-6 py-2.5 rounded-xl text-title-md font-title-md flex items-center gap-2 hover:bg-primary/90 transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">warehouse</span>
@@ -241,7 +264,7 @@ export default function ReservationConfirmationPage() {
         {/* Footer */}
         <div className="border-t border-surface-container px-6 py-3 flex items-center justify-between">
           <span className="text-body-sm font-body-sm text-on-surface-variant">
-            Hotline Tân Bình: <span className="font-semibold text-on-surface">1900 6868</span>
+            Hotline {branch.replace('QueenKho ', '')}: <span className="font-semibold text-on-surface">{hotline}</span>
           </span>
           <span className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1">
             <span className="material-symbols-outlined text-[14px]">lock</span>

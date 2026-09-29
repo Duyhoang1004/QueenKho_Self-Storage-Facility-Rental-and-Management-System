@@ -4,8 +4,7 @@ import { clearSession } from '../services/authService';
 
 const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
-  { path: '/manager/assign', icon: 'assignment_turned_in', label: 'Duyệt & Gán ô kho', badge: '3 đơn mới' },
-  { path: '/manager/pending', icon: 'pending_actions', label: 'Đơn chờ gán ô' },
+    { path: '/manager/pending', icon: 'pending_actions', label: 'Đơn chờ gán ô' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
   { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },
   { path: '/manager/customers', icon: 'history_edu', label: 'Khách hàng & Hợp đồng' },
@@ -19,7 +18,7 @@ export default function ManagerLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
-  const isManagerRole = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(currentUser.role);
+  const isManagerRole = ['FACILITY_MANAGER'].includes(currentUser.role);
   if (!isManagerRole) return <Navigate to="/login" replace />;
 
   const handleLogout = () => {
@@ -92,7 +91,7 @@ export default function ManagerLayout() {
           <div className="flex items-center gap-2 text-on-surface-variant font-label-md text-label-md">
             <span className="hover:text-on-surface cursor-pointer">Kho Việt</span>
             <span className="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
-            <span className="hover:text-on-surface cursor-pointer">Cơ sở Tân Bình</span>
+            <span className="hover:text-on-surface cursor-pointer">Cơ sở quản lý</span>
             <span className="material-symbols-outlined text-[16px] text-outline">chevron_right</span>
             <span className="text-on-surface font-title-md text-title-md">Điều phối vận hành</span>
           </div>
@@ -114,7 +113,7 @@ export default function ManagerLayout() {
               </div>
               <div className="flex flex-col text-left">
                 <span className="font-label-lg text-label-lg text-on-surface leading-tight">{currentUser.fullName}</span>
-                <span className="font-label-sm text-label-sm text-on-surface-variant leading-tight">Quản lý Cơ sở Tân Bình</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant leading-tight">Quản lý Cơ sở quản lý</span>
               </div>
             </div>
           </div>

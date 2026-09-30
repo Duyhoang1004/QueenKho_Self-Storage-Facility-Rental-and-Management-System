@@ -47,7 +47,9 @@ export default function ManagerLayout() {
           
           <nav className="flex flex-col gap-1 px-space-sm">
             {managerMenuItems.map((item) => {
-              const isActive = location.pathname === item.path || (item.path !== '/manager' && location.pathname.startsWith(item.path));
+              const isActive = location.pathname === item.path 
+                || (item.path !== '/manager' && location.pathname.startsWith(item.path))
+                || (item.path === '/manager/customers' && location.pathname.startsWith('/manager/contracts'));
               return (
                 <Link
                   key={item.path}

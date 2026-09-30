@@ -49,4 +49,10 @@ public class Reservation {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    @Column(name = "total_deposit_paid")
+    private java.math.BigDecimal totalDepositPaid;
+    
+    @Column(name = "expected_appointment_time")
+    private java.time.LocalDateTime expectedAppointmentTime;
 }

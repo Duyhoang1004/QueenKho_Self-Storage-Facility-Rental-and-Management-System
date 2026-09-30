@@ -28,4 +28,11 @@ export async function assignStorageUnit(reservationId, data) {
   const response = await api.post(`/reservations/${reservationId}/assign`, data)
   return response.data
 }
+//UC-15: Hủy đơn đặt chỗ (Cancel Reservation)
+export const getCancelPreview = (reservationId) => {
+    return api.get(`/reservations/${reservationId}/cancel-preview`).then(res => res.data);
+};
+export const cancelReservation = (reservationId, data) => {
+    return api.post(`/reservations/${reservationId}/cancel`, data).then(res => res.data);
+};
 

@@ -228,14 +228,6 @@ spring:
 }
 ```
 
-### Bảng tóm tắt API
-
-| API       | Method | URL                  | Request Body                         | Success Response                                  |
-|-----------|--------|----------------------|--------------------------------------|----------------------------------------------------|
-| Đăng ký   | POST   | /api/auth/register   | { fullName, email, phone, password } | 201: { message }                                   |
-| Đăng nhập | POST   | /api/auth/login      | { email, password }                  | 200: { token, userId, fullName, email, role }      |
-
----
 
 ## 8. Làm Việc Nhóm Trên Git
 

@@ -1,5 +1,7 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.dto.CancelPreviewResponse;
+import com.queenkho.api.dto.CancelReservationRequest;
 import com.queenkho.api.dto.CreateReservationRequest;
 import com.queenkho.api.dto.CreateReservationResponse;
 import com.queenkho.api.dto.MyReservationResponse;
@@ -42,34 +44,37 @@ public class ReservationService {
     @Autowired
     private com.queenkho.api.repository.RentalContractRepository rentalContractRepository;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
-            .stream()
-            .map(r -> new MyReservationResponse(
-                r.getId(),
-                r.getReservationCode(),
-                r.getFacility().getName(),
-                r.getUnitType().getName(),
-                r.getStorageUnitId(),
-                r.getStartDate(),
-                r.getDurationMonths(),
-                r.getDepositAmount(),
-                r.getStatus(),
-                r.getCreatedAt()
-            ))
-            .toList();
+                .stream()
+                .map(r -> new MyReservationResponse(
+                        r.getId(),
+                        r.getReservationCode(),
+                        r.getFacility().getName(),
+                        r.getUnitType().getName(),
+                        r.getStorageUnitId(),
+                        r.getStartDate(),
+                        r.getDurationMonths(),
+                        r.getDepositAmount(),
+                        r.getStatus(),
+                        r.getCreatedAt()))
+                .toList();
     }
 
     // UC-13: FM xem các đơn đã đặt cọc nhưng chưa được gán ô kho.
-    // Truyền facilityId trực tiếp, hoặc managerId để hệ thống tự lấy cơ sở của quản lý đó.
+    // Truyền facilityId trực tiếp, hoặc managerId để hệ thống tự lấy cơ sở của quản
+    // lý đó.
     @Transactional(readOnly = true)
     public List<PendingReservationResponse> getPendingReservations(Integer facilityId, Integer managerId) {
         Integer targetFacilityId = facilityId;
         if (targetFacilityId == null && managerId != null) {
             User manager = userRepository.findById(managerId)
-                .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại"));
+                    .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại"));
             targetFacilityId = manager.getFacilityId();
         }
         if (targetFacilityId == null) {
@@ -77,20 +82,19 @@ public class ReservationService {
         }
 
         return reservationRepository
-            .findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(targetFacilityId, "DEPOSIT_PAID")
-            .stream()
-            .map(r -> new PendingReservationResponse(
-                r.getId(),
-                r.getReservationCode(),
-                r.getCustomer().getFullName(),
-                r.getCustomer().getPhone(),
-                r.getUnitType().getName(),
-                r.getStartDate(),
-                r.getDurationMonths(),
-                r.getDepositAmount(),
-                r.getCreatedAt()
-            ))
-            .toList();
+                .findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(targetFacilityId, "DEPOSIT_PAID")
+                .stream()
+                .map(r -> new PendingReservationResponse(
+                        r.getId(),
+                        r.getReservationCode(),
+                        r.getCustomer().getFullName(),
+                        r.getCustomer().getPhone(),
+                        r.getUnitType().getName(),
+                        r.getStartDate(),
+                        r.getDurationMonths(),
+                        r.getDepositAmount(),
+                        r.getCreatedAt()))
+                .toList();
     }
 
     @Transactional
@@ -121,7 +125,8 @@ public class ReservationService {
         // Sinh ma don ngau nhien
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 
-        // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng thanh toán SePay)
+        // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng
+        // thanh toán SePay)
         BigDecimal depositAmount = unitType.getBasePriceMonthly();
 
         // Khoi tao va luu don dat cho
@@ -134,6 +139,8 @@ public class ReservationService {
         reservation.setStatus("PENDING");
         reservation.setDurationMonths(request.getDurationMonths());
         reservation.setDepositAmount(depositAmount);
+        // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
+        reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());
         reservation.setCreatedAt(LocalDateTime.now());
 
@@ -147,8 +154,7 @@ public class ReservationService {
                 saved.getStatus(),
                 saved.getStartDate(),
                 saved.getDurationMonths(),
-                "Tạo đơn đặt chỗ thành công"
-        );
+                "Tạo đơn đặt chỗ thành công");
     }
 
     // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán
@@ -174,8 +180,7 @@ public class ReservationService {
                         su.getFloor(),
                         su.getZone(),
                         su.getRoomNumber(),
-                        su.getStatus()
-                ))
+                        su.getStatus()))
                 .toList();
     }
 
@@ -207,6 +212,7 @@ public class ReservationService {
         // Cập nhật đơn đặt chỗ
         reservation.setStorageUnitId(storageUnit.getId());
         reservation.setStatus("UNIT_ASSIGNED");
+
         reservationRepository.save(reservation);
 
         com.queenkho.api.entity.RentalContract contract = new com.queenkho.api.entity.RentalContract();
@@ -228,5 +234,106 @@ public class ReservationService {
         }
         contract.setStatus("ACTIVE");
         rentalContractRepository.save(contract);
+    }
+
+    public CancelPreviewResponse previewCancel(Integer reservationId) {
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+
+        LocalDateTime appointmentTime = reservation.getExpectedAppointmentTime();
+        if (appointmentTime == null) {
+            // Nếu chưa có giờ hẹn chi tiết trong DB, mặc định lấy 09:00 sáng ngày bắt đầu
+            appointmentTime = reservation.getStartDate().atTime(9, 0);
+        }
+        java.math.BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount()
+                : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal penalty;
+        java.math.BigDecimal refund;
+        // So sánh thời gian hiện tại với (Giờ nhận phòng - 24 giờ)
+        if (LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
+            // TH1: Hủy hợp lệ (Trước 24h)
+            penalty = java.math.BigDecimal.ZERO;
+            refund = deposit;
+        } else {
+            // TH2: Hủy trễ (Trong vòng 24h hoặc trễ hơn) -> Phạt 50% cọc
+            penalty = deposit.multiply(new java.math.BigDecimal("0.5"));
+            refund = deposit.subtract(penalty);
+        }
+
+        return new CancelPreviewResponse(deposit, penalty, refund, appointmentTime);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void cancelReservation(Integer reservationId, CancelReservationRequest request) {
+
+        // 1. Tìm đơn trong DB
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+
+        // 2. Kiểm tra trạng thái hợp lệ để hủy
+        if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"PENDING".equals(reservation.getStatus())) {
+            throw new IllegalStateException("Trạng thái đơn không hợp lệ để hủy");
+        }
+
+        boolean wasDepositPaid = "DEPOSIT_PAID".equals(reservation.getStatus());
+
+        // 3. Cập nhật trạng thái đơn thành CANCELLED
+        reservation.setStatus("CANCELLED");
+        reservationRepository.save(reservation);
+
+        // 4. Nếu khách đã đóng cọc -> Tính hoàn cọc và tạo phiếu REFUND
+        CancelPreviewResponse preview = null;
+        if (wasDepositPaid) {
+            preview = previewCancel(reservationId);
+            java.math.BigDecimal refundAmount = preview.getRefundAmount();
+
+            String txnCode = "REF-" + reservation.getReservationCode()
+                    + "-" + (System.currentTimeMillis() % 100000);
+
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, reservation_id, user_id, amount, payment_type, payment_method, status, paid_at) "
+                            +
+                            "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'PENDING', SYSDATETIME())",
+                    txnCode,
+                    reservation.getId(),
+                    reservation.getCustomer().getId(),
+                    refundAmount);
+        }
+
+        // 5. Ghi vết hệ thống vào activity_logs (kèm nội dung task cho nhân viên)
+        String actionLog = "Hủy đặt chỗ " + reservation.getReservationCode()
+                + ". Lý do: " + request.getReason();
+
+        if (request.getOtherReason() != null && !request.getOtherReason().trim().isEmpty()) {
+            actionLog += " (" + request.getOtherReason().trim() + ")";
+        }
+
+        if (wasDepositPaid && preview != null) {
+            boolean hasBankInfo = request.getBankName() != null
+                    && !request.getBankName().trim().isEmpty();
+            if (hasBankInfo) {
+                actionLog += ". [HOÀN CỌC - CK] Chuyển tiền về tài khoản: "
+                        + request.getBankName().trim()
+                        + " - STK: " + request.getBankAccountNumber().trim()
+                        + " - " + request.getBankAccountName().trim()
+                        + ". Số tiền: " + preview.getRefundAmount().toPlainString() + " VND.";
+            } else {
+                actionLog += ". [HOÀN CỌC - TIỀN MẶT] Khách nhận hoàn cọc trực tiếp tại quầy."
+                        + " Số tiền: " + preview.getRefundAmount().toPlainString() + " VND."
+                        + " Liên hệ khách để xếp lịch.";
+            }
+        }
+
+        if (actionLog.length() > 500) {
+            actionLog = actionLog.substring(0, 497) + "...";
+        }
+
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
+                reservation.getCustomer().getId(),
+                actionLog,
+                reservation.getId());
     }
 }

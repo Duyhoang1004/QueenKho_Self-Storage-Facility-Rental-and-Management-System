@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { login, saveSession } from '../../services/authService'
+import { register } from '../../services/authService'
 
 function BrandMark() {
   return (
@@ -26,11 +26,12 @@ function EyeIcon({ open }) {
   )
 }
 
-export default function LoginPage() {
+export default function RegisterPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ email: '', password: '' })
+  const [form, setForm] = useState({ fullName: '', phone: '', email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleChange = (event) => {
@@ -40,9 +41,12 @@ export default function LoginPage() {
   }
 
   const validate = () => {
+    if (!form.fullName.trim()) return 'Vui lòng nhập họ và tên.'
+    if (!form.phone.trim()) return 'Vui lòng nhập số điện thoại.'
     if (!form.email.trim()) return 'Vui lòng nhập email.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Email không đúng định dạng.'
     if (!form.password) return 'Vui lòng nhập mật khẩu.'
+    if (form.password.length < 6) return 'Mật khẩu phải có ít nhất 6 ký tự.'
     return ''
   }
 
@@ -59,25 +63,21 @@ export default function LoginPage() {
       setLoading(true)
       setError('')
 
-      const response = await login({
+      await register({
+        fullName: form.fullName.trim(),
+        phone: form.phone.trim(),
         email: form.email.trim(),
         password: form.password,
       })
 
-      saveSession(response, form.email.trim())
-      navigate('/', { replace: true })
+      setSuccess('Đăng ký tài khoản thành công! Vui lòng đăng nhập.')
+      setTimeout(() => navigate('/login'), 2000)
     } catch (requestError) {
-      const status = requestError.response?.status
-      const errorCode = requestError.response?.data?.error
-
-      if (status === 401 || errorCode === 'INVALID_CREDENTIALS') {
-        setError('Email hoặc mật khẩu không đúng.')
-      } else if (errorCode === 'ACCOUNT_LOCKED') {
-        setError('Tài khoản đã bị khóa. Vui lòng liên hệ hỗ trợ.')
-      } else if (errorCode === 'ACCOUNT_DISABLED') {
-        setError('Tài khoản đã bị vô hiệu hóa.')
+      const errorMessage = requestError.response?.data?.message || requestError.response?.data || 'Không thể kết nối đến hệ thống. Vui lòng thử lại.'
+      if (typeof errorMessage === 'string' && errorMessage.includes('Email')) {
+        setError(errorMessage)
       } else {
-        setError(requestError.response?.data?.message || 'Không thể kết nối đến hệ thống. Vui lòng thử lại.')
+        setError('Đăng ký thất bại. Vui lòng thử lại.')
       }
     } finally {
       setLoading(false)
@@ -103,7 +103,7 @@ export default function LoginPage() {
             Quản lý kho lưu trữ
           </h1>
           <p className="mt-5 max-w-lg text-base leading-7 text-blue-100 xl:text-lg">
-            Thuê và quản lý kho lưu trữ hiệu quả.
+            Đăng ký tài khoản để bắt đầu trải nghiệm dịch vụ.
           </p>
         </div>
 
@@ -121,16 +121,45 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-action">Chào mừng trở lại</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Đăng nhập tài khoản</h2>
+            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-action">Bắt đầu ngay</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Đăng ký tài khoản</h2>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              Nhập thông tin của bạn để tiếp tục sử dụng QueenKho.
+              Nhập thông tin của bạn để tạo tài khoản mới.
             </p>
           </div>
 
-          <form className="mt-9 space-y-5" onSubmit={handleSubmit} noValidate>
+          <form className="mt-9 space-y-4" onSubmit={handleSubmit} noValidate>
+            
             <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+              <label htmlFor="fullName" className="mb-1 block text-sm font-semibold text-slate-700">Họ và tên</label>
+              <input
+                id="fullName"
+                name="fullName"
+                type="text"
+                value={form.fullName}
+                onChange={handleChange}
+                placeholder="Nguyễn Văn A"
+                disabled={loading}
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="phone" className="mb-1 block text-sm font-semibold text-slate-700">Số điện thoại</label>
+              <input
+                id="phone"
+                name="phone"
+                type="text"
+                value={form.phone}
+                onChange={handleChange}
+                placeholder="0987654321"
+                disabled={loading}
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="email" className="mb-1 block text-sm font-semibold text-slate-700">Email</label>
               <input
                 id="email"
                 name="email"
@@ -140,12 +169,12 @@ export default function LoginPage() {
                 placeholder="example@gmail.com"
                 autoComplete="email"
                 disabled={loading}
-                className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Mật khẩu</label>
+              <label htmlFor="password" className="mb-1 block text-sm font-semibold text-slate-700">Mật khẩu</label>
               <div className="relative">
                 <input
                   id="password"
@@ -153,10 +182,10 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Nhập mật khẩu"
-                  autoComplete="current-password"
+                  placeholder="Ít nhất 6 ký tự"
+                  autoComplete="new-password"
                   disabled={loading}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
                 />
                 <button
                   type="button"
@@ -174,20 +203,26 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+            
+            {success && (
+              <div role="alert" className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                {success}
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={loading}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-action px-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-brand focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
+              className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-action px-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-brand focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+              {loading ? 'Đang đăng ký...' : 'Đăng ký tài khoản'}
             </button>
             
             <p className="mt-6 text-center text-sm text-slate-500">
-              Chưa có tài khoản?{' '}
-              <Link to="/register" className="font-semibold text-action transition hover:text-brand">
-                Đăng ký ngay
+              Đã có tài khoản?{' '}
+              <Link to="/login" className="font-semibold text-action transition hover:text-brand">
+                Đăng nhập ngay
               </Link>
             </p>
           </form>

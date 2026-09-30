@@ -5,6 +5,11 @@ export async function login(credentials) {
   return response.data
 }
 
+export async function register(userData) {
+  const response = await api.post('/auth/register', userData)
+  return response.data
+}
+
 export function saveSession(loginResponse, emailInput = '') {
   const { token, userId, fullName, role } = loginResponse
   const email = loginResponse.email || emailInput

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { getMyReservations } from '../../services/reservationService'
 
 const STATUS_META = {
@@ -49,6 +49,7 @@ function readUserId() {
 
 export default function MyReservationsPage() {
   const userId = readUserId()
+  const navigate = useNavigate()
   const [reservations, setReservations] = useState([])
   const [loading, setLoading] = useState(Boolean(userId))
   const [error, setError] = useState(userId ? '' : 'Bạn cần đăng nhập để xem đơn đặt chỗ.')
@@ -214,6 +215,7 @@ export default function MyReservationsPage() {
                   <th className="px-4 py-3">Tiền cọc</th>
                   <th className="px-4 py-3">Ngày đặt</th>
                   <th className="px-4 py-3">Trạng thái</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="text-body-sm font-body-sm text-on-surface">
@@ -233,6 +235,17 @@ export default function MyReservationsPage() {
                         <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${meta.className}`}>
                           {meta.label}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {r.status === 'UNIT_ASSIGNED' && (
+                          <button
+                            onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
+                            className="flex items-center gap-1 text-secondary text-label-sm font-label-sm hover:underline cursor-pointer whitespace-nowrap"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">description</span>
+                            Xem HĐ
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )

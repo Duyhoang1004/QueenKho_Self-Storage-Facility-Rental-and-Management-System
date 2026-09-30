@@ -1,4 +1,4 @@
-﻿import { Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
@@ -15,11 +15,14 @@ import ReservationConfirmationPage from './pages/reservation/ReservationConfirma
 // Import cho chức năng Lịch sử & Quản lý Đặt chỗ (UC-12, UC-13)
 import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
 import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
+import CustomerContractPage from './pages/my_reservation/CustomerContractPage';
 
 // Import Manager Pages
 import ManagerLayout from './layouts/ManagerLayout';
 import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
 import StorageManagementPage from './pages/manager/StorageManagementPage';
+import CustomerContractsPage from './pages/manager/CustomerContractsPage';
+import ContractDetailPage from './pages/manager/ContractDetailPage';
 
 
 export default function App() {
@@ -42,6 +45,7 @@ export default function App() {
 
         {/* UC-12: Quản lý kho của tôi */}
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
+        <Route path="/kho-cua-toi/hop-dong/:reservationId" element={<CustomerContractPage />} />
       </Route>
 
       {/* ========== UC-13: FM Pending Reservations (tạm standalone) ========== */}
@@ -52,6 +56,8 @@ export default function App() {
         <Route path="/manager" element={<ManagerDashboardPage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
+        <Route path="/manager/customers" element={<CustomerContractsPage />} />
+        <Route path="/manager/contracts/:id" element={<ContractDetailPage />} />
       </Route>
     </Routes>
   );

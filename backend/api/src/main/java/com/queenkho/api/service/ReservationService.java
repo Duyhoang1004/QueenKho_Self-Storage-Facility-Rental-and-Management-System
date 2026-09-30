@@ -1,19 +1,48 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.dto.CreateReservationRequest;
+import com.queenkho.api.dto.CreateReservationResponse;
 import com.queenkho.api.dto.MyReservationResponse;
 import com.queenkho.api.dto.PendingReservationResponse;
+import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.Reservation;
+import com.queenkho.api.entity.UnitType;
+import com.queenkho.api.entity.User;
 import com.queenkho.api.repository.ReservationRepository;
+import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.queenkho.api.repository.FacilityRepository;
+import com.queenkho.api.repository.UnitTypeRepository;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Random;
 
 @Service
 public class ReservationService {
     @Autowired
     private ReservationRepository reservationRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private FacilityRepository facilityRepository;
+
+    @Autowired
+    private UnitTypeRepository unitTypeRepository;
+
+    @Autowired
+    private com.queenkho.api.repository.StorageUnitRepository storageUnitRepository;
+
+    @Autowired
+    private com.queenkho.api.repository.RentalContractRepository rentalContractRepository;
+
+    // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
@@ -23,26 +52,181 @@ public class ReservationService {
                 r.getReservationCode(),
                 r.getFacility().getName(),
                 r.getUnitType().getName(),
+                r.getStorageUnitId(),
                 r.getStartDate(),
                 r.getDurationMonths(),
                 r.getDepositAmount(),
-                r.getStatus()
+                r.getStatus(),
+                r.getCreatedAt()
             ))
             .toList();
     }
 
+    // UC-13: FM xem các đơn đã đặt cọc nhưng chưa được gán ô kho.
+    // Truyền facilityId trực tiếp, hoặc managerId để hệ thống tự lấy cơ sở của quản lý đó.
     @Transactional(readOnly = true)
-    public List<PendingReservationResponse> getPendingReservations(Integer facilityId) {
+    public List<PendingReservationResponse> getPendingReservations(Integer facilityId, Integer managerId) {
+        Integer targetFacilityId = facilityId;
+        if (targetFacilityId == null && managerId != null) {
+            User manager = userRepository.findById(managerId)
+                .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại"));
+            targetFacilityId = manager.getFacilityId();
+        }
+        if (targetFacilityId == null) {
+            throw new IllegalArgumentException("Tài khoản chưa được gán cơ sở nên không xem được đơn chờ gán ô");
+        }
+
         return reservationRepository
-            .findByFacility_IdAndStatusAndStorageUnitIdIsNull(facilityId, "DEPOSIT_PAID")
+            .findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(targetFacilityId, "DEPOSIT_PAID")
             .stream()
             .map(r -> new PendingReservationResponse(
                 r.getId(),
                 r.getReservationCode(),
                 r.getCustomer().getFullName(),
+                r.getCustomer().getPhone(),
                 r.getUnitType().getName(),
+                r.getStartDate(),
+                r.getDurationMonths(),
+                r.getDepositAmount(),
                 r.getCreatedAt()
             ))
             .toList();
+    }
+
+    @Transactional
+    public CreateReservationResponse createReservation(CreateReservationRequest request) {
+        // Kiem tra hop le
+        if (request.getStartDate() == null || request.getStartDate().isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Ngày bắt đầu không được ở quá khứ");
+        }
+        if (request.getDurationMonths() == null || request.getDurationMonths() <= 0) {
+            throw new IllegalArgumentException("Thời gian thuê phải tối thiểu 1 tháng");
+        }
+
+        // Kiem tra khach hang
+        User customer = userRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
+
+        if (request.getFacilityId() == null || request.getUnitTypeId() == null) {
+            throw new IllegalArgumentException("Vui lòng chọn cơ sở và loại kho");
+        }
+
+        // Lấy cơ sở và loại kho thật từ DB (không tạo object rỗng chỉ có id)
+        Facility facility = facilityRepository.findById(request.getFacilityId())
+                .orElseThrow(() -> new IllegalArgumentException("Cơ sở không tồn tại"));
+
+        UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
+                .orElseThrow(() -> new IllegalArgumentException("Loại kho không tồn tại"));
+
+        // Sinh ma don ngau nhien
+        String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
+
+        // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng thanh toán SePay)
+        BigDecimal depositAmount = unitType.getBasePriceMonthly();
+
+        // Khoi tao va luu don dat cho
+        Reservation reservation = new Reservation();
+        reservation.setReservationCode(reservationCode);
+        reservation.setCustomer(customer);
+        reservation.setFacility(facility);
+        reservation.setUnitType(unitType);
+        reservation.setStorageUnitId(null);
+        reservation.setStatus("PENDING");
+        reservation.setDurationMonths(request.getDurationMonths());
+        reservation.setDepositAmount(depositAmount);
+        reservation.setStartDate(request.getStartDate());
+        reservation.setCreatedAt(LocalDateTime.now());
+
+        Reservation saved = reservationRepository.save(reservation);
+
+        // Tra ve ket qua tao don
+        return new CreateReservationResponse(
+                saved.getId(),
+                saved.getReservationCode(),
+                saved.getDepositAmount(),
+                saved.getStatus(),
+                saved.getStartDate(),
+                saved.getDurationMonths(),
+                "Tạo đơn đặt chỗ thành công"
+        );
+    }
+
+    // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán
+    @Transactional(readOnly = true)
+    public List<com.queenkho.api.dto.StorageUnitResponse> getAvailableUnitsForReservation(Integer reservationId) {
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Đơn đặt chỗ không tồn tại"));
+
+        Integer facilityId = reservation.getFacility().getId();
+        Integer unitTypeId = reservation.getUnitType().getId();
+
+        List<com.queenkho.api.entity.StorageUnit> units = storageUnitRepository
+                .findByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, "AVAILABLE");
+        if (units.isEmpty()) {
+            units = storageUnitRepository.findByFacility_IdAndStatus(facilityId, "AVAILABLE");
+        }
+
+        return units.stream()
+                .map(su -> new com.queenkho.api.dto.StorageUnitResponse(
+                        su.getId(),
+                        su.getUnitType().getName(),
+                        su.getUnitType().getAreaSqm(),
+                        su.getFloor(),
+                        su.getZone(),
+                        su.getRoomNumber(),
+                        su.getStatus()
+                ))
+                .toList();
+    }
+
+    // UC-14: Quản lý xác nhận gán ô kho thực tế
+    @Transactional
+    public void assignStorageUnit(Integer reservationId, com.queenkho.api.dto.AssignUnitRequest request) {
+        if (request == null || request.getStorageUnitId() == null || request.getStorageUnitId().isBlank()) {
+            throw new IllegalArgumentException("Vui lòng chọn ô kho thực tế");
+        }
+
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Đơn đặt chỗ không tồn tại"));
+
+        if (!"DEPOSIT_PAID".equalsIgnoreCase(reservation.getStatus())) {
+            throw new IllegalStateException("Đơn đặt chỗ chưa thanh toán cọc hoặc đã được gán ô");
+        }
+
+        com.queenkho.api.entity.StorageUnit storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
+                .orElseThrow(() -> new IllegalArgumentException("Ô kho không tồn tại"));
+
+        if (!"AVAILABLE".equalsIgnoreCase(storageUnit.getStatus())) {
+            throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
+        }
+
+        // Cập nhật ô kho
+        storageUnit.setStatus("OCCUPIED");
+        storageUnitRepository.save(storageUnit);
+
+        // Cập nhật đơn đặt chỗ
+        reservation.setStorageUnitId(storageUnit.getId());
+        reservation.setStatus("UNIT_ASSIGNED");
+        reservationRepository.save(reservation);
+
+        com.queenkho.api.entity.RentalContract contract = new com.queenkho.api.entity.RentalContract();
+        String contractCode = "HD-" + (100000 + new java.util.Random().nextInt(900000));
+        contract.setContractCode(contractCode);
+        contract.setReservation(reservation);
+        contract.setCustomer(reservation.getCustomer());
+        contract.setStorageUnit(storageUnit);
+        contract.setRentalPolicyId(1);
+        contract.setStartDate(reservation.getStartDate());
+        if (reservation.getDurationMonths() != null) {
+            contract.setEndDate(reservation.getStartDate().plusMonths(reservation.getDurationMonths()));
+        }
+        contract.setBillingCycleMonths(1);
+        if (reservation.getDepositAmount() != null) {
+            contract.setDepositHeldAmount(reservation.getDepositAmount());
+        } else {
+            contract.setDepositHeldAmount(java.math.BigDecimal.ZERO);
+        }
+        contract.setStatus("ACTIVE");
+        rentalContractRepository.save(contract);
     }
 }

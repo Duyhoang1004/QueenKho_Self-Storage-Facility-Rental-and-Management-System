@@ -18,7 +18,7 @@ export default function CustomerLayout() {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
+    const userStr = sessionStorage.getItem('user');
     if (!userStr) {
       navigate('/login', { replace: true });
       return;
@@ -26,10 +26,14 @@ export default function CustomerLayout() {
 
     const user = JSON.parse(userStr);
     
-    // Kiểm tra phân quyền, nếu không phải Khách hàng thì đẩy về trang phù hợp
+    // Kiểm tra phân quyền: Nếu là quản lý / admin thì tự động chuyển sang trang quản lý
+    if (['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(user.role)) {
+      navigate('/manager', { replace: true });
+      return;
+    }
+
+    // Nếu không phải Khách hàng thì đẩy ra đăng nhập
     if (user.role !== 'CUSTOMER') {
-      // Giả sử sau này có staff thì đẩy về /staff, admin đẩy về /admin
-      // Tạm thời nếu sai quyền thì báo lỗi hoặc đẩy ra đăng nhập
       alert('Bạn không có quyền truy cập trang này!');
       clearSession();
       navigate('/login', { replace: true });

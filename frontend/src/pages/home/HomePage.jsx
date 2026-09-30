@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 
 // Mock data - sẽ thay bằng API thật sau
 const stats = [
@@ -64,8 +64,8 @@ const quickActions = [
 ];
 
 export default function HomePage() {
-  // Đọc thông tin user từ localStorage
-  const userStr = localStorage.getItem('user');
+  // Đọc thông tin user từ sessionStorage
+  const userStr = sessionStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   const displayName = user?.fullName || 'Khách';
 

@@ -65,7 +65,12 @@ export default function LoginPage() {
       })
 
       saveSession(response, form.email.trim())
-      navigate('/', { replace: true })
+      const role = response.role
+      if (role === 'FACILITY_MANAGER' || role === 'MANAGER' || role === 'ADMIN') {
+        navigate('/manager', { replace: true })
+      } else {
+        navigate('/', { replace: true })
+      }
     } catch (requestError) {
       const status = requestError.response?.status
       const errorCode = requestError.response?.data?.error

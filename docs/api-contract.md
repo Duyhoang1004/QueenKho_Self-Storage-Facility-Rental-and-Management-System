@@ -109,6 +109,48 @@
 
 
 # ==============================================================================
+# UC-10: TAO DON DAT CHO KHO BAI (Create Reservation)
+# ==============================================================================
+# Endpoint:  POST /api/v1/reservations
+# Muc dich:  Khach hang tao don dat cho kho moi
+# ==============================================================================
+
+# --- REQUEST (Frontend gui len) ---
+# Content-Type: application/json
+#
+# {
+#   "customerId":     1,
+#   "facilityId":     1,
+#   "unitTypeId":     1,
+#   "startDate":      "2026-10-01",
+#   "durationMonths": 3
+# }
+#
+# Quy tac:
+#   - Tat ca field deu BAT BUOC
+#   - startDate khong duoc o qua khu (dinh dang YYYY-MM-DD)
+#   - durationMonths toi thieu la 1 thang
+
+# --- RESPONSE THANH CONG ---
+# HTTP Status: 201 Created
+#
+# {
+#   "id":              1,
+#   "reservationCode": "RES-849201",
+#   "depositAmount":   500000,
+#   "status":          "PENDING",
+#   "startDate":       "2026-10-01",
+#   "durationMonths":  3,
+#   "message":         "Tạo đơn đặt chỗ thành công"
+# }
+
+# --- RESPONSE LOI ---
+# HTTP 400 Bad Request:
+# { "error": "INVALID_INPUT", "message": "Ngày bắt đầu không được ở quá khứ" }
+# { "error": "BAD_REQUEST",   "message": "Khách hàng không tồn tại" }
+
+
+# ==============================================================================
 # QUY TAC CHUNG CHO MOI API (AP DUNG TU SPRINT 1 TRO DI)
 # ==============================================================================
 #
@@ -161,10 +203,61 @@
 
 
 # ==============================================================================
+# UC-11: THANH TOAN TIEN DAT COC (Pay Deposit)
+# ==============================================================================
+# Endpoint:  POST /api/v1/payments
+# Muc dich:  Xac nhan khach hang da chuyen khoan dat coc thanh cong
+#            Cap nhat trang thai don dat cho tu PENDING -> DEPOSIT_PAID
+# Nguoi thuc hien: Nghia
+# ==============================================================================
+
+# --- REQUEST (Frontend gui len sau khi khach hang bam "Da chuyen khoan xong") ---
+# Content-Type: application/json
+#
+# {
+#   "reservationCode": "RES-849201",
+#   "amount":          500000,
+#   "paymentMethod":   "VIETQR"
+# }
+#
+# Quy tac:
+#   - reservationCode: lay tu response cua UC-10
+#   - amount: so tien dat coc (lay tu depositAmount cua UC-10)
+#   - paymentMethod: "VIETQR" | "NAPAS247" | "CASH"
+
+# --- RESPONSE THANH CONG ---
+# HTTP Status: 200 OK
+#
+# {
+#   "paymentId":       1,
+#   "reservationCode": "RES-849201",
+#   "status":          "DEPOSIT_PAID",
+#   "paidAt":          "2026-10-01T10:45:00",
+#   "message":         "Thanh toán đặt cọc thành công"
+# }
+
+# --- RESPONSE LOI ---
+# HTTP 404 Not Found:
+# { "error": "RESERVATION_NOT_FOUND", "message": "Không tìm thấy đơn đặt chỗ" }
+#
+# HTTP 400 Bad Request:
+# { "error": "ALREADY_PAID",    "message": "Đơn này đã được thanh toán" }
+# { "error": "WRONG_AMOUNT",    "message": "Số tiền không khớp" }
+
+# --- GHI CHU CHO NGHIA ---
+# 1. Sau khi thanh toan thanh cong, UPDATE reservations SET status = 'DEPOSIT_PAID' WHERE reservation_code = ?
+# 2. UC-13 (Facility Manager) chi hien don co status = 'DEPOSIT_PAID' -> NEU SAI status, UC-13 se khong hoat dong
+# 3. Frontend dang cho tai PaymentQRPage.jsx - Luon goi api.post('/payments', data) sau khi khach bam nut xac nhan
+# 4. Sau khi API tra ve thanh cong -> Frontend tu dong chuyen sang /booking/confirmation
+
+# ==============================================================================
 # BANG TOM TAT
 # ==============================================================================
 #
-# | API       | Method | URL                  | Request Body                         | Success                                           |
-# |-----------|--------|----------------------|--------------------------------------|---------------------------------------------------|
-# | Dang ky   | POST   | /api/auth/register   | { fullName, email, phone, password } | 201: { message }                                  |
-# | Dang nhap | POST   | /api/auth/login      | { email, password }                  | 200: { token, userId, fullName, email, role }     |
+# | API              | Method | URL                   | Request Body                                                      | Success                                              |
+# |------------------|--------|-----------------------|-------------------------------------------------------------------|------------------------------------------------------|
+# | Dang ky          | POST   | /api/auth/register    | { fullName, email, phone, password }                              | 201: { message }                                     |
+# | Dang nhap        | POST   | /api/auth/login       | { email, password }                                               | 200: { token, userId, fullName, email, role }        |
+# | Tao don dat kho  | POST   | /api/v1/reservations  | { customerId, facilityId, unitTypeId, startDate, durationMonths } | 201: { id, reservationCode, depositAmount, status }  |
+# | Thanh toan coc   | POST   | /api/v1/payments      | { reservationCode, amount, paymentMethod }                        | 200: { paymentId, reservationCode, status, paidAt }  |
+

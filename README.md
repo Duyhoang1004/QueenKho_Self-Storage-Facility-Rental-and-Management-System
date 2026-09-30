@@ -1,144 +1,180 @@
-# QueenKho - Self-Storage Facility Rental and Management System
+# QueenKho - Hệ Thống Cho Thuê & Quản Lý Kho Tự Quản
 
-> SWP391 Course Project — FPTU  
-> **Tech Stack:** ReactJS (Vite) + Spring Boot 4.x + SQL Server  
-> **Repo:** Monorepo (`frontend/` + `backend/` + `sql_script/`)
+> Đồ án môn học SWP391 – FPTU  
+> **Repo:** Monorepo (`frontend/` + `backend/` + `sql_script/`)  
+> **Mô hình kiến trúc:** Client-Server (Frontend - Backend tách biệt)
 
----
-
-## Muc Luc
-
-1. [Cai Dat Moi Truong](#1-cai-dat-moi-truong)
-2. [Cau Hinh Database](#2-cau-hinh-database)
-3. [Chay Du An](#3-chay-du-an)
-4. [Quy Tac JSON API](#4-quy-tac-json-api)
-5. [Vi Du JSON Cu The](#5-vi-du-json-cu-the)
-6. [Lam Viec Nhom Tren Git](#6-lam-viec-nhom-tren-git)
+**Công nghệ sử dụng:**
+*   **Frontend:** ReactJS (khởi tạo qua Vite), Tailwind CSS (thiết kế theo chuẩn Material Design 3), React Router DOM, Axios.
+*   **Backend:** Spring Boot (Java), Spring Data JPA & Hibernate, Spring Security (đang cấu hình mở cho Dev/Test).
+*   **Database:** SQL Server 2019/2022.
+*   **Tích hợp:** Cổng thanh toán SePay (Webhook tự động cập nhật đơn đặt cọc), QR Code tĩnh/động (VietQR).
 
 ---
 
-## 1. Cai Dat Moi Truong
+## Mục Lục
 
-### Yeu cau
+1. [Tiến Độ Dự Án (Milestones)](#1-tiến-độ-dự-án-milestones)
+2. [Cài Đặt Môi Trường](#2-cài-đặt-môi-trường)
+3. [Cấu Hình Database](#3-cấu-hình-database)
+4. [Chạy Dự Án & Tài Khoản Test](#4-chạy-dự-án--tài-khoản-test)
+5. [Hướng Dẫn Phát Triển Frontend](#5-hướng-dẫn-phát-triển-frontend)
+6. [Quy Tắc JSON API](#6-quy-tắc-json-api)
+7. [Ví Dụ JSON Cụ Thể](#7-ví-dụ-json-cụ-thể)
+8. [Làm Việc Nhóm Trên Git](#8-làm-việc-nhóm-trên-git)
 
-| Tool           | Version       | Link tai                                    |
+---
+
+## 1. Tiến Độ Dự Án (Milestones)
+Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời điểm hiện tại:
+*   **Luồng Xác thực (Authentication):** Đăng ký, Đăng nhập (Mã hóa mật khẩu BCrypt, tự động rẽ nhánh Layout theo Role).
+*   **Trang Khách Hàng (Customer Portal):**
+    *   Trang chủ (HomePage).
+    *   Tìm kiếm và khám phá danh mục kho, xem tình trạng ô trống (UC-09: Search & Landing Page).
+    *   Quy trình đặt chỗ kho (UC-10: Booking).
+    *   Quản lý kho của tôi (UC-12: My Reservations).
+*   **Cổng Thanh Toán:**
+    *   Tích hợp thành công Hosted Checkout qua SePay.
+    *   Trang xác nhận thành công sau khi hoàn tất thanh toán.
+    *   Backend có Webhook (IPN) tự động nhận tín hiệu thanh toán để cập nhật trạng thái `DEPOSIT_PAID` vào Database.
+*   **Trang Quản trị Cơ sở (Manager Portal):**
+    *   Bảng điều khiển tổng quan (Dashboard) với các thông số realtime.
+    *   Quản lý Danh mục Ô kho (Lọc trạng thái, xem ma trận kho).
+    *   Duyệt Đơn Đặt Chỗ & Gán Ô Kho (Giao diện bảng danh sách + Modal thao tác gắn mã số khoang thông minh).
+
+---
+
+## 2. Cài Đặt Môi Trường
+
+### Yêu cầu
+
+| Tool           | Version       | Link tải                                    |
 |----------------|---------------|---------------------------------------------|
 | JDK            | 17 LTS        | https://adoptium.net                        |
 | Node.js        | 18+           | https://nodejs.org                          |
-| SQL Server     | 2019/2022     | Co san hoac dung Express                    |
+| SQL Server     | 2019/2022     | Có sẵn hoặc dùng bản Express                |
 | IDE Backend    | IntelliJ IDEA | https://www.jetbrains.com/idea              |
 | IDE Frontend   | VS Code       | https://code.visualstudio.com               |
 
-### Cai dat bien moi truong (Database)
+### Cài đặt biến môi trường (Database)
 
-File `application.yaml` dung cu phap `${BIEN:gia_tri_mac_dinh}`.  
-Neu password SQL Server cua ban **trung voi gia tri mac dinh** (`12345`) thi **khong can lam gi**.  
-Neu password **khac** thi lam theo 1 trong 2 cach:
+File `application.yaml` dùng cú pháp `${BIEN:gia_tri_mac_dinh}`.  
+Nếu password SQL Server của bạn **trùng với giá trị mặc định** (`12345`) thì **không cần làm gì thêm**.  
+Nếu password **khác** thì làm theo 1 trong 2 cách sau:
 
-#### Cach 1: Dung GUI Windows
-
-1. Nhan phim **Windows**, go **"Environment Variables"**
-2. Chon **"Edit the system environment variables"**
-3. Bam **"Environment Variables..."**
-4. O phan **User variables**, bam **"New..."**:
+#### Cách 1: Dùng GUI Windows
+1. Nhấn phím **Windows**, gõ **"Environment Variables"**
+2. Chọn **"Edit the system environment variables"**
+3. Bấm **"Environment Variables..."**
+4. Ở phần **User variables**, bấm **"New..."**:
    - Variable name: `DB_PASSWORD`
    - Variable value: `MatKhauCuaBan`
-5. Bam **OK** tat ca cac cua so
-6. **Khoi dong lai IntelliJ / VS Code**
+5. Bấm **OK** tất cả các cửa sổ
+6. **Khởi động lại IntelliJ / VS Code**
 
-#### Cach 2: Dung PowerShell
-
+#### Cách 2: Dùng PowerShell
 ```powershell
-# Tao bien moi truong cap User (ton tai vinh vien, khong mat khi tat may)
+# Tạo biến môi trường cấp User (tồn tại vĩnh viễn, không mất khi tắt máy)
 [System.Environment]::SetEnvironmentVariable("DB_PASSWORD", "MatKhauCuaBan", "User")
 ```
+Khởi động lại IDE sau khi chạy lệnh.
 
-Khoi dong lai IDE sau khi chay lenh.
-
-#### Kiem tra da thanh cong
-
-Mo PowerShell **moi**, go:
-
+**Kiểm tra đã thành công:** Mở PowerShell **mới**, gõ:
 ```powershell
 echo $env:DB_PASSWORD
 ```
+Nếu hiện ra password bạn vừa đặt -> Thành công.
 
-Neu hien ra password ban vua dat -> Thanh cong.
-
-#### Bang tham chieu cac bien moi truong
-
-| Bien          | Mac dinh    | Khi nao can dat                            |
+| Biến          | Mặc định    | Khi nào cần đặt                            |
 |---------------|-------------|--------------------------------------------|
-| `DB_PASSWORD` | `12345`     | Password SQL Server cua ban khac `12345`   |
-| `DB_USERNAME` | `sa`        | Username SQL Server cua ban khac `sa`      |
-| `DB_NAME`     | `QueenKhoDB`| Ten database cua ban khac `QueenKhoDB`     |
-| `DB_PORT`     | `1433`      | Port SQL Server cua ban khac `1433`        |
+| `DB_PASSWORD` | `12345`     | Password SQL Server của bạn khác `12345`   |
+| `DB_USERNAME` | `sa`        | Username SQL Server của bạn khác `sa`      |
+| `DB_NAME`     | `QueenKhoDB`| Tên database của bạn khác `QueenKhoDB`     |
+| `DB_PORT`     | `1433`      | Port SQL Server của bạn khác `1433`        |
 
 ---
 
-## 2. Cau Hinh Database
+## 3. Cấu Hình Database
 
-### Buoc 1: Tao database va cac bang
-
-Mo SQL Server Management Studio (SSMS), mo file `sql_script/QueenKho.sql` va **chay toan bo**.  
-Script se tu dong:
-- Tao database `QueenKhoDB`
-- Tao 12 bang (theo thu tu phu thuoc FK)
+### Bước 1: Tạo database và các bảng
+Mở SQL Server Management Studio (SSMS), mở file `sql_script/QueenKho.sql` và **chạy toàn bộ**.  
+Script sẽ tự động:
+- Tạo database `QueenKhoDB`
+- Tạo 12 bảng (theo thứ tự phụ thuộc Khóa ngoại)
 - Seed 5 roles: `CUSTOMER`, `STAFF`, `FACILITY_MANAGER`, `BOM`, `ADMIN`
 
-### Buoc 2: Kiem tra
-
+### Bước 2: Kiểm tra
 ```sql
 USE QueenKhoDB;
 SELECT * FROM roles;
 ```
-
-Thay 5 dong du lieu -> Thanh cong.
+Thấy 5 dòng dữ liệu -> Thành công.
 
 ---
 
-## 3. Chay Du An
+## 4. Chạy Dự Án & Tài Khoản Test
 
 ### Backend (Spring Boot)
-
 ```bash
 cd backend/api
 ./mvnw spring-boot:run
 ```
-
-Backend chay tai: `http://localhost:8080`
+Backend chạy tại: `http://localhost:8080`
 
 ### Frontend (ReactJS)
-
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+Frontend chạy tại: `http://localhost:5173`
 
-Frontend chay tai: `http://localhost:5173`
+### Tài khoản kiểm thử (Dev Account)
+Để thuận tiện test các luồng giao diện nội bộ (Protected Route), hệ thống đã cấy sẵn tài khoản Quản lý:
+*   **Email:** `admin123@gmail.com`
+*   **Mật khẩu:** `1234`
+*   **Vai trò (Role):** `MANAGER`
+
+*(Ghi chú: Mật khẩu này đã được băm bằng BCrypt trong DB, bạn chỉ cần nhập "1234" ở trang Login để tự động được điều hướng vào màn hình `/manager`).*
 
 ---
 
-## 4. Quy Tac JSON API
+## 5. Hướng Dẫn Phát Triển Frontend
 
-> **QUAN TRONG:** Ca team (Frontend + Backend) phai doc va lam theo cac quy tac nay.  
-> Chi tiet day du xem file `docs/api-contract.md`.
+### 5.1. Quản lý phiên đăng nhập (SessionStorage)
+*   Dự án sử dụng **`sessionStorage`** thay vì `localStorage` để lưu thông tin Token và User sau khi đăng nhập.
+*   **Mục đích:** Mỗi khi tắt tab trình duyệt, toàn bộ phiên đăng nhập sẽ bị xóa sạch. Lần tới mở `localhost:5173` sẽ lập tức hiện lại trang Đăng nhập. Tránh lỗi "dính" session cũ khi test nhiều tài khoản khác nhau.
+*   **Bảo mật Route:** Các Layout (`ManagerLayout`, `CustomerLayout`) đều có kiểm tra `sessionStorage`. Nếu không có thông tin hợp lệ (chưa login hoặc sai Role), người dùng sẽ tự động bị đá văng về `/login`.
 
-### 5 quy tac bat buoc
+### 5.2. Cách bổ sung Routing khi làm xong giao diện mới
+Khi phát triển xong một Component giao diện mới, thực hiện các bước sau để cấu hình Route:
+1.  **Bước 1:** Đặt file Component vào đúng thư mục trong `src/pages/` (VD: `src/pages/manager/TenTrangMoi.jsx`).
+2.  **Bước 2:** Mở file `src/App.jsx`.
+3.  **Bước 3:** Import Component vừa tạo ở phần đầu file.
+4.  **Bước 4:** Tìm đến thẻ `<Route element={<TênLayoutPhùHợp />}>` (VD: CustomerLayout, ManagerLayout).
+5.  **Bước 5:** Thêm thẻ `<Route>` mới vào bên trong khối đó.
+    *(Ví dụ: `<Route path="/manager/bao-cao" element={<TenTrangMoi />} />`)*
+6.  **Bước 6:** Vào file Layout tương ứng (VD: `ManagerLayout.jsx`), thêm URL (`/manager/bao-cao`) vào mảng `menuItems` để liên kết xuất hiện trên Sidebar.
 
-| #  | Quy tac                                 | Dung                  | Sai                   |
+---
+
+## 6. Quy Tắc JSON API
+
+> **QUAN TRỌNG:** Cả team (Frontend + Backend) phải đọc và làm theo các quy tắc này.  
+> Chi tiết đầy đủ xem file `docs/api-contract.md`.
+
+### 5 quy tắc bắt buộc
+
+| #  | Quy tắc                                  | Đúng                  | Sai                   |
 |----|------------------------------------------|-----------------------|-----------------------|
-| 1  | Ten field dung **camelCase**             | `fullName`            | `full_name`           |
-| 2  | Trang thai dung **CHU HOA**              | `"ACTIVE"`            | `"Active"`            |
-| 3  | Response loi co `error` + `message`      | (xem vi du ben duoi)  |                       |
-| 4  | Dang nhap bang **email**                 | `"email": "..."`      | `"username": "..."`   |
-| 5  | FE gui password tho, BE tu bam BCrypt    | FE khong hash truoc   |                       |
+| 1  | Tên field dùng **camelCase**             | `fullName`            | `full_name`           |
+| 2  | Trạng thái dùng **CHỮ HOA**              | `"ACTIVE"`            | `"Active"`            |
+| 3  | Response lỗi có `error` + `message`      | (xem ví dụ bên dưới)  |                       |
+| 4  | Đăng nhập bằng **email**                 | `"email": "..."`      | `"username": "..."`   |
+| 5  | FE gửi password thô, BE tự băm BCrypt    | FE không hash trước   |                       |
 
-### Cau hinh Spring Boot de tu dong chuyen snake_case -> camelCase
-
-Them vao `application.yaml`:
-
+### Cấu hình Spring Boot để tự động chuyển snake_case -> camelCase
+Thêm vào `application.yaml`:
 ```yaml
 spring:
   jackson:
@@ -147,12 +183,10 @@ spring:
 
 ---
 
-## 5. Vi Du JSON Cu The
+## 7. Ví Dụ JSON Cụ Thể
 
-### UC-02: Dang Ky — `POST /api/auth/register`
-
-**Frontend gui len (Request Body):**
-
+### UC-02: Đăng Ký - `POST /api/auth/register`
+**Frontend gửi lên (Request Body):**
 ```json
 {
   "fullName": "Nguyen Van A",
@@ -161,17 +195,13 @@ spring:
   "password": "MyPassword@123"
 }
 ```
-
-**Backend tra ve khi THANH CONG (201 Created):**
-
+**Backend trả về khi THÀNH CÔNG (201 Created):**
 ```json
 {
   "message": "Dang ky thanh cong"
 }
 ```
-
-**Backend tra ve khi LOI — email da ton tai (409 Conflict):**
-
+**Backend trả về khi LỖI - email đã tồn tại (409 Conflict):**
 ```json
 {
   "error":   "DUPLICATE_EMAIL",
@@ -179,34 +209,18 @@ spring:
 }
 ```
 
-**Backend tra ve khi LOI — thieu field (400 Bad Request):**
-
-```json
-{
-  "error":   "MISSING_FIELD",
-  "message": "Thieu truong bat buoc",
-  "field":   "phone"
-}
-```
-
----
-
-### UC-01: Dang Nhap — `POST /api/auth/login`
-
-**Frontend gui len (Request Body):**
-
+### UC-01: Đăng Nhập - `POST /api/auth/login`
+**Frontend gửi lên (Request Body):**
 ```json
 {
   "email":    "nguyenvana@gmail.com",
   "password": "MyPassword@123"
 }
 ```
-
-**Backend tra ve khi THANH CONG (200 OK):**
-
+**Backend trả về khi THÀNH CÔNG (200 OK):**
 ```json
 {
-  "token":    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJuZ3V5ZW52YW5hQGdtYWlsLmNvbSIsInJvbGUiOiJDVVNUT01FUiIsImlhdCI6MTcyNjk4MDAwMH0.abcdef123456",
+  "token":    "eyJhbGciOiJIUzI1NiJ9...",
   "userId":   1,
   "fullName": "Nguyen Van A",
   "email":    "nguyenvana@gmail.com",
@@ -214,103 +228,48 @@ spring:
 }
 ```
 
-**Backend tra ve khi LOI — sai mat khau (401 Unauthorized):**
-
-```json
-{
-  "error":   "INVALID_CREDENTIALS",
-  "message": "Email hoac mat khau khong dung"
-}
-```
-
-**Backend tra ve khi LOI — tai khoan bi khoa (403 Forbidden):**
-
-```json
-{
-  "error":   "ACCOUNT_LOCKED",
-  "message": "Tai khoan da bi khoa"
-}
-```
-
----
-
-### Frontend: Gui token theo moi request sau khi login
-
-Sau khi login thanh cong, luu token vao localStorage:
-
-```javascript
-localStorage.setItem("accessToken", response.data.token);
-```
-
-Cau hinh Axios tu dong dinh kem token:
-
-```javascript
-// file: src/services/axiosClient.js
-import axios from 'axios';
-
-const axiosClient = axios.create({
-    baseURL: 'http://localhost:8080/api',
-    headers: { 'Content-Type': 'application/json' }
-});
-
-axiosClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem("accessToken");
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
-
-export default axiosClient;
-```
-
----
-
-### Bang tom tat API
+### Bảng tóm tắt API
 
 | API       | Method | URL                  | Request Body                         | Success Response                                  |
 |-----------|--------|----------------------|--------------------------------------|----------------------------------------------------|
-| Dang ky   | POST   | /api/auth/register   | { fullName, email, phone, password } | 201: { message }                                   |
-| Dang nhap | POST   | /api/auth/login      | { email, password }                  | 200: { token, userId, fullName, email, role }      |
+| Đăng ký   | POST   | /api/auth/register   | { fullName, email, phone, password } | 201: { message }                                   |
+| Đăng nhập | POST   | /api/auth/login      | { email, password }                  | 200: { token, userId, fullName, email, role }      |
 
 ---
 
-## 6. Lam Viec Nhom Tren Git
+## 8. Làm Việc Nhóm Trên Git
 
 ### Branching Strategy
-
 ```
-main          <- Code on dinh, chi merge qua Pull Request
+main          <- Code ổn định, chỉ merge qua Pull Request
   |
-  +-- dev     <- Nhanh tich hop, merge feature vao day truoc
+  +-- dev     <- Nhánh tích hợp, merge feature vào đây trước
        |
-       +-- feature/UC-01-login        (nhanh ca nhan)
-       +-- feature/UC-02-register     (nhanh ca nhan)
-       +-- feature/UC-03-reservation  (nhanh ca nhan)
+       +-- feature/UC-01-login        (nhánh cá nhân)
+       +-- feature/UC-02-register     (nhánh cá nhân)
+       +-- feature/UC-03-reservation  (nhánh cá nhân)
 ```
 
-### Quy trinh lam viec hang ngay
-
+### Quy trình làm việc hàng ngày
 ```bash
-# 1. Sang som: Cap nhat code moi nhat tu dev
+# 1. Sáng sớm: Cập nhật code mới nhất từ dev
 git checkout feature/UC-xx-ten-tinh-nang
 git pull origin dev
 
-# 2. Code suot ngay, commit thuong xuyen
+# 2. Code suốt ngày, commit thường xuyên
 git add .
 git commit -m "feat(UC-01): Hoan thanh login API"
 
-# 3. Chieu toi: Push len va tao Pull Request
+# 3. Chiều tối: Push lên và tạo Pull Request
 git push origin feature/UC-xx-ten-tinh-nang
-# -> Len GitHub tao PR tu feature/UC-xx vao dev
-# -> Can 1 nguoi review + approve moi duoc merge
+# -> Lên GitHub tạo PR từ feature/UC-xx vào dev
+# -> Cần 1 người review + approve mới được merge
 ```
 
-### Quy tac commit message
-
+### Quy tắc commit message
 ```
-feat(UC-01): Mo ta tinh nang moi
-fix(UC-02):  Sua loi gi do
-docs:        Cap nhat tai lieu
-chore:       Cong viec linh tinh (config, dependency)
+feat(UC-01): Mô tả tính năng mới
+fix(UC-02):  Sửa lỗi phát sinh
+docs:        Cập nhật tài liệu
+chore:       Công việc linh tinh (config, dependency)
 ```

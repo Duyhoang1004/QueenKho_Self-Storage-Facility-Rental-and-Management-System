@@ -2,20 +2,22 @@ package com.queenkho.api.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Getter
+@Setter
+@NoArgsConstructor
 @AllArgsConstructor
-public class PendingReservationResponse {
+public class CreateReservationResponse {
     private Integer id;
     private String reservationCode;
-    private String customerName;
-    private String customerPhone;
-    private String unitTypeName;
+    private BigDecimal depositAmount;
+    private String status;
     private LocalDate startDate;
     private Integer durationMonths;
-    private BigDecimal depositAmount;
-    private LocalDateTime createdAt;
+    private String message;
 }

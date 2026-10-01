@@ -17,6 +17,7 @@ const STATUS_META = {
     className: "bg-green-100 text-green-800",
   },
   CANCELLED: { label: "Đã hủy", className: "bg-red-100 text-red-800" },
+  REFUND_PENDING: { label: "Đã hủy - Liên hệ hỗ trợ hoàn tiền", className: "bg-orange-100 text-orange-800" },
   EXPIRED: { label: "Hết hạn giữ chỗ", className: "bg-gray-100 text-gray-600" },
   COMPLETED: {
     label: "Hoàn tất",
@@ -32,7 +33,7 @@ const FILTERS = [
   {
     key: "CLOSED",
     label: "Đã đóng",
-    statuses: ["CANCELLED", "EXPIRED", "COMPLETED"],
+    statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"],
   },
 ];
 

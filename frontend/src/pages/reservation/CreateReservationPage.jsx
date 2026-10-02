@@ -153,20 +153,36 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
       })
-      const payment = await createSepayPayment(response.id)
+      const paymentData = await createSepayPayment(response.id)
+      
       sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
         reservation: response,
         customerInfo,
         selectedMonths,
         startDate,
-        totalPayment: Number(payment.amount || totalPayment),
-        deposit: Number(payment.depositAmount || deposit),
+        totalPayment: Number(paymentData.amount || totalPayment),
+        deposit: Number(paymentData.depositAmount || deposit),
         storage: unit,
       }))
-      window.location.href = payment.payUrl
+
+      // Render form ẩn và tự động submit sang SePay, giống API gọn nhẹ
+      const form = document.createElement('form')
+      form.method = 'POST'
+      form.action = 'https://pay-sandbox.sepay.vn/v1/checkout/init'
+      
+      Object.entries(paymentData.fields || {}).forEach(([key, value]) => {
+        const input = document.createElement('input')
+        input.type = 'hidden'
+        input.name = key
+        input.value = value
+        form.appendChild(input)
+      })
+      
+      document.body.appendChild(form)
+      form.submit()
+
     } catch (err) {
       setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
-    } finally {
       setLoading(false)
     }
   }
@@ -549,18 +565,18 @@ export default function CreateReservationPage() {
               </div>
 
               {/* Nut thanh toan */}
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm text-orange-800 mt-2 mb-4">
+                <span className="font-semibold">Lưu ý giữ chỗ:</span> Vui lòng quét mã QR thanh toán trong vòng <strong>10 phút</strong> kể từ khi bấm nút <strong>THANH TOÁN</strong>. Nếu quá thời gian, đơn sẽ tự động hủy.
+              </div>
+
               <button
                 onClick={handleSubmit}
                 disabled={loading}
-                className="w-full bg-primary text-on-primary py-3.5 rounded-xl text-title-md font-title-md flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-60 cursor-pointer mt-1"
+                className="w-full bg-primary text-on-primary py-3.5 rounded-xl text-title-md font-title-md flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-60 cursor-pointer mt-1 mb-4"
               >
                 <span className="material-symbols-outlined text-[18px]">lock</span>
-                {loading ? 'Đang xử lý...' : `Thanh toán đợt 1: ${formatVND(totalPayment)}`}
+                {loading ? 'Đang chuyển hướng sang SePay...' : `Thanh toán giữ kho đợt 1`}
               </button>
-
-              <p className="text-label-sm font-label-sm text-on-surface-variant text-center">
-                Napas 247 • VietQR • Hoàn cọc tự động 100%
-              </p>
 
               <div className="flex justify-between items-center text-label-sm font-label-sm text-on-surface-variant border-t border-surface-container pt-2">
                 <span>Cần hỗ trợ hoá đơn VAT doanh nghiệp?</span>

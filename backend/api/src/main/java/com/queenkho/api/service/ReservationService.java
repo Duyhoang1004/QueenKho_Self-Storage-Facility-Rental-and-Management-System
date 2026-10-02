@@ -221,7 +221,20 @@ public class ReservationService {
         contract.setReservation(reservation);
         contract.setCustomer(reservation.getCustomer());
         contract.setStorageUnit(storageUnit);
-        contract.setRentalPolicyId(1);
+        
+        // Lấy chính sách của chính cơ sở đó từ DB
+        Integer facilityId = reservation.getFacility().getId();
+        Integer activePolicyId;
+        try {
+            activePolicyId = jdbcTemplate.queryForObject(
+                    "SELECT TOP 1 id FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+                    Integer.class,
+                    facilityId);
+        } catch (Exception e) {
+            activePolicyId = 1; // Fallback an toàn nếu cơ sở chưa kịp tạo chính sách
+        }
+
+        contract.setRentalPolicyId(activePolicyId);
         contract.setStartDate(reservation.getStartDate());
         if (reservation.getDurationMonths() != null) {
             contract.setEndDate(reservation.getStartDate().plusMonths(reservation.getDurationMonths()));

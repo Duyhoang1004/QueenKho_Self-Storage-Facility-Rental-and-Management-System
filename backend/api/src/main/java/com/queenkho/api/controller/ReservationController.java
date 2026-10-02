@@ -69,6 +69,7 @@ public class ReservationController {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }
     }
+    // UC-15: Preview Cancel và Cancel Request
         @GetMapping("/{reservationId}/cancel-preview")
     public ResponseEntity<?> previewCancel(@PathVariable Integer reservationId) {
         try {

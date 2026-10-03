@@ -27,4 +27,6 @@ public class CustomerContractResponse {
     private String reservationCode;
     private String accessPinCode;
     private String rfidCardCode;
+    private BigDecimal basePriceMonthly;
+    private Integer reservationId;
 }

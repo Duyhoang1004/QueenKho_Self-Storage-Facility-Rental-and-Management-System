@@ -16,6 +16,10 @@ const STATUS_META = {
     label: "Đã gán ô kho",
     className: "bg-green-100 text-green-800",
   },
+  TERMINATION_PENDING: {
+    label: "Chờ kiểm tra trả kho",
+    className: "bg-orange-100 text-orange-800",
+  },
   CANCELLED: { label: "Đã hủy", className: "bg-red-100 text-red-800" },
   REFUND_PENDING: { label: "Đã hủy - Liên hệ hỗ trợ hoàn tiền", className: "bg-orange-100 text-orange-800" },
   EXPIRED: { label: "Hết hạn giữ chỗ", className: "bg-gray-100 text-gray-600" },
@@ -29,7 +33,7 @@ const FILTERS = [
   { key: "ALL", label: "Tất cả", statuses: null },
   { key: "PENDING", label: "Chờ thanh toán", statuses: ["PENDING"] },
   { key: "DEPOSIT_PAID", label: "Đã đặt cọc", statuses: ["DEPOSIT_PAID"] },
-  { key: "UNIT_ASSIGNED", label: "Đã gán ô", statuses: ["UNIT_ASSIGNED"] },
+  { key: "UNIT_ASSIGNED", label: "Đã gán ô", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"] },
   {
     key: "CLOSED",
     label: "Đã đóng",
@@ -144,16 +148,51 @@ export default function MyReservationsPage() {
     {
       icon: "inventory_2",
       label: "Đã gán ô kho",
-      value: countBy(["UNIT_ASSIGNED"]),
+      value: countBy(["UNIT_ASSIGNED", "TERMINATION_PENDING"]),
       color: "text-[#10B981]",
       bgColor: "bg-[#ECFDF5]",
     },
   ];
 
+function getDaysUntilExpiry(r) {
+  if (r.status !== "UNIT_ASSIGNED") return null;
+  let endStr = r.endDate;
+  if (!endStr && r.startDate && r.durationMonths) {
+    const [y, m, d] = String(r.startDate).split("-").map(Number);
+    const date = new Date(y, m - 1 + Number(r.durationMonths), d);
+    const newY = date.getFullYear();
+    const newM = String(date.getMonth() + 1).padStart(2, "0");
+    const newD = String(date.getDate()).padStart(2, "0");
+    endStr = `${newY}-${newM}-${newD}`;
+  }
+  if (!endStr) return null;
+  const [y, m, d] = String(endStr).split("-").map(Number);
+  const target = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target - today) / 86400000);
+}
+
   const visibleReservations = useMemo(() => {
     const active = FILTERS.find((f) => f.key === filter);
-    if (!active || !active.statuses) return reservations;
-    return reservations.filter((r) => active.statuses.includes(r.status));
+    let list = reservations;
+    if (active && active.statuses) {
+      list = reservations.filter((r) => active.statuses.includes(r.status));
+    }
+    // Sắp xếp: Đưa các đơn sắp hết hạn (còn <= 3 ngày) lên đầu danh sách
+    return [...list].sort((a, b) => {
+      const diffA = getDaysUntilExpiry(a);
+      const diffB = getDaysUntilExpiry(b);
+      const isExpiringA = diffA !== null && diffA <= 3;
+      const isExpiringB = diffB !== null && diffB <= 3;
+
+      if (isExpiringA && !isExpiringB) return -1;
+      if (!isExpiringA && isExpiringB) return 1;
+      if (isExpiringA && isExpiringB) {
+        return diffA - diffB;
+      }
+      return 0;
+    });
   }, [reservations, filter]);
 
   return (
@@ -312,10 +351,15 @@ export default function MyReservationsPage() {
                     label: r.status,
                     className: "bg-gray-100 text-gray-600",
                   };
+                  const diffDays = getDaysUntilExpiry(r);
+                  const isExpiringSoon = diffDays !== null && diffDays <= 3;
+
                   return (
                     <tr
                       key={r.id}
-                      className="border-t border-outline-variant/40 hover:bg-slate-50 transition-colors"
+                      className={`border-t border-outline-variant/40 hover:bg-slate-50 transition-colors ${
+                        isExpiringSoon ? "bg-amber-50/50" : ""
+                      }`}
                     >
                       <td className="px-4 py-3 font-code-md text-code-md font-semibold text-secondary">
                         {r.reservationCode}
@@ -336,14 +380,22 @@ export default function MyReservationsPage() {
                         {formatDateTime(r.createdAt)}
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${meta.className}`}
-                        >
-                          {meta.label}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${meta.className}`}
+                          >
+                            {meta.label}
+                          </span>
+                          {isExpiringSoon && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs whitespace-nowrap animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                              Sắp hết hạn {diffDays <= 0 ? '(Hôm nay)' : `(${diffDays} ngày)`}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
-                        {r.status === "UNIT_ASSIGNED" && (
+                        {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
                           <button
                             onClick={() =>
                               navigate(`/kho-cua-toi/hop-dong/${r.id}`)

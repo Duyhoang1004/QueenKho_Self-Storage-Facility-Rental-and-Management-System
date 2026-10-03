@@ -14,10 +14,11 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:     { label: 'Đang hoạt động', cls: 'bg-[#ECFDF5] text-[#10B981]' },
-  OVERDUE:    { label: 'Quá hạn',         cls: 'bg-[#FEF3C7] text-[#D97706]' },
-  TERMINATED: { label: 'Đã kết thúc',     cls: 'bg-[#F1F5F9] text-[#64748B]' },
-  LIQUIDATED: { label: 'Đã thanh lý',     cls: 'bg-[#FEE2E2] text-[#EF4444]' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#ECFDF5] text-[#10B981]' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800' },
+  OVERDUE:             { label: 'Quá hạn',               cls: 'bg-[#FEF3C7] text-[#D97706]' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F1F5F9] text-[#64748B]' },
+  LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FEE2E2] text-[#EF4444]' },
 }
 
 function initials(name) {

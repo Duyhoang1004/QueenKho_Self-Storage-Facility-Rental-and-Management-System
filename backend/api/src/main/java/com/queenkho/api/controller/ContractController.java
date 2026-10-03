@@ -17,6 +17,9 @@ public class ContractController {
     @Autowired
     private RentalContractRepository rentalContractRepository;
 
+    @Autowired
+    private com.queenkho.api.service.ContractService contractService;
+
     private CustomerContractResponse toDto(RentalContract rc) {
         var su = rc.getStorageUnit();
         var ut = su.getUnitType();
@@ -39,7 +42,9 @@ public class ContractController {
                 rc.getDepositHeldAmount(),
                 rc.getReservation().getReservationCode(),
                 rc.getAccessPinCode(),
-                rc.getRfidCardCode()
+                rc.getRfidCardCode(),
+                ut.getBasePriceMonthly(),
+                rc.getReservation() != null ? rc.getReservation().getId() : null
         );
     }
 
@@ -81,5 +86,29 @@ public class ContractController {
         return rentalContractRepository.findDetailById(id)
                 .map(rc -> ResponseEntity.ok((Object) toDto(rc)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // UC-21: Khách hàng gia hạn hợp đồng thuê
+    @PostMapping("/{id}/renew")
+    public ResponseEntity<?> renewContract(@PathVariable Integer id, @RequestBody com.queenkho.api.dto.RenewContractRequest request) {
+        try {
+            return ResponseEntity.ok(contractService.renewContract(id, request));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
+        }
+    }
+
+    // UC-22: Khách hàng yêu cầu trả kho & hẹn ngày checkout
+    @PostMapping("/{id}/request-checkout")
+    public ResponseEntity<?> requestCheckout(@PathVariable Integer id, @RequestBody com.queenkho.api.dto.RequestCheckoutRequest request) {
+        try {
+            return ResponseEntity.ok(contractService.requestCheckout(id, request));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
+        }
     }
 }

@@ -19,4 +19,5 @@ public class MyReservationResponse {
     private BigDecimal depositAmount;
     private String status;
     private LocalDateTime createdAt;
+    private LocalDate endDate;
 }

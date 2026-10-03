@@ -26,8 +26,19 @@ public class SepayService {
     private static final String APP_URL = "http://localhost:5173";
 
     private final SepayRepository repository;
+    private final com.queenkho.api.repository.RentalContractRepository rentalContractRepository;
+    private final com.queenkho.api.repository.ReservationRepository reservationRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
-    public SepayService(SepayRepository repository) { this.repository = repository; }
+    public SepayService(SepayRepository repository,
+                        com.queenkho.api.repository.RentalContractRepository rentalContractRepository,
+                        com.queenkho.api.repository.ReservationRepository reservationRepository,
+                        org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        this.repository = repository;
+        this.rentalContractRepository = rentalContractRepository;
+        this.reservationRepository = reservationRepository;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     public Map<String, Object> createPayment(Integer reservationId) {
         Map<String, Object> res = repository.findReservation(reservationId);
@@ -92,5 +103,127 @@ public class SepayService {
         } catch (Exception e) {
             throw new RuntimeException("Signature failed", e);
         }
+    }
+
+    public Map<String, Object> createRenewalPayment(Integer contractId, Integer months) {
+        var contract = rentalContractRepository.findDetailById(contractId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hợp đồng"));
+
+        int m = (months != null && months > 0) ? months : 1;
+        BigDecimal baseMonthly = BigDecimal.ZERO;
+        if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null) {
+            baseMonthly = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
+            if (baseMonthly == null) baseMonthly = BigDecimal.ZERO;
+        }
+
+        BigDecimal subtotal = baseMonthly.multiply(BigDecimal.valueOf(m));
+        BigDecimal discount = BigDecimal.ZERO;
+        if (m >= 12) {
+            discount = subtotal.multiply(BigDecimal.valueOf(0.10));
+        } else if (m >= 6) {
+            discount = subtotal.multiply(BigDecimal.valueOf(0.05));
+        }
+        BigDecimal amount = subtotal.subtract(discount);
+
+        String contractCode = contract.getContractCode();
+        Integer reservationId = (contract.getReservation() != null) ? contract.getReservation().getId() : 0;
+
+        LinkedHashMap<String, String> fields = new LinkedHashMap<>();
+        fields.put("merchant", MERCHANT_ID);
+        fields.put("currency", "VND");
+        fields.put("order_amount", String.valueOf(amount.longValue()));
+        fields.put("operation", "PURCHASE");
+        fields.put("order_description", "Gia han HD " + contractCode + " (" + m + " thang)");
+        fields.put("order_invoice_number", "RNW-" + contractCode + "-" + (System.currentTimeMillis() % 100000));
+        fields.put("customer_id", String.valueOf(contract.getCustomer().getId()));
+        fields.put("success_url", APP_URL + "/kho-cua-toi/hop-dong/" + reservationId + "?renewal=success&contractId=" + contractId + "&months=" + m);
+        fields.put("error_url", APP_URL + "/kho-cua-toi/hop-dong/" + reservationId + "?renewal=failed");
+        fields.put("cancel_url", APP_URL + "/kho-cua-toi/hop-dong/" + reservationId + "?renewal=cancelled");
+        fields.put("signature", sign(fields));
+
+        return Map.of(
+                "fields", fields,
+                "amount", amount,
+                "contractId", contractId,
+                "months", m,
+                "reservationId", reservationId
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> confirmRenewalPayment(Integer contractId, Integer months, String transactionCode) {
+        var contract = rentalContractRepository.findDetailById(contractId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hợp đồng"));
+
+        int m = (months != null && months > 0) ? months : 1;
+        java.time.LocalDate currentEnd = contract.getEndDate();
+        java.time.LocalDate newEndDate;
+        if (currentEnd == null || currentEnd.isBefore(java.time.LocalDate.now())) {
+            newEndDate = java.time.LocalDate.now().plusMonths(m);
+        } else {
+            newEndDate = currentEnd.plusMonths(m);
+        }
+
+        BigDecimal baseMonthly = BigDecimal.ZERO;
+        if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null) {
+            baseMonthly = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
+            if (baseMonthly == null) baseMonthly = BigDecimal.ZERO;
+        }
+
+        BigDecimal subtotal = baseMonthly.multiply(BigDecimal.valueOf(m));
+        BigDecimal discount = BigDecimal.ZERO;
+        if (m >= 12) {
+            discount = subtotal.multiply(BigDecimal.valueOf(0.10));
+        } else if (m >= 6) {
+            discount = subtotal.multiply(BigDecimal.valueOf(0.05));
+        }
+        BigDecimal amount = subtotal.subtract(discount);
+
+        contract.setEndDate(newEndDate);
+        if ("OVERDUE".equalsIgnoreCase(contract.getStatus()) || "TERMINATION_PENDING".equalsIgnoreCase(contract.getStatus())) {
+            contract.setStatus("ACTIVE");
+            if (contract.getReservation() != null) {
+                var res = contract.getReservation();
+                res.setStatus("UNIT_ASSIGNED");
+                reservationRepository.save(res);
+            }
+        }
+        rentalContractRepository.save(contract);
+
+        String txnCode = (transactionCode != null && !transactionCode.isBlank())
+                ? transactionCode : ("SEPAY-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000));
+
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'MONTHLY_RENT', 'SEPAY', ?, 'SUCCESS', SYSDATETIME())",
+                    txnCode,
+                    contract.getCustomer().getId(),
+                    contract.getReservation() != null ? contract.getReservation().getId() : null,
+                    contract.getId(),
+                    amount
+            );
+        } catch (Exception ignored) {}
+
+        String logDesc = "Gia hạn hợp đồng " + contract.getContractCode() + " thêm " + m + " tháng qua SePay. Hạn mới: " + newEndDate;
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                            "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
+                    contract.getCustomer().getId(),
+                    logDesc,
+                    contract.getId()
+            );
+        } catch (Exception ignored) {}
+
+        return Map.of(
+                "success", true,
+                "contractId", contract.getId(),
+                "contractCode", contract.getContractCode(),
+                "newEndDate", newEndDate.toString(),
+                "monthsAdded", m,
+                "amountPaid", amount
+        );
     }
 }

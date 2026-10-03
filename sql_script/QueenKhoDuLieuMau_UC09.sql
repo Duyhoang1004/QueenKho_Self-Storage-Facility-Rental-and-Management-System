@@ -136,3 +136,25 @@ SELECT 'unit_types', COUNT(*) FROM unit_types
 UNION ALL
 SELECT 'storage_units', COUNT(*) FROM storage_units;
 GO
+
+
+SELECT u.id, u.email, r.name AS role, u.facility_id
+   FROM users u JOIN roles r ON r.id = u.role_id;
+
+
+   select * from users
+
+   select * from roles
+
+   update users set role_id = 1 where (id = 16)
+
+INSERT INTO users (role_id, email, password_hash , full_name)
+VALUES (
+    3,
+    'toilakiet01@gmail.com',
+    '$2a$10$LJmhRe6Xb8CLdES2cqI0OeZ18a0HxfDVABzGPwMX8.UPcAwRmjwf2', 'testAccount'
+);
+
+select * from reservations where reservation_code = 'RES-373821'
+
+select * from storage_units

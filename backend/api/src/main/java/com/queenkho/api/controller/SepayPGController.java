@@ -32,4 +32,18 @@ public class SepayPGController {
     public Map<String, Object> confirmDevPayment(@RequestBody Map<String, Object> body) {
         return sepayService.confirmDevPayment(body);
     }
+
+    public record CreateRenewalPaymentRequest(Integer contractId, Integer months) {}
+
+    @PostMapping("/create-renewal")
+    public Map<String, Object> createRenewalPayment(@RequestBody CreateRenewalPaymentRequest request) {
+        return sepayService.createRenewalPayment(request.contractId(), request.months());
+    }
+
+    public record ConfirmRenewalPaymentRequest(Integer contractId, Integer months, String transactionCode) {}
+
+    @PostMapping("/confirm-renewal")
+    public Map<String, Object> confirmRenewalPayment(@RequestBody ConfirmRenewalPaymentRequest request) {
+        return sepayService.confirmRenewalPayment(request.contractId(), request.months(), request.transactionCode());
+    }
 }

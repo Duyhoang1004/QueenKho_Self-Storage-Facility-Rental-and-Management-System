@@ -14,10 +14,11 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:     { label: 'Đang hoạt động',       cls: 'bg-[#ECFDF5] text-[#10B981]', icon: 'check_circle' },
-  OVERDUE:    { label: 'Quá hạn thanh toán',   cls: 'bg-[#FEF3C7] text-[#D97706]', icon: 'warning' },
-  TERMINATED: { label: 'Đã kết thúc',          cls: 'bg-[#F1F5F9] text-[#64748B]', icon: 'cancel' },
-  LIQUIDATED: { label: 'Đã thanh lý hợp đồng', cls: 'bg-[#FEE2E2] text-[#EF4444]', icon: 'gavel' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#ECFDF5] text-[#10B981]', icon: 'check_circle' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800',  icon: 'schedule' },
+  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FEF3C7] text-[#D97706]', icon: 'warning' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F1F5F9] text-[#64748B]', icon: 'cancel' },
+  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-[#FEE2E2] text-[#EF4444]', icon: 'gavel' },
 }
 
 function InfoRow({ label, value, mono }) {

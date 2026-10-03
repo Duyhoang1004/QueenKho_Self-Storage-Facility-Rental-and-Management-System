@@ -52,17 +52,35 @@ public class ReservationService {
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
                 .stream()
-                .map(r -> new MyReservationResponse(
-                        r.getId(),
-                        r.getReservationCode(),
-                        r.getFacility().getName(),
-                        r.getUnitType().getName(),
-                        r.getStorageUnitId(),
-                        r.getStartDate(),
-                        r.getDurationMonths(),
-                        r.getDepositAmount(),
-                        r.getStatus(),
-                        r.getCreatedAt()))
+                .map(r -> {
+                    LocalDate endDate = null;
+                    String effectiveStatus = r.getStatus();
+                    if ("UNIT_ASSIGNED".equals(r.getStatus()) || "TERMINATION_PENDING".equals(r.getStatus())) {
+                        var contractOpt = rentalContractRepository.findByReservationId(r.getId());
+                        if (contractOpt.isPresent()) {
+                            var contract = contractOpt.get();
+                            endDate = contract.getEndDate();
+                            if ("TERMINATION_PENDING".equals(contract.getStatus())) {
+                                effectiveStatus = "TERMINATION_PENDING";
+                            }
+                        }
+                    }
+                    if (endDate == null && r.getStartDate() != null && r.getDurationMonths() != null) {
+                        endDate = r.getStartDate().plusMonths(r.getDurationMonths());
+                    }
+                    return new MyReservationResponse(
+                            r.getId(),
+                            r.getReservationCode(),
+                            r.getFacility().getName(),
+                            r.getUnitType().getName(),
+                            r.getStorageUnitId(),
+                            r.getStartDate(),
+                            r.getDurationMonths(),
+                            r.getDepositAmount(),
+                            effectiveStatus,
+                            r.getCreatedAt(),
+                            endDate);
+                })
                 .toList();
     }
 

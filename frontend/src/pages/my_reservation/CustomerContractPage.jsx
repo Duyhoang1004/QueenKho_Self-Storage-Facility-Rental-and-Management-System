@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { getContractByReservation } from '../../services/contractService'
+import { confirmSepayRenewalPayment } from '../../services/sepayService'
+import ContractOptionsModal from '../../components/ContractOptionsModal'
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -14,10 +16,11 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:     { label: 'Đang hoạt động',        cls: 'bg-green-100 text-green-800',  icon: 'check_circle' },
-  OVERDUE:    { label: 'Quá hạn thanh toán',    cls: 'bg-yellow-100 text-yellow-800', icon: 'warning' },
-  TERMINATED: { label: 'Đã kết thúc',           cls: 'bg-gray-100 text-gray-600',    icon: 'cancel' },
-  LIQUIDATED: { label: 'Đã thanh lý hợp đồng',  cls: 'bg-red-100 text-red-800',      icon: 'gavel' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-green-100 text-green-800',  icon: 'check_circle' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800', icon: 'schedule' },
+  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-yellow-100 text-yellow-800', icon: 'warning' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-gray-100 text-gray-600',    icon: 'cancel' },
+  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-red-100 text-red-800',      icon: 'gavel' },
 }
 
 function InfoRow({ label, value, mono }) {
@@ -40,8 +43,15 @@ export default function CustomerContractPage() {
   const [contract, setContract] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
 
-  useEffect(() => {
+  const [searchParams] = useSearchParams()
+  const renewalStatus = searchParams.get('renewal')
+  const qContractId = searchParams.get('contractId')
+  const qMonths = searchParams.get('months')
+
+  const loadContract = () => {
     getContractByReservation(reservationId)
       .then(data => {
         if (!data || !data.contractId) throw new Error('not found')
@@ -49,7 +59,40 @@ export default function CustomerContractPage() {
       })
       .catch(() => setError('Không tìm thấy hợp đồng cho đơn đặt chỗ này.'))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadContract()
   }, [reservationId])
+
+  // Xử lý khi redirect từ SePay trở về
+  useEffect(() => {
+    if (renewalStatus === 'success' && qContractId && qMonths) {
+      confirmSepayRenewalPayment(Number(qContractId), Number(qMonths))
+        .then((res) => {
+          setToastMessage(`Thanh toán SePay thành công! Hợp đồng ${res.contractCode || ''} đã được gia hạn thêm ${qMonths} tháng.`)
+          loadContract()
+          setTimeout(() => setToastMessage(''), 8000)
+        })
+        .catch((err) => {
+          console.error('Lỗi khi xác nhận gia hạn sau thanh toán:', err)
+        })
+        .finally(() => {
+          sessionStorage.removeItem('queenkhoRenewalContext')
+          navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
+        })
+    } else if (renewalStatus === 'failed' || renewalStatus === 'cancelled') {
+      setError('Giao dịch thanh toán SePay đã bị hủy hoặc không thành công.')
+      sessionStorage.removeItem('queenkhoRenewalContext')
+      navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
+    }
+  }, [renewalStatus, qContractId, qMonths])
+
+  const handleModalSuccess = (msg) => {
+    setToastMessage(msg)
+    loadContract()
+    setTimeout(() => setToastMessage(''), 6000)
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-[60vh] gap-3">
@@ -90,6 +133,22 @@ export default function CustomerContractPage() {
         <span>/</span>
         <span className="text-on-surface font-semibold">Hợp đồng</span>
       </div>
+
+      {/* Toast thông báo thành công */}
+      {toastMessage && (
+        <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2 font-medium text-body-md">
+            <span className="material-symbols-outlined text-emerald-600 text-[22px]">check_circle</span>
+            <span>{toastMessage}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage('')}
+            className="text-emerald-600 hover:text-emerald-900 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+      )}
 
       {/* Banner HĐ */}
       <div className="bg-secondary rounded-2xl p-6 text-on-secondary">
@@ -132,22 +191,42 @@ export default function CustomerContractPage() {
         </div>
 
         {/* Thời hạn & Tài chính */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-secondary text-[22px]">calendar_month</span>
-            <h2 className="text-title-md font-title-md text-on-surface">Thời hạn thuê</h2>
-          </div>
-          <div className="flex flex-col gap-4">
-            <InfoRow label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
-            <InfoRow label="Ngày kết thúc" value={formatDate(contract.endDate)} />
-            <InfoRow label="Chu kỳ thanh toán" value={`${contract.billingCycleMonths} tháng / lần`} />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider text-xs">
-                Tiền cọc đã nộp
-              </span>
-              <span className="text-title-md font-title-md text-secondary font-bold">
-                {formatVND(contract.depositHeldAmount)}
-              </span>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-secondary text-[22px]">calendar_month</span>
+                <h2 className="text-title-md font-title-md text-on-surface">Thời hạn thuê</h2>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+              <div className="flex flex-col gap-3">
+                <InfoRow label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
+                <InfoRow label="Ngày kết thúc" value={formatDate(contract.endDate)} />
+                <InfoRow label="Chu kỳ thanh toán" value={`${contract.billingCycleMonths} tháng / lần`} />
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider text-xs">
+                    Tiền cọc đã nộp
+                  </span>
+                  <span className="text-title-md font-title-md text-secondary font-bold">
+                    {formatVND(contract.depositHeldAmount)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Vị trí khoanh đỏ: Nút thao tác tùy chọn hợp đồng */}
+              <div className="flex flex-col items-center justify-center p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 gap-2.5 text-center">
+                <span className="text-xs text-slate-500 font-medium">Gia hạn thêm hoặc hẹn ngày trả kho</span>
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsModalOpen(true)}
+                  className="w-full px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg font-title-md text-body-sm shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">tune</span>
+                  Tùy chọn hợp đồng
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -203,6 +282,14 @@ export default function CustomerContractPage() {
           Quay lại đơn đặt chỗ của tôi
         </button>
       </div>
+
+      {/* Modal Popup Tùy Chọn Hợp Đồng (UC-21 & UC-22) */}
+      <ContractOptionsModal
+        isOpen={isOptionsModalOpen}
+        onClose={() => setIsOptionsModalOpen(false)}
+        contract={contract}
+        onSuccess={handleModalSuccess}
+      />
     </div>
   )
 }

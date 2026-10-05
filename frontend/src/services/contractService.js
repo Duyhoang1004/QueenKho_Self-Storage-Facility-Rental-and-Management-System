@@ -23,3 +23,15 @@ export async function getContractDetail(contractId) {
   const res = await api.get(`/contracts/${contractId}`)
   return res.data
 }
+
+// UC-21: Khách hàng gia hạn hợp đồng thuê
+export async function renewContract(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/renew`, data)
+  return res.data
+}
+
+// UC-22: Khách hàng yêu cầu trả kho & hẹn ngày checkout
+export async function requestCheckout(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/request-checkout`, data)
+  return res.data
+}

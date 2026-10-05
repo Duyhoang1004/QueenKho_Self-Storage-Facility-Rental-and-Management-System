@@ -9,6 +9,7 @@ import java.util.List;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Integer> {
 
+        // UC-12: Lấy danh sách đơn đặt của 1 customer, mới nhất xếp trước
     List<Reservation> findByCustomer_IdOrderByCreatedAtDesc(Integer customerId);
 
         // UC-13: đơn đã cọc nhưng chưa gán ô, cũ nhất xếp trước (hàng đợi xử lý)

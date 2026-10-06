@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getContractByReservation } from '../../services/contractService'
 import { confirmSepayRenewalPayment } from '../../services/sepayService'
 import ContractOptionsModal from '../../components/ContractOptionsModal'
@@ -16,20 +16,18 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-green-100 text-green-800',  icon: 'check_circle' },
-  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800', icon: 'schedule' },
-  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-yellow-100 text-yellow-800', icon: 'warning' },
-  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-gray-100 text-gray-600',    icon: 'cancel' },
-  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-red-100 text-red-800',      icon: 'gavel' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]',  icon: 'check_circle' },
+  TERMINATION_PENDING: { label: 'Chờ trả kho',           cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'schedule' },
+  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'warning' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]', icon: 'cancel' },
+  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FFDFDF]', icon: 'gavel' },
 }
 
 function InfoRow({ label, value, mono }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider text-xs">
-        {label}
-      </span>
-      <span className={`text-body-md font-body-md text-on-surface font-semibold ${mono ? 'font-mono' : ''}`}>
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{label}</span>
+      <span className={`text-sm font-black text-[#4B4B4B] ${mono ? 'font-mono' : ''}`}>
         {value || '—'}
       </span>
     </div>
@@ -37,151 +35,121 @@ function InfoRow({ label, value, mono }) {
 }
 
 export default function CustomerContractPage() {
-  // reservationId được truyền từ URL /kho-cua-toi/hop-dong/:reservationId
   const { reservationId } = useParams()
   const navigate = useNavigate()
   const [contract, setContract] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false)
+
   const [toastMessage, setToastMessage] = useState('')
 
-  const [searchParams] = useSearchParams()
-  const renewalStatus = searchParams.get('renewal')
-  const qContractId = searchParams.get('contractId')
-  const qMonths = searchParams.get('months')
+  const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false)
 
-  const loadContract = () => {
+  const fetchContract = () => {
+    setLoading(true)
     getContractByReservation(reservationId)
       .then(data => {
-        if (!data || !data.contractId) throw new Error('not found')
         setContract(data)
+        setError('')
       })
-      .catch(() => setError('Không tìm thấy hợp đồng cho đơn đặt chỗ này.'))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        setError('Không thể tải thông tin hợp đồng.')
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }
 
   useEffect(() => {
-    loadContract()
+    fetchContract()
   }, [reservationId])
 
-  // Xử lý khi redirect từ SePay trở về
   useEffect(() => {
-    if (renewalStatus === 'success' && qContractId && qMonths) {
-      confirmSepayRenewalPayment(Number(qContractId), Number(qMonths))
-        .then((res) => {
-          setToastMessage(`Thanh toán SePay thành công! Hợp đồng ${res.contractCode || ''} đã được gia hạn thêm ${qMonths} tháng.`)
-          loadContract()
-          setTimeout(() => setToastMessage(''), 8000)
-        })
-        .catch((err) => {
-          console.error('Lỗi khi xác nhận gia hạn sau thanh toán:', err)
-        })
-        .finally(() => {
-          sessionStorage.removeItem('queenkhoRenewalContext')
-          navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
-        })
-    } else if (renewalStatus === 'failed' || renewalStatus === 'cancelled') {
-      setError('Giao dịch thanh toán SePay đã bị hủy hoặc không thành công.')
-      sessionStorage.removeItem('queenkhoRenewalContext')
-      navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('success') === 'true' && params.get('renewal') === 'true') {
+      const transId = params.get('transaction_id')
+      if (transId) {
+        confirmSepayRenewalPayment(transId)
+          .then(res => {
+            setToastMessage('Gia hạn hợp đồng và thanh toán thành công!')
+            fetchContract()
+          })
+          .catch(err => {
+            console.error('Lỗi xác nhận thanh toán gia hạn:', err)
+          })
+      }
+      window.history.replaceState({}, document.title, window.location.pathname)
     }
-  }, [renewalStatus, qContractId, qMonths])
+  }, [])
 
-  const handleModalSuccess = (msg) => {
-    setToastMessage(msg)
-    loadContract()
-    setTimeout(() => setToastMessage(''), 6000)
+  const handleModalSuccess = (message) => {
+    setIsOptionsModalOpen(false)
+    if (message) {
+      setToastMessage(message)
+    }
+    fetchContract()
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh] gap-3">
-      <span className="material-symbols-outlined text-[32px] text-on-surface-variant animate-spin">
-        progress_activity
-      </span>
-      <span className="text-body-md text-on-surface-variant">Đang tải hợp đồng...</span>
+  if (loading) return <div className="p-8 text-sm font-bold text-[#AFAFAF] text-center max-w-[1240px] mx-auto">Đang tải hợp đồng...</div>
+  if (error) return (
+    <div className="p-8 flex flex-col items-center justify-center gap-4 text-center max-w-[1240px] mx-auto">
+      <span className="material-symbols-outlined text-[40px] text-[#FF4B4B]">error</span>
+      <p className="text-sm font-bold text-[#FF4B4B]">{error}</p>
+      <button onClick={() => navigate(-1)} className="duo-btn-gray px-5 py-3 text-xs">QUAY LẠI</button>
     </div>
   )
+  if (!contract) return null
 
-  if (error || !contract) return (
-    <div className="flex flex-col items-center gap-4 min-h-[60vh] justify-center p-6">
-      <span className="material-symbols-outlined text-error text-[56px]">error</span>
-      <p className="text-body-md text-error font-semibold">{error || 'Không tìm thấy hợp đồng.'}</p>
-      <button
-        onClick={() => navigate('/kho-cua-toi')}
-        className="bg-secondary text-on-secondary px-5 py-2.5 rounded-xl text-body-md font-semibold cursor-pointer"
-      >
-        Quay lại đơn đặt chỗ
-      </button>
-    </div>
-  )
-
-  const statusInfo = STATUS_MAP[contract.status] || {
-    label: contract.status,
-    cls: 'bg-gray-100 text-gray-600',
-    icon: 'info',
-  }
+  const statusInfo = STATUS_MAP[contract.status] || { label: contract.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]', icon: 'info' }
 
   return (
-    <div className="max-w-[820px] w-full mx-auto px-margin py-space-lg flex flex-col gap-space-lg">
+    <div className="max-w-[1000px] w-full mx-auto px-8 py-8 flex flex-col gap-6 select-none">
 
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 font-code-sm text-code-sm text-outline">
-        <Link to="/" className="hover:text-on-surface">Trang chủ</Link>
-        <span>/</span>
-        <Link to="/kho-cua-toi" className="hover:text-on-surface">Đơn đặt chỗ của tôi</Link>
-        <span>/</span>
-        <span className="text-on-surface font-semibold">Hợp đồng</span>
-      </div>
-
-      {/* Toast thông báo thành công */}
       {toastMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl flex items-center justify-between shadow-sm animate-fade-in">
-          <div className="flex items-center gap-2 font-medium text-body-md">
-            <span className="material-symbols-outlined text-emerald-600 text-[22px]">check_circle</span>
+        <div className="bg-[#D7FFB8] border-2 border-[#58CC02] rounded-2xl p-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2 font-bold text-[#58A700]">
+            <span className="material-symbols-outlined text-[24px]">check_circle</span>
             <span>{toastMessage}</span>
           </div>
           <button
             onClick={() => setToastMessage('')}
-            className="text-emerald-600 hover:text-emerald-900 cursor-pointer"
+            className="text-[#58A700] hover:text-[#58CC02] cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
       )}
 
-      {/* Banner HĐ */}
-      <div className="bg-secondary rounded-2xl p-6 text-on-secondary">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <p className="text-label-sm font-label-sm text-on-secondary/70 uppercase tracking-wider mb-1">
-              Hợp đồng thuê kho
-            </p>
-            <p className="text-headline-md font-headline-md font-bold font-mono tracking-wide">
-              {contract.contractCode}
-            </p>
-            <p className="text-body-sm text-on-secondary/70 mt-1 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[15px]">receipt_long</span>
-              Từ đơn: <span className="font-semibold text-on-secondary ml-1">{contract.reservationCode}</span>
-            </p>
-          </div>
-          <span className={`text-label-sm font-label-sm px-3 py-1.5 rounded-full flex items-center gap-1.5 shrink-0 ${statusInfo.cls}`}>
-            <span className="material-symbols-outlined text-[14px]">{statusInfo.icon}</span>
-            {statusInfo.label}
-          </span>
+      {/* Banner HD */}
+      <div className="bg-[#1CB0F6] border-b-4 border-[#1899D6] rounded-2xl p-6 text-white flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex flex-col">
+          <p className="text-[11px] font-black uppercase tracking-wider text-white/80 mb-1">
+            Hợp đồng thuê kho
+          </p>
+          <p className="text-3xl font-black font-mono tracking-wide">
+            {contract.contractCode}
+          </p>
+          <p className="text-sm font-bold text-white/90 mt-2 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+            Từ đơn: <span className="font-mono bg-white/20 px-2 py-0.5 rounded-lg ml-1">{contract.reservationCode}</span>
+          </p>
         </div>
+        <span className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0 ${statusInfo.cls}`}>
+          <span className="material-symbols-outlined text-[18px]">{statusInfo.icon}</span>
+          {statusInfo.label}
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Ô kho đã thuê */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm col-span-full">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-secondary text-[22px]">warehouse</span>
-            <h2 className="text-title-md font-title-md text-on-surface">Ô kho đã thuê</h2>
+        {/* O kho da thue */}
+        <div className="duo-card p-6 col-span-full">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
+            <span className="material-symbols-outlined text-[#1CB0F6] text-[28px]">warehouse</span>
+            <h2 className="text-lg font-black text-[#4B4B4B] uppercase">Ô kho đã thuê</h2>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <InfoRow label="Mã ô kho" value={contract.storageUnitId} mono />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+            <InfoRow label="Mã Ô kho" value={contract.storageUnitId} mono />
             <InfoRow label="Loại kho" value={contract.unitTypeName} />
             <InfoRow label="Diện tích" value={`${contract.areaSqm} m²`} />
             <InfoRow label="Tầng" value={`Tầng ${contract.floor}`} />
@@ -190,100 +158,86 @@ export default function CustomerContractPage() {
           </div>
         </div>
 
-        {/* Thời hạn & Tài chính */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+        {/* Thoi han & Tai chinh */}
+        <div className="duo-card p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-secondary text-[22px]">calendar_month</span>
-                <h2 className="text-title-md font-title-md text-on-surface">Thời hạn thuê</h2>
-              </div>
+            <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
+              <span className="material-symbols-outlined text-[#FF9600] text-[28px]">calendar_month</span>
+              <h2 className="text-lg font-black text-[#4B4B4B] uppercase">Thời hạn thuê</h2>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-              <div className="flex flex-col gap-3">
+            
+            <div className="flex flex-col gap-6">
+              <div className="grid grid-cols-2 gap-4">
                 <InfoRow label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
                 <InfoRow label="Ngày kết thúc" value={formatDate(contract.endDate)} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <InfoRow label="Chu kỳ thanh toán" value={`${contract.billingCycleMonths} tháng / lần`} />
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider text-xs">
-                    Tiền cọc đã nộp
-                  </span>
-                  <span className="text-title-md font-title-md text-secondary font-bold">
-                    {formatVND(contract.depositHeldAmount)}
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Tiền cọc đã nộp</span>
+                  <span className="text-xl font-black text-[#58CC02]">{formatVND(contract.depositHeldAmount)}</span>
                 </div>
               </div>
 
-              {/* Vị trí khoanh đỏ: Nút thao tác tùy chọn hợp đồng */}
-              <div className="flex flex-col items-center justify-center p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 gap-2.5 text-center">
-                <span className="text-xs text-slate-500 font-medium">Gia hạn thêm hoặc hẹn ngày trả kho</span>
+              {/* Nut tuy chon hop dong */}
+              <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-2 text-center">
+                <span className="text-xs font-bold text-[#AFAFAF]">Cần thêm thời gian hoặc trả kho sớm?</span>
                 <button
                   type="button"
                   onClick={() => setIsOptionsModalOpen(true)}
-                  className="w-full px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg font-title-md text-body-sm shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  className="duo-btn-blue w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm"
                 >
                   <span className="material-symbols-outlined text-[18px]">tune</span>
-                  Tùy chọn hợp đồng
+                  TÙY CHỌN HỢP ĐỒNG
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Thông tin truy cập */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="material-symbols-outlined text-secondary text-[22px]">lock</span>
-            <h2 className="text-title-md font-title-md text-on-surface">Truy cập kho</h2>
+        {/* Thong tin truy cap */}
+        <div className="duo-card p-6 flex flex-col">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
+            <span className="material-symbols-outlined text-[#FF4B4B] text-[28px]">lock</span>
+            <h2 className="text-lg font-black text-[#4B4B4B] uppercase">Truy cập kho</h2>
           </div>
-          <div className="flex flex-col gap-3">
-            <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs text-on-surface-variant uppercase tracking-wider mb-2 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">pin</span>
-                Mã PIN SmartLock
-              </p>
+          <div className="flex flex-col gap-4 flex-1 justify-center">
+            <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] mb-2 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[16px]">pin</span> Mã PIN SmartLock
+              </span>
               {contract.accessPinCode ? (
-                <p className="text-2xl font-mono font-bold tracking-[0.4em] text-on-surface text-center py-1">
-                  {contract.accessPinCode}
-                </p>
+                <span className="text-3xl font-mono font-black tracking-[0.3em] text-[#4B4B4B]">{contract.accessPinCode}</span>
               ) : (
-                <p className="text-body-sm text-on-surface-variant text-center italic py-2">
-                  Chưa được cấp phát — liên hệ quản lý cơ sở
-                </p>
+                <span className="text-sm font-bold text-[#AFAFAF] italic">Chưa được cấp phát</span>
               )}
             </div>
-            <div className="bg-slate-50 rounded-xl p-4">
-              <p className="text-xs text-on-surface-variant uppercase tracking-wider mb-2 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">contactless</span>
-                Mã thẻ RFID
-              </p>
+            
+            <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-5 text-center flex flex-col items-center justify-center">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] mb-2 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[16px]">contactless</span> Mã thẻ RFID
+              </span>
               {contract.rfidCardCode ? (
-                <p className="text-body-md font-mono font-semibold tracking-widest text-on-surface">
-                  {contract.rfidCardCode}
-                </p>
+                <span className="text-lg font-mono font-black tracking-widest text-[#4B4B4B]">{contract.rfidCardCode}</span>
               ) : (
-                <p className="text-body-sm text-on-surface-variant italic">
-                  Chưa được cấp phát — liên hệ quản lý cơ sở
-                </p>
+                <span className="text-sm font-bold text-[#AFAFAF] italic">Chưa được cấp phát</span>
               )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Quay lại */}
-      <div>
+      {/* Quay lai */}
+      <div className="mt-4">
         <button
           onClick={() => navigate('/kho-cua-toi')}
-          className="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer text-body-md"
+          className="flex items-center gap-2 text-sm font-bold text-[#AFAFAF] hover:text-[#4B4B4B] transition-colors cursor-pointer"
         >
-          <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-          Quay lại đơn đặt chỗ của tôi
+          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          QUAY LẠI ĐƠN ĐẶT CHỖ
         </button>
       </div>
 
-      {/* Modal Popup Tùy Chọn Hợp Đồng (UC-21 & UC-22) */}
       <ContractOptionsModal
         isOpen={isOptionsModalOpen}
         onClose={() => setIsOptionsModalOpen(false)}

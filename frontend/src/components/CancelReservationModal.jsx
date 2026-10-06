@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { getCancelPreview, cancelReservation } from '../services/reservationService';
 
 const CANCEL_REASONS = [
@@ -64,7 +64,6 @@ export default function CancelReservationModal({ isOpen, onClose, reservation, o
     return amount.toLocaleString('vi-VN') + '₫';
   };
 
-  // Handle parse Array date từ Spring Boot trả về hoặc ISO String
   const formatDateTime = (dateVal) => {
     if (!dateVal) return '—';
     let date = Array.isArray(dateVal) 
@@ -74,55 +73,55 @@ export default function CancelReservationModal({ isOpen, onClose, reservation, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-surface w-full max-w-2xl rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 select-none">
+      <div className="duo-card bg-white w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh] shadow-2xl">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant">
-          <h2 className="text-title-md text-error font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined">warning</span>
+        <div className="flex items-center justify-between px-6 py-4 border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
+          <h2 className="text-base font-black text-[#FF4B4B] uppercase tracking-wider flex items-center gap-2">
+            <span className="material-symbols-outlined text-[22px]">warning</span>
             Xác nhận hủy đặt chỗ khoang lưu trữ
           </h2>
-          <button onClick={onClose} className="text-on-surface-variant hover:text-ink">
-            <span className="material-symbols-outlined">close</span>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl text-[#AFAFAF] hover:text-[#4B4B4B] hover:bg-[#E5E5E5] flex items-center justify-center transition-colors cursor-pointer">
+            <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
         </div>
 
         {/* Content Box */}
-        <div className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-6">
+        <div className="p-6 overflow-y-auto flex flex-col gap-5">
           
           {/* Tóm tắt đơn */}
-          <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
-            <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-body-md text-on-surface">
-              <div><span className="text-on-surface-variant">Mã đơn:</span> <strong className="text-ink">{reservation.reservationCode}</strong></div>
-              <div><span className="text-on-surface-variant">Chi nhánh:</span> <strong className="text-ink">{reservation.facilityName}</strong></div>
-              <div><span className="text-on-surface-variant">Loại kho:</span> <strong className="text-ink">{reservation.unitTypeName}</strong></div>
-              <div><span className="text-on-surface-variant">Giờ hẹn nhận kho dự kiến:</span> <strong className="text-ink">{preview ? formatDateTime(preview.appointmentTime) : 'Đang tính toán...'}</strong></div>
+          <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-4">
+            <div className="grid grid-cols-2 gap-y-2.5 gap-x-4 text-xs font-bold text-[#4B4B4B]">
+              <div><span className="text-[#AFAFAF] uppercase text-[10px] block">Mã đơn:</span> <strong className="text-[#1CB0F6] font-black">{reservation.reservationCode}</strong></div>
+              <div><span className="text-[#AFAFAF] uppercase text-[10px] block">Chi nhánh:</span> <strong>{reservation.facilityName}</strong></div>
+              <div><span className="text-[#AFAFAF] uppercase text-[10px] block">Loại kho:</span> <strong>{reservation.unitTypeName}</strong></div>
+              <div><span className="text-[#AFAFAF] uppercase text-[10px] block">Giờ hẹn nhận:</span> <strong>{preview ? formatDateTime(preview.appointmentTime) : 'Đang tính...'}</strong></div>
             </div>
           </div>
 
           {/* Khung tính toán hoàn cọc */}
           {loading ? (
-             <div className="flex justify-center p-4"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>
+             <div className="flex justify-center p-4"><span className="material-symbols-outlined animate-spin text-[32px] text-[#58CC02]">sync</span></div>
           ) : preview ? (
-            <div className="bg-surface-container-lowest border border-outline-variant rounded-lg p-4">
-              <h3 className="text-title-md text-ink mb-3">Tính toán hoàn cọc</h3>
-              <div className="flex flex-col gap-2 text-body-md">
+            <div className="bg-[#FFF5F5] border-2 border-b-4 border-[#FFDFDF] rounded-2xl p-4">
+              <h3 className="text-xs font-black uppercase text-[#FF4B4B] mb-2">Chính sách hoàn cọc</h3>
+              <div className="flex flex-col gap-2 text-xs font-bold">
                 <div className="flex justify-between">
-                  <span className="text-on-surface-variant">Tiền cọc ban đầu:</span>
-                  <span className="font-semibold text-ink">{formatVND(preview.depositAmount)}</span>
+                  <span className="text-[#AFAFAF]">Tiền cọc ban đầu:</span>
+                  <span className="text-[#4B4B4B] font-black">{formatVND(preview.depositAmount)}</span>
                 </div>
-                <div className="flex justify-between text-error">
-                  <span>Khấu trừ phí phạt hủy sát giờ:</span>
+                <div className="flex justify-between text-[#FF4B4B]">
+                  <span>Khấu trừ phí phạt (nếu sát giờ):</span>
                   <span>- {formatVND(preview.penaltyAmount)}</span>
                 </div>
-                <div className="border-t border-outline-variant my-1"></div>
-                <div className="flex justify-between items-center text-title-md">
+                <div className="border-t-2 border-[#FFDFDF] my-1"></div>
+                <div className="flex justify-between items-center text-sm font-black">
                   <span>Số tiền thực tế hoàn trả:</span>
-                  <span className="text-success text-lg">{formatVND(preview.refundAmount)}</span>
+                  <span className="text-[#58CC02] text-base">{formatVND(preview.refundAmount)}</span>
                 </div>
-                <p className="text-body-sm text-on-surface-variant italic mt-1">
-                  * {preview.penaltyAmount > 0 ? "Bị trừ 50% cọc do hủy trong vòng 24h hoặc quá giờ hẹn." : "Bạn được miễn phí phạt vì hủy hợp lệ trước 24h so với giờ hẹn."}
+                <p className="text-[11px] font-bold text-[#AFAFAF] mt-1">
+                  * {preview.penaltyAmount > 0 ? "Khấu trừ 50% do hủy sát giờ hẹn (< 24h)." : "Miễn phí phạt do hủy hợp lệ trước 24h."}
                 </p>
               </div>
             </div>
@@ -130,17 +129,19 @@ export default function CancelReservationModal({ isOpen, onClose, reservation, o
 
           {/* Lý do hủy */}
           <div>
-            <h3 className="text-title-md text-ink mb-3">Lý do hủy đặt chỗ <span className="text-error">*</span></h3>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#4B4B4B] mb-2.5">
+              Lý do hủy đặt chỗ <span className="text-[#FF4B4B]">*</span>
+            </h3>
             <div className="flex flex-col gap-2">
               {CANCEL_REASONS.map((r, idx) => (
-                <label key={idx} className="flex items-start gap-3 cursor-pointer">
-                  <input type="radio" name="cancel_reason" value={r} onChange={(e) => setReason(e.target.value)} checked={reason === r} className="mt-1" />
-                  <span className="text-body-md text-on-surface">{r}</span>
+                <label key={idx} className="flex items-center gap-3 cursor-pointer p-2 rounded-xl hover:bg-[#F7F7F7] transition-colors">
+                  <input type="radio" name="cancel_reason" value={r} onChange={(e) => setReason(e.target.value)} checked={reason === r} className="accent-[#FF4B4B] w-4 h-4 cursor-pointer" />
+                  <span className="text-xs font-bold text-[#4B4B4B]">{r}</span>
                 </label>
               ))}
               {reason === 'Lý do khác' && (
                 <textarea 
-                  className="mt-2 w-full border border-outline-variant rounded-md p-2 text-body-md focus:border-primary focus:outline-none" 
+                  className="duo-input w-full text-xs mt-2" 
                   rows="2" 
                   placeholder="Vui lòng cho chúng tôi biết lý do..."
                   value={otherReason}
@@ -152,43 +153,44 @@ export default function CancelReservationModal({ isOpen, onClose, reservation, o
 
           {/* Kênh nhận tiền */}
           {reservation.status === 'DEPOSIT_PAID' && (
-             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
-                <h3 className="text-title-md text-blue-900 mb-2">Kênh nhận tiền hoàn cọc (Tài khoản ngân hàng) <span className="text-error">*</span></h3>
-                <p className="text-body-sm text-blue-700 mb-3">Nhận qua chuyển khoản sẽ xử lý sau 24h làm việc. Vui lòng nhập chính xác.</p>
-                <div className="grid grid-cols-1 gap-3">
-                  <input type="text" placeholder="Tên ngân hàng (VD: Vietcombank)" className="border border-outline-variant rounded-md p-2 w-full text-body-md"
+             <div className="bg-[#DDF4FF] border-2 border-b-4 border-[#84D8FF] rounded-2xl p-4">
+                <h3 className="text-xs font-black uppercase text-[#1CB0F6] mb-1">
+                  Thông tin tài khoản nhận tiền hoàn <span className="text-[#FF4B4B]">*</span>
+                </h3>
+                <p className="text-[11px] font-bold text-[#1899D6] mb-3">Xử lý trong vòng 24h làm việc.</p>
+                <div className="grid grid-cols-1 gap-2.5">
+                  <input type="text" placeholder="Tên ngân hàng (VD: Vietcombank, MB Bank)" className="duo-input w-full text-xs"
                          value={bankInfo.bankName} onChange={e => setBankInfo({...bankInfo, bankName: e.target.value})} />
-                  <input type="text" placeholder="Số tài khoản" className="border border-outline-variant rounded-md p-2 w-full text-body-md"
+                  <input type="text" placeholder="Số tài khoản ngân hàng" className="duo-input w-full text-xs"
                          value={bankInfo.bankAccountNumber} onChange={e => setBankInfo({...bankInfo, bankAccountNumber: e.target.value})} />
-                  <input type="text" placeholder="Tên chủ tài khoản" className="border border-outline-variant rounded-md p-2 w-full text-body-md"
+                  <input type="text" placeholder="Tên chủ tài khoản" className="duo-input w-full text-xs"
                          value={bankInfo.bankAccountName} onChange={e => setBankInfo({...bankInfo, bankAccountName: e.target.value})} />
                 </div>
              </div>
           )}
 
           {/* Warning */}
-          <div className="text-[#B91C1C] flex gap-2 items-start text-body-md">
-             <span className="material-symbols-outlined text-[20px]">info</span>
-             <p><strong>Lưu ý:</strong> Thao tác này không thể hoàn tác. Suất giữ phòng sẽ được giải phóng ngay lập tức cho khách hàng khác.</p>
+          <div className="text-[#FF4B4B] flex gap-2 items-start text-xs font-bold bg-[#FFF5F5] p-3 rounded-xl border border-[#FFDFDF]">
+             <span className="material-symbols-outlined text-[18px]">info</span>
+             <p>Lưu ý: Thao tác hủy đơn không thể hoàn tác. Suất giữ phòng sẽ được mở lại ngay cho khách hàng khác.</p>
           </div>
         </div>
 
-        {/* Footer Cặp nút thao tác */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-outline-variant bg-surface-container-lowest">
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t-2 border-[#E5E5E5] bg-[#FAFAFA]">
           <button 
             onClick={onClose} 
             disabled={submitting}
-            className="px-5 py-2 border border-outline-variant text-on-surface-variant rounded-md font-medium hover:bg-surface-variant transition-colors"
+            className="duo-btn-gray px-4 py-2 text-xs"
           >
-            Giữ lại đơn
+            GIỮ LẠI ĐƠN
           </button>
           <button 
             onClick={handleConfirm}
             disabled={submitting}
-            className="px-5 py-2 bg-[#B91C1C] text-white rounded-md font-medium hover:bg-red-800 transition-colors flex items-center gap-2"
+            className="duo-btn-red px-5 py-2 text-xs tracking-wider"
           >
-            {submitting && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>}
-            Xác nhận hủy đặt chỗ
+            {submitting ? 'ĐANG XỬ LÝ...' : 'XÁC NHẬN HỦY'}
           </button>
         </div>
       </div>

@@ -16,6 +16,7 @@ const customerMenuItems = [
 export default function CustomerLayout() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const userStr = sessionStorage.getItem('user');
@@ -62,23 +63,27 @@ export default function CustomerLayout() {
     navigate('/login', { replace: true });
   };
 
-  if (!currentUser) return null; // Hoặc hiển thị một spinner loading
+  if (!currentUser) return null;
+
+  const sidebarWidth = sidebarCollapsed ? 'pl-[72px]' : 'pl-[260px]';
 
   return (
-    <div>
+    <div className="bg-[#FFFFFF] min-h-screen">
       <Sidebar
         menuItems={customerMenuItems}
         role={currentUser.role}
         user={currentUser}
         onLogout={handleLogout}
+        onCollapseChange={setSidebarCollapsed}
       />
-      <div className="pl-[260px]">
+      <div className={`${sidebarWidth} transition-all duration-300`}>
         <Header
           portalName="Cổng Khách Hàng"
           user={currentUser}
           onLogout={handleLogout}
+          sidebarCollapsed={sidebarCollapsed}
         />
-        <main className="w-full pt-16 bg-[#F4F6F8] min-h-screen" style={{ backgroundColor: 'rgb(226, 232, 240)' }}>
+        <main className="w-full pt-20 bg-[#FFFFFF] min-h-screen">
           <Outlet />
         </main>
       </div>

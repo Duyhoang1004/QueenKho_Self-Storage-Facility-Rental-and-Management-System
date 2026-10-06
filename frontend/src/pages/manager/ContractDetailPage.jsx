@@ -14,18 +14,18 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#ECFDF5] text-[#10B981]', icon: 'check_circle' },
-  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800',  icon: 'schedule' },
-  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FEF3C7] text-[#D97706]', icon: 'warning' },
-  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F1F5F9] text-[#64748B]', icon: 'cancel' },
-  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-[#FEE2E2] text-[#EF4444]', icon: 'gavel' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]', icon: 'check_circle' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'schedule' },
+  OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'warning' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]', icon: 'cancel' },
+  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]', icon: 'gavel' },
 }
 
 function InfoRow({ label, value, mono }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider">{label}</span>
-      <span className={`text-body-md font-body-md text-on-surface font-semibold ${mono ? 'font-mono' : ''}`}>
+      <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{label}</span>
+      <span className={`text-sm font-black text-[#4B4B4B] ${mono ? 'font-mono' : ''}`}>
         {value || '—'}
       </span>
     </div>
@@ -34,10 +34,10 @@ function InfoRow({ label, value, mono }) {
 
 function Section({ icon, title, children }) {
   return (
-    <div className="bg-white rounded-xl border border-surface-container-high p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="material-symbols-outlined text-primary text-[22px]">{icon}</span>
-        <h2 className="text-title-md font-title-md text-on-surface">{title}</h2>
+    <div className="duo-card p-6">
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b-2 border-[#E5E5E5]">
+        <span className="material-symbols-outlined text-[#1CB0F6] text-[24px]">{icon}</span>
+        <h2 className="text-sm font-black uppercase text-[#4B4B4B]">{title}</h2>
       </div>
       {children}
     </div>
@@ -59,90 +59,90 @@ export default function ContractDetailPage() {
   }, [id])
 
   if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh] gap-3">
-      <span className="material-symbols-outlined text-[32px] text-on-surface-variant animate-spin">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+      <span className="material-symbols-outlined text-[36px] text-[#58CC02] animate-spin">
         progress_activity
       </span>
-      <span className="text-body-md text-on-surface-variant">Đang tải thông tin hợp đồng...</span>
+      <span className="text-xs font-black uppercase text-[#AFAFAF]">Đang tải thông tin hợp đồng...</span>
     </div>
   )
 
   if (error || !contract) return (
-    <div className="p-6 flex flex-col items-center gap-4 min-h-[60vh] justify-center">
-      <span className="material-symbols-outlined text-error text-[56px]">error</span>
-      <p className="text-body-md text-error font-semibold">{error || 'Không tìm thấy hợp đồng.'}</p>
+    <div className="p-8 flex flex-col items-center gap-4 min-h-[60vh] justify-center text-center select-none">
+      <span className="material-symbols-outlined text-[#FF4B4B] text-[56px]">error</span>
+      <p className="text-sm font-black text-[#FF4B4B]">{error || 'Không tìm thấy hợp đồng.'}</p>
       <button
         onClick={() => navigate('/manager/customers')}
-        className="bg-primary text-on-primary px-5 py-2.5 rounded-xl text-body-md font-semibold cursor-pointer hover:bg-primary/90 transition-colors"
+        className="duo-btn-green px-5 py-2.5 text-xs"
       >
-        Quay lại danh sách
+        QUAY LẠI DANH SÁCH
       </button>
     </div>
   )
 
   const statusInfo = STATUS_MAP[contract.status] || {
     label: contract.status,
-    cls: 'bg-surface-container text-on-surface-variant',
+    cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]',
     icon: 'info',
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-8 max-w-5xl mx-auto select-none">
       {/* Breadcrumb + Back */}
       <div className="flex items-center gap-2 mb-6">
         <button
           onClick={() => navigate('/manager/customers')}
-          className="flex items-center gap-1 text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+          className="duo-btn-white px-4 py-2 text-xs"
         >
-          <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-          <span className="text-body-md font-body-md">Khách hàng & Hợp đồng</span>
+          <span className="material-symbols-outlined text-[18px] mr-1">arrow_back</span>
+          <span>QUAY LẠI</span>
         </button>
-        <span className="text-on-surface-variant">/</span>
-        <span className="text-body-md font-body-md text-on-surface font-semibold">Chi tiết Hợp đồng</span>
+        <span className="text-[#AFAFAF]">/</span>
+        <span className="text-xs font-black uppercase tracking-wider text-[#4B4B4B]">Chi tiết Hợp đồng #{contract.contractCode}</span>
       </div>
 
-      {/* Contract Banner */}
-      <div className="bg-primary rounded-2xl p-6 mb-5 text-on-primary">
-        <div className="flex items-start justify-between gap-4">
+      {/* Contract Banner Duolingo Green */}
+      <div className="bg-[#58CC02] border-b-4 border-[#58A700] rounded-2xl p-6 mb-6 text-white shadow-xs">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="text-label-md font-label-md text-on-primary/70 uppercase tracking-wider mb-1">
-              Mã hợp đồng thuê kho
+            <p className="text-xs font-black uppercase tracking-wider text-emerald-100 mb-1">
+              MÃ HỢP ĐỒNG THUÊ KHO
             </p>
-            <p className="text-headline-md font-headline-md font-bold font-mono tracking-wide">
+            <p className="text-3xl font-black font-mono tracking-wide">
               {contract.contractCode}
             </p>
-            <p className="text-body-sm font-body-sm text-on-primary/70 mt-2 flex items-center gap-1">
+            <p className="text-xs font-bold text-emerald-100 mt-2 flex items-center gap-1">
               <span className="material-symbols-outlined text-[16px]">receipt_long</span>
               Từ đơn đặt chỗ:
-              <span className="font-semibold text-on-primary ml-1">{contract.reservationCode}</span>
+              <span className="font-black text-white ml-1">#{contract.reservationCode}</span>
             </p>
           </div>
-          <span className={`text-label-sm font-label-sm px-3 py-1.5 rounded-full flex items-center gap-1.5 shrink-0 ${statusInfo.cls}`}>
-            <span className="material-symbols-outlined text-[14px]">{statusInfo.icon}</span>
+          <span className={`duo-badge ${statusInfo.cls}`}>
+            <span className="material-symbols-outlined text-[16px]">{statusInfo.icon}</span>
             {statusInfo.label}
           </span>
         </div>
       </div>
 
       {/* Info Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Thông tin khách hàng */}
         <Section icon="person" title="Thông tin khách hàng">
-          <div className="flex items-center gap-3 mb-4 p-3 bg-surface-container-low rounded-xl">
-            <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-on-primary font-bold text-lg flex-shrink-0">
+          <div className="flex items-center gap-3 mb-4 p-3.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-[#58CC02] border-b border-[#58A700] flex items-center justify-center text-white font-black text-base flex-shrink-0">
               {contract.customerFullName?.charAt(contract.customerFullName.lastIndexOf(' ') + 1)?.toUpperCase() || 'K'}
             </div>
             <div>
-              <p className="text-title-md font-title-md text-on-surface font-semibold">{contract.customerFullName}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">phone</span>
+              <p className="text-sm font-black text-[#4B4B4B]">{contract.customerFullName}</p>
+              <p className="text-xs font-bold text-[#AFAFAF] flex items-center gap-1 mt-0.5">
+                <span className="material-symbols-outlined text-[15px]">phone</span>
                 {contract.customerPhone}
               </p>
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3">
-            <InfoRow label="Mã khách hàng" value={`#KH-${contract.customerId}`} mono />
+            <InfoRow label="Mã định danh khách hàng" value={`#KH-${contract.customerId}`} mono />
           </div>
         </Section>
 
@@ -159,16 +159,16 @@ export default function ContractDetailPage() {
         </Section>
 
         {/* Thông tin hợp đồng */}
-        <Section icon="description" title="Chi tiết hợp đồng">
+        <Section icon="description" title="Chi tiết thời hạn & Cọc">
           <div className="grid grid-cols-2 gap-4">
             <InfoRow label="Ngày bắt đầu" value={formatDate(contract.startDate)} />
             <InfoRow label="Ngày kết thúc" value={formatDate(contract.endDate)} />
             <InfoRow label="Chu kỳ thanh toán" value={`${contract.billingCycleMonths} tháng / lần`} />
             <div className="flex flex-col gap-0.5">
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider">
-                Tiền cọc đang giữ
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
+                Tiền cọc an toàn
               </span>
-              <span className="text-body-md font-body-md text-secondary font-bold">
+              <span className="text-base font-black text-[#58CC02]">
                 {formatVND(contract.depositHeldAmount)}
               </span>
             </div>
@@ -176,41 +176,29 @@ export default function ContractDetailPage() {
         </Section>
 
         {/* Thông tin truy cập kho */}
-        <Section icon="lock" title="Thông tin truy cập kho">
+        <Section icon="lock" title="Mã mở khóa điện tử">
           <div className="flex flex-col gap-3">
-            <div className="bg-surface-container-low rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="material-symbols-outlined text-on-surface-variant text-[16px]">pin</span>
-                <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider">
-                  Mã PIN SmartLock
-                </p>
-              </div>
+            <div className="bg-[#DDF4FF] border-2 border-b-4 border-[#84D8FF] rounded-2xl p-4 text-center">
+              <p className="text-[11px] font-black uppercase tracking-wider text-[#1CB0F6] mb-1">
+                MÃ PIN SMARTLOCK
+              </p>
               {contract.accessPinCode ? (
-                <p className="text-title-md font-title-md text-on-surface font-mono tracking-[0.4em] text-center py-1">
+                <p className="text-3xl font-mono font-black tracking-[0.4em] text-[#1CB0F6]">
                   {contract.accessPinCode}
                 </p>
               ) : (
-                <p className="text-body-sm font-body-sm text-on-surface-variant text-center py-1 italic">
-                  Chưa được cấp phát
+                <p className="text-xs font-bold text-[#AFAFAF] py-1">
+                  Chưa cấp phát
                 </p>
               )}
             </div>
-            <div className="bg-surface-container-low rounded-xl p-4">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="material-symbols-outlined text-on-surface-variant text-[16px]">contactless</span>
-                <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider">
-                  Mã thẻ RFID
-                </p>
-              </div>
-              {contract.rfidCardCode ? (
-                <p className="text-body-md font-body-md text-on-surface font-mono tracking-widest">
-                  {contract.rfidCardCode}
-                </p>
-              ) : (
-                <p className="text-body-sm font-body-sm text-on-surface-variant italic">
-                  Chưa được cấp phát
-                </p>
-              )}
+            <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-0.5">
+                MÃ THẺ TỪ RFID
+              </p>
+              <p className="text-xs font-mono font-bold text-[#4B4B4B]">
+                {contract.rfidCardCode || 'Chưa cấp phát'}
+              </p>
             </div>
           </div>
         </Section>

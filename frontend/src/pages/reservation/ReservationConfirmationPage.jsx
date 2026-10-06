@@ -11,6 +11,7 @@ export default function ReservationConfirmationPage() {
   const navigate = useNavigate()
   const { state } = useLocation()
   const [finalStatus, setFinalStatus] = useState('PENDING')
+  const [searchParams] = useSearchParams()
 
   let savedContext = {}
   try {

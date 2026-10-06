@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getContractByReservation } from '../../services/contractService'
-import vnpayService from '../../services/vnpayService'
+import { getVnpayStatus } from '../../services/vnpayService'
 import { useSearchParams } from 'react-router-dom'
 import ContractOptionsModal from '../../components/ContractOptionsModal'
 

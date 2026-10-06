@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
-import vnpayService from '../../services/vnpayService'
+import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability } from '../../services/facilityService'
 
 function buildUnit(availability, unitTypeId) {
@@ -169,7 +169,7 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
       })
-      const paymentData = await vnpayService.createReservation(response.id)
+      const paymentData = await createVnpayPayment(response.id)
       
       sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
         reservation: response,

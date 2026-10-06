@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
@@ -23,19 +23,19 @@ function buildUnit(availability, unitTypeId) {
 }
 
 const DURATION_OPTIONS = [
-  { months: 1, label: '1 ThÃ¡ng', sub: 'TiÃªu chuáº©n', note: 'GiÃ¡ chuáº©n', discount: 0 },
-  { months: 3, label: '3 ThÃ¡ng', sub: 'Phá»• biáº¿n nháº¥t', note: 'Tiáº¿t kiá»‡m 5%', discount: 5, popular: true },
-  { months: 6, label: '6 ThÃ¡ng', sub: 'Trung háº¡n', note: 'Tiáº¿t kiá»‡m 10%', discount: 10 },
-  { months: 12, label: '12 ThÃ¡ng', sub: 'DÃ i háº¡n', note: 'Tiáº¿t kiá»‡m 15%', discount: 15 },
+  { months: 1, label: '1 Tháng', sub: 'Tiêu chuẩn', note: 'Giá chuẩn', discount: 0 },
+  { months: 3, label: '3 Tháng', sub: 'Phổ biến nhất', note: 'Tiết kiệm 5%', discount: 5, popular: true },
+  { months: 6, label: '6 Tháng', sub: 'Trung hạn', note: 'Tiết kiệm 10%', discount: 10 },
+  { months: 12, label: '12 Tháng', sub: 'Dài hạn', note: 'Tiết kiệm 15%', discount: 15 },
 ]
 
 const VOUCHER_DISCOUNT = 100000
 
 function formatVND(amount) {
-  return amount.toLocaleString('vi-VN') + 'Ä‘'
+  return amount.toLocaleString('vi-VN') + 'đ'
 }
 
-// Map mÃ£ voucher â†’ giÃ¡ trá»‹ giáº£m
+// Map mã voucher → giá trị giảm
 const VOUCHER_MAP = {
   NEWKHO: 100000,
   WELCOME50: 50000,
@@ -70,7 +70,7 @@ export default function CreateReservationPage() {
       setVoucherError('')
       setVoucherCode('')
     } else {
-      setVoucherError('MÃ£ voucher khÃ´ng há»£p lá»‡ hoáº·c Ä‘Ã£ háº¿t háº¡n.')
+      setVoucherError('Mã voucher không hợp lệ hoặc đã hết hạn.')
     }
   }
 
@@ -92,10 +92,10 @@ export default function CreateReservationPage() {
         if (cancelled) return
         const found = buildUnit(data, unitTypeId)
         if (found) setUnit(found)
-        else setUnitError('CÆ¡ sá»Ÿ nÃ y khÃ´ng cÃ³ loáº¡i kho báº¡n Ä‘Ã£ chá»n.')
+        else setUnitError('Cơ sở này không có loại kho bạn đã chọn.')
       })
       .catch(() => {
-        if (!cancelled) setUnitError('KhÃ´ng táº£i Ä‘Æ°á»£c thÃ´ng tin kho. Vui lÃ²ng thá»­ láº¡i.')
+        if (!cancelled) setUnitError('Không tải được thông tin kho. Vui lòng thử lại.')
       })
       .finally(() => {
         if (!cancelled) setUnitLoading(false)
@@ -113,16 +113,16 @@ export default function CreateReservationPage() {
 
     const paymentResult = new URLSearchParams(window.location.search).get('payment')
     if (paymentResult === 'failed') {
-      setError('Thanh toÃ¡n tháº¥t báº¡i hoáº·c Ä‘Ã£ bá»‹ há»§y. Vui lÃ²ng thá»­ láº¡i.')
+      setError('Thanh toán thất bại hoặc đã bị hủy. Vui lòng thử lại.')
     }
   }, [])
 
   if (!hasParams || unitLoading || unitError || !unit) {
     const message = !hasParams
-      ? 'Báº¡n chÆ°a chá»n kho. Vui lÃ²ng chá»n cÆ¡ sá»Ÿ vÃ  loáº¡i kho trÆ°á»›c khi Ä‘áº·t chá»—.'
+      ? 'Bạn chưa chọn kho. Vui lòng chọn cơ sở và loại kho trước khi đặt chỗ.'
       : unitLoading
-        ? 'Äang táº£i thÃ´ng tin kho...'
-        : unitError || 'KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin kho.'
+        ? 'Đang tải thông tin kho...'
+        : unitError || 'Không tìm thấy thông tin kho.'
     return (
       <div className="p-8 max-w-3xl mx-auto flex flex-col items-center gap-4 text-center">
         <p className={`font-black ${unitLoading ? 'text-[#AFAFAF]' : 'text-[#FF4B4B]'}`}>{message}</p>
@@ -131,7 +131,7 @@ export default function CreateReservationPage() {
             to="/tim-va-dat-kho"
             className="duo-btn-green px-6 py-3 text-xs tracking-wider"
           >
-            TÃŒM & CHá»ŒN KHO
+            TÌM & CHỌN KHO
           </Link>
         )}
       </div>
@@ -147,15 +147,15 @@ export default function CreateReservationPage() {
 
   const handleSubmit = async () => {
     if (!agreed) {
-      setError('Báº¡n cáº§n Ä‘á»“ng Ã½ vá»›i cam káº¿t lÆ°u trá»¯ trÆ°á»›c khi tiáº¿p tá»¥c.')
+      setError('Bạn cần đồng ý với cam kết lưu trữ trước khi tiếp tục.')
       return
     }
     if (!startDate) {
-      setError('Vui lÃ²ng chá»n ngÃ y báº¯t Ä‘áº§u nháº­n kho.')
+      setError('Vui lòng chọn ngày bắt đầu nhận kho.')
       return
     }
     if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email || !customerInfo.address) {
-      setError('Vui lÃ²ng Ä‘iá»n Ä‘áº§y Ä‘á»§ thÃ´ng tin khÃ¡ch hÃ ng.')
+      setError('Vui lòng điền đầy đủ thông tin khách hàng.')
       return
     }
 
@@ -184,7 +184,7 @@ export default function CreateReservationPage() {
       window.location.assign(paymentData.payUrl)
 
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.message || 'CÃ³ lá»—i xáº£y ra. Vui lÃ²ng thá»­ láº¡i.')
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
       setLoading(false)
     }
   }
@@ -193,32 +193,32 @@ export default function CreateReservationPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8 select-none">
-      {/* TiÃªu Ä‘á» trang */}
+      {/* Tiêu đề trang */}
       <div className="mb-6">
         <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">
-          HoÃ n táº¥t Ä‘áº·t chá»— & Há»£p Ä‘á»“ng
+          Hoàn tất đặt chỗ & Hợp đồng
         </h1>
         <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
-          XÃ¡c nháº­n thÃ´ng tin há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ vÃ  tiáº¿p tá»¥c thanh toÃ¡n giá»¯ chá»—.
+          Xác nhận thông tin hợp đồng điện tử và tiếp tục thanh toán giữ chỗ.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
 
-        {/* Cá»™t trÃ¡i */}
+        {/* Cột trái */}
         <div className="flex flex-col gap-6">
 
-          {/* Section 1: ThÃ´ng tin khoang kho */}
+          {/* Section 1: Thông tin khoang kho */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] flex items-center justify-center text-white text-xs font-black">
                   1
                 </div>
-                <span className="text-base font-black text-[#4B4B4B]">ThÃ´ng tin khoang kho</span>
+                <span className="text-base font-black text-[#4B4B4B]">Thông tin khoang kho</span>
               </div>
               <span className="text-xs font-black uppercase text-[#58A700] bg-[#D7FFB8] border-2 border-[#58CC02] px-3 py-1 rounded-full">
-                Tá»± quáº£n 24/7
+                Tự quản 24/7
               </span>
             </div>
 
@@ -229,21 +229,21 @@ export default function CreateReservationPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-base font-black text-[#4B4B4B]">
-                    {unit.name} ({unit.area} mÂ²)
+                    {unit.name} ({unit.area} m²)
                   </span>
                   <span className="text-[11px] font-black uppercase bg-[#DDF4FF] border border-[#84D8FF] text-[#1CB0F6] px-2 py-0.5 rounded-full">
-                    CÃ²n {unit.availableCount} Ã´ trá»‘ng
+                    Còn {unit.availableCount} ô trống
                   </span>
                 </div>
                 <p className="text-xs font-bold text-[#AFAFAF] mt-1">
-                  Chi nhÃ¡nh: {unit.branch} ({unit.address})
+                  Chi nhánh: {unit.branch} ({unit.address})
                 </p>
                 <p className="text-xs font-bold text-[#AFAFAF]">
-                  KÃ­ch thÆ°á»›c: {unit.dimension}
+                  Kích thước: {unit.dimension}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="text-[11px] font-black text-[#AFAFAF] uppercase">ÄÆ¡n giÃ¡ chuáº©n:</div>
+                <div className="text-[11px] font-black text-[#AFAFAF] uppercase">Đơn giá chuẩn:</div>
                 <div className="text-base font-black text-[#58CC02]">
                   {formatVND(unit.pricePerMonth)}
                   <span className="text-xs text-[#AFAFAF]">/th</span>
@@ -252,22 +252,22 @@ export default function CreateReservationPage() {
             </div>
           </div>
 
-          {/* Section 2: Thá»i háº¡n thuÃª */}
+          {/* Section 2: Thời hạn thuê */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#1CB0F6] border-b-2 border-[#1899D6] flex items-center justify-center text-white text-xs font-black">
                   2
                 </div>
-                <span className="text-base font-black text-[#4B4B4B]">Thá»i háº¡n thuÃª & NgÃ y nháº­n kho</span>
+                <span className="text-base font-black text-[#4B4B4B]">Thời hạn thuê & Ngày nhận kho</span>
               </div>
               <span className="text-xs font-black uppercase text-[#1CB0F6] bg-[#DDF4FF] border-2 border-[#84D8FF] px-3 py-1 rounded-full">
-                Linh hoáº¡t gia háº¡n
+                Linh hoạt gia hạn
               </span>
             </div>
 
             <p className="text-xs font-black text-[#AFAFAF] uppercase tracking-wider mb-3">
-              Thá»i háº¡n cam káº¿t thuÃª tá»‘i thiá»ƒu
+              Thời hạn cam kết thuê tối thiểu
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
@@ -283,7 +283,7 @@ export default function CreateReservationPage() {
                 >
                   {opt.popular && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-black uppercase bg-[#FF9600] border border-[#E58800] text-white px-2 py-0.5 rounded-full whitespace-nowrap">
-                      Tiáº¿t kiá»‡m 5%
+                      Tiết kiệm 5%
                     </span>
                   )}
                   {!opt.popular && opt.discount > 0 && (
@@ -299,7 +299,7 @@ export default function CreateReservationPage() {
                   </div>
                   {selectedMonths === opt.months && opt.discount > 0 && (
                     <div className="text-[10px] font-black text-[#1CB0F6] mt-1">
-                      Giáº£m {formatVND(Math.round(unit.pricePerMonth * opt.months * opt.discount / 100))}
+                      Giảm {formatVND(Math.round(unit.pricePerMonth * opt.months * opt.discount / 100))}
                     </div>
                   )}
                 </button>
@@ -308,7 +308,7 @@ export default function CreateReservationPage() {
 
             <div>
               <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-2 block">
-                NgÃ y báº¯t Ä‘áº§u nháº­n kho <span className="text-[#FF4B4B]">*</span>
+                Ngày bắt đầu nhận kho <span className="text-[#FF4B4B]">*</span>
               </label>
               <div className="relative">
                 <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">
@@ -323,31 +323,31 @@ export default function CreateReservationPage() {
                 />
               </div>
               <p className="text-xs font-bold text-[#AFAFAF] mt-2">
-                ðŸ• Há»— trá»£ dá»i ngÃ y nháº­n tá»‘i Ä‘a 3 ngÃ y trÆ°á»›c khi kÃ­ch hoáº¡t khÃ´ng phá»¥ phÃ­.
+                🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
               </p>
             </div>
           </div>
 
-          {/* Section 3: ThÃ´ng tin khÃ¡ch hÃ ng */}
+          {/* Section 3: Thông tin khách hàng */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] flex items-center justify-center text-white text-xs font-black">
                   3
                 </div>
-                <span className="text-base font-black text-[#4B4B4B]">ThÃ´ng tin khÃ¡ch hÃ ng</span>
+                <span className="text-base font-black text-[#4B4B4B]">Thông tin khách hàng</span>
               </div>
-              <span className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider">* Báº¯t buá»™c</span>
+              <span className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider">* Bắt buộc</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
-                  Há» vÃ  TÃªn cÃ¡ nhÃ¢n / Doanh nghiá»‡p <span className="text-[#FF4B4B]">*</span>
+                  Họ và Tên cá nhân / Doanh nghiệp <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="Nguyá»…n Thu Trang"
+                  placeholder="Nguyễn Thu Trang"
                   value={customerInfo.fullName}
                   onChange={(e) => setCustomerInfo({ ...customerInfo, fullName: e.target.value })}
                   className="duo-input w-full"
@@ -356,7 +356,7 @@ export default function CreateReservationPage() {
 
               <div>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
-                  Sá»‘ Ä‘iá»‡n thoáº¡i / Zalo <span className="text-[#FF4B4B]">*</span>
+                  Số điện thoại / Zalo <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <input
                   type="tel"
@@ -369,7 +369,7 @@ export default function CreateReservationPage() {
 
               <div>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
-                  Sá»‘ CCCD / Passport <span className="text-[#FF4B4B]">*</span>
+                  Số CCCD / Passport <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <input
                   type="text"
@@ -379,13 +379,13 @@ export default function CreateReservationPage() {
                   className="duo-input w-full"
                 />
                 <p className="text-[11px] font-bold text-[#AFAFAF] mt-1">
-                  Cáº¥p quyá»n má»Ÿ khÃ³a SmartLock Ä‘iá»‡n tá»­
+                  Cấp quyền mở khóa SmartLock điện tử
                 </p>
               </div>
 
               <div>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
-                  Email nháº­n há»£p Ä‘á»“ng & hÃ³a Ä‘Æ¡n <span className="text-[#FF4B4B]">*</span>
+                  Email nhận hợp đồng & hóa đơn <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <input
                   type="email"
@@ -398,11 +398,11 @@ export default function CreateReservationPage() {
 
               <div className="sm:col-span-2">
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
-                  Äá»‹a chá»‰ thÆ°á»ng trÃº / Trá»¥ sá»Ÿ ghi nháº­n há»£p Ä‘á»“ng <span className="text-[#FF4B4B]">*</span>
+                  Địa chỉ thường trú / Trụ sở ghi nhận hợp đồng <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <input
                   type="text"
-                  placeholder="PhÆ°á»ng 13, Quáº­n TÃ¢n BÃ¬nh, TP. Há»“ ChÃ­ Minh"
+                  placeholder="Phường 13, Quận Tân Bình, TP. Hồ Chí Minh"
                   value={customerInfo.address}
                   onChange={(e) => setCustomerInfo({ ...customerInfo, address: e.target.value })}
                   className="duo-input w-full"
@@ -410,7 +410,7 @@ export default function CreateReservationPage() {
               </div>
             </div>
 
-            {/* Checkbox cam káº¿t */}
+            {/* Checkbox cam kết */}
             <div className="flex items-start gap-3 mt-4 pt-4 border-t-2 border-[#E5E5E5]">
               <input
                 type="checkbox"
@@ -420,11 +420,11 @@ export default function CreateReservationPage() {
                 className="mt-1 w-5 h-5 accent-[#58CC02] cursor-pointer"
               />
               <label htmlFor="agreed" className="text-xs font-bold text-[#4B4B4B] cursor-pointer leading-relaxed">
-                TÃ´i cam káº¿t{' '}
+                Tôi cam kết{' '}
                 <span className="font-black text-[#FF4B4B]">
-                  khÃ´ng lÆ°u trá»¯ cháº¥t dá»… chÃ¡y ná»•, hÃ ng láº­u, hÃ³a cháº¥t Ä‘á»™c háº¡i hoáº·c hÃ ng cáº¥m
+                  không lưu trữ chất dễ cháy nổ, hàng lậu, hóa chất độc hại hoặc hàng cấm
                 </span>{' '}
-                theo quy Ä‘á»‹nh cá»§a phÃ¡p luáº­t vÃ  ná»™i quy QueenKho.
+                theo quy định của pháp luật và nội quy QueenKho.
               </label>
             </div>
           </div>
@@ -437,41 +437,41 @@ export default function CreateReservationPage() {
           )}
         </div>
 
-        {/* Cá»™t pháº£i - Chi tiáº¿t thanh toÃ¡n Duolingo Card */}
+        {/* Cột phải - Chi tiết thanh toán Duolingo Card */}
         <div className="lg:sticky lg:top-24 h-fit">
           <div className="duo-card overflow-hidden">
             {/* Header Duolingo Green */}
             <div className="bg-[#58CC02] border-b-4 border-[#58A700] px-6 py-5 text-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-base font-black uppercase tracking-wider">Chi Tiáº¿t Thanh ToÃ¡n</p>
+                  <p className="text-base font-black uppercase tracking-wider">Chi Tiết Thanh Toán</p>
                   <p className="text-xs font-bold text-emerald-100 mt-0.5">
-                    MÃ£ Ä‘Æ¡n sáº½ cáº¥p ngay sau khi giá»¯ chá»—
+                    Mã đơn sẽ cấp ngay sau khi giữ chỗ
                   </p>
                 </div>
                 <span className="material-symbols-outlined text-white text-[24px]">receipt_long</span>
               </div>
             </div>
 
-            {/* Breakdown giÃ¡ */}
+            {/* Breakdown giá */}
             <div className="p-6 flex flex-col gap-3.5 bg-white">
               <div className="flex justify-between items-start text-xs font-bold">
                 <div>
-                  <p className="text-[#4B4B4B]">Tiá»n thuÃª ({selectedMonths} thÃ¡ng)</p>
-                  <p className="text-[#AFAFAF]">{formatVND(unit.pricePerMonth)} Ã— {selectedMonths}</p>
+                  <p className="text-[#4B4B4B]">Tiền thuê ({selectedMonths} tháng)</p>
+                  <p className="text-[#AFAFAF]">{formatVND(unit.pricePerMonth)} × {selectedMonths}</p>
                 </div>
                 <span className="font-black text-[#4B4B4B]">{formatVND(baseTotal)}</span>
               </div>
 
               {selectedOption.discount > 0 && (
                 <div className="flex justify-between items-center text-xs font-bold text-[#58A700] bg-[#D7FFB8] px-3 py-1.5 rounded-xl border border-[#58CC02]">
-                  <span>Æ¯u Ä‘Ã£i gÃ³i {selectedMonths}T (-{selectedOption.discount}%)</span>
+                  <span>Ưu đãi gói {selectedMonths}T (-{selectedOption.discount}%)</span>
                   <span className="font-black">-{formatVND(discountAmount)}</span>
                 </div>
               )}
 
               <div className="flex justify-between items-center text-xs font-bold pt-1">
-                <span className="text-[#4B4B4B]">Tiá»n cá»c hoÃ n tráº£ 100%</span>
+                <span className="text-[#4B4B4B]">Tiền cọc hoàn trả 100%</span>
                 <span className="font-black text-[#4B4B4B]">{formatVND(deposit)}</span>
               </div>
 
@@ -480,7 +480,7 @@ export default function CreateReservationPage() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Nháº­p mÃ£ voucher..."
+                    placeholder="Nhập mã voucher..."
                     value={voucherCode}
                     onChange={(e) => { setVoucherCode(e.target.value); setVoucherError('') }}
                     onKeyDown={(e) => e.key === 'Enter' && handleApplyVoucher()}
@@ -491,24 +491,24 @@ export default function CreateReservationPage() {
                     onClick={handleApplyVoucher}
                     className="duo-btn-white px-3 py-2 text-xs tracking-wider shrink-0"
                   >
-                    ÃP Dá»¤NG
+                    ÁP DỤNG
                   </button>
                 </div>
                 {voucherError && (
-                  <p className="text-[11px] font-bold text-[#FF4B4B]">âš ï¸ {voucherError}</p>
+                  <p className="text-[11px] font-bold text-[#FF4B4B]">⚠️ {voucherError}</p>
                 )}
               </div>
 
-              {/* DÃ²ng voucher Ä‘ang Ã¡p dá»¥ng */}
+              {/* Dòng voucher đang áp dụng */}
               <div className="flex justify-between items-center text-xs font-bold text-[#58A700] bg-[#D7FFB8] px-3 py-1.5 rounded-xl border border-[#58CC02]">
-                <span>ðŸŽ« Voucher <span className="font-black">{voucherApplied.code}</span></span>
+                <span>🎫 Voucher <span className="font-black">{voucherApplied.code}</span></span>
                 <span className="font-black">-{formatVND(voucherApplied.discount)}</span>
               </div>
 
-              {/* Tá»•ng tiá»n */}
+              {/* Tổng tiền */}
               <div className="border-t-2 border-[#E5E5E5] pt-4 mt-1">
                 <p className="text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
-                  Tá»”NG Cá»˜NG THANH TOÃN Äá»¢T 1
+                  TỔNG CỘNG THANH TOÁN ĐỢT 1
                 </p>
                 <div className="flex items-baseline justify-between mt-1">
                   <span className="text-2xl font-black text-[#58CC02]">
@@ -516,15 +516,15 @@ export default function CreateReservationPage() {
                   </span>
                   {selectedOption.discount > 0 && (
                     <span className="text-[11px] font-black uppercase bg-[#D7FFB8] text-[#58A700] px-2.5 py-0.5 rounded-full border border-[#58CC02]">
-                      Tiáº¿t kiá»‡m {formatVND(discountAmount + voucherApplied.discount)}
+                      Tiết kiệm {formatVND(discountAmount + voucherApplied.discount)}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* LÆ°u Ã½ 10 phÃºt */}
+              {/* Lưu ý 10 phút */}
               <div className="bg-[#FFE8CC] border-2 border-b-4 border-[#FF9600] rounded-2xl p-3.5 text-xs font-bold text-[#E58800] mt-2">
-                <span className="font-black">âš¡ LÆ°u Ã½ giá»¯ chá»—:</span> QuÃ©t mÃ£ QR thanh toÃ¡n trong vÃ²ng <strong>10 phÃºt</strong>.
+                <span className="font-black">⚡ Lưu ý giữ chỗ:</span> Quét mã QR thanh toán trong vòng <strong>10 phút</strong>.
               </div>
 
               {/* Giant Green CTA Button */}
@@ -534,7 +534,7 @@ export default function CreateReservationPage() {
                 className="duo-btn-green w-full py-4 text-sm tracking-wider mt-2 disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[18px] mr-1">lock</span>
-                <span>{loading ? 'Äang chuyá»ƒn sang SePay...' : 'THANH TOÃN GIá»® KHO'}</span>
+                <span>{loading ? 'Đang chuyển sang VNPAY...' : 'THANH TOÁN GIỮ KHO'}</span>
               </button>
             </div>
           </div>

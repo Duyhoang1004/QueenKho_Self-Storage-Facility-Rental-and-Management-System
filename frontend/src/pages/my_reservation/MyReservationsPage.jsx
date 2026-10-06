@@ -1,40 +1,40 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import CancelReservationModal from "../../components/CancelReservationModal";
 
 const STATUS_META = {
-  PENDING: { label: "Chá» thanh toÃ¡n cá»c", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
-  DEPOSIT_PAID: { label: "ÄÃ£ cá»c - chá» gÃ¡n Ã´", className: "bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]" },
-  UNIT_ASSIGNED: { label: "ÄÃ£ gÃ¡n Ã´ kho", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
-  TERMINATION_PENDING: { label: "Chá» tráº£ kho", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
-  CANCELLED: { label: "ÄÃ£ há»§y", className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]" },
-  REFUND_PENDING: { label: "Há»§y - Chá» hoÃ n tiá»n", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
-  EXPIRED: { label: "Háº¿t háº¡n", className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" },
-  COMPLETED: { label: "HoÃ n táº¥t", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
+  PENDING: { label: "Chờ thanh toán cọc", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  DEPOSIT_PAID: { label: "Đã cọc - chờ gán ô", className: "bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]" },
+  UNIT_ASSIGNED: { label: "Đã gán ô kho", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
+  TERMINATION_PENDING: { label: "Chờ trả kho", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  CANCELLED: { label: "Đã hủy", className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]" },
+  REFUND_PENDING: { label: "Hủy - Chờ hoàn tiền", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  EXPIRED: { label: "Hết hạn", className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" },
+  COMPLETED: { label: "Hoàn tất", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
 };
 
 const FILTERS = [
-  { key: "ALL", label: "Táº¥t cáº£", statuses: null },
-  { key: "PENDING", label: "Chá» thanh toÃ¡n", statuses: ["PENDING"] },
-  { key: "DEPOSIT_PAID", label: "ÄÃ£ Ä‘áº·t cá»c", statuses: ["DEPOSIT_PAID"] },
-  { key: "UNIT_ASSIGNED", label: "ÄÃ£ gÃ¡n Ã´", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"] },
-  { key: "CLOSED", label: "ÄÃ£ Ä‘Ã³ng", statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"] },
+  { key: "ALL", label: "Tất cả", statuses: null },
+  { key: "PENDING", label: "Chờ thanh toán", statuses: ["PENDING"] },
+  { key: "DEPOSIT_PAID", label: "Đã đặt cọc", statuses: ["DEPOSIT_PAID"] },
+  { key: "UNIT_ASSIGNED", label: "Đã gán ô", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"] },
+  { key: "CLOSED", label: "Đã đóng", statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"] },
 ];
 
 function formatVND(amount) {
-  if (amount === null || amount === undefined) return "â€”";
-  return Number(amount).toLocaleString("vi-VN") + "â‚«";
+  if (amount === null || amount === undefined) return "—";
+  return Number(amount).toLocaleString("vi-VN") + "₫";
 }
 
 function formatDate(value) {
-  if (!value) return "â€”";
+  if (!value) return "—";
   const [y, m, d] = String(value).split("-");
   return `${d}/${m}/${y}`;
 }
 
 function formatDateTimeSplit(value) {
-  if (!value) return { date: "â€”", time: "" };
+  if (!value) return { date: "—", time: "" };
   const d = new Date(value);
   const dateStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
   const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -54,7 +54,7 @@ export default function MyReservationsPage() {
 
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(Boolean(userId));
-  const [error, setError] = useState(userId ? "" : "Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ xem Ä‘Æ¡n Ä‘áº·t chá»—.");
+  const [error, setError] = useState(userId ? "" : "Bạn cần đăng nhập để xem đơn đặt chỗ.");
   const [filter, setFilter] = useState("ALL");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -69,7 +69,7 @@ export default function MyReservationsPage() {
         setError("");
       })
       .catch(() => {
-        if (!cancelled) setError("KhÃ´ng táº£i Ä‘Æ°á»£c danh sÃ¡ch Ä‘Æ¡n Ä‘áº·t chá»—. Vui lÃ²ng thá»­ láº¡i.");
+        if (!cancelled) setError("Không tải được danh sách đơn đặt chỗ. Vui lòng thử lại.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -90,7 +90,7 @@ export default function MyReservationsPage() {
     setIsCancelModalOpen(false);
     setSelectedResToCancel(null);
     setReloadKey((k) => k + 1);
-    alert("ÄÃ£ há»§y Ä‘Æ¡n Ä‘áº·t chá»— thÃ nh cÃ´ng.");
+    alert("Đã hủy đơn đặt chỗ thành công.");
   };
 
   const countBy = (statuses) => reservations.filter((r) => statuses.includes(r.status)).length;
@@ -98,7 +98,7 @@ export default function MyReservationsPage() {
   const stats = [
     {
       icon: "receipt_long",
-      label: "Tá»•ng Ä‘Æ¡n Ä‘áº·t chá»—",
+      label: "Tổng đơn đặt chỗ",
       value: reservations.length,
       iconColor: "text-[#58A700]",
       iconBg: "bg-[#D7FFB8]",
@@ -106,7 +106,7 @@ export default function MyReservationsPage() {
     },
     {
       icon: "hourglass_top",
-      label: "Chá» thanh toÃ¡n cá»c",
+      label: "Chờ thanh toán cọc",
       value: countBy(["PENDING"]),
       iconColor: "text-[#E58800]",
       iconBg: "bg-[#FFE8CC]",
@@ -114,7 +114,7 @@ export default function MyReservationsPage() {
     },
     {
       icon: "payments",
-      label: "ÄÃ£ cá»c, chá» gÃ¡n Ã´",
+      label: "Đã cọc, chờ gán ô",
       value: countBy(["DEPOSIT_PAID"]),
       iconColor: "text-[#1CB0F6]",
       iconBg: "bg-[#DDF4FF]",
@@ -122,7 +122,7 @@ export default function MyReservationsPage() {
     },
     {
       icon: "inventory_2",
-      label: "ÄÃ£ gÃ¡n Ã´ kho",
+      label: "Đã gán ô kho",
       value: countBy(["UNIT_ASSIGNED", "TERMINATION_PENDING"]),
       iconColor: "text-[#58A700]",
       iconBg: "bg-[#D7FFB8]",
@@ -175,18 +175,18 @@ export default function MyReservationsPage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
         <Link to="/" className="hover:text-[#4B4B4B] transition-colors">
-          Trang chá»§
+          Trang chủ
         </Link>
         <span>/</span>
-        <span className="text-[#4B4B4B]">ÄÆ¡n Ä‘áº·t chá»— cá»§a tÃ´i</span>
+        <span className="text-[#4B4B4B]">Đơn đặt chỗ của tôi</span>
       </div>
 
-      {/* TiÃªu Ä‘á» + NÃºt Ä‘áº·t kho */}
+      {/* Tiêu đề + Nút đặt kho */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] tracking-tight">ÄÆ¡n Ä‘áº·t chá»— cá»§a tÃ´i</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] tracking-tight">Đơn đặt chỗ của tôi</h1>
           <p className="text-[13px] font-bold text-[#AFAFAF]">
-            Theo dÃµi tráº¡ng thÃ¡i cÃ¡c Ä‘Æ¡n Ä‘áº·t chá»—, tá»« lÃºc Ä‘áº·t cá»c Ä‘áº¿n khi Ä‘Æ°á»£c gÃ¡n Ã´ kho.
+            Theo dõi trạng thái các đơn đặt chỗ, từ lúc đặt cọc đến khi được gán ô kho.
           </p>
         </div>
         <Link
@@ -194,11 +194,11 @@ export default function MyReservationsPage() {
           className="duo-btn-green px-5 py-3 text-xs tracking-wider flex items-center gap-1.5 self-start sm:self-auto shadow-sm shrink-0"
         >
           <span className="material-symbols-outlined text-[18px]">add_circle</span>
-          <span>Äáº¶T KHO Má»šI</span>
+          <span>ĐẶT KHO MỚI</span>
         </Link>
       </div>
 
-      {/* Tháº» thá»‘ng kÃª */}
+      {/* Thẻ thống kê */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <div key={stat.label} className={`duo-card p-4 flex flex-col gap-3 transition-all ${stat.cardBorder}`}>
@@ -209,15 +209,15 @@ export default function MyReservationsPage() {
               </div>
             </div>
             <span className="text-3xl font-black text-[#4B4B4B]">
-              {loading ? "â€”" : stat.value}
+              {loading ? "—" : stat.value}
             </span>
           </div>
         ))}
       </div>
 
-      {/* Báº£ng danh sÃ¡ch */}
+      {/* Bảng danh sách */}
       <div className="duo-card overflow-hidden">
-        {/* Bá»™ lá»c tráº¡ng thÃ¡i */}
+        {/* Bộ lọc trạng thái */}
         <div className="px-4 py-3 bg-[#FAFAFA] border-b-2 border-[#E5E5E5] flex flex-wrap items-center gap-2">
           {FILTERS.map((f) => (
             <button
@@ -235,12 +235,12 @@ export default function MyReservationsPage() {
           ))}
         </div>
 
-        {loading && <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF]">Äang táº£i danh sÃ¡ch...</p>}
+        {loading && <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF]">Đang tải danh sách...</p>}
 
         {!loading && error && (
           <div className="px-6 py-8 flex flex-col items-start gap-3">
             <p className="text-[#FF4B4B] font-bold text-sm">{error}</p>
-            <button onClick={retry} className="duo-btn-blue px-4 py-2 text-xs">Thá»­ láº¡i</button>
+            <button onClick={retry} className="duo-btn-blue px-4 py-2 text-xs">Thử lại</button>
           </div>
         )}
 
@@ -249,13 +249,13 @@ export default function MyReservationsPage() {
             <div className="w-16 h-16 rounded-full bg-[#F7F7F7] flex items-center justify-center border-2 border-[#E5E5E5]">
               <span className="material-symbols-outlined text-[32px] text-[#AFAFAF]">inventory_2</span>
             </div>
-            <p className="text-sm font-bold text-[#777777]">Báº¡n chÆ°a cÃ³ Ä‘Æ¡n Ä‘áº·t chá»— nÃ o.</p>
-            <Link to="/tim-va-dat-kho" className="duo-btn-green px-5 py-3 text-xs mt-1">TÃ¬m & Ä‘áº·t kho ngay</Link>
+            <p className="text-sm font-bold text-[#777777]">Bạn chưa có đơn đặt chỗ nào.</p>
+            <Link to="/tim-va-dat-kho" className="duo-btn-green px-5 py-3 text-xs mt-1">Tìm & đặt kho ngay</Link>
           </div>
         )}
 
         {!loading && !error && reservations.length > 0 && visibleReservations.length === 0 && (
-          <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF] bg-white">KhÃ´ng cÃ³ Ä‘Æ¡n nÃ o á»Ÿ tráº¡ng thÃ¡i nÃ y.</p>
+          <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF] bg-white">Không có đơn nào ở trạng thái này.</p>
         )}
 
         {!loading && !error && visibleReservations.length > 0 && (
@@ -263,16 +263,16 @@ export default function MyReservationsPage() {
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
-                  <th className="px-3 py-3 whitespace-nowrap">MÃ£ Ä‘Æ¡n</th>
-                  <th className="px-3 py-3 whitespace-nowrap">CÆ¡ sá»Ÿ</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Loáº¡i kho</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Ã” kho</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Báº¯t Ä‘áº§u</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Mã đơn</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Cơ sở</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Loại kho</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Ô kho</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Bắt đầu</th>
                   <th className="px-3 py-3 whitespace-nowrap text-center">T/gian</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Tiá»n cá»c</th>
-                  <th className="px-3 py-3 whitespace-nowrap">NgÃ y Ä‘áº·t</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Tráº¡ng thÃ¡i</th>
-                  <th className="px-3 py-3 whitespace-nowrap text-right">Thao tÃ¡c</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Tiền cọc</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Ngày đặt</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Trạng thái</th>
+                  <th className="px-3 py-3 whitespace-nowrap text-right">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="text-[13px] font-bold text-[#4B4B4B]">
@@ -296,7 +296,7 @@ export default function MyReservationsPage() {
                         {r.storageUnitId ? (
                           <span className="font-mono font-black text-[#4B4B4B]">{r.storageUnitId}</span>
                         ) : (
-                          <span className="text-[#AFAFAF] italic">ChÆ°a gÃ¡n</span>
+                          <span className="text-[#AFAFAF] italic">Chưa gán</span>
                         )}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap font-bold text-[#4B4B4B]">{formatDate(r.startDate)}</td>
@@ -316,7 +316,7 @@ export default function MyReservationsPage() {
                           {isExpiringSoon && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600] animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600]"></span>
-                              Sáº¯p háº¿t háº¡n {diffDays <= 0 ? '(HÃ´m nay)' : `(${diffDays} ngÃ y)`}
+                              Sắp hết hạn {diffDays <= 0 ? '(Hôm nay)' : `(${diffDays} ngày)`}
                             </span>
                           )}
                         </div>
@@ -329,7 +329,7 @@ export default function MyReservationsPage() {
                               className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
                             >
                               <span className="material-symbols-outlined text-[14px]">description</span>
-                              XEM HÄ
+                              XEM HĐ
                             </button>
                           )}
                           {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
@@ -341,7 +341,7 @@ export default function MyReservationsPage() {
                               className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
                             >
                               <span className="material-symbols-outlined text-[14px]">cancel</span>
-                              Há»¦Y ÄÆ N
+                              HỦY ĐƠN
                             </button>
                           )}
                         </div>
@@ -364,4 +364,3 @@ export default function MyReservationsPage() {
     </div>
   );
 }
-

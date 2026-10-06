@@ -124,7 +124,7 @@ export default function ReservationConfirmationPage() {
               <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
               đã bị hủy. Vui lòng đặt lại hoặc liên hệ hỗ trợ.
             </p>
-            <button onClick={() => navigate('/booking')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
+            <button onClick={() => navigate('/tim-va-dat-kho')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
               TÌM KHO MỚI
             </button>
           </div>

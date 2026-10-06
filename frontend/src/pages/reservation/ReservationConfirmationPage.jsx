@@ -41,21 +41,46 @@ export default function ReservationConfirmationPage() {
   const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
 
   useEffect(() => {
-    const resId = reservation.id
-    if (resId) {
-      confirmPaymentAfterCheckout(resId, totalPayment, reservationCode)
-        .then((data) => {
-          if (data && data.status) {
-            setFinalStatus(data.status)
-          } else {
-            setFinalStatus('DEPOSIT_PAID')
-          }
-        })
-        .catch((err) => {
-          console.warn('[QueenKho] Lỗi khi tự động cập nhật thanh toán:', err)
-        })
+    const orderId = searchParams.get('orderId')
+    const vnpResponse = searchParams.get('vnpResponse')
+
+    if (vnpResponse && vnpResponse !== '00' && vnpResponse !== '24') {
+      setFinalStatus('FAILED')
+      return
     }
-  }, [reservation.id, totalPayment, reservationCode])
+    if (vnpResponse === '24') {
+      setFinalStatus('FAILED')
+      return
+    }
+
+    if (orderId) {
+      let active = true
+      const poll = async () => {
+        try {
+          const result = await getVnpayStatus(orderId)
+          if (!active) return
+          if (result.status === 'SUCCESS') {
+            setFinalStatus('DEPOSIT_PAID')
+            clearInterval(intervalId)
+          } else if (result.status === 'NEEDS_REFUND') {
+            setFinalStatus('REFUND_PENDING')
+            clearInterval(intervalId)
+          } else if (result.status === 'FAILED') {
+            setFinalStatus('FAILED')
+            clearInterval(intervalId)
+          }
+        } catch (e) {
+          console.error('Polling failed', e)
+        }
+      }
+      const intervalId = setInterval(poll, 3000)
+      poll()
+      return () => {
+        active = false
+        clearInterval(intervalId)
+      }
+    }
+  }, [searchParams])
 
   return (
     <div className="p-6 max-w-3xl mx-auto select-none">
@@ -77,7 +102,24 @@ export default function ReservationConfirmationPage() {
       <div className="duo-card overflow-hidden">
 
         {/* Phần đầu - Biểu tượng thành công */}
-        {finalStatus === 'REFUND_PENDING' ? (
+        {finalStatus === 'FAILED' ? (
+          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFDFDF]">
+            <div className="w-20 h-20 rounded-3xl bg-[#FF4B4B] border-b-4 border-[#EA2B2B] flex items-center justify-center text-white text-4xl mb-4">
+              <span className="material-symbols-outlined text-[40px]">close</span>
+            </div>
+            <p className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider mb-1">
+              THANH TOÁN THẤT BẠI HOẶC ĐÃ HỦY
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] text-center">
+              GIAO DỊCH CHƯA HOÀN TẤT
+            </h1>
+            <p className="text-xs font-bold text-[#AFAFAF] mt-2 text-center">
+              Đơn đặt chỗ{' '}
+              <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
+              đã bị hủy. Vui lòng đặt lại hoặc liên hệ hỗ trợ.
+            </p>
+          </div>
+        ) : finalStatus === 'REFUND_PENDING' ? (
           <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFE8CC]">
             <div className="w-16 h-16 rounded-2xl bg-[#FF9600] border-b-4 border-[#E58800] flex items-center justify-center text-white text-2xl mb-4">
               ⚠️

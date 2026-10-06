@@ -8,107 +8,91 @@ export default {
     extend: {
       colors: {
         // ==========================================
-        // 1. CÁC BÍ DANH TIỆN ÍCH (Cho Login, Register & Các Flow)
+        // 1. BẢNG MÀU CHÍNH DUOLINGO (FLAT 2.5D SYSTEM)
         // ==========================================
-        "brand": "#0b3d66",             // Xanh Navy QueenKho (trùng primary-container)
-        "brand-hover": "#002746",       // Xanh Navy đậm khi hover
-        "action": "#0051d5",            // Xanh dương hành động / nút bấm (trùng secondary)
-        "action-hover": "#003ea8",      // Hover nút bấm (trùng on-secondary-fixed-variant)
-        "page": "#f9f9ff",              // Nền trang xám mát (trùng background)
-        "surface": "#ffffff",           // Nền thẻ trắng nổi bật
-        "ink": "#141b2b",               // Màu chữ đen đậm tiêu đề (trùng on-surface)
+        "duo-green": "#58CC02",        // Feather Green đặc trưng
+        "duo-green-dark": "#58A700",   // Viền/đổ bóng nút bấm 2.5D
+        "duo-green-hover": "#61E002",
+        "duo-green-light": "#D7FFB8",
+
+        "duo-blue": "#1CB0F6",         // Macaw Blue
+        "duo-blue-dark": "#1899D6",
+        "duo-blue-hover": "#25C0FF",
+        "duo-blue-light": "#DDF4FF",
+
+        "duo-orange": "#FF9600",       // Fox Orange / Streak Flame
+        "duo-orange-dark": "#E58800",
+        "duo-orange-light": "#FFE8CC",
+
+        "duo-red": "#FF4B4B",          // Cardinal Red / Heart
+        "duo-red-dark": "#EA2B2B",
+        "duo-red-light": "#FFDFDF",
+
+        "duo-yellow": "#FFC800",       // Crown / Gold Coin
+        "duo-yellow-dark": "#E5B400",
+        "duo-yellow-light": "#FFF3B3",
+
+        "duo-purple": "#CE82FF",       // Badges & VIP
+        "duo-purple-dark": "#A559D9",
+
+        "duo-gray": "#E5E5E5",         // Viền thẻ / Nền xám nhạt
+        "duo-gray-dark": "#CECECE",    // Viền đậm hơn
+        "duo-border": "#E5E5E5",
+        "duo-text": "#4B4B4B",         // Chữ chính đậm
+        "duo-muted": "#777777",        // Chữ phụ
+        "duo-bg": "#FFFFFF",
+        "duo-surface": "#F7F7F7",
 
         // ==========================================
-        // 2. NGUYÊN BẢN TOKENS MATERIAL DESIGN 3 CỦA TEAM
+        // 2. MAPPING TƯƠNG THÍCH TOÀN DỰ ÁN SANG DUOLINGO
         // ==========================================
-        "background": "#f9f9ff",
-        "on-background": "#141b2b",
-        "on-primary-fixed-variant": "#1d4973",
-        "error": "#ba1a1a",
-        "error-container": "#ffdad6",
-        "primary-container": "#0b3d66",
-        "secondary-fixed-dim": "#b4c5ff",
-        "tertiary-fixed-dim": "#4edea3",
-        "surface-container": "#e9edff",
-        "surface-bright": "#f9f9ff",
-        "secondary": "#0051d5",
-        "inverse-on-surface": "#edf0ff",
-        "secondary-fixed": "#dbe1ff",
-        "on-primary-container": "#81a8d7",
-        "on-surface-variant": "#42474e",
-        "on-error": "#ffffff",
-        "on-primary": "#ffffff",
-        "primary": "#002746",
-        "inverse-primary": "#a2cafa",
-        "surface-variant": "#dce2f7",
-        "on-tertiary-fixed-variant": "#005236",
-        "surface-dim": "#d3daef",
-        "primary-fixed": "#d1e4ff",
-        "on-secondary": "#ffffff",
-        "inverse-surface": "#293040",
-        "on-tertiary-container": "#17bb83",
-        "tertiary-fixed": "#6ffbbe",
-        "surface-container-low": "#f1f3ff",
-        "on-secondary-fixed-variant": "#003ea8",
-        "tertiary-container": "#00442d",
-        "outline-variant": "#c2c7cf",
-        "on-surface": "#141b2b",
-        "primary-fixed-dim": "#a2cafa",
-        "outline": "#73777f",
-        "surface-tint": "#38618c",
-        "secondary-container": "#316bf3",
-        "on-secondary-fixed": "#00174b",
-        "on-secondary-container": "#fefcff",
-        "on-tertiary": "#ffffff",
-        "on-primary-fixed": "#001d36",
-        "surface-container-lowest": "#ffffff",
-        "on-error-container": "#93000a",
-        "surface-container-highest": "#dce2f7",
-        "on-tertiary-fixed": "#002113",
-        "tertiary": "#002c1b",
-        "surface-container-high": "#e1e8fd",
-        "brand": "#002746",
-        "action": "#0051d5",
-        "page": "#f9f9ff",
-        "ink": "#141b2b",
-        "success": "#17bb83",
-      },
-      borderRadius: {
-        DEFAULT: "0.125rem",
-        lg: "0.25rem",
-        xl: "0.5rem",
-        full: "9999px", // Sửa thành 9999px để avatar và loading spinner luôn tròn trịa
-      },
-      spacing: {
-        "space-xl": "2rem",
-        "space-sm": "0.5rem",
-        "space-lg": "1.5rem",
-        "space-md": "1rem",
-        "space-xs": "0.25rem",
-        "gutter": "1.5rem",
-        "margin": "2rem",
+        "brand": "#58CC02",
+        "brand-hover": "#61E002",
+        "action": "#58CC02",
+        "action-hover": "#61E002",
+        "page": "#FFFFFF",
+        "surface": "#FFFFFF",
+        "ink": "#4B4B4B",
+
+        "background": "#FFFFFF",
+        "on-background": "#4B4B4B",
+        "primary": "#58CC02",
+        "primary-hover": "#61E002",
+        "primary-dark": "#58A700",
+        "primary-container": "#D7FFB8",
+        "on-primary": "#FFFFFF",
+        "on-primary-container": "#58A700",
+        "primary-fixed": "#D7FFB8",
+        "primary-fixed-dim": "#C3F59B",
+
+        "secondary": "#1CB0F6",
+        "secondary-dark": "#1899D6",
+        "secondary-fixed": "#DDF4FF",
+        "secondary-fixed-dim": "#B8E9FF",
+        "on-secondary": "#FFFFFF",
+
+        "surface-container-lowest": "#FFFFFF",
+        "surface-container-low": "#F7F7F7",
+        "surface-container": "#F7F7F7",
+        "surface-container-high": "#E5E5E5",
+        "on-surface": "#4B4B4B",
+        "on-surface-variant": "#777777",
+        "outline": "#CECECE",
+        "outline-variant": "#E5E5E5",
+        "error": "#FF4B4B",
+        "error-container": "#FFDFDF",
+        "on-error-container": "#EA2B2B",
+        "success": "#58CC02",
+        "warning": "#FF9600",
       },
       fontFamily: {
-        "headline-sm": ["Inter", "sans-serif"],
-        "headline-md": ["Inter", "sans-serif"],
-        "code-sm": ["Inter", "sans-serif"],
-        "title-md": ["Inter", "sans-serif"],
-        "label-sm": ["Inter", "sans-serif"],
-        "body-sm": ["Inter", "sans-serif"],
-        "label-md": ["Inter", "sans-serif"],
-        "display-lg": ["Inter", "sans-serif"],
-        "body-md": ["Inter", "sans-serif"],
+        sans: ["Nunito", "Inter", "sans-serif"],
+        headline: ["Nunito", "sans-serif"],
       },
-      fontSize: {
-        "headline-sm": ["18px", { lineHeight: "24px", letterSpacing: "-0.01em", fontWeight: "600" }],
-        "headline-md": ["24px", { lineHeight: "32px", letterSpacing: "-0.015em", fontWeight: "600" }],
-        "code-sm": ["12px", { lineHeight: "16px", letterSpacing: "0.02em", fontWeight: "500" }],
-        "title-md": ["15px", { lineHeight: "20px", letterSpacing: "-0.005em", fontWeight: "600" }],
-        "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "500" }],
-        "body-sm": ["13px", { lineHeight: "18px", letterSpacing: "0em", fontWeight: "400" }],
-        "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.04em", fontWeight: "600" }],
-        "display-lg": ["32px", { lineHeight: "40px", letterSpacing: "-0.02em", fontWeight: "700" }],
-        "body-md": ["14px", { lineHeight: "20px", letterSpacing: "0em", fontWeight: "400" }],
+      borderRadius: {
+        "xl": "1rem",
+        "2xl": "1.25rem",
+        "3xl": "1.5rem",
       },
     },
   },

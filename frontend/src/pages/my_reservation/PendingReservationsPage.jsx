@@ -2,19 +2,11 @@ import { useEffect, useState } from 'react'
 import { getPendingReservations } from '../../services/reservationService'
 import AssignUnitModal from '../../components/AssignUnitModal'
 
-const cardStyle = {
-  backgroundColor: 'rgb(255, 255, 255)',
-  border: '1px solid rgb(203, 213, 225)',
-  borderRadius: '0.75rem',
-  boxShadow: 'rgba(0, 0, 0, 0.05) 0px 1px 2px 0px',
-}
-
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
   return Number(amount).toLocaleString('vi-VN') + '₫'
 }
 
-// yyyy-MM-dd -> dd/MM/yyyy (không qua Date để tránh lệch múi giờ)
 function formatDate(value) {
   if (!value) return '—'
   const [y, m, d] = String(value).split('-')
@@ -26,7 +18,6 @@ function formatDateOnly(value) {
   return new Date(value).toLocaleDateString('vi-VN')
 }
 
-// Số ngày còn lại tới ngày khách hẹn nhận kho (âm = đã quá hạn)
 function daysUntil(value) {
   if (!value) return null
   const [y, m, d] = String(value).split('-').map(Number)
@@ -38,10 +29,10 @@ function daysUntil(value) {
 
 function startHint(diff) {
   if (diff === null) return null
-  if (diff < 0) return { text: `Quá hạn ${-diff} ngày`, className: 'text-error font-semibold' }
-  if (diff === 0) return { text: 'Hôm nay', className: 'text-error font-semibold' }
-  if (diff === 1) return { text: 'Ngày mai', className: 'text-secondary font-semibold' }
-  return { text: `Còn ${diff} ngày`, className: 'text-outline' }
+  if (diff < 0) return { text: `Quá hạn ${-diff} ngày`, className: 'text-[#FF4B4B] font-black' }
+  if (diff === 0) return { text: 'Hôm nay', className: 'text-[#FF4B4B] font-black' }
+  if (diff === 1) return { text: 'Ngày mai', className: 'text-[#FF9600] font-black' }
+  return { text: `Còn ${diff} ngày`, className: 'text-[#AFAFAF] font-bold' }
 }
 
 function initials(name) {
@@ -63,7 +54,6 @@ export default function PendingReservationsPage() {
   const [error, setError] = useState(userId ? '' : 'Bạn cần đăng nhập để xem danh sách đơn chờ gán ô.')
   const [reloadKey, setReloadKey] = useState(0)
 
-  // State cho Pop-up Gán ô kho (Modal)
   const [selectedReservation, setSelectedReservation] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [toast, setToast] = useState(null)
@@ -72,7 +62,6 @@ export default function PendingReservationsPage() {
     if (!userId) return
 
     let cancelled = false
-    // Backend tự lấy cơ sở của quản lý theo userId (users.facility_id)
     getPendingReservations({ managerId: userId })
       .then((data) => {
         if (cancelled) return
@@ -98,7 +87,6 @@ export default function PendingReservationsPage() {
     setReloadKey((k) => k + 1)
   }
 
-  // Mở popup gán ô kho thực tế (Stitch modal)
   const openAssign = (item) => {
     setSelectedReservation(item)
     setIsModalOpen(true)
@@ -107,7 +95,7 @@ export default function PendingReservationsPage() {
   const handleAssignSuccess = (unitId, code) => {
     setToast({
       title: 'Gán ô kho thành công!',
-      desc: `Đã phân bổ ô ${unitId} cho đơn ${code} & kích hoạt trạng thái gán kho.`,
+      desc: `Đã phân bổ ô ${unitId} cho đơn ${code} & kích hoạt mã mở khóa.`,
     })
     reload()
     setTimeout(() => {
@@ -116,31 +104,48 @@ export default function PendingReservationsPage() {
   }
 
   return (
-    <div className="max-w-content-max-width mx-auto px-gutter py-space-lg">
-      <div className="flex flex-col w-full gap-space-lg">
-        {/* Banner tiêu đề */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
-          <div className="flex items-start gap-space-md">
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-on-primary shrink-0 shadow-sm">
-              <span className="material-symbols-outlined text-[28px]">pending_actions</span>
+    <div className="max-w-[1200px] mx-auto px-8 py-8 select-none">
+      <div className="flex flex-col gap-6">
+
+        {/* Toast notification */}
+        {toast && (
+          <div className="duo-card p-4 bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-between text-[#58A700]">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-[24px]">check_circle</span>
+              <div>
+                <p className="font-black text-sm uppercase">{toast.title}</p>
+                <p className="font-bold text-xs">{toast.desc}</p>
+              </div>
+            </div>
+            <button onClick={() => setToast(null)} className="text-[#58A700] hover:text-[#4B4B4B]">
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+        )}
+
+        {/* Banner tiêu đề Duolingo Card */}
+        <div className="duo-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#FF9600] border-b-4 border-[#E58800] flex items-center justify-center text-white shrink-0">
+              <span className="material-symbols-outlined text-[30px]">pending_actions</span>
             </div>
             <div className="flex flex-col">
-              <span className="self-start font-label-sm text-label-sm text-secondary uppercase tracking-wider bg-secondary-fixed/50 px-2 py-0.5 rounded-full">
-                Hàng đợi xử lý
+              <span className="self-start text-[11px] font-black text-[#E58800] uppercase tracking-wider bg-[#FFE8CC] border border-[#FF9600] px-2.5 py-0.5 rounded-full">
+                Hàng đợi phê duyệt
               </span>
-              <h1 className="font-display-lg text-display-lg text-primary tracking-tight mt-1">
-                Đơn chờ gán ô kho
+              <h1 className="text-2xl font-black text-[#4B4B4B] tracking-tight mt-1">
+                Đơn chờ gán ô kho thực tế
               </h1>
-              <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-                Các đơn khách đã thanh toán cọc nhưng chưa được gán ô kho thực tế. Đơn cũ nhất được xếp trước.
-                Các đơn khách hàng đã đặt đang chờ gán ô kho thực tế. Đơn cũ nhất được xếp trước.
+              <p className="text-xs font-bold text-[#AFAFAF] mt-1">
+                Khách hàng đã thanh toán cọc thành công. Cần chỉ định mã ô kho vật lý trước ngày hẹn nhận kho.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-space-md shrink-0 self-start md:self-center">
-            <div className="bg-surface-container-low px-space-md py-space-xs rounded-xl flex flex-col">
-              <span className="font-label-sm text-label-sm text-on-surface-variant">Chờ gán kho</span>
-              <span className="font-title-md text-title-md text-primary">
+
+          <div className="flex items-center gap-3 shrink-0 self-start md:self-center">
+            <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] px-4 py-2 rounded-2xl flex flex-col">
+              <span className="text-[10px] font-black uppercase text-[#1CB0F6]">Chờ phân bổ</span>
+              <span className="text-xl font-black text-[#1CB0F6]">
                 {loading ? '—' : `${items.length} đơn`}
               </span>
             </div>
@@ -148,142 +153,117 @@ export default function PendingReservationsPage() {
               type="button"
               onClick={reload}
               disabled={loading}
-              className="h-10 px-space-md bg-surface-container hover:bg-surface-container-high text-on-surface font-label-lg text-label-lg rounded-lg flex items-center gap-space-xs transition-colors disabled:opacity-60"
+              className="duo-btn-white px-4 py-2.5 text-xs tracking-wider"
             >
-              <span className={`material-symbols-outlined text-[18px] ${loading ? 'animate-spin' : ''}`}>sync</span>
-              <span>Làm mới</span>
+              <span className={`material-symbols-outlined text-[18px] mr-1 ${loading ? 'animate-spin' : ''}`}>sync</span>
+              <span>LÀM MỚI</span>
             </button>
           </div>
         </div>
 
-        {/* Bảng danh sách */}
-        <div className="bg-surface-container-lowest overflow-hidden flex flex-col" style={cardStyle}>
-          {loading && <p className="px-space-lg py-space-lg text-on-surface-variant">Đang tải danh sách...</p>}
+        {/* Bảng danh sách Duolingo Card */}
+        <div className="duo-card overflow-hidden">
+          {loading && <p className="p-8 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách hàng đợi...</p>}
 
           {!loading && error && (
-            <div className="px-space-lg py-space-lg flex flex-col items-start gap-3">
-              <p className="text-error">{error}</p>
+            <div className="p-8 flex flex-col items-center gap-3 text-center">
+              <p className="text-xs font-black text-[#FF4B4B]">{error}</p>
               <button
                 type="button"
                 onClick={reload}
-                className="px-4 py-2 bg-primary text-on-primary rounded font-label-lg text-label-lg hover:opacity-90"
+                className="duo-btn-green px-5 py-2.5 text-xs"
               >
-                Thử lại
+                THỬ LẠI
               </button>
             </div>
           )}
 
           {!loading && !error && items.length === 0 && (
-            <div className="px-space-lg py-space-2xl flex flex-col items-center gap-2 text-center">
-              <span className="material-symbols-outlined text-[40px] text-outline">task_alt</span>
-              <p className="text-on-surface-variant">Không có đơn nào đang chờ gán ô kho.</p>
+            <div className="p-12 flex flex-col items-center gap-2 text-center">
+              <span className="material-symbols-outlined text-[48px] text-[#58CC02]">task_alt</span>
+              <p className="text-sm font-black text-[#4B4B4B]">Tuyệt vời! Không còn đơn nào chờ gán kho.</p>
             </div>
           )}
 
           {!loading && !error && items.length > 0 && (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low/50 text-outline text-label-sm font-label-sm uppercase tracking-wider">
-                      <th className="py-3.5 px-space-md">Mã đặt cọc</th>
-                      <th className="py-3.5 px-space-md">Ngày cọc</th>
-                      <th className="py-3.5 px-space-md">Mã đơn</th>
-                      <th className="py-3.5 px-space-md">Ngày đặt</th>
-                      <th className="py-3.5 px-space-md">Khách hàng</th>
-                      <th className="py-3.5 px-space-md">Số điện thoại</th>
-                      <th className="py-3.5 px-space-md">Loại kho đã chọn</th>
-                      <th className="py-3.5 px-space-md">Chu kỳ thuê</th>
-                      <th className="py-3.5 px-space-md">Ngày hẹn nhận kho</th>
-                      <th className="py-3.5 px-space-md">Tiền cọc đã thu</th>
-                      <th className="py-3.5 px-space-md">Tiền cọc</th>
-                      <th className="py-3.5 px-space-md text-right pr-space-lg">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-container text-body-md font-body-md text-on-surface">
-                    {items.map((r) => {
-                      const hint = startHint(daysUntil(r.startDate))
-                      return (
-                        <tr key={r.id} className="transition-colors hover:bg-slate-50">
-                          <td className="py-4 px-4 align-middle font-code-md text-code-md font-semibold text-secondary">
-                            {r.reservationCode}
-                          </td>
-                          <td className="py-4 px-4 align-middle text-on-surface-variant font-code-md text-code-md">
-                            {formatDateOnly(r.createdAt)}
-                          </td>
-                          <td className="py-4 px-4 align-middle">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-title-md text-label-sm">
-                                {initials(r.customerName)}
-                              </div>
-                              <span className="font-title-md text-body-md text-on-surface leading-snug">
-                                {r.customerName}
-                              </span>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3.5 px-5">Mã đơn</th>
+                    <th className="py-3.5 px-5">Ngày cọc</th>
+                    <th className="py-3.5 px-5">Khách hàng</th>
+                    <th className="py-3.5 px-5">Điện thoại</th>
+                    <th className="py-3.5 px-5">Loại kho</th>
+                    <th className="py-3.5 px-5">Thời hạn</th>
+                    <th className="py-3.5 px-5">Hẹn nhận</th>
+                    <th className="py-3.5 px-5">Tiền cọc</th>
+                    <th className="py-3.5 px-5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-[#E5E5E5] text-xs font-bold text-[#4B4B4B]">
+                  {items.map((r) => {
+                    const hint = startHint(daysUntil(r.startDate))
+                    return (
+                      <tr key={r.id} className="hover:bg-[#FDFDFD] transition-colors">
+                        <td className="py-4 px-5 font-black text-[#1CB0F6]">
+                          {r.reservationCode}
+                        </td>
+                        <td className="py-4 px-5 text-[#AFAFAF]">
+                          {formatDateOnly(r.createdAt)}
+                        </td>
+                        <td className="py-4 px-5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-xl bg-[#58CC02] border-b border-[#58A700] text-white flex items-center justify-center font-black text-xs">
+                              {initials(r.customerName)}
                             </div>
-                          </td>
-                          <td className="py-4 px-4 align-middle font-code-md text-code-md">{r.customerPhone || '—'}</td>
-                          <td className="py-4 px-4 align-middle">
-                            <span
-                              className="inline-flex items-center px-2.5 py-1 rounded-md font-label-md text-label-md"
-                              style={{ color: '#1D4ED8', border: '1px solid #93C5FD', backgroundColor: '#DBEAFE' }}
-                            >
-                              {r.unitTypeName}
+                            <span className="font-black text-[#4B4B4B]">
+                              {r.customerName}
                             </span>
-                          </td>
-                          <td className="py-4 px-4 align-middle font-label-lg text-label-lg">Thuê {r.durationMonths} tháng</td>
-                          <td className="py-4 px-4 align-middle">
-                            <div className="flex flex-col">
-                              <span className="font-code-md text-code-md">{formatDate(r.startDate)}</span>
-                              {hint && <span className={`text-label-sm font-label-sm ${hint.className}`}>{hint.text}</span>}
-                            </div>
-                          </td>
-                          <td className="py-4 px-4 align-middle font-title-md text-title-md text-tertiary-container font-semibold">
-                            {formatVND(r.depositAmount)}
-                          </td>
-                          <td className="py-4 px-4 align-middle text-right pr-space-lg">
-                            <button
-                              type="button"
-                              onClick={() => openAssign(r)}
-                              className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg font-label-lg text-label-lg shadow-sm transition-all active:scale-95"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">domain_verification</span>
-                              <span>Gán ô kho</span>
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="px-space-lg py-3.5 bg-surface-container-low/40 font-body-sm text-body-sm text-on-surface-variant">
-                Tổng cộng <span className="font-semibold text-on-surface">{items.length}</span> đơn đang chờ gán ô kho
-              </div>
-            </>
+                          </div>
+                        </td>
+                        <td className="py-4 px-5">{r.customerPhone || '—'}</td>
+                        <td className="py-4 px-5">
+                          <span className="duo-badge bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]">
+                            {r.unitTypeName}
+                          </span>
+                        </td>
+                        <td className="py-4 px-5 font-black">{r.durationMonths} tháng</td>
+                        <td className="py-4 px-5">
+                          <div className="flex flex-col">
+                            <span>{formatDate(r.startDate)}</span>
+                            {hint && <span className={`text-[10px] ${hint.className}`}>{hint.text}</span>}
+                          </div>
+                        </td>
+                        <td className="py-4 px-5 font-black text-[#58CC02]">
+                          {formatVND(r.depositAmount)}
+                        </td>
+                        <td className="py-4 px-5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openAssign(r)}
+                            className="duo-btn-green px-4 py-2 text-xs"
+                          >
+                            <span className="material-symbols-outlined text-[16px] mr-1">key</span>
+                            <span>GÁN Ô KHO</span>
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Pop-up Modal Phân Bổ Ô Kho Thực Tế (Stitch Design) */}
       <AssignUnitModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         reservation={selectedReservation}
         onSuccess={handleAssignSuccess}
       />
-
-      {/* Toast Notification khi Gán Kho Thành Công */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 transform transition-all duration-300 flex items-center gap-3 bg-primary text-on-primary px-space-lg py-space-md rounded-xl shadow-2xl">
-          <div className="w-8 h-8 rounded-full bg-tertiary-container flex items-center justify-center text-on-tertiary-container">
-            <span className="material-symbols-outlined text-[20px]">check</span>
-          </div>
-          <div className="flex flex-col">
-            <span className="font-title-md text-body-md font-semibold text-on-primary">{toast.title}</span>
-            <span className="font-body-sm text-label-sm text-surface-container-high">{toast.desc}</span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

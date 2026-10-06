@@ -2,13 +2,10 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { login, saveSession } from '../../services/authService'
 
-function BrandMark() {
+function DuoBrandMark() {
   return (
-    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-action text-white shadow-lg shadow-blue-950/20">
-      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" aria-hidden="true">
-        <path d="M4 10.5 12 4l8 6.5V20H4v-9.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-        <path d="M8 20v-6h8v6M9.5 9.5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
+    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] text-white">
+      <span className="material-symbols-outlined text-[32px]">warehouse</span>
     </div>
   )
 }
@@ -16,12 +13,12 @@ function BrandMark() {
 function EyeIcon({ open }) {
   return open ? (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" strokeWidth="1.7" />
-      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="2" />
     </svg>
   ) : (
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-      <path d="m4 4 16 16M10.7 6.1A10 10 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.2 2.8M7.4 7.4C4.2 9.1 2.5 12 2.5 12s3.5 6 9.5 6a9 9 0 0 0 3.2-.6M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="m4 4 16 16M10.7 6.1A10 10 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-2.2 2.8M7.4 7.4C4.2 9.1 2.5 12 2.5 12s3.5 6 9.5 6a9 9 0 0 0 3.2-.6M10.2 10.2a2.5 2.5 0 0 0 3.6 3.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
 }
@@ -90,52 +87,69 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-page lg:grid lg:grid-cols-[1.05fr_0.95fr]">
-      <section className="brand-grid relative hidden min-h-screen overflow-hidden bg-brand px-12 py-10 text-white lg:flex lg:flex-col xl:px-20">
-        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-action/25 blur-3xl" />
-        <div className="absolute -bottom-40 -right-24 h-[30rem] w-[30rem] rounded-full bg-success/20 blur-3xl" />
-
-        <div className="relative flex items-center gap-3">
-          <BrandMark />
+    <main className="min-h-screen bg-white lg:grid lg:grid-cols-[1.05fr_0.95fr] select-none">
+      {/* Duolingo Brand Showcase Hero (Left Panel) */}
+      <section className="relative hidden min-h-screen flex-col justify-between bg-[#58CC02] border-r-4 border-[#58A700] px-12 py-12 text-white lg:flex xl:px-20">
+        {/* Top brand */}
+        <div className="flex items-center gap-3.5">
+          <div className="h-12 w-12 rounded-2xl bg-white border-b-4 border-[#E5E5E5] flex items-center justify-center text-[#58CC02] shadow-sm">
+            <span className="material-symbols-outlined text-[28px]">warehouse</span>
+          </div>
           <div>
-            <p className="text-xl font-bold tracking-tight">QueenKho</p>
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-blue-100">Self-Storage</p>
+            <p className="text-2xl font-black uppercase tracking-wider">QueenKho</p>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-100">Kho tự quản Flat & Smart</p>
           </div>
         </div>
 
-        <div className="relative my-auto max-w-xl py-16">
-          <h1 className="text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
-            Quản lý kho lưu trữ
+        {/* Center Gamified Hero Card */}
+        <div className="my-auto max-w-lg space-y-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-xs font-black uppercase tracking-wider backdrop-blur-xs">
+            <span>🎉</span>
+            <span>Hệ thống kho tự quản thông minh 2026</span>
+          </div>
+
+          <h1 className="text-4xl font-black leading-tight tracking-tight xl:text-5xl">
+            Lưu trữ gọn gàng, khởi đầu thảnh thơi!
           </h1>
-          <p className="mt-5 max-w-lg text-base leading-7 text-blue-100 xl:text-lg">
-            Thuê và quản lý kho lưu trữ hiệu quả.
+          
+          <p className="text-base font-bold text-emerald-50 leading-relaxed xl:text-lg">
+            Đăng nhập để xem mã mở khóa SmartLock, thời hạn hợp đồng và quản lý kho lưu trữ của bạn mọi lúc mọi nơi.
           </p>
+
+
         </div>
 
-        <p className="relative text-xs text-blue-200">© 2026 QueenKho. All rights reserved.</p>
+        <p className="text-xs font-extrabold uppercase tracking-widest text-emerald-100">
+          © 2026 QueenKho. All rights reserved.
+        </p>
       </section>
 
-      <section className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-10 lg:px-14 xl:px-24">
+      {/* Login Form Panel (Right Panel) */}
+      <section className="flex min-h-screen items-center justify-center px-6 py-12 sm:px-12 lg:px-16 xl:px-24 bg-white">
         <div className="w-full max-w-md">
-          <div className="mb-10 flex items-center gap-3 lg:hidden">
-            <BrandMark />
+          {/* Mobile Header */}
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <DuoBrandMark />
             <div>
-              <p className="text-xl font-bold text-brand">QueenKho</p>
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">Self-Storage</p>
+              <p className="text-2xl font-black text-[#58CC02] uppercase tracking-wider">QueenKho</p>
+              <p className="text-xs font-black text-[#AFAFAF] uppercase tracking-widest">Self-Storage</p>
             </div>
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.14em] text-action">Chào mừng trở lại</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-ink sm:text-4xl">Đăng nhập tài khoản</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
-              Nhập thông tin của bạn để tiếp tục sử dụng QueenKho.
+            <h2 className="text-3xl font-black tracking-tight text-[#4B4B4B] sm:text-4xl">
+              Đăng nhập
+            </h2>
+            <p className="mt-2 text-sm font-bold text-[#AFAFAF]">
+              Nhập email và mật khẩu để tiếp tục quản lý kho của bạn!
             </p>
           </div>
 
-          <form className="mt-9 space-y-5" onSubmit={handleSubmit} noValidate>
+          <form className="mt-8 space-y-4" onSubmit={handleSubmit} noValidate>
             <div>
-              <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-700">Email</label>
+              <label htmlFor="email" className="mb-1.5 block text-xs font-black uppercase tracking-wider text-[#777777]">
+                Email tài khoản
+              </label>
               <input
                 id="email"
                 name="email"
@@ -145,12 +159,16 @@ export default function LoginPage() {
                 placeholder="example@gmail.com"
                 autoComplete="email"
                 disabled={loading}
-                className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                className="duo-input w-full"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Mật khẩu</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="password" className="block text-xs font-black uppercase tracking-wider text-[#777777]">
+                  Mật khẩu
+                </label>
+              </div>
               <div className="relative">
                 <input
                   id="password"
@@ -158,15 +176,15 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Nhập mật khẩu"
+                  placeholder="Nhập mật khẩu của bạn"
                   autoComplete="current-password"
                   disabled={loading}
-                  className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-action focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className="duo-input w-full pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((current) => !current)}
-                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-slate-400 transition hover:text-action"
+                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-[#AFAFAF] transition hover:text-[#58CC02] cursor-pointer"
                   aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 >
                   <EyeIcon open={showPassword} />
@@ -175,26 +193,34 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
+              <div role="alert" className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] px-4 py-3 text-xs font-black text-[#FF4B4B] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{error}</span>
               </div>
             )}
 
+            {/* Giant Pushable Green CTA Button */}
             <button
               type="submit"
               disabled={loading}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-action px-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-brand focus:outline-none focus:ring-4 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-70"
+              className="duo-btn-green w-full py-4 text-base tracking-wider mt-2 disabled:opacity-50"
             >
-              {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+              {loading && <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white mr-2" />}
+              {loading ? 'Đang đăng nhập...' : 'ĐĂNG NHẬP'}
             </button>
             
-            <p className="mt-6 text-center text-sm text-slate-500">
-              Chưa có tài khoản?{' '}
-              <Link to="/register" className="font-semibold text-action transition hover:text-brand">
-                Đăng ký ngay
+            {/* White/Gray Pushable Button for Registration */}
+            <div className="pt-4 border-t-2 border-[#E5E5E5] text-center">
+              <p className="text-xs font-bold text-[#AFAFAF] mb-3">
+                Bạn chưa có tài khoản QueenKho?
+              </p>
+              <Link
+                to="/register"
+                className="duo-btn-white w-full py-3.5 text-xs uppercase tracking-wider block text-center"
+              >
+                TẠO TÀI KHOẢN MỚI
               </Link>
-            </p>
+            </div>
           </form>
         </div>
       </section>

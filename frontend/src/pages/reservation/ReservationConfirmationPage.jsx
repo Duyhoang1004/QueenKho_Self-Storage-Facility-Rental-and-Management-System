@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { confirmPaymentAfterCheckout } from '../../services/sepayService'
 
-// Format tien VND
 function formatVND(amount) {
   return Number(amount || 0).toLocaleString('vi-VN') + 'đ'
 }
@@ -12,7 +11,6 @@ export default function ReservationConfirmationPage() {
   const { state } = useLocation()
   const [finalStatus, setFinalStatus] = useState('PENDING')
 
-  // Hosted Checkout lam mat navigate state, nen doc lai du lieu da luu truoc khi sang SePay.
   let savedContext = {}
   try {
     savedContext = JSON.parse(sessionStorage.getItem('queenkhoPaymentContext') || '{}')
@@ -34,10 +32,7 @@ export default function ReservationConfirmationPage() {
   const unitName = storage.name || '—'
   const area = storage.area ?? '—'
   const dimension = storage.dimension || '—'
-  const hotline = storage.hotline || '1900 6868'
 
-
-  // Format ngay hien thi
   const now = new Date()
   const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} ngày ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`
 
@@ -62,130 +57,110 @@ export default function ReservationConfirmationPage() {
   }, [reservation.id, totalPayment, reservationCode])
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto select-none">
 
       {/* Step indicator */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary text-sm font-bold">3</div>
-          <span className="text-title-md font-title-md text-on-surface">Biên Nhận Xác Nhận Đặt Chỗ</span>
+          <div className="w-8 h-8 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] flex items-center justify-center text-white text-xs font-black">
+            3
+          </div>
+          <span className="text-base font-black text-[#4B4B4B]">Biên Nhận Xác Nhận Đặt Chỗ</span>
         </div>
-        <span className="text-label-md font-label-md text-[#10B981] bg-[#ECFDF5] px-3 py-1 rounded-full flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">check_circle</span>
+        <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
+          <span className="material-symbols-outlined text-[16px]">check_circle</span>
           Hệ Thống Đã Ghi Nhận
         </span>
       </div>
 
-      <div className="bg-white rounded-xl border border-surface-container-high overflow-hidden">
+      <div className="duo-card overflow-hidden">
 
-        {/* Phan dau - icon va tieu de */}
+        {/* Phần đầu - Biểu tượng thành công */}
         {finalStatus === 'REFUND_PENDING' ? (
-          <div className="flex flex-col items-center py-8 px-6 border-b border-surface-container bg-orange-50">
-            <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-orange-600 text-[40px]">error</span>
+          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFE8CC]">
+            <div className="w-16 h-16 rounded-2xl bg-[#FF9600] border-b-4 border-[#E58800] flex items-center justify-center text-white text-2xl mb-4">
+              ⚠️
             </div>
-            <p className="text-label-md font-label-md text-orange-600 uppercase tracking-wider mb-2">
+            <p className="text-xs font-black text-[#E58800] uppercase tracking-wider mb-2">
               Quá hạn thanh toán
             </p>
-            <h1 className="text-headline-md font-headline-md text-orange-700 text-center uppercase">
+            <h1 className="text-2xl font-black text-[#4B4B4B] text-center uppercase">
               Thanh toán trễ • Đơn đã bị hủy
             </h1>
-            <div className="text-body-md font-body-md text-orange-800 mt-3 text-center bg-white p-4 rounded-lg shadow-sm border border-orange-200">
-              Đơn đặt chỗ <span className="font-bold">#{reservationCode}</span> đã bị hệ thống tự động hủy do thanh toán quá thời gian 10 phút.<br/><br/>
-              Chúng tôi đã ghi nhận khoản tiền của bạn. Vui lòng liên hệ hỗ trợ để được hoàn tiền nhanh nhất!
+            <div className="duo-card p-4 mt-3 text-xs font-bold text-[#E58800] text-center max-w-lg">
+              Đơn đặt chỗ <span className="font-black text-[#4B4B4B]">#{reservationCode}</span> đã quá hạn 10 phút thanh toán.<br/>
+              Chúng tôi đã ghi nhận khoản tiền của bạn. Vui lòng liên hệ hỗ trợ để được hoàn tiền ngay!
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center py-8 px-6 border-b border-surface-container">
-            <div className="w-16 h-16 rounded-full bg-[#ECFDF5] flex items-center justify-center mb-4">
-              <span className="material-symbols-outlined text-[#10B981] text-[40px]">check_circle</span>
+          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
+            <div className="w-20 h-20 rounded-3xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white text-4xl mb-4">
+              🎉
             </div>
-            <p className="text-label-md font-label-md text-[#D97706] uppercase tracking-wider mb-2">
-              Đặt chỗ tự động
+            <p className="text-xs font-black text-[#58CC02] uppercase tracking-wider mb-1">
+              ĐẶT CHỖ THÀNH CÔNG!
             </p>
-            <h1 className="text-headline-md font-headline-md text-on-surface text-center">
-              THANH TOÁN THÀNH CÔNG • ĐẶT CHỖ ĐÃ XÁC NHẬN
+            <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] text-center">
+              THANH TOÁN THÀNH CÔNG • ĐÃ XÁC NHẬN
             </h1>
-            <p className="text-body-sm font-body-sm text-on-surface-variant mt-2 text-center">
+            <p className="text-xs font-bold text-[#AFAFAF] mt-2 text-center">
               Đơn đặt chỗ{' '}
-              <span className="font-semibold text-on-surface">#{reservationCode}</span>{' '}
+              <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
               đã thanh toán thành công vào lúc {timeStr}.
             </p>
           </div>
         )}
 
-        {/* Banner thong bao buoc tiep theo */}
-        <div className="bg-secondary-fixed/50 border-l-4 border-secondary mx-6 mt-5 rounded-xl p-4">
+        {/* Banner thông báo bước tiếp theo */}
+        <div className="bg-[#DDF4FF] border-2 border-b-4 border-[#84D8FF] mx-6 mt-6 rounded-2xl p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <p className="text-title-md font-title-md text-on-surface mb-1">
-                Thanh toán:{' '}
-                <span className="text-secondary">Đã hoàn tất</span>
+              <p className="text-sm font-black text-[#1CB0F6] uppercase mb-1">
+                Thanh toán: Đã hoàn tất thành công
               </p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">
-                Hệ thống đã ghi nhận khoản thanh toán đợt 1{' '}
-                <span className="font-semibold text-on-surface">{formatVND(totalPayment)}</span>.
-                {' '}Quản lý cơ sở sẽ gán ô kho và gửi thông báo cho bạn.
+              <p className="text-xs font-bold text-[#4B4B4B]">
+                Hệ thống đã nhận thanh toán đợt 1{' '}
+                <span className="font-black text-[#58CC02]">{formatVND(totalPayment)}</span>.
+                {' '}Quản lý cơ sở sẽ gán ô kho và cấp phát mã mở khóa SmartLock cho bạn.
               </p>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-body-sm font-body-sm text-[#10B981] flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[14px]">check</span>
-                  Tự động kiểm tra tồn kho
-                </span>
-                <span className="text-body-sm font-body-sm text-[#10B981] flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[14px]">check</span>
-                  Mã khóa tự sinh
-                </span>
-              </div>
             </div>
           </div>
         </div>
 
-        {/* 3 thong tin nhanh */}
-        <div className="grid grid-cols-3 gap-3 mx-6 mt-4">
-          <div className="bg-surface-container-low rounded-xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">location_on</span>
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Cơ sở hoạt động</span>
-            </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">{branch}</p>
+        {/* 3 thông tin nhanh */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mx-6 mt-4">
+          <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
+            <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Cơ sở hoạt động</span>
+            <p className="text-sm font-black text-[#4B4B4B] mt-1">{branch}</p>
           </div>
-          <div className="bg-surface-container-low rounded-xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">straighten</span>
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Kích thước khoang</span>
-            </div>
-            <p className="text-body-md font-body-md text-on-surface font-semibold">{area} m² • {dimension}</p>
+          <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
+            <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Kích thước khoang</span>
+            <p className="text-sm font-black text-[#4B4B4B] mt-1">{area} m² • {dimension}</p>
           </div>
-          <div className="bg-surface-container-low rounded-xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">payments</span>
-              <span className="text-label-sm font-label-sm text-on-surface-variant uppercase">Đã thanh toán</span>
-            </div>
-            <p className="text-body-md font-body-md text-secondary font-semibold">{formatVND(totalPayment)}</p>
+          <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
+            <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Đã thanh toán</span>
+            <p className="text-sm font-black text-[#58CC02] mt-1">{formatVND(totalPayment)}</p>
           </div>
         </div>
 
-        {/* Chi tiet hop dong */}
-        <div className="mx-6 mt-5">
+        {/* Chi tiết đơn */}
+        <div className="mx-6 mt-6">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider">
-              Chi tiết đơn đặt chỗ
+            <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
+              CHI TIẾT ĐƠN ĐẶT CHỖ
             </span>
-            <span className="text-label-sm font-label-sm text-on-surface-variant">QueenKho SAAS v4.2</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4 border border-surface-container-high rounded-xl p-4">
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 border-2 border-[#E5E5E5] rounded-2xl p-5 bg-white">
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Mã đặt chỗ</p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Mã đặt chỗ</p>
               <div className="flex items-center gap-2">
-                <span className="text-title-md font-title-md text-secondary font-bold">
+                <span className="text-base font-black text-[#1CB0F6]">
                   #{reservationCode}
                 </span>
                 <button
                   onClick={() => navigator.clipboard.writeText(reservationCode)}
-                  className="text-on-surface-variant hover:text-secondary transition-colors cursor-pointer"
+                  className="text-[#AFAFAF] hover:text-[#1CB0F6] transition-colors cursor-pointer"
                   title="Sao chép"
                 >
                   <span className="material-symbols-outlined text-[16px]">content_copy</span>
@@ -194,92 +169,52 @@ export default function ReservationConfirmationPage() {
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Loại kho đăng ký</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{unitName}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">{area} m² diện tích sàn • {dimension}</p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Loại kho đăng ký</p>
+              <p className="text-sm font-black text-[#4B4B4B]">{unitName}</p>
+              <p className="text-xs font-bold text-[#AFAFAF]">{area} m² • {dimension}</p>
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Khách hàng đăng ký</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{customerInfo.fullName || 'Khách hàng'}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">phone</span>
-                {customerInfo.phone || '---'}
-              </p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Khách hàng</p>
+              <p className="text-sm font-black text-[#4B4B4B]">{customerInfo.fullName || 'Khách hàng'}</p>
+              <p className="text-xs font-bold text-[#AFAFAF]">{customerInfo.phone || '---'}</p>
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Thời hạn thuê</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{selectedMonths} Tháng</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">Bắt đầu tính phí từ: {startDateStr}</p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Thời hạn thuê</p>
+              <p className="text-sm font-black text-[#4B4B4B]">{selectedMonths} Tháng</p>
+              <p className="text-xs font-bold text-[#AFAFAF]">Bắt đầu từ: {startDateStr}</p>
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Số CCCD / Định danh</p>
-              <p className="text-body-md font-body-md text-on-surface">{customerInfo.cccd || '---'}</p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Thanh toán đợt 1</p>
+              <p className="text-base font-black text-[#58CC02]">{formatVND(totalPayment)}</p>
+              <p className="text-[11px] font-bold text-[#AFAFAF]">Cọc an toàn: {formatVND(depositAmount)}</p>
             </div>
 
             <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Thanh toán đợt 1</p>
-              <div className="flex items-center gap-2">
-                <p className="text-body-md font-body-md text-on-surface font-semibold">{formatVND(totalPayment)}</p>
-                <span className="text-label-sm font-label-sm text-[#10B981] bg-[#ECFDF5] px-2 py-0.5 rounded-full">
-                  Đã thanh toán
-                </span>
-              </div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant mt-1">Trong đó tiền cọc: {formatVND(depositAmount)}</p>
-            </div>
-
-            <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Cơ sở lưu trữ</p>
-              <p className="text-body-md font-body-md text-on-surface font-semibold">{branch}</p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">{address}</p>
-            </div>
-
-            <div>
-              <p className="text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider mb-1">Email nhận hóa đơn</p>
-              <p className="text-body-md font-body-md text-on-surface">{customerInfo.email || '---'}</p>
+              <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Địa chỉ kho</p>
+              <p className="text-sm font-black text-[#4B4B4B]">{branch}</p>
+              <p className="text-xs font-bold text-[#AFAFAF]">{address}</p>
             </div>
           </div>
         </div>
 
-        {/* Hai card thong tin bottom */}
-        <div className="grid grid-cols-2 gap-4 mx-6 mt-4">
-          <div className="bg-surface-container-low rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-secondary text-[18px]">checklist</span>
-              <span className="text-title-md font-title-md text-on-surface">Cần chuẩn bị gì khi nhận kho?</span>
-            </div>
-            <p className="text-body-sm font-body-sm text-on-surface-variant">
-              Vui lòng mang theo bản gốc CCCD gắn chip để đối chiếu và lấy thẻ từ truy cập tầng lưu trữ.
-            </p>
-          </div>
-          <div className="bg-surface-container-low rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-secondary text-[18px]">schedule</span>
-              <span className="text-title-md font-title-md text-on-surface">Thời gian kho mở cửa?</span>
-            </div>
-            <p className="text-body-sm font-body-sm text-on-surface-variant">
-              Cơ sở mở cửa 24/7 với khách hàng đã kích hoạt thẻ điện tử. Hỗ trợ trực tiếp từ 08:00 - 20:00 hàng ngày.
-            </p>
-          </div>
-        </div>
-
-        {/* Nut hanh dong */}
-        <div className="flex items-center justify-between mx-6 mt-5 mb-5">
+        {/* Nút hành động */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mx-6 mt-6 mb-6">
           <button
             onClick={() => navigate('/booking')}
-            className="flex items-center gap-2 text-body-md font-body-md text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+            className="duo-btn-white w-full sm:w-auto px-5 py-3 text-xs tracking-wider"
           >
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            Tải phiếu biên nhận PDF
+            <span className="material-symbols-outlined text-[18px] mr-1">download</span>
+            <span>TẢI PHIẾU BIÊN NHẬN</span>
           </button>
           <button
             onClick={() => navigate('/kho-cua-toi')}
-            className="bg-primary text-on-primary px-6 py-2.5 rounded-xl text-title-md font-title-md flex items-center gap-2 hover:bg-primary/90 transition-colors cursor-pointer"
+            className="duo-btn-green w-full sm:w-auto px-6 py-3.5 text-xs tracking-wider"
           >
-            <span className="material-symbols-outlined text-[18px]">warehouse</span>
-            Xem kho của tôi
+            <span className="material-symbols-outlined text-[18px] mr-1">warehouse</span>
+            <span>XEM KHO CỦA TÔI</span>
           </button>
         </div>
 

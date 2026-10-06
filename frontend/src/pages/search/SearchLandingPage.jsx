@@ -9,19 +9,16 @@ function formatVND(amount) {
 export default function SearchLandingPage() {
   const navigate = useNavigate()
 
-  // States cho search form
   const [keyword, setKeyword] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [selectedUnitType, setSelectedUnitType] = useState('')
 
-  // States cho data
   const [facilities, setFacilities] = useState([])
   const [unitTypes, setUnitTypes] = useState([])
   const [cities, setCities] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Load dữ liệu khi trang mở
   useEffect(() => {
     loadInitialData()
   }, [])
@@ -45,7 +42,6 @@ export default function SearchLandingPage() {
     }
   }
 
-  // Xử lý tìm kiếm
   function handleSearch(e) {
     e.preventDefault()
     const params = new URLSearchParams()
@@ -55,192 +51,153 @@ export default function SearchLandingPage() {
     navigate(`/tim-va-dat-kho/ket-qua?${params.toString()}`)
   }
 
-  // Chọn nhanh một cơ sở → xem chi tiết availability
   function handleSelectFacility(facilityId) {
     navigate(`/tim-va-dat-kho/ket-qua?facilityId=${facilityId}`)
   }
 
-  // Chọn nhanh một loại kho → tìm tất cả cơ sở có loại đó
   function handleSelectUnitType(unitTypeId) {
     navigate(`/tim-va-dat-kho/ket-qua?unitTypeId=${unitTypeId}`)
   }
 
   return (
-    <div className="flex flex-col w-full">
-      <div className="max-w-[1180px] w-full mx-auto px-margin py-space-lg flex flex-col gap-space-lg">
+    <div className="flex flex-col w-full pb-20 bg-white select-none">
+      <div className="max-w-[1040px] w-full mx-auto px-6 pt-8 flex flex-col gap-8">
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 font-code-sm text-code-sm text-outline">
-          <span className="hover:text-on-surface cursor-pointer" onClick={() => navigate('/')}>Trang chủ</span>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-on-surface font-semibold">Tìm & Đặt Kho</span>
+        {/* BREADCRUMB */}
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
+          <span className="text-[#58CC02] hover:text-[#58A700] cursor-pointer" onClick={() => navigate('/')}>Trang chủ</span>
+          <span>/</span>
+          <span className="text-[#4B4B4B]">Tìm & Đặt Kho</span>
         </div>
 
-        {/* ═══════════════ HERO SECTION ═══════════════ */}
-        <div
-          className="rounded-lg p-8 flex flex-col items-center text-center gap-5"
-          style={{
-            background: 'linear-gradient(135deg, #002746 0%, #0b3d66 50%, #1d4973 100%)',
-          }}
-        >
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center">
-              <span className="material-symbols-outlined text-on-secondary text-[24px]">warehouse</span>
+        {/* HEADER & TÌM KIẾM DUOLINGO FLAT */}
+        <div className="duo-card p-6 space-y-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🔍</span>
+              <h1 className="text-2xl font-black text-[#4B4B4B] tracking-tight">
+                Tìm khoang lưu trữ lý tưởng
+              </h1>
             </div>
-            <h1 className="text-display-lg font-display-lg text-on-primary tracking-tight">
-              Tìm Kho Lưu Trữ
-            </h1>
+            <p className="text-xs font-bold text-[#AFAFAF] mt-1">
+              Chọn chi nhánh gần bạn nhất và kích thước khoang kho phù hợp với nhu cầu.
+            </p>
           </div>
-          <p className="text-body-md font-body-md text-on-primary/70 max-w-xl">
-            Khám phá hệ thống kho tự quản 24/7 an toàn, hiện đại. Chọn loại kho và chi nhánh phù hợp với nhu cầu của bạn.
-          </p>
 
-          {/* ── SEARCH BAR ── */}
-          <form onSubmit={handleSearch} className="w-full max-w-3xl">
-            <div className="bg-white rounded-xl p-4 flex flex-col sm:flex-row gap-3 shadow-lg">
-              {/* Keyword input */}
-              <div className="relative flex-1">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-outline">search</span>
-                <input
-                  type="text"
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="Tìm theo khu vực, tên cơ sở..."
-                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary/30"
-                />
-              </div>
+          <form onSubmit={handleSearch} className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2">
+            <div className="sm:col-span-5 relative">
+              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[20px] text-[#AFAFAF]">
+                search
+              </span>
+              <input
+                type="text"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="Tìm khu vực, cơ sở (Q7, Cầu Giấy)..."
+                className="duo-input w-full pl-11"
+              />
+            </div>
 
-              {/* City dropdown */}
-              <div className="relative sm:w-44">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-outline">location_on</span>
-                <select
-                  value={selectedCity}
-                  onChange={(e) => setSelectedCity(e.target.value)}
-                  className="w-full pl-10 pr-8 py-3 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface appearance-none cursor-pointer focus:outline-none focus:border-secondary"
-                >
-                  <option value="">Tất cả TP</option>
-                  {cities.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-[18px] text-outline pointer-events-none">expand_more</span>
-              </div>
+            <div className="sm:col-span-3 relative">
+              <select
+                value={selectedCity}
+                onChange={(e) => setSelectedCity(e.target.value)}
+                className="duo-input w-full cursor-pointer appearance-none"
+              >
+                <option value="">Tất cả thành phố</option>
+                {cities.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[20px] text-[#AFAFAF] pointer-events-none">
+                expand_more
+              </span>
+            </div>
 
-              {/* UnitType dropdown */}
-              <div className="relative sm:w-52">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-outline">inventory_2</span>
-                <select
-                  value={selectedUnitType}
-                  onChange={(e) => setSelectedUnitType(e.target.value)}
-                  className="w-full pl-10 pr-8 py-3 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface appearance-none cursor-pointer focus:outline-none focus:border-secondary"
-                >
-                  <option value="">Tất cả loại kho</option>
-                  {unitTypes.map((ut) => (
-                    <option key={ut.id} value={ut.id}>{ut.name} ({ut.areaSqm} m²)</option>
-                  ))}
-                </select>
-                <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-[18px] text-outline pointer-events-none">expand_more</span>
-              </div>
+            <div className="sm:col-span-3 relative">
+              <select
+                value={selectedUnitType}
+                onChange={(e) => setSelectedUnitType(e.target.value)}
+                className="duo-input w-full cursor-pointer appearance-none"
+              >
+                <option value="">Tất cả kích thước</option>
+                {unitTypes.map((ut) => (
+                  <option key={ut.id} value={ut.id}>{ut.name} ({ut.areaSqm}m²)</option>
+                ))}
+              </select>
+              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[20px] text-[#AFAFAF] pointer-events-none">
+                expand_more
+              </span>
+            </div>
 
-              {/* Search button */}
+            <div className="sm:col-span-1">
               <button
                 type="submit"
-                className="px-6 py-3 bg-secondary text-on-secondary rounded-lg font-title-md text-title-md hover:opacity-90 transition-opacity flex items-center gap-2 cursor-pointer whitespace-nowrap"
+                className="duo-btn-green w-full h-full py-3 flex items-center justify-center cursor-pointer"
+                title="Tìm kiếm"
               >
                 <span className="material-symbols-outlined text-[20px]">search</span>
-                Tìm kiếm
               </button>
             </div>
           </form>
-
-          {/* Quick stats */}
-          <div className="flex items-center gap-6 text-on-primary/60 text-label-sm font-label-sm">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">apartment</span>
-              <span>{facilities.length} cơ sở</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">category</span>
-              <span>{unitTypes.length} loại kho</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">verified_user</span>
-              <span>Bảo vệ 3 lớp • CCTV 24/7</span>
-            </div>
-          </div>
         </div>
 
-        {/* ═══════════════ LOADING / ERROR ═══════════════ */}
+        {/* LOADING & ERROR */}
         {loading && (
-          <div className="text-center py-12 text-on-surface-variant text-body-md font-body-md">
-            <span className="material-symbols-outlined text-[32px] animate-spin text-secondary">progress_activity</span>
-            <p className="mt-2">Đang tải dữ liệu...</p>
+          <div className="text-center py-16 text-[#AFAFAF]">
+            <span className="material-symbols-outlined text-[36px] animate-spin text-[#58CC02]">progress_activity</span>
+            <p className="mt-2 text-xs font-bold uppercase tracking-wider">Đang tải danh sách kho...</p>
           </div>
         )}
 
         {error && (
-          <div className="bg-error-container text-on-error-container text-body-sm font-body-sm px-4 py-3 rounded-xl text-center">
+          <div className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] text-[#FF4B4B] text-xs font-black p-4 text-center">
             {error}
           </div>
         )}
 
         {!loading && !error && (
           <>
-            {/* ═══════════════ DANH SÁCH LOẠI KHO ═══════════════ */}
+            {/* DANH SÁCH LOẠI KHOANG */}
             <div>
-              <div className="flex items-center justify-between mb-space-md">
-                <h2 className="text-headline-sm font-headline-sm text-on-surface">
-                  Chọn loại kho phù hợp
-                </h2>
-                <span className="text-body-sm font-body-sm text-on-surface-variant">
-                  {unitTypes.length} phân loại kích thước
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📦</span>
+                  <h2 className="text-lg font-black uppercase tracking-wider text-[#4B4B4B]">
+                    Kích thước khoang kho
+                  </h2>
+                </div>
+                <span className="text-xs font-black uppercase text-[#1CB0F6] bg-[#DDF4FF] px-3 py-1 rounded-full border border-[#84D8FF]">
+                  {unitTypes.length} phân loại
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {unitTypes.map((ut) => (
                   <button
                     key={ut.id}
                     onClick={() => handleSelectUnitType(ut.id)}
-                    className="bg-white rounded-lg border border-outline-variant/60 p-5 flex flex-col gap-3 hover:border-secondary/40 hover:shadow-md transition-all text-left cursor-pointer group"
-                    style={{
-                      boxShadow: 'rgba(0, 0, 0, 0.08) 0px 2px 4px -1px',
-                    }}
+                    className="duo-card p-5 flex flex-col justify-between hover:border-[#58CC02] text-left cursor-pointer group transition-all"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary-fixed flex items-center justify-center">
-                          <span className="material-symbols-outlined text-[22px] text-primary">inventory_2</span>
-                        </div>
-                        <div>
-                          <h3 className="text-title-md font-title-md text-on-surface group-hover:text-secondary transition-colors">
-                            {ut.name}
-                          </h3>
-                          <p className="text-label-sm font-label-sm text-on-surface-variant">{ut.dimensions}</p>
-                        </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-black text-[#AFAFAF] uppercase tracking-wider">{ut.dimensions}</span>
+                        <span className="text-xs font-black text-[#58A700] bg-[#D7FFB8] border-2 border-[#58CC02] px-2.5 py-0.5 rounded-full uppercase">
+                          {ut.areaSqm} m²
+                        </span>
                       </div>
-                      <span className="material-symbols-outlined text-[18px] text-outline group-hover:text-secondary group-hover:translate-x-1 transition-all">
-                        arrow_forward
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-4 text-body-sm font-body-sm text-on-surface-variant">
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">straighten</span>
-                        {ut.areaSqm} m²
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">deployed_code</span>
-                        {ut.volumeCbm} m³
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-outline-variant/40 pt-3">
-                      <span className="text-body-sm font-body-sm text-on-surface-variant">
+                      <h3 className="font-black text-lg text-[#4B4B4B] group-hover:text-[#58CC02] transition-colors">
+                        {ut.name}
+                      </h3>
+                      <p className="text-xs font-bold text-[#AFAFAF] mt-1.5 line-clamp-2 leading-relaxed">
                         {ut.suggestedCapacity}
-                      </span>
-                      <span className="text-title-md font-title-md text-secondary font-bold">
-                        {formatVND(ut.basePriceMonthly)}<span className="text-body-sm font-normal text-on-surface-variant">/th</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-5 pt-3 border-t-2 border-[#E5E5E5] flex items-center justify-between">
+                      <span className="text-xs font-black text-[#AFAFAF] uppercase">Giá khởi điểm</span>
+                      <span className="text-base font-black text-[#58CC02]">
+                        {formatVND(ut.basePriceMonthly)}/tháng
                       </span>
                     </div>
                   </button>
@@ -248,96 +205,57 @@ export default function SearchLandingPage() {
               </div>
             </div>
 
-            {/* ═══════════════ DANH SÁCH CƠ SỞ ═══════════════ */}
+            {/* DANH SÁCH CHI NHÁNH */}
             <div>
-              <div className="flex items-center justify-between mb-space-md">
-                <h2 className="text-headline-sm font-headline-sm text-on-surface">
-                  Chi nhánh QueenKho
-                </h2>
-                <span className="text-body-sm font-body-sm text-on-surface-variant">
-                  {facilities.length} cơ sở đang hoạt động
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🏢</span>
+                  <h2 className="text-lg font-black uppercase tracking-wider text-[#4B4B4B]">
+                    Hệ thống chi nhánh QueenKho
+                  </h2>
+                </div>
+                <span className="text-xs font-black uppercase text-[#58A700] bg-[#D7FFB8] px-3 py-1 rounded-full border border-[#58CC02]">
+                  {facilities.length} chi nhánh
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {facilities.map((f) => (
                   <button
                     key={f.id}
                     onClick={() => handleSelectFacility(f.id)}
-                    className="bg-white rounded-lg border border-outline-variant/60 p-5 flex flex-col gap-3 hover:border-secondary/40 hover:shadow-md transition-all text-left cursor-pointer group"
-                    style={{
-                      boxShadow: 'rgba(0, 0, 0, 0.08) 0px 2px 4px -1px',
-                    }}
+                    className="duo-card p-5 flex flex-col justify-between hover:border-[#1CB0F6] text-left cursor-pointer group transition-all"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-secondary-fixed flex items-center justify-center">
-                          <span className="material-symbols-outlined text-[22px] text-secondary">apartment</span>
-                        </div>
-                        <div>
-                          <h3 className="text-title-md font-title-md text-on-surface group-hover:text-secondary transition-colors">
-                            {f.name}
-                          </h3>
-                          <p className="text-label-sm font-label-sm text-on-surface-variant">{f.district}, {f.city}</p>
-                        </div>
+                    <div>
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-black text-lg text-[#4B4B4B] group-hover:text-[#1CB0F6] transition-colors">
+                          {f.name}
+                        </h3>
+                        <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 ${
+                          f.totalAvailableUnits > 0
+                            ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
+                            : 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]'
+                        }`}>
+                          {f.totalAvailableUnits > 0 ? `Còn ${f.totalAvailableUnits} ô` : 'Hết ô'}
+                        </span>
                       </div>
-                      <span className="material-symbols-outlined text-[18px] text-outline group-hover:text-secondary group-hover:translate-x-1 transition-all">
-                        arrow_forward
-                      </span>
+                      <p className="text-xs font-bold text-[#AFAFAF] mt-1">{f.address} • {f.district}, {f.city}</p>
                     </div>
 
-                    <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[14px]">location_on</span>
-                      {f.address}
-                    </p>
-
-                    <div className="flex items-center justify-between border-t border-outline-variant/40 pt-3">
-                      <span className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[14px]">call</span>
-                        {f.hotline || 'N/A'}
-                      </span>
-                      <span className={`text-label-sm font-label-sm px-2.5 py-1 rounded-full ${
-                        f.totalAvailableUnits > 0
-                          ? 'bg-[#ECFDF5] text-[#10B981] border border-[#10B981]/30'
-                          : 'bg-error-container text-error border border-error/30'
-                      }`}>
-                        {f.totalAvailableUnits > 0 ? `${f.totalAvailableUnits} ô trống` : 'Hết chỗ'}
+                    <div className="mt-5 pt-3 border-t-2 border-[#E5E5E5] flex items-center justify-between text-xs font-black">
+                      <span className="text-[#AFAFAF]">Hotline: {f.hotline || '1900 6868'}</span>
+                      <span className="text-[#1CB0F6] group-hover:translate-x-1 transition-transform flex items-center gap-1 uppercase tracking-wider">
+                        <span>XEM KHO</span>
+                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </span>
                     </div>
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* ═══════════════ CTA BANNER ═══════════════ */}
-            <div
-              className="rounded-lg p-space-md flex flex-col sm:flex-row items-center justify-between gap-4"
-              style={{
-                background: 'linear-gradient(135deg, #ECFDF5 0%, #dbe1ff 100%)',
-                border: '1px solid rgba(16, 185, 129, 0.2)',
-              }}
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-[#10B981]/10 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[24px] text-[#10B981]">local_offer</span>
-                </div>
-                <div>
-                  <h4 className="text-title-md font-title-md text-on-surface">
-                    Ưu đãi khách hàng mới
-                  </h4>
-                  <p className="text-body-sm font-body-sm text-on-surface-variant">
-                    Giảm ngay 100.000đ cho đơn đầu tiên. Chiết khấu thêm 5–15% cho kỳ dài hạn.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-label-sm font-label-sm bg-white text-[#10B981] px-3 py-1.5 rounded-full border border-[#10B981]/20 font-semibold">
-                  NEWKHO100K
-                </span>
-              </div>
-            </div>
           </>
         )}
+
       </div>
     </div>
   )

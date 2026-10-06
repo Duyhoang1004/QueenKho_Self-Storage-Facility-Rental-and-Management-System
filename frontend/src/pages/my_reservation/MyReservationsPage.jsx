@@ -1,68 +1,44 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import CancelReservationModal from "../../components/CancelReservationModal";
 
 const STATUS_META = {
-  PENDING: {
-    label: "Chờ thanh toán cọc",
-    className: "bg-yellow-100 text-yellow-800",
-  },
-  DEPOSIT_PAID: {
-    label: "Đã đặt cọc - chờ gán ô",
-    className: "bg-blue-100 text-blue-800",
-  },
-  UNIT_ASSIGNED: {
-    label: "Đã gán ô kho",
-    className: "bg-green-100 text-green-800",
-  },
-  TERMINATION_PENDING: {
-    label: "Chờ kiểm tra trả kho",
-    className: "bg-orange-100 text-orange-800",
-  },
-  CANCELLED: { label: "Đã hủy", className: "bg-red-100 text-red-800" },
-  REFUND_PENDING: { label: "Đã hủy", className: "bg-orange-100 text-orange-800" },
-  EXPIRED: { label: "Hết hạn giữ chỗ", className: "bg-gray-100 text-gray-600" },
-  COMPLETED: {
-    label: "Hoàn tất",
-    className: "bg-emerald-100 text-emerald-800",
-  },
+  PENDING: { label: "Chá» thanh toÃ¡n cá»c", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  DEPOSIT_PAID: { label: "ÄÃ£ cá»c - chá» gÃ¡n Ã´", className: "bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]" },
+  UNIT_ASSIGNED: { label: "ÄÃ£ gÃ¡n Ã´ kho", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
+  TERMINATION_PENDING: { label: "Chá» tráº£ kho", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  CANCELLED: { label: "ÄÃ£ há»§y", className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]" },
+  REFUND_PENDING: { label: "Há»§y - Chá» hoÃ n tiá»n", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  EXPIRED: { label: "Háº¿t háº¡n", className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" },
+  COMPLETED: { label: "HoÃ n táº¥t", className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]" },
 };
 
 const FILTERS = [
-  { key: "ALL", label: "Tất cả", statuses: null },
-  { key: "PENDING", label: "Chờ thanh toán", statuses: ["PENDING"] },
-  { key: "DEPOSIT_PAID", label: "Đã đặt cọc", statuses: ["DEPOSIT_PAID"] },
-  { key: "UNIT_ASSIGNED", label: "Đã gán ô", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"] },
-  {
-    key: "CLOSED",
-    label: "Đã đóng",
-    statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"],
-  },
+  { key: "ALL", label: "Táº¥t cáº£", statuses: null },
+  { key: "PENDING", label: "Chá» thanh toÃ¡n", statuses: ["PENDING"] },
+  { key: "DEPOSIT_PAID", label: "ÄÃ£ Ä‘áº·t cá»c", statuses: ["DEPOSIT_PAID"] },
+  { key: "UNIT_ASSIGNED", label: "ÄÃ£ gÃ¡n Ã´", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"] },
+  { key: "CLOSED", label: "ÄÃ£ Ä‘Ã³ng", statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"] },
 ];
 
-const cardStyle = {
-  backgroundColor: "rgb(255, 255, 255)",
-  border: "1px solid rgb(203, 213, 225)",
-  boxShadow:
-    "rgba(0, 0, 0, 0.1) 0px 4px 6px -1px, rgba(0, 0, 0, 0.1) 0px 2px 4px -2px",
-};
-
 function formatVND(amount) {
-  if (amount === null || amount === undefined) return "—";
-  return Number(amount).toLocaleString("vi-VN") + "₫";
+  if (amount === null || amount === undefined) return "â€”";
+  return Number(amount).toLocaleString("vi-VN") + "â‚«";
 }
 
-// startDate từ API có dạng yyyy-MM-dd -> hiển thị dd/MM/yyyy (không qua Date để tránh lệch múi giờ)
 function formatDate(value) {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const [y, m, d] = String(value).split("-");
   return `${d}/${m}/${y}`;
 }
 
-function formatDateTime(value) {
-  if (!value) return "—";
-  return new Date(value).toLocaleString("vi-VN");
+function formatDateTimeSplit(value) {
+  if (!value) return { date: "â€”", time: "" };
+  const d = new Date(value);
+  const dateStr = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
+  const timeStr = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  return { date: dateStr, time: timeStr };
 }
 
 function readUserId() {
@@ -78,9 +54,7 @@ export default function MyReservationsPage() {
 
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(Boolean(userId));
-  const [error, setError] = useState(
-    userId ? "" : "Bạn cần đăng nhập để xem đơn đặt chỗ.",
-  );
+  const [error, setError] = useState(userId ? "" : "Báº¡n cáº§n Ä‘Äƒng nháº­p Ä‘á»ƒ xem Ä‘Æ¡n Ä‘áº·t chá»—.");
   const [filter, setFilter] = useState("ALL");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -95,8 +69,7 @@ export default function MyReservationsPage() {
         setError("");
       })
       .catch(() => {
-        if (!cancelled)
-          setError("Không tải được danh sách đơn đặt chỗ. Vui lòng thử lại.");
+        if (!cancelled) setError("KhÃ´ng táº£i Ä‘Æ°á»£c danh sÃ¡ch Ä‘Æ¡n Ä‘áº·t chá»—. Vui lÃ²ng thá»­ láº¡i.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -117,61 +90,64 @@ export default function MyReservationsPage() {
     setIsCancelModalOpen(false);
     setSelectedResToCancel(null);
     setReloadKey((k) => k + 1);
-    alert("Đã hủy đơn đặt chỗ thành công.");
+    alert("ÄÃ£ há»§y Ä‘Æ¡n Ä‘áº·t chá»— thÃ nh cÃ´ng.");
   };
 
-  const countBy = (statuses) =>
-    reservations.filter((r) => statuses.includes(r.status)).length;
+  const countBy = (statuses) => reservations.filter((r) => statuses.includes(r.status)).length;
 
   const stats = [
     {
       icon: "receipt_long",
-      label: "Tổng đơn đặt chỗ",
+      label: "Tá»•ng Ä‘Æ¡n Ä‘áº·t chá»—",
       value: reservations.length,
-      color: "text-primary",
-      bgColor: "bg-primary-fixed",
+      iconColor: "text-[#58A700]",
+      iconBg: "bg-[#D7FFB8]",
+      cardBorder: "hover:border-[#58CC02]"
     },
     {
       icon: "hourglass_top",
-      label: "Chờ thanh toán cọc",
+      label: "Chá» thanh toÃ¡n cá»c",
       value: countBy(["PENDING"]),
-      color: "text-[#D97706]",
-      bgColor: "bg-[#FFFBEB]",
+      iconColor: "text-[#E58800]",
+      iconBg: "bg-[#FFE8CC]",
+      cardBorder: "hover:border-[#FF9600]"
     },
     {
       icon: "payments",
-      label: "Đã đặt cọc, chờ gán ô",
+      label: "ÄÃ£ cá»c, chá» gÃ¡n Ã´",
       value: countBy(["DEPOSIT_PAID"]),
-      color: "text-secondary",
-      bgColor: "bg-secondary-fixed",
+      iconColor: "text-[#1CB0F6]",
+      iconBg: "bg-[#DDF4FF]",
+      cardBorder: "hover:border-[#1CB0F6]"
     },
     {
       icon: "inventory_2",
-      label: "Đã gán ô kho",
+      label: "ÄÃ£ gÃ¡n Ã´ kho",
       value: countBy(["UNIT_ASSIGNED", "TERMINATION_PENDING"]),
-      color: "text-[#10B981]",
-      bgColor: "bg-[#ECFDF5]",
+      iconColor: "text-[#58A700]",
+      iconBg: "bg-[#D7FFB8]",
+      cardBorder: "hover:border-[#58CC02]"
     },
   ];
 
-function getDaysUntilExpiry(r) {
-  if (r.status !== "UNIT_ASSIGNED") return null;
-  let endStr = r.endDate;
-  if (!endStr && r.startDate && r.durationMonths) {
-    const [y, m, d] = String(r.startDate).split("-").map(Number);
-    const date = new Date(y, m - 1 + Number(r.durationMonths), d);
-    const newY = date.getFullYear();
-    const newM = String(date.getMonth() + 1).padStart(2, "0");
-    const newD = String(date.getDate()).padStart(2, "0");
-    endStr = `${newY}-${newM}-${newD}`;
+  function getDaysUntilExpiry(r) {
+    if (r.status !== "UNIT_ASSIGNED") return null;
+    let endStr = r.endDate;
+    if (!endStr && r.startDate && r.durationMonths) {
+      const [y, m, d] = String(r.startDate).split("-").map(Number);
+      const date = new Date(y, m - 1 + Number(r.durationMonths), d);
+      const newY = date.getFullYear();
+      const newM = String(date.getMonth() + 1).padStart(2, "0");
+      const newD = String(date.getDate()).padStart(2, "0");
+      endStr = `${newY}-${newM}-${newD}`;
+    }
+    if (!endStr) return null;
+    const [y, m, d] = String(endStr).split("-").map(Number);
+    const target = new Date(y, m - 1, d);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((target - today) / 86400000);
   }
-  if (!endStr) return null;
-  const [y, m, d] = String(endStr).split("-").map(Number);
-  const target = new Date(y, m - 1, d);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((target - today) / 86400000);
-}
 
   const visibleReservations = useMemo(() => {
     const active = FILTERS.find((f) => f.key === filter);
@@ -179,7 +155,6 @@ function getDaysUntilExpiry(r) {
     if (active && active.statuses) {
       list = reservations.filter((r) => active.statuses.includes(r.status));
     }
-    // Sắp xếp: Đưa các đơn sắp hết hạn (còn <= 3 ngày) lên đầu danh sách
     return [...list].sort((a, b) => {
       const diffA = getDaysUntilExpiry(a);
       const diffB = getDaysUntilExpiry(b);
@@ -196,84 +171,63 @@ function getDaysUntilExpiry(r) {
   }, [reservations, filter]);
 
   return (
-    <div className="max-w-[1180px] w-full mx-auto px-margin py-space-lg flex flex-col gap-space-lg">
+    <div className="max-w-[1240px] w-full mx-auto px-6 py-6 flex flex-col gap-6 select-none">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 font-code-sm text-code-sm text-outline">
-        <Link to="/" className="hover:text-on-surface">
-          Trang chủ
+      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
+        <Link to="/" className="hover:text-[#4B4B4B] transition-colors">
+          Trang chá»§
         </Link>
         <span>/</span>
-        <span className="text-on-surface font-semibold">
-          Đơn đặt chỗ của tôi
-        </span>
+        <span className="text-[#4B4B4B]">ÄÆ¡n Ä‘áº·t chá»— cá»§a tÃ´i</span>
       </div>
 
-      {/* Tiêu đề + nút đặt kho */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-space-sm">
+      {/* TiÃªu Ä‘á» + NÃºt Ä‘áº·t kho */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="font-headline-md text-headline-md text-on-surface tracking-tight">
-            Đơn đặt chỗ của tôi
-          </h1>
-          <p className="font-body-md text-body-md text-on-surface-variant">
-            Theo dõi trạng thái các đơn đặt chỗ, từ lúc đặt cọc đến khi được gán
-            ô kho.
+          <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] tracking-tight">ÄÆ¡n Ä‘áº·t chá»— cá»§a tÃ´i</h1>
+          <p className="text-[13px] font-bold text-[#AFAFAF]">
+            Theo dÃµi tráº¡ng thÃ¡i cÃ¡c Ä‘Æ¡n Ä‘áº·t chá»—, tá»« lÃºc Ä‘áº·t cá»c Ä‘áº¿n khi Ä‘Æ°á»£c gÃ¡n Ã´ kho.
           </p>
         </div>
         <Link
           to="/tim-va-dat-kho"
-          className="px-4 py-2 bg-secondary text-on-secondary rounded font-title-md text-title-md hover:opacity-90 transition-opacity self-start sm:self-auto"
+          className="duo-btn-green px-5 py-3 text-xs tracking-wider flex items-center gap-1.5 self-start sm:self-auto shadow-sm shrink-0"
         >
-          Đặt kho mới
+          <span className="material-symbols-outlined text-[18px]">add_circle</span>
+          <span>Äáº¶T KHO Má»šI</span>
         </Link>
       </div>
 
-      {/* Thẻ thống kê */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
+      {/* Tháº» thá»‘ng kÃª */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-surface-container-lowest rounded-lg p-5 flex items-center gap-4 shadow-sm"
-            style={cardStyle}
-          >
-            <div
-              className={`w-12 h-12 rounded-lg ${stat.bgColor} flex items-center justify-center`}
-            >
-              <span
-                className={`material-symbols-outlined text-[24px] ${stat.color}`}
-              >
-                {stat.icon}
-              </span>
+          <div key={stat.label} className={`duo-card p-4 flex flex-col gap-3 transition-all ${stat.cardBorder}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{stat.label}</span>
+              <div className={`w-9 h-9 rounded-xl ${stat.iconBg} ${stat.iconColor} flex items-center justify-center border-2 border-b-4 border-black/5`}>
+                <span className="material-symbols-outlined text-[18px]">{stat.icon}</span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="font-label-sm text-label-sm text-outline uppercase font-semibold tracking-wider">
-                {stat.label}
-              </span>
-              <span
-                className={`font-headline-sm text-headline-sm ${stat.color} font-bold mt-0.5`}
-              >
-                {loading ? "—" : stat.value}
-              </span>
-            </div>
+            <span className="text-3xl font-black text-[#4B4B4B]">
+              {loading ? "â€”" : stat.value}
+            </span>
           </div>
         ))}
       </div>
 
-      {/* Bảng danh sách */}
-      <div
-        className="bg-surface-container-lowest rounded-lg overflow-hidden"
-        style={cardStyle}
-      >
-        {/* Bộ lọc trạng thái */}
-        <div className="px-space-md py-space-sm border-b border-outline-variant/40 flex flex-wrap items-center gap-2">
+      {/* Báº£ng danh sÃ¡ch */}
+      <div className="duo-card overflow-hidden">
+        {/* Bá»™ lá»c tráº¡ng thÃ¡i */}
+        <div className="px-4 py-3 bg-[#FAFAFA] border-b-2 border-[#E5E5E5] flex flex-wrap items-center gap-2">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
               onClick={() => setFilter(f.key)}
-              className={`px-3 py-1.5 rounded-full text-label-sm font-label-sm transition-colors ${
+              className={`px-4 py-1.5 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                 filter === f.key
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface-container text-on-surface-variant hover:text-on-surface"
+                  ? "bg-[#58CC02] border-2 border-b-4 border-[#58A700] text-white shadow-xs"
+                  : "bg-white border-2 border-[#E5E5E5] text-[#777777] hover:bg-[#F7F7F7] hover:text-[#4B4B4B] active:border-b-2 active:translate-y-[2px]"
               }`}
             >
               {f.label}
@@ -281,147 +235,116 @@ function getDaysUntilExpiry(r) {
           ))}
         </div>
 
-        {loading && (
-          <p className="px-space-md py-space-lg text-on-surface-variant">
-            Đang tải danh sách...
-          </p>
-        )}
+        {loading && <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF]">Äang táº£i danh sÃ¡ch...</p>}
 
         {!loading && error && (
-          <div className="px-space-md py-space-lg flex flex-col items-start gap-3">
-            <p className="text-error">{error}</p>
-            <button
-              type="button"
-              onClick={retry}
-              className="px-4 py-2 bg-primary text-on-primary rounded font-label-lg text-label-lg hover:opacity-90"
-            >
-              Thử lại
-            </button>
+          <div className="px-6 py-8 flex flex-col items-start gap-3">
+            <p className="text-[#FF4B4B] font-bold text-sm">{error}</p>
+            <button onClick={retry} className="duo-btn-blue px-4 py-2 text-xs">Thá»­ láº¡i</button>
           </div>
         )}
 
         {!loading && !error && reservations.length === 0 && (
-          <div className="px-space-md py-space-2xl flex flex-col items-center gap-3 text-center">
-            <span className="material-symbols-outlined text-[40px] text-outline">
-              inventory_2
-            </span>
-            <p className="text-on-surface-variant">
-              Bạn chưa có đơn đặt chỗ nào.
-            </p>
-            <Link
-              to="/tim-va-dat-kho"
-              className="px-4 py-2 bg-secondary text-on-secondary rounded font-title-md text-title-md hover:opacity-90"
-            >
-              Tìm & đặt kho ngay
-            </Link>
+          <div className="px-6 py-12 flex flex-col items-center gap-4 text-center bg-white">
+            <div className="w-16 h-16 rounded-full bg-[#F7F7F7] flex items-center justify-center border-2 border-[#E5E5E5]">
+              <span className="material-symbols-outlined text-[32px] text-[#AFAFAF]">inventory_2</span>
+            </div>
+            <p className="text-sm font-bold text-[#777777]">Báº¡n chÆ°a cÃ³ Ä‘Æ¡n Ä‘áº·t chá»— nÃ o.</p>
+            <Link to="/tim-va-dat-kho" className="duo-btn-green px-5 py-3 text-xs mt-1">TÃ¬m & Ä‘áº·t kho ngay</Link>
           </div>
         )}
 
-        {!loading &&
-          !error &&
-          reservations.length > 0 &&
-          visibleReservations.length === 0 && (
-            <p className="px-space-md py-space-lg text-on-surface-variant">
-              Không có đơn nào ở trạng thái này.
-            </p>
-          )}
+        {!loading && !error && reservations.length > 0 && visibleReservations.length === 0 && (
+          <p className="px-6 py-8 text-sm font-bold text-[#AFAFAF] bg-white">KhÃ´ng cÃ³ Ä‘Æ¡n nÃ o á»Ÿ tráº¡ng thÃ¡i nÃ y.</p>
+        )}
 
         {!loading && !error && visibleReservations.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-[#F4F6F8] text-on-surface-variant text-label-sm font-label-sm uppercase tracking-wider">
+          <div className="overflow-x-auto bg-white custom-scrollbar pb-2">
+            <table className="w-full text-left border-collapse min-w-[900px]">
+              <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
-                  <th className="px-4 py-3">Mã đơn</th>
-                  <th className="px-4 py-3">Cơ sở</th>
-                  <th className="px-4 py-3">Loại kho</th>
-                  <th className="px-4 py-3">Ô kho</th>
-                  <th className="px-4 py-3">Ngày bắt đầu</th>
-                  <th className="px-4 py-3">Số tháng</th>
-                  <th className="px-4 py-3">Tiền cọc</th>
-                  <th className="px-4 py-3">Ngày đặt</th>
-                  <th className="px-4 py-3">Trạng thái</th>
-                  <th className="px-4 py-3 text-left font-semibold text-on-surface-variant">
-                    Thao tác
-                  </th>
+                  <th className="px-3 py-3 whitespace-nowrap">MÃ£ Ä‘Æ¡n</th>
+                  <th className="px-3 py-3 whitespace-nowrap">CÆ¡ sá»Ÿ</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Loáº¡i kho</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Ã” kho</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Báº¯t Ä‘áº§u</th>
+                  <th className="px-3 py-3 whitespace-nowrap text-center">T/gian</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Tiá»n cá»c</th>
+                  <th className="px-3 py-3 whitespace-nowrap">NgÃ y Ä‘áº·t</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Tráº¡ng thÃ¡i</th>
+                  <th className="px-3 py-3 whitespace-nowrap text-right">Thao tÃ¡c</th>
                 </tr>
               </thead>
-              <tbody className="text-body-sm font-body-sm text-on-surface">
-                {visibleReservations.map((r) => {
-                  const meta = STATUS_META[r.status] || {
-                    label: r.status,
-                    className: "bg-gray-100 text-gray-600",
-                  };
+              <tbody className="text-[13px] font-bold text-[#4B4B4B]">
+                {visibleReservations.map((r, index) => {
+                  const meta = STATUS_META[r.status] || { label: r.status, className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" };
                   const diffDays = getDaysUntilExpiry(r);
                   const isExpiringSoon = diffDays !== null && diffDays <= 3;
+                  const isLast = index === visibleReservations.length - 1;
+                  const dt = formatDateTimeSplit(r.createdAt);
 
                   return (
-                    <tr
-                      key={r.id}
-                      className={`border-t border-outline-variant/40 hover:bg-slate-50 transition-colors ${
-                        isExpiringSoon ? "bg-amber-50/50" : ""
-                      }`}
-                    >
-                      <td className="px-4 py-3 font-code-md text-code-md font-semibold text-secondary">
-                        {r.reservationCode}
+                    <tr key={r.id} className={`transition-colors hover:bg-[#F7F7F7] ${!isLast ? 'border-b-2 border-[#F0F0F0]' : ''} ${isExpiringSoon ? 'bg-[#FFFBEB] hover:bg-[#FFF3C7]' : ''}`}>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <span className="font-mono font-black text-[#1CB0F6] bg-[#DDF4FF] px-1.5 py-0.5 rounded border border-[#84D8FF]">{r.reservationCode}</span>
                       </td>
-                      <td className="px-4 py-3">{r.facilityName}</td>
-                      <td className="px-4 py-3">{r.unitTypeName}</td>
-                      <td className="px-4 py-3">
-                        {r.storageUnitId ?? (
-                          <span className="text-outline">Chưa gán</span>
+                      <td className="px-3 py-3 whitespace-nowrap font-extrabold text-[#4B4B4B]">
+                        {r.facilityName.replace('QueenKho ', '')}
+                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-[#777777]">{r.unitTypeName}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        {r.storageUnitId ? (
+                          <span className="font-mono font-black text-[#4B4B4B]">{r.storageUnitId}</span>
+                        ) : (
+                          <span className="text-[#AFAFAF] italic">ChÆ°a gÃ¡n</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">{formatDate(r.startDate)}</td>
-                      <td className="px-4 py-3">{r.durationMonths}</td>
-                      <td className="px-4 py-3">
-                        {formatVND(r.depositAmount)}
+                      <td className="px-3 py-3 whitespace-nowrap font-bold text-[#4B4B4B]">{formatDate(r.startDate)}</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-center font-extrabold">{r.durationMonths}T</td>
+                      <td className="px-3 py-3 whitespace-nowrap font-black text-[#58CC02]">{formatVND(r.depositAmount)}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <div className="flex flex-col leading-tight">
+                          <span className="text-[11px] font-bold text-[#777777]">{dt.time}</span>
+                          <span className="text-[11px] font-bold text-[#AFAFAF]">{dt.date}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-on-surface-variant">
-                        {formatDateTime(r.createdAt)}
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-1">
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${meta.className}`}
-                          >
+                          <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${meta.className}`}>
                             {meta.label}
                           </span>
                           {isExpiringSoon && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs whitespace-nowrap animate-pulse">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
-                              Sắp hết hạn {diffDays <= 0 ? '(Hôm nay)' : `(${diffDays} ngày)`}
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600] animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600]"></span>
+                              Sáº¯p háº¿t háº¡n {diffDays <= 0 ? '(HÃ´m nay)' : `(${diffDays} ngÃ y)`}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
-                          <button
-                            onClick={() =>
-                              navigate(`/kho-cua-toi/hop-dong/${r.id}`)
-                            }
-                            className="flex items-center gap-1 text-secondary text-label-sm font-label-sm hover:underline cursor-pointer whitespace-nowrap"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">
-                              description
-                            </span>
-                            Xem HĐ
-                          </button>
-                        )}
-                        {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
-                          <button
-                            onClick={() => {
-                              setSelectedResToCancel(r);
-                              setIsCancelModalOpen(true);
-                            }}
-                            className="text-[#B91C1C] hover:text-red-800 font-medium text-body-sm flex items-center gap-1"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">
-                              cancel
-                            </span>
-                            Hủy đơn
-                          </button>
-                        )}
+                      <td className="px-3 py-3 whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
+                            <button
+                              onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
+                              className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">description</span>
+                              XEM HÄ
+                            </button>
+                          )}
+                          {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
+                            <button
+                              onClick={() => {
+                                setSelectedResToCancel(r);
+                                setIsCancelModalOpen(true);
+                              }}
+                              className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">cancel</span>
+                              Há»¦Y ÄÆ N
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -441,3 +364,4 @@ function getDaysUntilExpiry(r) {
     </div>
   );
 }
+

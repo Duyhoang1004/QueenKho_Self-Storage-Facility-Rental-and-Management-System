@@ -14,11 +14,11 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#ECFDF5] text-[#10B981]' },
-  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-orange-100 text-orange-800' },
-  OVERDUE:             { label: 'Quá hạn',               cls: 'bg-[#FEF3C7] text-[#D97706]' },
-  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F1F5F9] text-[#64748B]' },
-  LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FEE2E2] text-[#EF4444]' },
+  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
+  OVERDUE:             { label: 'Quá hạn',               cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
+  TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
+  LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
 }
 
 function initials(name) {
@@ -60,159 +60,152 @@ export default function CustomerContractsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-headline-md font-headline-md text-on-surface">Khách hàng & Hợp đồng</h1>
-        <p className="text-body-md font-body-md text-on-surface-variant mt-1">
-          Danh sách hợp đồng thuê kho tại cơ sở của bạn.
+      <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5]">
+        <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Khách Hàng & Hợp Đồng</h1>
+        <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
+          Danh sách toàn bộ hợp đồng thuê kho tự quản tại chi nhánh cơ sở của bạn.
         </p>
       </div>
 
-      {/* Stats */}
+      {/* 4 Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Tổng hợp đồng',    value: stats.total,   icon: 'description',  color: 'text-primary' },
-          { label: 'Đang hoạt động',   value: stats.active,  icon: 'check_circle', color: 'text-[#10B981]' },
-          { label: 'Quá hạn',          value: stats.overdue, icon: 'warning',      color: 'text-[#D97706]' },
-          { label: 'Đã kết thúc',      value: stats.ended,   icon: 'cancel',       color: 'text-[#64748B]' },
+          { label: 'Tổng hợp đồng',    value: stats.total,   icon: 'description',  color: 'text-[#1CB0F6]', bgColor: 'bg-[#DDF4FF]', borderColor: 'border-[#1CB0F6]' },
+          { label: 'Đang hoạt động',   value: stats.active,  icon: 'check_circle', color: 'text-[#58CC02]', bgColor: 'bg-[#D7FFB8]', borderColor: 'border-[#58CC02]' },
+          { label: 'Quá hạn nợ',       value: stats.overdue, icon: 'warning',      color: 'text-[#FF9600]', bgColor: 'bg-[#FFE8CC]', borderColor: 'border-[#FF9600]' },
+          { label: 'Đã kết thúc',      value: stats.ended,   icon: 'cancel',       color: 'text-[#777777]', bgColor: 'bg-[#F7F7F7]', borderColor: 'border-[#E5E5E5]' },
         ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl border border-surface-container-high p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-surface-container-low flex items-center justify-center flex-shrink-0">
-              <span className={`material-symbols-outlined text-[22px] ${s.color}`}>{s.icon}</span>
+          <div key={s.label} className="duo-card p-4 flex items-center gap-3.5 hover:border-[#1CB0F6] transition-all">
+            <div className={`w-12 h-12 rounded-2xl ${s.bgColor} border-2 border-b-4 ${s.borderColor} flex items-center justify-center shrink-0`}>
+              <span className={`material-symbols-outlined text-[24px] ${s.color}`}>{s.icon}</span>
             </div>
             <div>
-              <p className="text-headline-sm font-headline-sm text-on-surface font-bold">
+              <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">{s.label}</span>
+              <p className="text-2xl font-black text-[#4B4B4B] mt-0.5">
                 {loading ? '—' : s.value}
               </p>
-              <p className="text-body-sm font-body-sm text-on-surface-variant">{s.label}</p>
             </div>
           </div>
         ))}
       </div>
 
       {/* Search */}
-      <div className="mb-4">
+      <div className="mb-6">
         <div className="relative">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[20px]">
+          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">
             search
           </span>
           <input
             type="text"
-            placeholder="Tìm theo tên khách hàng, mã hợp đồng, ô kho..."
+            placeholder="Tìm theo tên khách hàng, mã hợp đồng, mã ô kho..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-outline-variant rounded-xl text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary bg-white"
+            className="duo-input w-full pl-11 text-xs"
           />
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl border border-surface-container-high overflow-hidden">
+      {/* Table Duolingo Card */}
+      <div className="duo-card overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-16 gap-3">
-            <span className="material-symbols-outlined text-on-surface-variant text-[32px] animate-spin">
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <span className="material-symbols-outlined text-[#58CC02] text-[36px] animate-spin">
               progress_activity
             </span>
-            <span className="text-body-md text-on-surface-variant">Đang tải danh sách hợp đồng...</span>
+            <span className="text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách hợp đồng...</span>
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2">
-            <span className="material-symbols-outlined text-error text-[40px]">error</span>
-            <p className="text-body-md text-error">{error}</p>
+            <span className="material-symbols-outlined text-[#FF4B4B] text-[40px]">error</span>
+            <p className="text-xs font-black text-[#FF4B4B]">{error}</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-2">
-            <span className="material-symbols-outlined text-on-surface-variant text-[48px]">description</span>
-            <p className="text-body-md text-on-surface-variant font-semibold">
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
+            <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">description</span>
+            <p className="text-sm font-black text-[#4B4B4B]">
               {search ? 'Không tìm thấy kết quả phù hợp.' : 'Chưa có hợp đồng nào tại cơ sở này.'}
             </p>
-            {!search && (
-              <p className="text-body-sm text-on-surface-variant">
-                Hợp đồng sẽ được tạo tự động sau khi bạn gán ô kho cho khách.
-              </p>
-            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px]">
-              <thead>
-                <tr className="border-b border-surface-container-high bg-surface-container-low">
-                  {['Mã HĐ', 'Khách hàng', 'Ô kho', 'Ngày BĐ', 'Ngày KT', 'Tiền cọc giữ', 'Trạng thái', ''].map(h => (
+              <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+                <tr>
+                  {['Mã HĐ', 'Khách hàng', 'Ô kho', 'Ngày BĐ', 'Ngày KT', 'Tiền cọc giữ', 'Trạng thái', 'Thao tác'].map(h => (
                     <th
                       key={h}
-                      className="text-left px-4 py-3 text-label-sm font-label-sm text-on-surface-variant uppercase tracking-wider whitespace-nowrap"
+                      className="text-left px-5 py-3.5 whitespace-nowrap"
                     >
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-surface-container">
+              <tbody className="divide-y-2 divide-[#E5E5E5] text-xs font-bold text-[#4B4B4B]">
                 {filtered.map(c => {
-                  const statusInfo = STATUS_MAP[c.status] || { label: c.status, cls: 'bg-surface-container text-on-surface-variant' }
+                  const statusInfo = STATUS_MAP[c.status] || { label: c.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' }
                   return (
-                    <tr key={c.contractId} className="hover:bg-surface-container-low/50 transition-colors">
+                    <tr key={c.contractId} className="hover:bg-[#FDFDFD] transition-colors">
                       {/* Mã HĐ */}
-                      <td className="px-4 py-3">
-                        <span className="text-body-sm font-body-sm text-secondary font-semibold font-mono">
-                          {c.contractCode}
-                        </span>
+                      <td className="px-5 py-4 font-black font-mono text-[#1CB0F6]">
+                        {c.contractCode}
                       </td>
 
                       {/* Khách hàng */}
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary text-xs font-bold flex-shrink-0">
+                          <div className="w-8 h-8 rounded-xl bg-[#58CC02] border-b border-[#58A700] text-white flex items-center justify-center font-black text-xs shrink-0">
                             {initials(c.customerFullName)}
                           </div>
                           <div>
-                            <p className="text-body-sm font-body-sm text-on-surface font-semibold whitespace-nowrap">
+                            <p className="font-black text-[#4B4B4B] whitespace-nowrap">
                               {c.customerFullName}
                             </p>
-                            <p className="text-label-sm font-label-sm text-on-surface-variant">{c.customerPhone}</p>
+                            <p className="text-[11px] font-bold text-[#AFAFAF]">{c.customerPhone}</p>
                           </div>
                         </div>
                       </td>
 
                       {/* Ô kho */}
-                      <td className="px-4 py-3">
-                        <p className="text-body-sm font-body-sm text-on-surface font-mono">{c.storageUnitId}</p>
-                        <p className="text-label-sm font-label-sm text-on-surface-variant whitespace-nowrap">
+                      <td className="px-5 py-4">
+                        <p className="font-black text-[#4B4B4B]">{c.storageUnitId}</p>
+                        <p className="text-[11px] font-bold text-[#AFAFAF] whitespace-nowrap">
                           {c.unitTypeName} • {c.areaSqm}m²
                         </p>
                       </td>
 
                       {/* Ngày BĐ */}
-                      <td className="px-4 py-3 text-body-sm font-body-sm text-on-surface whitespace-nowrap">
+                      <td className="px-5 py-4 whitespace-nowrap">
                         {formatDate(c.startDate)}
                       </td>
 
                       {/* Ngày KT */}
-                      <td className="px-4 py-3 text-body-sm font-body-sm text-on-surface whitespace-nowrap">
+                      <td className="px-5 py-4 whitespace-nowrap">
                         {formatDate(c.endDate)}
                       </td>
 
                       {/* Tiền cọc */}
-                      <td className="px-4 py-3 text-body-sm font-body-sm text-on-surface font-semibold whitespace-nowrap">
+                      <td className="px-5 py-4 font-black text-[#58CC02] whitespace-nowrap">
                         {formatVND(c.depositHeldAmount)}
                       </td>
 
                       {/* Trạng thái */}
-                      <td className="px-4 py-3">
-                        <span className={`text-label-sm font-label-sm px-2.5 py-1 rounded-full whitespace-nowrap ${statusInfo.cls}`}>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className={`duo-badge ${statusInfo.cls}`}>
                           {statusInfo.label}
                         </span>
                       </td>
 
                       {/* Nút xem HĐ */}
-                      <td className="px-4 py-3">
+                      <td className="px-5 py-4 text-right whitespace-nowrap">
                         <button
                           onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
-                          className="flex items-center gap-1 text-secondary text-label-sm font-label-sm hover:underline cursor-pointer whitespace-nowrap"
+                          className="duo-btn-green px-3 py-1.5 text-[11px]"
                         >
-                          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                          Xem HĐ
+                          <span className="material-symbols-outlined text-[15px] mr-1">open_in_new</span>
+                          <span>XEM HĐ</span>
                         </button>
                       </td>
                     </tr>
@@ -225,9 +218,9 @@ export default function CustomerContractsPage() {
 
         {/* Footer count */}
         {!loading && !error && filtered.length > 0 && (
-          <div className="border-t border-surface-container px-4 py-2.5">
-            <p className="text-label-sm font-label-sm text-on-surface-variant">
-              Hiển thị <span className="font-semibold text-on-surface">{filtered.length}</span> / {contracts.length} hợp đồng
+          <div className="border-t-2 border-[#E5E5E5] px-6 py-3 bg-[#FAFAFA]">
+            <p className="text-xs font-bold text-[#AFAFAF]">
+              Hiển thị <span className="font-black text-[#4B4B4B]">{filtered.length}</span> / {contracts.length} hợp đồng
             </p>
           </div>
         )}

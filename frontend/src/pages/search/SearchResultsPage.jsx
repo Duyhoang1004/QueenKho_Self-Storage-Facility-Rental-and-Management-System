@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   searchFacilities,
@@ -22,6 +22,12 @@ export default function SearchResultsPage() {
   const [minPrice, setMinPrice] = useState(searchParams.get('minPrice') || '')
   const [maxPrice, setMaxPrice] = useState(searchParams.get('maxPrice') || '')
 
+  // Dropdown Popover state
+  const [openDropdown, setOpenDropdown] = useState(null)
+  const [onlyAvailable, setOnlyAvailable] = useState(false)
+  const [selectedFeatures, setSelectedFeatures] = useState([])
+  const [sortOption, setSortOption] = useState('hot')
+
   // Data
   const [results, setResults] = useState([])
   const [unitTypes, setUnitTypes] = useState([])
@@ -29,7 +35,6 @@ export default function SearchResultsPage() {
   const [loading, setLoading] = useState(true)
   const [totalElements, setTotalElements] = useState(0)
   const [page, setPage] = useState(0)
-  const [totalPages, setTotalPages] = useState(0)
   const PAGE_SIZE = 12
 
   // Facility detail modal
@@ -37,7 +42,16 @@ export default function SearchResultsPage() {
   const [facilityDetail, setFacilityDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
-  // Load filter options
+  const featureOptions = [
+    'Bảo mật vân tay',
+    'Kháng nước, kháng bụi',
+    'Điều hòa 20°C',
+    'CCTV 24/7 AI',
+    'Tầng trệt ô tô vào tận cửa',
+    'Gần thang hàng',
+    'Bảo hiểm 500 triệu',
+  ]
+
   useEffect(() => {
     Promise.all([getAllUnitTypes(), getCities()]).then(([ut, ct]) => {
       setUnitTypes(ut)
@@ -45,7 +59,6 @@ export default function SearchResultsPage() {
     })
   }, [])
 
-  // Search khi params thay đổi
   useEffect(() => {
     performSearch()
   }, [searchParams])
@@ -69,10 +82,8 @@ export default function SearchResultsPage() {
       params.page = page
       params.size = PAGE_SIZE
 
-      // Nếu chọn trực tiếp 1 facility → xem availability detail
       if (facilityId && !kw && !ct && !ut) {
         const detail = await getFacilityAvailability(facilityId)
-        // Chuyển availability thành dạng result items
         const items = detail.unitTypeAvailability
           .filter((slot) => slot.availableCount > 0)
           .map((slot) => ({
@@ -93,12 +104,10 @@ export default function SearchResultsPage() {
           }))
         setResults(items)
         setTotalElements(items.length)
-        setTotalPages(1)
       } else {
         const data = await searchFacilities(params)
         setResults(data.content || [])
         setTotalElements(data.totalElements || 0)
-        setTotalPages(data.totalPages || 0)
       }
     } catch (err) {
       console.error('Search failed:', err)
@@ -108,295 +117,600 @@ export default function SearchResultsPage() {
     }
   }
 
-  // Áp dụng bộ lọc
-  function applyFilters(e) {
-    e.preventDefault()
+  function applyFilters(newValues = {}) {
     const params = new URLSearchParams()
-    if (keyword.trim()) params.set('keyword', keyword.trim())
-    if (selectedCity) params.set('city', selectedCity)
-    if (selectedUnitType) params.set('unitTypeId', selectedUnitType)
-    if (minPrice) params.set('minPrice', minPrice)
-    if (maxPrice) params.set('maxPrice', maxPrice)
+    const kw = newValues.keyword !== undefined ? newValues.keyword : keyword
+    const ct = newValues.city !== undefined ? newValues.city : selectedCity
+    const ut = newValues.unitTypeId !== undefined ? newValues.unitTypeId : selectedUnitType
+    const minP = newValues.minPrice !== undefined ? newValues.minPrice : minPrice
+    const maxP = newValues.maxPrice !== undefined ? newValues.maxPrice : maxPrice
+
+    if (kw && kw.trim()) params.set('keyword', kw.trim())
+    if (ct) params.set('city', ct)
+    if (ut) params.set('unitTypeId', ut)
+    if (minP) params.set('minPrice', minP)
+    if (maxP) params.set('maxPrice', maxP)
+    
     setPage(0)
     setSearchParams(params)
+    setOpenDropdown(null)
   }
 
-  // Reset bộ lọc
   function resetFilters() {
     setKeyword('')
     setSelectedCity('')
     setSelectedUnitType('')
     setMinPrice('')
     setMaxPrice('')
+    setOnlyAvailable(false)
+    setSelectedFeatures([])
+    setSortOption('hot')
     setPage(0)
     setSearchParams({})
+    setOpenDropdown(null)
   }
 
-  // Xem chi tiết facility
-  async function openFacilityDetail(facilityId) {
-    try {
-      setDetailLoading(true)
-      setSelectedFacility(facilityId)
-      const data = await getFacilityAvailability(facilityId)
-      setFacilityDetail(data)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setDetailLoading(false)
+  function toggleFeature(feat) {
+    if (selectedFeatures.includes(feat)) {
+      setSelectedFeatures(selectedFeatures.filter((f) => f !== feat))
+    } else {
+      setSelectedFeatures([...selectedFeatures, feat])
     }
   }
 
-  // Đặt kho → chuyển sang CreateReservationPage
+  const filteredAndSortedResults = useMemo(() => {
+    let list = [...results]
+
+    if (onlyAvailable) {
+      list = list.filter((item) => item.availableCount > 0)
+    }
+
+    if (selectedFeatures.length > 0) {
+      list = list.filter((item) => {
+        const featText = (item.features || '') + (item.suggestedCapacity || '') + (item.unitTypeName || '')
+        return selectedFeatures.some((sf) => featText.toLowerCase().includes(sf.toLowerCase().slice(0, 5)))
+      })
+    }
+
+    if (sortOption === 'price_asc') {
+      list.sort((a, b) => a.basePriceMonthly - b.basePriceMonthly)
+    } else if (sortOption === 'price_desc') {
+      list.sort((a, b) => b.basePriceMonthly - a.basePriceMonthly)
+    } else if (sortOption === 'area_desc') {
+      list.sort((a, b) => (b.areaSqm || 0) - (a.areaSqm || 0))
+    }
+
+    return list
+  }, [results, onlyAvailable, selectedFeatures, sortOption])
+
   function handleBooking(facilityId, unitTypeId) {
     navigate(`/booking?facilityId=${facilityId}&unitTypeId=${unitTypeId}`)
   }
 
-  // Tên loại kho từ id
   function getUnitTypeName(id) {
     const ut = unitTypes.find((u) => u.id === Number(id))
     return ut ? ut.name : ''
   }
 
-  // Mô tả tìm kiếm hiện tại
-  function getSearchDescription() {
-    const parts = []
-    if (searchParams.get('keyword')) parts.push(`"${searchParams.get('keyword')}"`)
-    if (searchParams.get('city')) parts.push(searchParams.get('city'))
-    if (searchParams.get('unitTypeId')) parts.push(getUnitTypeName(searchParams.get('unitTypeId')))
-    if (searchParams.get('facilityId')) parts.push('Chi nhánh cụ thể')
-    return parts.length > 0 ? parts.join(' • ') : 'Tất cả kho khả dụng'
-  }
+  const activeFilterCount = [
+    Boolean(keyword),
+    Boolean(selectedCity),
+    Boolean(selectedUnitType),
+    Boolean(minPrice || maxPrice),
+    onlyAvailable,
+    selectedFeatures.length > 0,
+  ].filter(Boolean).length
 
   return (
-    <div className="flex flex-col w-full">
-      <div className="max-w-[1180px] w-full mx-auto px-margin py-space-lg flex flex-col gap-space-lg">
+    <div className="flex flex-col w-full pb-20 bg-white select-none">
+      <div className="max-w-[1040px] w-full mx-auto px-6 pt-8 flex flex-col gap-6">
 
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 font-code-sm text-code-sm text-outline">
-          <span className="hover:text-on-surface cursor-pointer" onClick={() => navigate('/')}>Trang chủ</span>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="hover:text-on-surface cursor-pointer" onClick={() => navigate('/tim-va-dat-kho')}>Tìm & Đặt Kho</span>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          <span className="text-on-surface font-semibold">Kết quả tìm kiếm</span>
+        {/* 1. BREADCRUMB */}
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
+          <span className="text-[#58CC02] hover:text-[#58A700] cursor-pointer" onClick={() => navigate('/')}>Trang chủ</span>
+          <span>/</span>
+          <span className="text-[#58CC02] hover:text-[#58A700] cursor-pointer" onClick={() => navigate('/tim-va-dat-kho')}>Tìm & Đặt Kho</span>
+          <span>/</span>
+          <span className="text-[#4B4B4B]">Kết quả tìm kiếm</span>
         </div>
 
-        {/* ═══════════════ FILTER BAR ═══════════════ */}
-        <form
-          onSubmit={applyFilters}
-          className="bg-white border border-outline-variant/60 rounded-lg p-4 flex flex-col gap-3"
-          style={{ boxShadow: 'rgba(0, 0, 0, 0.06) 0px 2px 4px -1px' }}
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-title-md font-title-md text-on-surface flex items-center gap-2">
-              <span className="material-symbols-outlined text-[20px] text-secondary">filter_list</span>
-              Bộ lọc tìm kiếm
-            </h2>
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="text-label-sm font-label-sm text-outline hover:text-error flex items-center gap-1 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">filter_alt_off</span>
-              Đặt lại
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            {/* Keyword */}
-            <div className="sm:col-span-4 relative">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-outline">search</span>
+        {/* 2. KHỐI TÌM KIẾM & BỘ LỌC DUOLINGO FLAT */}
+        <div className="duo-card p-6 space-y-5">
+          
+          {/* Thanh input tìm kiếm */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              applyFilters()
+            }}
+            className="flex gap-3"
+          >
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[20px] text-[#AFAFAF]">
+                search
+              </span>
               <input
                 type="text"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                placeholder="Tên cơ sở, quận, địa chỉ..."
-                className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary"
+                placeholder="Tìm kho theo quận, cơ sở, địa chỉ..."
+                className="duo-input w-full pl-11"
               />
             </div>
+            <button
+              type="submit"
+              className="duo-btn-green px-6 py-3 text-xs tracking-wider"
+            >
+              TÌM KIẾM
+            </button>
+          </form>
 
-            {/* City */}
-            <div className="sm:col-span-2 relative">
-              <select
-                value={selectedCity}
-                onChange={(e) => setSelectedCity(e.target.value)}
-                className="w-full pl-3 pr-8 py-2.5 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface appearance-none cursor-pointer focus:outline-none focus:border-secondary"
-              >
-                <option value="">Thành phố</option>
-                {cities.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-[18px] text-outline pointer-events-none">expand_more</span>
+          <div className="h-[2px] bg-[#E5E5E5]"></div>
+
+          {/* Tiêu đề & Chips Bộ lọc Duolingo */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-black text-[#AFAFAF] uppercase tracking-wider">
+                CHỌN THEO TIÊU CHÍ LỌC
+              </span>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="text-xs font-black uppercase text-[#FF4B4B] hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[15px]">close</span>
+                  <span>XÓA BỘ LỌC ({activeFilterCount})</span>
+                </button>
+              )}
             </div>
 
-            {/* Unit Type */}
-            <div className="sm:col-span-2 relative">
-              <select
-                value={selectedUnitType}
-                onChange={(e) => setSelectedUnitType(e.target.value)}
-                className="w-full pl-3 pr-8 py-2.5 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface appearance-none cursor-pointer focus:outline-none focus:border-secondary"
-              >
-                <option value="">Loại kho</option>
-                {unitTypes.map((ut) => (
-                  <option key={ut.id} value={ut.id}>{ut.name}</option>
-                ))}
-              </select>
-              <span className="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-[18px] text-outline pointer-events-none">expand_more</span>
-            </div>
-
-            {/* Min Price */}
-            <div className="sm:col-span-1">
-              <input
-                type="number"
-                value={minPrice}
-                onChange={(e) => setMinPrice(e.target.value)}
-                placeholder="Giá từ"
-                className="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary"
-              />
-            </div>
-
-            {/* Max Price */}
-            <div className="sm:col-span-1">
-              <input
-                type="number"
-                value={maxPrice}
-                onChange={(e) => setMaxPrice(e.target.value)}
-                placeholder="Giá đến"
-                className="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-body-md font-body-md text-on-surface focus:outline-none focus:border-secondary"
-              />
-            </div>
-
-            {/* Search button */}
-            <div className="sm:col-span-2">
+            <div className="flex flex-wrap items-center gap-2.5 relative">
+              
+              {/* Nút 1: [Bộ lọc] */}
               <button
-                type="submit"
-                className="w-full py-2.5 bg-secondary text-on-secondary rounded-lg font-title-md text-title-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2 cursor-pointer"
+                type="button"
+                onClick={() => setOpenDropdown(openDropdown === 'all' ? null : 'all')}
+                className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                  activeFilterCount > 0
+                    ? 'bg-[#DDF4FF] border-2 border-b-4 border-[#1899D6] text-[#1CB0F6]'
+                    : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                }`}
               >
-                <span className="material-symbols-outlined text-[18px]">search</span>
-                Tìm
+                <span className="material-symbols-outlined text-[16px] mr-1">filter_alt</span>
+                <span>Bộ lọc {activeFilterCount > 0 ? `(${activeFilterCount})` : ''}</span>
+              </button>
+
+              {/* Nút 2: [Sẵn hàng] */}
+              <button
+                type="button"
+                onClick={() => setOnlyAvailable(!onlyAvailable)}
+                className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                  onlyAvailable
+                    ? 'bg-[#D7FFB8] border-2 border-b-4 border-[#58A700] text-[#58A700]'
+                    : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px] mr-1">check_circle</span>
+                <span>Còn trống</span>
+              </button>
+
+              {/* Nút 3: [Kho đạt chuẩn] */}
+              <button
+                type="button"
+                onClick={() => setSortOption('hot')}
+                className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                  sortOption === 'hot'
+                    ? 'bg-[#FFE8CC] border-2 border-b-4 border-[#E58800] text-[#E58800]'
+                    : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                }`}
+              >
+                <span className="text-sm mr-1">🔥</span>
+                <span>Hot nhất</span>
+              </button>
+
+              {/* Nút 4: [Xem theo giá v] */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdown(openDropdown === 'price' ? null : 'price')}
+                  className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                    minPrice || maxPrice || openDropdown === 'price'
+                      ? 'bg-[#DDF4FF] border-2 border-b-4 border-[#1899D6] text-[#1CB0F6]'
+                      : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px] mr-1">payments</span>
+                  <span>
+                    {minPrice || maxPrice ? `Giá: ${minPrice ? minPrice / 1000 + 'k' : '0'} - ${maxPrice ? maxPrice / 1000 + 'k' : '...'}` : 'Mức giá'}
+                  </span>
+                  <span className="material-symbols-outlined text-[16px] ml-1">expand_more</span>
+                </button>
+
+                {openDropdown === 'price' && (
+                  <div className="absolute left-0 top-full mt-3 w-80 bg-white rounded-2xl border-2 border-b-4 border-[#E5E5E5] shadow-xl p-5 z-40">
+                    <p className="text-xs font-black uppercase text-[#4B4B4B] mb-3">Chọn khoảng giá thuê:</p>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => { setMinPrice(''); setMaxPrice('500000'); applyFilters({ minPrice: '', maxPrice: '500000' }) }}
+                        className="duo-btn-gray py-2 text-xs rounded-xl"
+                      >
+                        Dưới 500k
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setMinPrice('500000'); setMaxPrice('1000000'); applyFilters({ minPrice: '500000', maxPrice: '1000000' }) }}
+                        className="duo-btn-gray py-2 text-xs rounded-xl"
+                      >
+                        500k - 1 triệu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setMinPrice('1000000'); setMaxPrice('2000000'); applyFilters({ minPrice: '1000000', maxPrice: '2000000' }) }}
+                        className="duo-btn-gray py-2 text-xs rounded-xl"
+                      >
+                        1 - 2 triệu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setMinPrice('2000000'); setMaxPrice(''); applyFilters({ minPrice: '2000000', maxPrice: '' }) }}
+                        className="duo-btn-gray py-2 text-xs rounded-xl"
+                      >
+                        Trên 2 triệu
+                      </button>
+                    </div>
+                    <div className="flex gap-2 pt-3 border-t-2 border-[#E5E5E5]">
+                      <button
+                        type="button"
+                        onClick={() => setOpenDropdown(null)}
+                        className="duo-btn-gray flex-1 py-2 text-xs rounded-xl"
+                      >
+                        ĐÓNG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyFilters()}
+                        className="duo-btn-green flex-1 py-2 text-xs rounded-xl"
+                      >
+                        ÁP DỤNG
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Nút 5: [Khu vực / Thành phố v] */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdown(openDropdown === 'city' ? null : 'city')}
+                  className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                    selectedCity || openDropdown === 'city'
+                      ? 'bg-[#DDF4FF] border-2 border-b-4 border-[#1899D6] text-[#1CB0F6]'
+                      : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px] mr-1">location_on</span>
+                  <span>{selectedCity || 'Khu vực'}</span>
+                  <span className="material-symbols-outlined text-[16px] ml-1">expand_more</span>
+                </button>
+
+                {openDropdown === 'city' && (
+                  <div className="absolute left-0 top-full mt-3 w-72 bg-white rounded-2xl border-2 border-b-4 border-[#E5E5E5] shadow-xl p-5 z-40">
+                    <p className="text-xs font-black uppercase text-[#4B4B4B] mb-3">Chọn thành phố:</p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedCity(''); applyFilters({ city: '' }) }}
+                        className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                          !selectedCity ? 'bg-[#58CC02] border-b-2 border-[#58A700] text-white' : 'duo-btn-gray'
+                        }`}
+                      >
+                        Tất cả
+                      </button>
+                      {cities.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => { setSelectedCity(c); applyFilters({ city: c }) }}
+                          className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                            selectedCity === c ? 'bg-[#58CC02] border-b-2 border-[#58A700] text-white' : 'duo-btn-gray'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="duo-btn-gray w-full py-2 text-xs rounded-xl"
+                    >
+                      ĐÓNG
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Nút 6: [Loại khoang v] */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdown(openDropdown === 'unitType' ? null : 'unitType')}
+                  className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                    selectedUnitType || openDropdown === 'unitType'
+                      ? 'bg-[#DDF4FF] border-2 border-b-4 border-[#1899D6] text-[#1CB0F6]'
+                      : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px] mr-1">inventory_2</span>
+                  <span>{selectedUnitType ? getUnitTypeName(selectedUnitType) : 'Kích thước'}</span>
+                  <span className="material-symbols-outlined text-[16px] ml-1">expand_more</span>
+                </button>
+
+                {openDropdown === 'unitType' && (
+                  <div className="absolute left-0 top-full mt-3 w-84 bg-white rounded-2xl border-2 border-b-4 border-[#E5E5E5] shadow-xl p-5 z-40">
+                    <p className="text-xs font-black uppercase text-[#4B4B4B] mb-3">Kích thước khoang:</p>
+                    <div className="flex flex-col gap-1.5 mb-4 max-h-52 overflow-y-auto">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedUnitType(''); applyFilters({ unitTypeId: '' }) }}
+                        className={`text-left text-xs font-bold px-3 py-2 rounded-xl border-2 transition ${
+                          !selectedUnitType ? 'bg-[#58CC02] border-[#58A700] text-white' : 'bg-white border-[#E5E5E5] text-[#4B4B4B]'
+                        }`}
+                      >
+                        Tất cả loại kho
+                      </button>
+                      {unitTypes.map((ut) => (
+                        <button
+                          key={ut.id}
+                          type="button"
+                          onClick={() => { setSelectedUnitType(String(ut.id)); applyFilters({ unitTypeId: String(ut.id) }) }}
+                          className={`text-left text-xs font-bold px-3 py-2 rounded-xl border-2 transition flex items-center justify-between ${
+                            String(selectedUnitType) === String(ut.id)
+                              ? 'bg-[#58CC02] border-[#58A700] text-white'
+                              : 'bg-white border-[#E5E5E5] text-[#4B4B4B] hover:border-[#1CB0F6]'
+                          }`}
+                        >
+                          <span>{ut.name} ({ut.areaSqm}m²)</span>
+                          <span className="font-black">{formatVND(ut.basePriceMonthly)}/th</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="duo-btn-gray w-full py-2 text-xs rounded-xl"
+                    >
+                      ĐÓNG
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Nút 7: [Tính năng đặc biệt v] */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setOpenDropdown(openDropdown === 'features' ? null : 'features')}
+                  className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                    selectedFeatures.length > 0 || openDropdown === 'features'
+                      ? 'bg-[#DDF4FF] border-2 border-b-4 border-[#1899D6] text-[#1CB0F6]'
+                      : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px] mr-1">stars</span>
+                  <span>
+                    Tính năng {selectedFeatures.length > 0 ? `(${selectedFeatures.length})` : ''}
+                  </span>
+                  <span className="material-symbols-outlined text-[16px] ml-1">expand_more</span>
+                </button>
+
+                {openDropdown === 'features' && (
+                  <div className="absolute left-0 top-full mt-3 w-84 sm:w-96 bg-white rounded-2xl border-2 border-b-4 border-[#E5E5E5] shadow-xl p-5 z-40">
+                    <p className="text-xs font-black uppercase text-[#4B4B4B] mb-3">
+                      Chọn tiện ích đi kèm:
+                    </p>
+                    
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {featureOptions.map((feat) => {
+                        const isSelected = selectedFeatures.includes(feat)
+                        return (
+                          <button
+                            key={feat}
+                            type="button"
+                            onClick={() => toggleFeature(feat)}
+                            className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                              isSelected
+                                ? 'bg-[#D7FFB8] border-2 border-[#58CC02] text-[#58A700]'
+                                : 'duo-btn-gray'
+                            }`}
+                          >
+                            {isSelected && (
+                              <span className="material-symbols-outlined text-[14px] mr-1 text-[#58CC02]">check</span>
+                            )}
+                            <span>{feat}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t-2 border-[#E5E5E5]">
+                      <button
+                        type="button"
+                        onClick={() => setOpenDropdown(null)}
+                        className="duo-btn-gray w-full py-2 text-xs rounded-xl"
+                      >
+                        ĐÓNG
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOpenDropdown(null)}
+                        className="duo-btn-green w-full py-2 text-xs rounded-xl"
+                      >
+                        XONG
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+
+          <div className="h-[2px] bg-[#E5E5E5]"></div>
+
+          {/* Sắp xếp theo */}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-black uppercase text-[#AFAFAF] shrink-0">
+              Sắp xếp theo:
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSortOption('hot')}
+                className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                  sortOption === 'hot'
+                    ? 'bg-[#FFE8CC] border-2 border-[#FF9600] text-[#E58800]'
+                    : 'duo-btn-gray'
+                }`}
+              >
+                Hot nhất
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSortOption('price_asc')}
+                className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                  sortOption === 'price_asc'
+                    ? 'bg-[#DDF4FF] border-2 border-[#1CB0F6] text-[#1899D6]'
+                    : 'duo-btn-gray'
+                }`}
+              >
+                Giá Thấp - Cao
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSortOption('price_desc')}
+                className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                  sortOption === 'price_desc'
+                    ? 'bg-[#DDF4FF] border-2 border-[#1CB0F6] text-[#1899D6]'
+                    : 'duo-btn-gray'
+                }`}
+              >
+                Giá Cao - Thấp
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSortOption('area_desc')}
+                className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
+                  sortOption === 'area_desc'
+                    ? 'bg-[#D7FFB8] border-2 border-[#58CC02] text-[#58A700]'
+                    : 'duo-btn-gray'
+                }`}
+              >
+                Diện tích lớn nhất
               </button>
             </div>
           </div>
-        </form>
 
-        {/* ═══════════════ RESULTS HEADER ═══════════════ */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-headline-md font-headline-md text-on-surface">
-              Kết quả tìm kiếm
-            </h1>
-            <p className="text-body-sm font-body-sm text-on-surface-variant mt-0.5">
-              {getSearchDescription()} — {totalElements} kết quả
-            </p>
-          </div>
         </div>
 
-        {/* ═══════════════ LOADING ═══════════════ */}
+        {/* 3. RESULTS HEADER & COUNT */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-black uppercase tracking-wider text-[#4B4B4B]">
+            Khoang kho khả dụng ({filteredAndSortedResults.length})
+          </h2>
+        </div>
+
+        {/* 4. LOADING SPINNER */}
         {loading && (
-          <div className="text-center py-16 text-on-surface-variant">
-            <span className="material-symbols-outlined text-[32px] animate-spin text-secondary">progress_activity</span>
-            <p className="mt-2 text-body-md font-body-md">Đang tìm kiếm...</p>
+          <div className="text-center py-20 text-[#AFAFAF]">
+            <span className="material-symbols-outlined text-[40px] animate-spin text-[#58CC02]">progress_activity</span>
+            <p className="mt-2 text-xs font-bold uppercase tracking-wider">Đang tìm kiếm khoang kho phù hợp...</p>
           </div>
         )}
 
-        {/* ═══════════════ EMPTY STATE ═══════════════ */}
-        {!loading && results.length === 0 && (
-          <div className="text-center py-16">
-            <span className="material-symbols-outlined text-[48px] text-outline/40">search_off</span>
-            <h3 className="text-title-md font-title-md text-on-surface mt-3">
-              Không tìm thấy kết quả
+        {/* 5. EMPTY STATE */}
+        {!loading && filteredAndSortedResults.length === 0 && (
+          <div className="duo-card p-12 text-center">
+            <span className="material-symbols-outlined text-[54px] text-[#AFAFAF]">search_off</span>
+            <h3 className="text-lg font-black text-[#4B4B4B] mt-3">
+              Không tìm thấy khoang kho phù hợp
             </h3>
-            <p className="text-body-sm font-body-sm text-on-surface-variant mt-1 max-w-md mx-auto">
-              Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm. Có thể tất cả ô kho tại khu vực này đã được thuê hết.
+            <p className="text-xs font-bold text-[#AFAFAF] mt-1 max-w-sm mx-auto">
+              Không có ô kho nào thỏa mãn tiêu chí lọc. Vui lòng mở rộng khoảng giá hoặc chọn khu vực khác.
             </p>
             <button
               onClick={resetFilters}
-              className="mt-4 px-4 py-2 bg-secondary text-on-secondary rounded-lg font-title-md text-title-md hover:opacity-90 cursor-pointer"
+              className="duo-btn-green px-5 py-2.5 text-xs tracking-wider mt-4"
             >
-              Xóa bộ lọc & thử lại
+              ĐẶT LẠI BỘ LỌC
             </button>
           </div>
         )}
 
-        {/* ═══════════════ RESULTS GRID ═══════════════ */}
-        {!loading && results.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
-            {results.map((item, idx) => (
+        {/* 6. RESULTS GRID DUOLINGO FLAT */}
+        {!loading && filteredAndSortedResults.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredAndSortedResults.map((item, idx) => (
               <div
                 key={`${item.facilityId}-${item.unitTypeId}-${idx}`}
-                className="bg-white rounded-lg border border-outline-variant/60 overflow-hidden hover:shadow-md transition-all flex flex-col"
-                style={{ boxShadow: 'rgba(0, 0, 0, 0.06) 0px 2px 4px -1px' }}
+                className="duo-card p-5 flex flex-col justify-between group hover:border-[#1CB0F6] transition-all"
               >
-                {/* Card header - Facility name */}
-                <div className="bg-primary/5 px-4 py-3 border-b border-outline-variant/40 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-secondary-fixed flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-[18px] text-secondary">apartment</span>
+                <div>
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b-2 border-[#E5E5E5]">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="material-symbols-outlined text-[18px] text-[#58CC02]">apartment</span>
+                      <span className="text-xs font-black text-[#4B4B4B] truncate">{item.facilityName}</span>
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="text-title-md font-title-md text-on-surface truncate">{item.facilityName}</h3>
-                      <p className="text-label-sm font-label-sm text-on-surface-variant truncate">{item.district}, {item.city}</p>
-                    </div>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 ${
+                      item.availableCount > 2
+                        ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
+                        : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
+                    }`}>
+                      Còn {item.availableCount} ô
+                    </span>
                   </div>
-                  <button
-                    onClick={() => openFacilityDetail(item.facilityId)}
-                    className="text-label-sm font-label-sm text-secondary hover:underline cursor-pointer flex-shrink-0"
-                  >
-                    Chi tiết
-                  </button>
-                </div>
 
-                {/* Card body - Unit type info */}
-                <div className="px-4 py-4 flex-1 flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-label-sm font-label-sm bg-primary-fixed text-primary px-2 py-0.5 rounded-full">
-                      {item.unitTypeName}
-                    </span>
-                    <span className="text-label-sm font-label-sm text-on-surface-variant">
-                      {item.areaSqm} m² • {item.dimensions}
-                    </span>
-                  </div>
+                  <h3 className="text-lg font-black text-[#4B4B4B] group-hover:text-[#1CB0F6] transition-colors">
+                    {item.unitTypeName} ({item.areaSqm}m²)
+                  </h3>
+
+                  <p className="text-xs font-bold text-[#AFAFAF] mt-1">
+                    Kích thước: {item.dimensions}
+                  </p>
 
                   {item.features && (
-                    <p className="text-body-sm font-body-sm text-on-surface-variant">
+                    <p className="text-xs font-bold text-[#777777] mt-2 line-clamp-2 leading-relaxed">
                       {item.features}
                     </p>
                   )}
 
-                  {item.suggestedCapacity && (
-                    <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[14px]">package_2</span>
-                      {item.suggestedCapacity}
-                    </p>
-                  )}
-
-                  <p className="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[14px]">location_on</span>
-                    {item.address}
-                  </p>
+                  <div className="flex items-center gap-1 text-xs font-bold text-[#AFAFAF] mt-3">
+                    <span className="material-symbols-outlined text-[15px]">location_on</span>
+                    <span className="truncate">{item.address} • {item.district}</span>
+                  </div>
                 </div>
 
-                {/* Card footer - Price + CTA */}
-                <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between bg-white">
+                {/* Card Footer: Giá & Nút Đặt kho Duolingo Green */}
+                <div className="mt-5 pt-3.5 border-t-2 border-[#E5E5E5] flex items-center justify-between">
                   <div>
-                    <span className="text-headline-sm font-headline-sm text-primary">
+                    <span className="text-[11px] font-black text-[#AFAFAF] uppercase block">Đơn giá tháng</span>
+                    <span className="text-lg font-black text-[#58CC02]">
                       {formatVND(item.basePriceMonthly)}
                     </span>
-                    <span className="text-body-sm font-body-sm text-on-surface-variant">/tháng</span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className={`text-label-sm font-label-sm ${
-                        item.availableCount > 2 ? 'text-[#10B981]' : 'text-[#D97706]'
-                      }`}>
-                        {item.availableCount} ô trống
-                      </span>
-                    </div>
                   </div>
+
                   <button
                     onClick={() => handleBooking(item.facilityId, item.unitTypeId)}
-                    className="px-4 py-2 bg-secondary text-on-secondary rounded-lg font-title-md text-title-md hover:opacity-90 transition-opacity cursor-pointer flex items-center gap-1.5"
+                    className="duo-btn-green px-5 py-2.5 text-xs tracking-wider"
                   >
-                    <span className="material-symbols-outlined text-[18px]">bookmark_add</span>
-                    Đặt kho
+                    ĐẶT KHO
                   </button>
                 </div>
               </div>
@@ -404,140 +718,6 @@ export default function SearchResultsPage() {
           </div>
         )}
 
-        {/* ═══════════════ PAGINATION ═══════════════ */}
-        {!loading && totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 py-4">
-            <button
-              disabled={page === 0}
-              onClick={() => {
-                setPage(page - 1)
-                const p = new URLSearchParams(searchParams)
-                p.set('page', String(page - 1))
-                setSearchParams(p)
-              }}
-              className="w-9 h-9 rounded-lg border border-outline-variant bg-white flex items-center justify-center text-on-surface-variant hover:bg-surface-container disabled:opacity-30 cursor-pointer disabled:cursor-default"
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  setPage(i)
-                  const p = new URLSearchParams(searchParams)
-                  p.set('page', String(i))
-                  setSearchParams(p)
-                }}
-                className={`w-9 h-9 rounded-lg font-title-md text-title-md cursor-pointer ${
-                  i === page
-                    ? 'bg-primary text-on-primary'
-                    : 'border border-outline-variant bg-white text-on-surface hover:bg-surface-container'
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
-
-            <button
-              disabled={page >= totalPages - 1}
-              onClick={() => {
-                setPage(page + 1)
-                const p = new URLSearchParams(searchParams)
-                p.set('page', String(page + 1))
-                setSearchParams(p)
-              }}
-              className="w-9 h-9 rounded-lg border border-outline-variant bg-white flex items-center justify-center text-on-surface-variant hover:bg-surface-container disabled:opacity-30 cursor-pointer disabled:cursor-default"
-            >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-            </button>
-          </div>
-        )}
-
-        {/* ═══════════════ FACILITY DETAIL MODAL ═══════════════ */}
-        {selectedFacility && (
-          <div
-            className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-            onClick={() => { setSelectedFacility(null); setFacilityDetail(null) }}
-          >
-            <div
-              className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-y-auto shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {detailLoading ? (
-                <div className="p-8 text-center">
-                  <span className="material-symbols-outlined text-[32px] animate-spin text-secondary">progress_activity</span>
-                  <p className="mt-2 text-body-md font-body-md text-on-surface-variant">Đang tải...</p>
-                </div>
-              ) : facilityDetail ? (
-                <>
-                  {/* Modal header */}
-                  <div className="px-5 py-4 border-b border-outline-variant/60 flex items-center justify-between"
-                    style={{ background: 'linear-gradient(135deg, #002746 0%, #0b3d66 100%)' }}
-                  >
-                    <div>
-                      <h3 className="text-title-md font-title-md text-on-primary">{facilityDetail.facility.name}</h3>
-                      <p className="text-label-sm font-label-sm text-on-primary/70">
-                        {facilityDetail.facility.address} • {facilityDetail.facility.district}, {facilityDetail.facility.city}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => { setSelectedFacility(null); setFacilityDetail(null) }}
-                      className="text-on-primary/60 hover:text-on-primary cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[24px]">close</span>
-                    </button>
-                  </div>
-
-                  {/* Modal body */}
-                  <div className="p-5 flex flex-col gap-3">
-                    <h4 className="text-title-md font-title-md text-on-surface">Loại kho khả dụng tại cơ sở</h4>
-
-                    {facilityDetail.unitTypeAvailability.length === 0 ? (
-                      <p className="text-body-sm font-body-sm text-on-surface-variant text-center py-4">
-                        Hiện không có loại kho nào tại cơ sở này.
-                      </p>
-                    ) : (
-                      facilityDetail.unitTypeAvailability.map((slot) => (
-                        <div
-                          key={slot.unitTypeId}
-                          className="border border-outline-variant/60 rounded-lg p-4 flex items-center justify-between"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-title-md font-title-md text-on-surface">{slot.unitTypeName}</span>
-                              <span className="text-label-sm font-label-sm text-on-surface-variant">{slot.areaSqm} m²</span>
-                            </div>
-                            <p className="text-body-sm font-body-sm text-on-surface-variant mt-0.5">
-                              {slot.dimensions} • {formatVND(slot.basePriceMonthly)}/tháng
-                            </p>
-                            <div className="flex items-center gap-3 mt-1.5">
-                              <span className="text-label-sm font-label-sm text-on-surface-variant">
-                                Tổng: {slot.totalUnits} ô
-                              </span>
-                              <span className={`text-label-sm font-label-sm font-semibold ${
-                                slot.availableCount > 0 ? 'text-[#10B981]' : 'text-error'
-                              }`}>
-                                Còn trống: {slot.availableCount}
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            disabled={slot.availableCount === 0}
-                            onClick={() => handleBooking(facilityDetail.facility.id, slot.unitTypeId)}
-                            className="px-3 py-2 bg-secondary text-on-secondary rounded-lg font-title-md text-title-md hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-30 disabled:cursor-default flex-shrink-0 ml-3"
-                          >
-                            Đặt kho
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

@@ -7,9 +7,11 @@
   body {
     margin: 0;
     padding: 0;
-    font-family: "Inter", sans-serif;
+    font-family: "Nunito", "Inter", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: #FFFFFF;
+    color: #4B4B4B;
   }
 
   body {
@@ -23,5 +25,54 @@
 
   * {
     scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* ========================================================
+     DUOLINGO 2.5D FLAT PUSH BUTTONS & CARDS
+     ======================================================== */
+  .duo-btn {
+    @apply inline-flex items-center justify-center font-black uppercase tracking-wider rounded-2xl transition-all select-none cursor-pointer text-sm;
+  }
+
+  .duo-btn-green {
+    @apply duo-btn bg-[#58CC02] hover:bg-[#61E002] text-white border-b-4 border-[#58A700] active:border-b-0 active:translate-y-1;
+  }
+
+  .duo-btn-blue {
+    @apply duo-btn bg-[#1CB0F6] hover:bg-[#25C0FF] text-white border-b-4 border-[#1899D6] active:border-b-0 active:translate-y-1;
+  }
+
+  .duo-btn-orange {
+    @apply duo-btn bg-[#FF9600] hover:bg-[#FFA524] text-white border-b-4 border-[#E58800] active:border-b-0 active:translate-y-1;
+  }
+
+  .duo-btn-red {
+    @apply duo-btn bg-[#FF4B4B] hover:bg-[#FF5E5E] text-white border-b-4 border-[#EA2B2B] active:border-b-0 active:translate-y-1;
+  }
+
+  .duo-btn-white {
+    @apply duo-btn bg-white hover:bg-[#F7F7F7] text-[#1CB0F6] border-2 border-b-4 border-[#E5E5E5] active:border-b-2 active:translate-y-0.5;
+  }
+
+  .duo-btn-gray {
+    @apply duo-btn bg-white hover:bg-[#F7F7F7] text-[#777777] border-2 border-b-4 border-[#E5E5E5] active:border-b-2 active:translate-y-0.5;
+  }
+
+  .duo-card {
+    @apply bg-white border-2 border-b-4 border-[#E5E5E5] rounded-2xl;
+  }
+
+  .duo-card-interactive {
+    @apply bg-white border-2 border-b-4 border-[#E5E5E5] rounded-2xl hover:border-[#1CB0F6] transition-all cursor-pointer;
+  }
+
+  .duo-input {
+    @apply bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl px-4 py-3 font-bold text-[#4B4B4B] placeholder:text-[#AFAFAF] focus:bg-white focus:border-[#1CB0F6] focus:outline-none transition-all;
+  }
+
+  .duo-badge {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full font-black text-xs uppercase tracking-wider;
   }
 }

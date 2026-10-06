@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
-import { createSepayPayment } from '../../services/sepayService'
+import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability } from '../../services/facilityService'
 
 // Gom dữ liệu cơ sở + loại kho (lấy từ API UC-09) thành 1 object dùng cho giao diện và trang xác nhận
@@ -153,7 +153,7 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
       })
-      const paymentData = await createSepayPayment(response.id)
+      const paymentData = await createVnpayPayment(response.id)
       
       sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
         reservation: response,
@@ -163,23 +163,10 @@ export default function CreateReservationPage() {
         totalPayment: Number(paymentData.amount || totalPayment),
         deposit: Number(paymentData.depositAmount || deposit),
         storage: unit,
+        orderId: paymentData.orderId,
       }))
 
-      // Render form ẩn và tự động submit sang SePay, giống API gọn nhẹ
-      const form = document.createElement('form')
-      form.method = 'POST'
-      form.action = 'https://pay-sandbox.sepay.vn/v1/checkout/init'
-      
-      Object.entries(paymentData.fields || {}).forEach(([key, value]) => {
-        const input = document.createElement('input')
-        input.type = 'hidden'
-        input.name = key
-        input.value = value
-        form.appendChild(input)
-      })
-      
-      document.body.appendChild(form)
-      form.submit()
+      window.location.assign(paymentData.payUrl)
 
     } catch (err) {
       setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
@@ -564,18 +551,13 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              {/* Nut thanh toan */}
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm text-orange-800 mt-2 mb-4">
-                <span className="font-semibold">Lưu ý giữ chỗ:</span> Vui lòng quét mã QR thanh toán trong vòng <strong>10 phút</strong> kể từ khi bấm nút <strong>THANH TOÁN</strong>. Nếu quá thời gian, đơn sẽ tự động hủy.
-              </div>
-
               <button
                 onClick={handleSubmit}
                 disabled={loading}
                 className="w-full bg-primary text-on-primary py-3.5 rounded-xl text-title-md font-title-md flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-60 cursor-pointer mt-1 mb-4"
               >
                 <span className="material-symbols-outlined text-[18px]">lock</span>
-                {loading ? 'Đang chuyển hướng sang SePay...' : `Thanh toán giữ kho đợt 1`}
+                {loading ? 'Đang chuyển sang VNPAY...' : `Thanh toán giữ kho đợt 1`}
               </button>
 
               <div className="flex justify-between items-center text-label-sm font-label-sm text-on-surface-variant border-t border-surface-container pt-2">

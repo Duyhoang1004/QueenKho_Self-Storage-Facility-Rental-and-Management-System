@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { confirmPaymentAfterCheckout } from '../../services/sepayService'
+import { getVnpayStatus } from '../../services/vnpayService'
 
 // Format tien VND
 function formatVND(amount) {
@@ -12,7 +12,7 @@ export default function ReservationConfirmationPage() {
   const { state } = useLocation()
   const [finalStatus, setFinalStatus] = useState('PENDING')
 
-  // Hosted Checkout lam mat navigate state, nen doc lai du lieu da luu truoc khi sang SePay.
+  // Hosted Checkout lam mat navigate state, nen doc lai du lieu da luu truoc khi sang VNPAY.
   let savedContext = {}
   try {
     savedContext = JSON.parse(sessionStorage.getItem('queenkhoPaymentContext') || '{}')
@@ -45,22 +45,31 @@ export default function ReservationConfirmationPage() {
   const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
 
   useEffect(() => {
-    const resId = reservation.id
-    if (resId) {
-      confirmPaymentAfterCheckout(resId, totalPayment, reservationCode)
-        .then((data) => {
-          if (data && data.status) {
-            setFinalStatus(data.status)
-          } else {
-            setFinalStatus('DEPOSIT_PAID')
-          }
-        })
-        .catch((err) => {
-          console.warn('[QueenKho] Lỗi khi tự động cập nhật thanh toán:', err)
-        })
+    const orderId = paymentContext.orderId
+    if (!orderId || new URLSearchParams(window.location.search).get('orderId') !== orderId) return
+    let active = true
+    const poll = async () => {
+      try {
+        const data = await getVnpayStatus(orderId)
+        if (!active) return
+        if (data.status === 'SUCCESS' || data.status === 'NEEDS_REFUND') setFinalStatus(data.reservation_status === 'REFUND_PENDING' ? 'REFUND_PENDING' : 'DEPOSIT_PAID')
+        else if (data.status === 'FAILED') setFinalStatus('FAILED')
+        else setTimeout(poll, 2000)
+      } catch { if (active) setTimeout(poll, 3000) }
     }
-  }, [reservation.id, totalPayment, reservationCode])
+    poll()
 
+  return () => { active = false }
+  }, [paymentContext.orderId])
+
+
+  if (finalStatus !== 'DEPOSIT_PAID' && finalStatus !== 'REFUND_PENDING') return (
+    <div className="mx-auto max-w-2xl p-8 text-center">
+      <h1 className="text-2xl font-bold text-on-surface">{finalStatus === 'FAILED' ? 'Thanh toán VNPAY không thành công, vui lòng chọn lại.' : 'Đang chờ VNPAY xác nhận thanh toán'}</h1>
+      {finalStatus !== 'FAILED' && <p className="mt-3 text-on-surface-variant">Đơn đang chờ xác nhận kết quả thanh toán từ VNPAY.</p>}
+      <button onClick={() => navigate(finalStatus === 'FAILED' ? '/tim-va-dat-kho' : '/kho-cua-toi')} className="mt-6 rounded-xl bg-primary px-5 py-3 text-on-primary">{finalStatus === 'FAILED' ? 'Chọn lại' : 'Xem đơn của tôi'}</button>
+    </div>
+  )
   return (
     <div className="p-6 max-w-3xl mx-auto">
 
@@ -79,7 +88,9 @@ export default function ReservationConfirmationPage() {
       <div className="bg-white rounded-xl border border-surface-container-high overflow-hidden">
 
         {/* Phan dau - icon va tieu de */}
-        {finalStatus === 'REFUND_PENDING' ? (
+        {finalStatus !== 'DEPOSIT_PAID' && finalStatus !== 'REFUND_PENDING' ? (
+          <p className="text-center p-8 text-lg">{finalStatus === 'FAILED' ? 'Thanh toán VNPAY không thành công, vui lòng chọn lại.' : 'Đang chờ VNPAY xác nhận thanh toán...'}</p>
+        ) : finalStatus === 'REFUND_PENDING' ? (
           <div className="flex flex-col items-center py-8 px-6 border-b border-surface-container bg-orange-50">
             <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center mb-4">
               <span className="material-symbols-outlined text-orange-600 text-[40px]">error</span>
@@ -91,8 +102,8 @@ export default function ReservationConfirmationPage() {
               Thanh toán trễ • Đơn đã bị hủy
             </h1>
             <div className="text-body-md font-body-md text-orange-800 mt-3 text-center bg-white p-4 rounded-lg shadow-sm border border-orange-200">
-              Đơn đặt chỗ <span className="font-bold">#{reservationCode}</span> đã bị hệ thống tự động hủy do thanh toán quá thời gian 10 phút.<br/><br/>
-              Chúng tôi đã ghi nhận khoản tiền của bạn. Vui lòng liên hệ hỗ trợ để được hoàn tiền nhanh nhất!
+              Đơn đặt chỗ <span className="font-bold">#{reservationCode}</span> đã bị hệ thống tự động hủy do thanh toán quá thời gian 15 phút.<br/><br/>
+              Khoản thanh toán phát sinh sau khi đơn bị hủy đang được hệ thống xử lý.
             </div>
           </div>
         ) : (

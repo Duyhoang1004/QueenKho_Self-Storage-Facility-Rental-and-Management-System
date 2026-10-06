@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { getContractByReservation } from '../../services/contractService'
-import { confirmSepayRenewalPayment } from '../../services/sepayService'
 import ContractOptionsModal from '../../components/ContractOptionsModal'
+import { getVnpayStatus } from '../../services/vnpayService'
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -47,10 +47,6 @@ export default function CustomerContractPage() {
   const [toastMessage, setToastMessage] = useState('')
 
   const [searchParams] = useSearchParams()
-  const renewalStatus = searchParams.get('renewal')
-  const qContractId = searchParams.get('contractId')
-  const qMonths = searchParams.get('months')
-
   const loadContract = () => {
     getContractByReservation(reservationId)
       .then(data => {
@@ -65,29 +61,28 @@ export default function CustomerContractPage() {
     loadContract()
   }, [reservationId])
 
-  // Xử lý khi redirect từ SePay trở về
-  useEffect(() => {
-    if (renewalStatus === 'success' && qContractId && qMonths) {
-      confirmSepayRenewalPayment(Number(qContractId), Number(qMonths))
-        .then((res) => {
-          setToastMessage(`Thanh toán SePay thành công! Hợp đồng ${res.contractCode || ''} đã được gia hạn thêm ${qMonths} tháng.`)
-          loadContract()
-          setTimeout(() => setToastMessage(''), 8000)
-        })
-        .catch((err) => {
-          console.error('Lỗi khi xác nhận gia hạn sau thanh toán:', err)
-        })
-        .finally(() => {
-          sessionStorage.removeItem('queenkhoRenewalContext')
-          navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
-        })
-    } else if (renewalStatus === 'failed' || renewalStatus === 'cancelled') {
-      setError('Giao dịch thanh toán SePay đã bị hủy hoặc không thành công.')
-      sessionStorage.removeItem('queenkhoRenewalContext')
-      navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
-    }
-  }, [renewalStatus, qContractId, qMonths])
 
+  useEffect(() => {
+    const orderId = searchParams.get('orderId')
+    if (!orderId) return
+    let active = true
+    const poll = async () => {
+      try {
+        const result = await getVnpayStatus(orderId)
+        if (!active) return
+        if (result.status === 'SUCCESS') {
+          setToastMessage('Thanh toán VNPAY thành công. Hợp đồng đã được gia hạn.')
+          loadContract()
+          navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
+        } else if (result.status === 'FAILED') {
+          setError('Thanh toán VNPAY không thành công, vui lòng chọn lại.')
+          navigate(`/kho-cua-toi/hop-dong/${reservationId}`, { replace: true })
+        } else setTimeout(poll, 2500)
+      } catch { if (active) setTimeout(poll, 3000) }
+    }
+    poll()
+    return () => { active = false }
+  }, [searchParams, reservationId])
   const handleModalSuccess = (msg) => {
     setToastMessage(msg)
     loadContract()

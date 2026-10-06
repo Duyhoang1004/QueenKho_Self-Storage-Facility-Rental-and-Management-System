@@ -8,7 +8,7 @@
 *   **Frontend:** ReactJS (khởi tạo qua Vite), Tailwind CSS (thiết kế theo chuẩn Material Design 3), React Router DOM, Axios.
 *   **Backend:** Spring Boot (Java), Spring Data JPA & Hibernate, Spring Security (đang cấu hình mở cho Dev/Test).
 *   **Database:** SQL Server 2019/2022.
-*   **Tích hợp:** Cổng thanh toán SePay (Webhook tự động cập nhật đơn đặt cọc), QR Code tĩnh/động (VietQR).
+*   **Tích hợp:** VNPAY sandbox, QR Code tĩnh/động (VietQR).
 
 ---
 
@@ -34,7 +34,7 @@ Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời 
     *   Quy trình đặt chỗ kho (UC-10: Booking).
     *   Quản lý kho của tôi (UC-12: My Reservations).
 *   **Cổng Thanh Toán:**
-    *   Tích hợp thành công Hosted Checkout qua SePay.
+    *   Tích hợp thành công VNPAY sandbox.
     *   Trang xác nhận thành công sau khi hoàn tất thanh toán.
     *   Backend có Webhook (IPN) tự động nhận tín hiệu thanh toán để cập nhật trạng thái `DEPOSIT_PAID` vào Database.
 *   **Trang Quản trị Cơ sở (Manager Portal):**
@@ -265,3 +265,13 @@ fix(UC-02):  Sửa lỗi phát sinh
 docs:        Cập nhật tài liệu
 chore:       Công việc linh tinh (config, dependency)
 ```
+## VNPAY sandbox
+
+1. Register a VNPAY sandbox merchant at https://sandbox.vnpayment.vn/devreg/ and obtain `vnp_TmnCode` and `vnp_HashSecret` by email.
+2. Use the existing `payment_transactions` table in QueenKhoDB. Creating a payment inserts a PENDING row; a verified IPN updates the same row to SUCCESS, FAILED, or NEEDS_REFUND. No new payment table is required.
+3. The local sandbox credentials are stored in the ignored `backend/api/config/application.yaml` (loaded when running from `backend/api`). For another machine, set `VNPAY_TMN_CODE` and `VNPAY_HASH_SECRET` as backend environment variables instead. The optional `VNPAY_RETURN_URL` defaults to `http://localhost:8080/api/payments/vnpay/return`, and `VNPAY_FRONTEND_URL` defaults to `http://localhost:5173`. Keep the secret out of Git.
+4. Configure VNPAY's IPN URL as `https://<public-backend-host>/api/payments/vnpay/ipn` for a complete server-to-server integration. VNPAY requires a publicly reachable SSL IPN URL. For localhost sandbox testing only, the ignored local config enables `vnpay.local-return-confirm`; a signed browser return with the matching amount updates the existing payment record. This fallback is disabled by default and only accepts the VNPAY sandbox endpoint with a localhost Return URL.
+5. Start backend and frontend. Test with the sandbox ATM card/OTP published by VNPAY. No real funds are involved.
+
+In normal mode, the browser Return URL only verifies and displays a result; a signed IPN updates the payment record. In local sandbox mode only, the signed Return URL can also confirm a test payment because VNPAY cannot reach localhost via IPN.
+

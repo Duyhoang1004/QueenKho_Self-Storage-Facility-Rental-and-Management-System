@@ -21,7 +21,7 @@ const STATUS_META = {
     className: "bg-orange-100 text-orange-800",
   },
   CANCELLED: { label: "Đã hủy", className: "bg-red-100 text-red-800" },
-  REFUND_PENDING: { label: "Đã hủy - Liên hệ hỗ trợ hoàn tiền", className: "bg-orange-100 text-orange-800" },
+  REFUND_PENDING: { label: "Đã hủy", className: "bg-orange-100 text-orange-800" },
   EXPIRED: { label: "Hết hạn giữ chỗ", className: "bg-gray-100 text-gray-600" },
   COMPLETED: {
     label: "Hoàn tất",

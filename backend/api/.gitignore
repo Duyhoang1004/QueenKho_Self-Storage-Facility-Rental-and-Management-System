@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local VNPAY sandbox credentials (external Spring configuration)
+/config/application.yaml

@@ -89,15 +89,27 @@ export default function ReservationConfirmationPage() {
       {/* Step indicator */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] flex items-center justify-center text-white text-xs font-black">
+          <div className={`w-8 h-8 rounded-2xl border-b-2 flex items-center justify-center text-white text-xs font-black ${finalStatus === 'FAILED' ? 'bg-[#FF4B4B] border-[#EA2B2B]' : finalStatus === 'REFUND_PENDING' ? 'bg-[#FF9600] border-[#E58800]' : 'bg-[#58CC02] border-[#58A700]'}`}>
             3
           </div>
           <span className="text-base font-black text-[#4B4B4B]">Biên Nhận Xác Nhận Đặt Chỗ</span>
         </div>
-        <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
-          <span className="material-symbols-outlined text-[16px]">check_circle</span>
-          Hệ Thống Đã Ghi Nhận
-        </span>
+        {finalStatus === 'FAILED' ? (
+          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
+            <span className="material-symbols-outlined text-[16px]">cancel</span>
+            Đã Hủy Giao Dịch
+          </span>
+        ) : finalStatus === 'REFUND_PENDING' ? (
+          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600]">
+            <span className="material-symbols-outlined text-[16px]">error</span>
+            Quá Hạn Thanh Toán
+          </span>
+        ) : (
+          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
+            <span className="material-symbols-outlined text-[16px]">check_circle</span>
+            Hệ Thống Đã Ghi Nhận
+          </span>
+        )}
       </div>
 
       <div className="duo-card overflow-hidden">

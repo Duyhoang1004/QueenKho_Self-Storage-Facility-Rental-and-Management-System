@@ -119,6 +119,9 @@ export default function ReservationConfirmationPage() {
               <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
               đã bị hủy. Vui lòng đặt lại hoặc liên hệ hỗ trợ.
             </p>
+            <button onClick={() => navigate('/booking')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
+              TÌM KHO MỚI
+            </button>
           </div>
         ) : finalStatus === 'REFUND_PENDING' ? (
           <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFE8CC]">

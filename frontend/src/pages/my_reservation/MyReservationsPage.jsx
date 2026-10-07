@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
-import { createVnpayPayment } from '../../services/vnpayService';
 import CancelReservationModal from "../../components/CancelReservationModal";
 
 const STATUS_META = {
@@ -50,32 +49,7 @@ function readUserId() {
 export default function MyReservationsPage() {
   const [selectedResToCancel, setSelectedResToCancel] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
-  const [payingId, setPayingId] = useState(null);
-
-  const handlePayment = async (res) => {
-    try {
-      setPayingId(res.id);
-      const paymentData = await createVnpayPayment(res.id);
-      
-      sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
-          reservation: res,
-          selectedMonths: res.durationMonths,
-          startDate: res.startDate,
-          totalPayment: Number(paymentData.amount || res.depositAmount),
-          deposit: Number(res.depositAmount),
-          storage: {
-              branch: res.facilityName,
-              name: res.unitTypeName,
-          }
-      }));
-
-      window.location.assign(paymentData.payUrl);
-    } catch (e) {
-      alert("Lỗi khi tạo thanh toán: " + (e.response?.data?.message || e.message));
-      setPayingId(null);
-    }
-  };
-  const userId = readUserId();
+    const userId = readUserId();
   const navigate = useNavigate();
 
   const [reservations, setReservations] = useState([]);
@@ -356,20 +330,6 @@ export default function MyReservationsPage() {
                               >
                                 <span className="material-symbols-outlined text-[14px]">description</span>
                                 XEM HĐ
-                              </button>
-                            )}
-                            {r.status === "PENDING" && (
-                              <button
-                                onClick={() => handlePayment(r)}
-                                disabled={payingId === r.id}
-                                className="duo-btn-green px-2.5 py-1 text-[10px] gap-1 shadow-sm disabled:opacity-50"
-                              >
-                                {payingId === r.id ? (
-                                  <span className="material-symbols-outlined text-[14px] animate-spin">sync</span>
-                                ) : (
-                                  <span className="material-symbols-outlined text-[14px]">payments</span>
-                                )}
-                                {payingId === r.id ? "ĐANG TẠO..." : "THANH TOÁN"}
                               </button>
                             )}
                             {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (

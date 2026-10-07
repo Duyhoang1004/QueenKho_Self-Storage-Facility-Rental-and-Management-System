@@ -522,10 +522,7 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              {/* Lưu ý 10 phút */}
-              <div className="bg-[#FFE8CC] border-2 border-b-4 border-[#FF9600] rounded-2xl p-3.5 text-xs font-bold text-[#E58800] mt-2">
-                <span className="font-black">⚡ Lưu ý giữ chỗ:</span> Quét mã QR thanh toán trong vòng <strong>10 phút</strong>.
-              </div>
+              
 
               {/* Giant Green CTA Button */}
               <button

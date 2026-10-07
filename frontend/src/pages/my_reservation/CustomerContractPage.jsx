@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getContractByReservation } from '../../services/contractService'
-import { confirmSepayRenewalPayment } from '../../services/sepayService'
+import { useSearchParams } from 'react-router-dom'
+import { getVnpayStatus } from '../../services/vnpayService'
 import ContractOptionsModal from '../../components/ContractOptionsModal'
 
 function formatVND(v) {

@@ -103,7 +103,7 @@ export default function CancelReservationModal({ isOpen, onClose, reservation, o
           {/* Khung tính toán hoàn cọc */}
           {loading ? (
              <div className="flex justify-center p-4"><span className="material-symbols-outlined animate-spin text-[32px] text-[#58CC02]">sync</span></div>
-          ) : preview ? (
+          ) : (preview && reservation.status !== 'PENDING') ? (
             <div className="bg-[#FFF5F5] border-2 border-b-4 border-[#FFDFDF] rounded-2xl p-4">
               <h3 className="text-xs font-black uppercase text-[#FF4B4B] mb-2">Chính sách hoàn cọc</h3>
               <div className="flex flex-col gap-2 text-xs font-bold">

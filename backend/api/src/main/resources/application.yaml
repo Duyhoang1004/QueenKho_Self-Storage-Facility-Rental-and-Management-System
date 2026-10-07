@@ -16,3 +16,11 @@ spring:
 
 server:
   port: 8080
+
+vnpay:
+  tmn-code: ${VNPAY_TMN_CODE:}
+  hash-secret: ${VNPAY_HASH_SECRET:}
+  pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+  return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/payments/vnpay/return}
+  frontend-url: ${VNPAY_FRONTEND_URL:http://localhost:5173}
+  local-return-confirm: ${VNPAY_LOCAL_RETURN_CONFIRM:false}

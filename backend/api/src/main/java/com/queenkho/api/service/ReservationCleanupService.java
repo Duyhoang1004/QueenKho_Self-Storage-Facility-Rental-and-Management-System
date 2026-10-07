@@ -16,9 +16,9 @@ public class ReservationCleanupService {
     // Chạy mỗi phút 1 lần (60000ms)
     @Scheduled(fixedRate = 60000)
     public void cancelExpiredReservations() {
-        // Tìm các đơn PENDING (chưa đóng cọc) mà thời gian tạo đã quá 10 phút và chuyển thành CANCELLED
+        // Hủy các đơn chưa thanh toán sau 10 phút, khớp thời hạn checkout VNPAY.
         String sql = "UPDATE reservations SET status = 'CANCELLED' " +
-                     "WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -1, GETDATE())";
+                     "WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -10, GETDATE())";
         
         int rowsUpdated = jdbcTemplate.update(sql);
         if (rowsUpdated > 0) {

@@ -49,7 +49,7 @@ function readUserId() {
 export default function MyReservationsPage() {
   const [selectedResToCancel, setSelectedResToCancel] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
-  const userId = readUserId();
+    const userId = readUserId();
   const navigate = useNavigate();
 
   const [reservations, setReservations] = useState([]);
@@ -272,7 +272,7 @@ export default function MyReservationsPage() {
                   <th className="px-3 py-3 whitespace-nowrap">Tiền cọc</th>
                   <th className="px-3 py-3 whitespace-nowrap">Ngày đặt</th>
                   <th className="px-3 py-3 whitespace-nowrap">Trạng thái</th>
-                  <th className="px-3 py-3 whitespace-nowrap text-right">Thao tác</th>
+                  <th className="px-3 py-3 whitespace-nowrap text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="text-[13px] font-bold text-[#4B4B4B]">
@@ -321,31 +321,31 @@ export default function MyReservationsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
-                            <button
-                              onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
-                              className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">description</span>
-                              XEM HĐ
-                            </button>
-                          )}
-                          {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
-                            <button
-                              onClick={() => {
-                                setSelectedResToCancel(r);
-                                setIsCancelModalOpen(true);
-                              }}
-                              className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">cancel</span>
-                              HỦY ĐƠN
-                            </button>
-                          )}
-                        </div>
-                      </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
+                              <button
+                                onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
+                                className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">description</span>
+                                XEM HĐ
+                              </button>
+                            )}
+                            {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedResToCancel(r);
+                                  setIsCancelModalOpen(true);
+                                }}
+                                className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">cancel</span>
+                                HỦY ĐƠN
+                              </button>
+                            )}
+                          </div>
+                        </td>
                     </tr>
                   );
                 })}

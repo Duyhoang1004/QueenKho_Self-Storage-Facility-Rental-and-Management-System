@@ -8,7 +8,7 @@
 *   **Frontend:** ReactJS (khởi tạo qua Vite), Tailwind CSS (thiết kế theo chuẩn Material Design 3), React Router DOM, Axios.
 *   **Backend:** Spring Boot (Java), Spring Data JPA & Hibernate, Spring Security (đang cấu hình mở cho Dev/Test).
 *   **Database:** SQL Server 2019/2022.
-*   **Tích hợp:** Cổng thanh toán SePay (Webhook tự động cập nhật đơn đặt cọc), QR Code tĩnh/động (VietQR).
+*   **Tích hợp:** VNPAY sandbox, QR Code tĩnh/động (VietQR).
 
 ---
 
@@ -34,7 +34,7 @@ Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời 
     *   Quy trình đặt chỗ kho (UC-10: Booking).
     *   Quản lý kho của tôi (UC-12: My Reservations).
 *   **Cổng Thanh Toán:**
-    *   Tích hợp thành công Hosted Checkout qua SePay.
+    *   Tích hợp thành công VNPAY sandbox.
     *   Trang xác nhận thành công sau khi hoàn tất thanh toán.
     *   Backend có Webhook (IPN) tự động nhận tín hiệu thanh toán để cập nhật trạng thái `DEPOSIT_PAID` vào Database.
 *   **Trang Quản trị Cơ sở (Manager Portal):**

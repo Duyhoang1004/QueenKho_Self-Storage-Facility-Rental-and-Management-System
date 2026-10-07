@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
-import { createSepayPayment } from '../../services/sepayService'
+import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability } from '../../services/facilityService'
 
 function buildUnit(availability, unitTypeId) {
@@ -169,7 +169,7 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
       })
-      const paymentData = await createSepayPayment(response.id)
+      const paymentData = await createVnpayPayment(response.id)
       
       sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({
         reservation: response,
@@ -181,20 +181,7 @@ export default function CreateReservationPage() {
         storage: unit,
       }))
 
-      const form = document.createElement('form')
-      form.method = 'POST'
-      form.action = 'https://pay-sandbox.sepay.vn/v1/checkout/init'
-      
-      Object.entries(paymentData.fields || {}).forEach(([key, value]) => {
-        const input = document.createElement('input')
-        input.type = 'hidden'
-        input.name = key
-        input.value = value
-        form.appendChild(input)
-      })
-      
-      document.body.appendChild(form)
-      form.submit()
+      window.location.assign(paymentData.payUrl)
 
     } catch (err) {
       setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
@@ -535,10 +522,7 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              {/* Lưu ý 10 phút */}
-              <div className="bg-[#FFE8CC] border-2 border-b-4 border-[#FF9600] rounded-2xl p-3.5 text-xs font-bold text-[#E58800] mt-2">
-                <span className="font-black">⚡ Lưu ý giữ chỗ:</span> Quét mã QR thanh toán trong vòng <strong>10 phút</strong>.
-              </div>
+              
 
               {/* Giant Green CTA Button */}
               <button
@@ -547,7 +531,7 @@ export default function CreateReservationPage() {
                 className="duo-btn-green w-full py-4 text-sm tracking-wider mt-2 disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[18px] mr-1">lock</span>
-                <span>{loading ? 'Đang chuyển sang SePay...' : 'THANH TOÁN GIỮ KHO'}</span>
+                <span>{loading ? 'Đang chuyển sang VNPAY...' : 'THANH TOÁN GIỮ KHO'}</span>
               </button>
             </div>
           </div>

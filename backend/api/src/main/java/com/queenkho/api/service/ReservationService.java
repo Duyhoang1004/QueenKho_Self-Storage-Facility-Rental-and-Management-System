@@ -144,7 +144,7 @@ public class ReservationService {
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 
         // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng
-        // thanh toán SePay)
+        // thanh toán VNPAY)
         BigDecimal depositAmount = unitType.getBasePriceMonthly();
 
         // Khoi tao va luu don dat cho

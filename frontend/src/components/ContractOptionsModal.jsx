@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { requestCheckout } from '../services/contractService'
-import { createSepayRenewalPayment } from '../services/sepayService'
+import { createVnpayRenewal } from '../services/vnpayService'
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -14,8 +14,6 @@ function formatDate(val) {
 }
 
 export default function ContractOptionsModal({ isOpen, onClose, contract, onSuccess }) {
-  if (!isOpen || !contract) return null
-
   const [activeTab, setActiveTab] = useState('renew') // 'renew' | 'checkout'
 
   // Tab 1 state: Gia hạn
@@ -73,13 +71,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
   const currentPricing = getPricing(selectedMonths)
 
-  // UC-21: Xử lý Gia hạn hợp đồng qua cổng SePay
+  // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
   const handleRenewSubmit = async (e) => {
     e.preventDefault()
     setRenewLoading(true)
     setRenewError('')
     try {
-      const paymentData = await createSepayRenewalPayment(contract.contractId, selectedMonths)
+      const paymentData = await createVnpayRenewal(contract.contractId, selectedMonths)
       
       sessionStorage.setItem('queenkhoRenewalContext', JSON.stringify({
         contractId: contract.contractId,
@@ -87,24 +85,12 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
         reservationId: contract.reservationId || null,
         months: selectedMonths,
         amount: paymentData.amount,
+        orderId: paymentData.orderId,
       }))
 
-      // Render form ẩn và tự động submit sang SePay sandbox
-      const form = document.createElement('form')
-      form.method = 'POST'
-      form.action = 'https://pay-sandbox.sepay.vn/v1/checkout/init'
-      
-      Object.entries(paymentData.fields || {}).forEach(([key, value]) => {
-        const input = document.createElement('input')
-        input.type = 'hidden'
-        input.name = key
-        input.value = value
-        form.appendChild(input)
-      })
-      document.body.appendChild(form)
-      form.submit()
+      window.location.assign(paymentData.payUrl)
     } catch (err) {
-      setRenewError(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi tạo giao dịch thanh toán SePay.')
+      setRenewError(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi tạo giao dịch thanh toán VNPAY.')
       setRenewLoading(false)
     }
   }
@@ -132,6 +118,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       setCheckoutLoading(false)
     }
   }
+
+  if (!isOpen || !contract) return null
 
   const isMatchedExpiry = checkoutDate && contract.endDate && checkoutDate === contract.endDate
 

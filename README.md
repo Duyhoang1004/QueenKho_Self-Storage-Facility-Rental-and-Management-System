@@ -275,3 +275,15 @@ chore:       Công việc linh tinh (config, dependency)
 
 In normal mode, the browser Return URL only verifies and displays a result; a signed IPN updates the payment record. In local sandbox mode only, the signed Return URL can also confirm a test payment because VNPAY cannot reach localhost via IPN.
 
+
+---
+
+## 8. Thông Tin Cổng Thanh Toán (VNPAY Test)
+
+Để tiện cho việc kiểm thử (test) tính năng thanh toán VNPAY Sandbox, dưới đây là thông tin thẻ ATM mẫu. Bạn vui lòng sử dụng thông tin này để tiến hành mô phỏng thanh toán thành công:
+
+- **Ngân hàng:** NCB
+- **Số thẻ:** `9704198526191432198`
+- **Tên chủ thẻ:** `NGUYEN VAN A`
+- **Ngày phát hành:** `07/15`
+- **Mật khẩu OTP:** `123456`

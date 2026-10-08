@@ -1,5 +1,5 @@
-# Sử dụng môi trường Node 18
-FROM node:18-alpine
+# Sử dụng môi trường Node 22
+FROM node:22-alpine
 WORKDIR /app
 
 # Copy file cấu hình và cài đặt thư viện

@@ -7,7 +7,7 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "12345678@Password"
     ports:
-      - "1433:1433"
+      - "1434:1433"
     
   backend:
     build: ./backend/api
@@ -16,11 +16,10 @@ services:
     environment:
       - DB_USERNAME=sa
       - DB_PASSWORD=12345678@Password
-      - DB_NAME=QueenKhoDB
-      - DB_PORT=1433
-      # THÔNG TIN VNPAY SANDBOX CỦA TEAM
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://db:1433;databaseName=QueenKhoDB;encrypt=true;trustServerCertificate=true;
       - VNPAY_TMN_CODE=83NI8FOK
       - VNPAY_HASH_SECRET=YFFJDENNWNIZZYNWLPCRWZFNIKCGEYDQ
+      - VNPAY_LOCAL_RETURN_CONFIRM=true
     depends_on:
       - db
 

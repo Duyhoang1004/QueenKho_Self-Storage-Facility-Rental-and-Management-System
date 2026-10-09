@@ -25,6 +25,13 @@
 
 ---
 
+## Rule đặt tên commit
+
+[NgayThangNam][Ten] Chức năng
+
+Ví dụ: [03/10/2026][SonNT] made UC-21 & UC-22
+
+
 ## 1. Tiến Độ Dự Án (Milestones)
 Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời điểm hiện tại:
 *   **Luồng Xác thực (Authentication):** Đăng ký, Đăng nhập (Mã hóa mật khẩu BCrypt, tự động rẽ nhánh Layout theo Role).

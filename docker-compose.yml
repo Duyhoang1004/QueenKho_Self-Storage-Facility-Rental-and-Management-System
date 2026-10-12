@@ -19,6 +19,8 @@ services:
     environment:
       - DB_USERNAME=sa
       - DB_PASSWORD=12345678@Password
+      - DB_NAME=QueenKhoDB
+      - DB_PORT=1433
       - SPRING_DATASOURCE_URL=jdbc:sqlserver://db:1433;databaseName=QueenKhoDB;encrypt=true;trustServerCertificate=true;
       - VNPAY_TMN_CODE=83NI8FOK
       - VNPAY_HASH_SECRET=YFFJDENNWNIZZYNWLPCRWZFNIKCGEYDQ

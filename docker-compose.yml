@@ -3,11 +3,14 @@ version: '3.8'
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    user: root
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "12345678@Password"
     ports:
-      - "1433:1433"
+      - "1434:1433"
+    volumes:
+      - sql_data:/var/opt/mssql/data
     
   backend:
     build: ./backend/api
@@ -18,9 +21,10 @@ services:
       - DB_PASSWORD=12345678@Password
       - DB_NAME=QueenKhoDB
       - DB_PORT=1433
-      # THÔNG TIN VNPAY SANDBOX CỦA TEAM
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://db:1433;databaseName=QueenKhoDB;encrypt=true;trustServerCertificate=true;
       - VNPAY_TMN_CODE=83NI8FOK
       - VNPAY_HASH_SECRET=YFFJDENNWNIZZYNWLPCRWZFNIKCGEYDQ
+      - VNPAY_LOCAL_RETURN_CONFIRM=true
     depends_on:
       - db
 
@@ -32,3 +36,6 @@ services:
       - VITE_API_URL=http://localhost:8080
     depends_on:
       - backend
+
+volumes:
+  sql_data:

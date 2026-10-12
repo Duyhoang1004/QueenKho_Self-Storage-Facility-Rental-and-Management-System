@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 
 @Service
 public class ContractService {
@@ -26,6 +25,9 @@ public class ContractService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private StaffTaskService staffTaskService;
 
     @Transactional
     public RenewContractResponse renewContract(Integer contractId, RenewContractRequest request) {
@@ -63,6 +65,8 @@ public class ContractService {
         contract.setEndDate(newEndDate);
         if ("OVERDUE".equalsIgnoreCase(contract.getStatus()) || "TERMINATION_PENDING".equalsIgnoreCase(contract.getStatus())) {
             contract.setStatus("ACTIVE");
+            // UC-16: khách gia hạn → không trả kho nữa → huỷ task check-out đang mở
+            staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
             if (contract.getReservation() != null) {
                 var res = contract.getReservation();
                 res.setStatus("UNIT_ASSIGNED");
@@ -121,6 +125,11 @@ public class ContractService {
         RentalContract contract = rentalContractRepository.findDetailById(contractId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hợp đồng"));
 
+        // UC-16: chỉ hợp đồng đang thuê mới được yêu cầu trả kho
+        if (!"ACTIVE".equals(contract.getStatus()) && !"OVERDUE".equals(contract.getStatus())) {
+            throw new IllegalStateException("Hợp đồng không ở trạng thái có thể trả kho");
+        }
+
         LocalDate checkoutDate = (request != null && request.getCheckoutDate() != null)
                 ? request.getCheckoutDate() : contract.getEndDate();
         if (checkoutDate == null) {
@@ -136,29 +145,6 @@ public class ContractService {
             reservationRepository.save(res);
         }
 
-        // Find staff id for handover record
-        Integer staffId = null;
-        Integer facilityId = (contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null)
-                ? contract.getStorageUnit().getFacility().getId() : null;
-
-        if (facilityId != null) {
-            List<Integer> staffIds = jdbcTemplate.query(
-                    "SELECT TOP 1 u.id FROM users u WHERE u.facility_id = ? AND u.status = 'ACTIVE'",
-                    (rs, rowNum) -> rs.getInt(1),
-                    facilityId
-            );
-            if (!staffIds.isEmpty()) {
-                staffId = staffIds.get(0);
-            }
-        }
-        if (staffId == null) {
-            List<Integer> anyStaff = jdbcTemplate.query(
-                    "SELECT TOP 1 u.id FROM users u WHERE u.status = 'ACTIVE'",
-                    (rs, rowNum) -> rs.getInt(1)
-            );
-            staffId = !anyStaff.isEmpty() ? anyStaff.get(0) : 1;
-        }
-
         // Build notes
         StringBuilder noteBuilder = new StringBuilder();
         noteBuilder.append("Yêu cầu trả kho ngày: ").append(checkoutDate);
@@ -171,18 +157,9 @@ public class ContractService {
         }
         String noteStr = noteBuilder.toString();
 
-        try {
-            jdbcTemplate.update(
-                    "INSERT INTO handover_records " +
-                            "(contract_id, staff_id, record_type, is_identity_verified, is_empty, is_clean, is_lock_intact, customer_signature_confirmed, notes, created_at) " +
-                            "VALUES (?, ?, 'CHECK_OUT', 0, 1, 1, 1, 0, ?, SYSDATETIME())",
-                    contract.getId(),
-                    staffId,
-                    noteStr
-            );
-        } catch (Exception e) {
-            // fallback
-        }
+        // UC-16: sinh task CHECK_OUT cho nhân viên (biên bản do nhân viên lập khi check-out),
+        // ghi chú chứa thông tin hoàn cọc
+        staffTaskService.createCheckOutTask(contract, checkoutDate, noteStr);
 
         // Log activity
         String logDesc = "Yêu cầu trả kho và hẹn ngày checkout cho HĐ " + contract.getContractCode() + " vào ngày " + checkoutDate;

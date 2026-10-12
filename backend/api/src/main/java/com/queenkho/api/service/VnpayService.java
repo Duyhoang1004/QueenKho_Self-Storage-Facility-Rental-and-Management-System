@@ -35,6 +35,7 @@ public class VnpayService {
     private final PaymentRepository payments; 
     private final RentalContractRepository contracts; 
     private final ReservationRepository reservations;
+    private final StaffTaskService staffTasks;
 
     public Map<String, Object> createReservation(Integer id, String ip) {
         var r = payments.findReservation(id);
@@ -174,8 +175,10 @@ public class VnpayService {
         c.setEndDate(currentEnd.plusMonths(monthsToRenew));
         
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
-            c.setStatus("ACTIVE"); 
-            c.getReservation().setStatus("UNIT_ASSIGNED"); 
+            c.setStatus("ACTIVE");
+            // UC-16: khách gia hạn → huỷ task check-out đang mở
+            staffTasks.cancelOpenTasks(c.getId(), "CHECK_OUT");
+            c.getReservation().setStatus("UNIT_ASSIGNED");
             reservations.save(c.getReservation()); 
         }
         

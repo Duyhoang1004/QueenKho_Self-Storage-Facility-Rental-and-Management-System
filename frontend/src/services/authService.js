@@ -11,11 +11,11 @@ export async function register(userData) {
 }
 
 export function saveSession(loginResponse, emailInput = '') {
-  const { token, userId, fullName, role } = loginResponse
+  const { token, userId, fullName, role, facilityId, facilityName } = loginResponse
   const email = loginResponse.email || emailInput
 
   sessionStorage.setItem('accessToken', token)
-  sessionStorage.setItem('user', JSON.stringify({ userId, fullName, email, role }))
+  sessionStorage.setItem('user', JSON.stringify({ userId, fullName, email, role, facilityId, facilityName }))
 }
 
 export function clearSession() {

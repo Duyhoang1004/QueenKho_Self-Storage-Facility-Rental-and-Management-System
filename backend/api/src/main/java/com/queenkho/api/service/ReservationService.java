@@ -47,6 +47,9 @@ public class ReservationService {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private StaffTaskService staffTaskService;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
@@ -263,8 +266,11 @@ public class ReservationService {
         } else {
             contract.setDepositHeldAmount(java.math.BigDecimal.ZERO);
         }
-        contract.setStatus("ACTIVE");
+        // UC-16: hợp đồng chờ nhân viên check-in, check-in xong (UC-18) mới ACTIVE
+        contract.setStatus("PENDING_CHECK_IN");
         rentalContractRepository.save(contract);
+
+        staffTaskService.createCheckInTask(contract);
     }
 
     public CancelPreviewResponse previewCancel(Integer reservationId) {

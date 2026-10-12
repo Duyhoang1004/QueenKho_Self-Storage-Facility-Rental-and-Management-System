@@ -20,8 +20,8 @@ public class StaffTaskService {
 
     // Giờ đóng cửa: hạn chót của mọi task
     private static final LocalTime CLOSING_TIME = LocalTime.of(21, 0);
-    // Các trạng thái được coi là "task còn mở"
-    private static final List<String> OPEN_STATUSES = List.of("OPEN", "IN_PROGRESS");
+    // Các trạng thái được coi là "task chưa đóng" (kể cả quá hạn — Manager vẫn phải xử lý)
+    private static final List<String> OPEN_STATUSES = List.of("OPEN", "IN_PROGRESS", "OVERDUE");
     private static final List<String> VALID_STATUSES =
             List.of("OPEN", "IN_PROGRESS", "OVERDUE", "COMPLETED", "CANCELLED");
 
@@ -47,7 +47,22 @@ public class StaffTaskService {
         createTask(contract, "CHECK_OUT", checkoutDate, note);
     }
 
-    // UC-16: huỷ task còn mở — gọi khi khách gia hạn (không trả kho nữa)
+    // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi được khách).
+    // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận → IN_PROGRESS
+    @Transactional
+    public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
+        List<StaffTask> tasks = staffTaskRepository
+                .findByContractIdAndTaskTypeAndStatusIn(contractId, taskType, OPEN_STATUSES);
+        for (StaffTask task : tasks) {
+            task.setDueAt(computeDueAt(newAppointmentDate));
+            if ("OVERDUE".equals(task.getStatus())) {
+                task.setStatus(task.getStaff() == null ? "OPEN" : "IN_PROGRESS");
+            }
+        }
+        staffTaskRepository.saveAll(tasks);
+    }
+
+    // UC-16: huỷ task chưa đóng — gọi khi khách gia hạn (không trả kho nữa) hoặc khi xử lý No-Show
     @Transactional
     public void cancelOpenTasks(Integer contractId, String taskType) {
         List<StaffTask> tasks = staffTaskRepository

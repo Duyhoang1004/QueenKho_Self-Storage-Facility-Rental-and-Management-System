@@ -65,6 +65,8 @@ export default function LoginPage() {
       const role = response.role
       if (role === 'FACILITY_MANAGER' || role === 'MANAGER' || role === 'ADMIN') {
         navigate('/manager', { replace: true })
+      } else if (role === 'STAFF') {
+        navigate('/staff', { replace: true })
       } else {
         navigate('/', { replace: true })
       }

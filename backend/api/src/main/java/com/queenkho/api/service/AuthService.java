@@ -3,7 +3,9 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.LoginRequest;
 import com.queenkho.api.dto.LoginResponse;
+import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.User;
+import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +19,9 @@ public class AuthService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private FacilityRepository facilityRepository;
+
     public LoginResponse login(LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail())
@@ -28,7 +33,12 @@ public class AuthService {
         }
         String token = java.util.UUID.randomUUID().toString();
 
-        return new LoginResponse(token, user.getRole().getName(), user.getId(), user.getFullName());
+        // UC-16: trả kèm cơ sở để header Staff/Manager hiển thị tên cơ sở
+        String facilityName = user.getFacilityId() == null ? null
+                : facilityRepository.findById(user.getFacilityId()).map(Facility::getName).orElse(null);
+
+        return new LoginResponse(token, user.getRole().getName(), user.getId(), user.getFullName(),
+                user.getFacilityId(), facilityName);
 
     }
 

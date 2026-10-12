@@ -137,7 +137,7 @@ CREATE TABLE rental_contracts (
     storage_unit_id         NVARCHAR(20) NOT NULL,
     rental_policy_id        INT NOT NULL,
     status                  NVARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
-                            -- ACTIVE / OVERDUE / TERMINATED / LIQUIDATED
+                            -- PENDING_CHECK_IN / ACTIVE / OVERDUE / TERMINATION_PENDING / TERMINATED / LIQUIDATED
     start_date              DATE NOT NULL,
     end_date                DATE NULL,
     billing_cycle_months    INT NOT NULL DEFAULT 1,
@@ -211,6 +211,44 @@ CREATE TABLE support_requests (
 );
 GO
 CREATE INDEX IX_support_customer ON support_requests(customer_id);
+GO
+
+/* ---------- 11b. staff_tasks (UC-16, UC-17, UC-18) ----------
+   Bảng công việc tại cơ sở, sinh tự động:
+   - CHECK_IN : khi Manager gán ô (UC-14)
+   - CHECK_OUT: khi khách yêu cầu trả kho (UC-22)
+   - SUPPORT  : khi khách gửi yêu cầu hỗ trợ
+   Có IF guard để chạy lại script trên DB cũ vẫn tạo được bảng. */
+IF OBJECT_ID('staff_tasks', 'U') IS NULL
+BEGIN
+    CREATE TABLE staff_tasks (
+        id                  INT IDENTITY(1,1) PRIMARY KEY,
+        facility_id         INT NOT NULL,
+        task_type           NVARCHAR(20) NOT NULL,                -- CHECK_IN / CHECK_OUT / SUPPORT
+        contract_id         INT NULL,                             -- bắt buộc với CHECK_IN / CHECK_OUT
+        support_request_id  INT NULL,                             -- bắt buộc với SUPPORT
+        status              NVARCHAR(20) NOT NULL DEFAULT 'OPEN', -- OPEN / IN_PROGRESS / OVERDUE / COMPLETED / CANCELLED
+        staff_id            INT NULL,                             -- nhân viên đã nhận việc (UC-17), nhận rồi không trả
+        due_at              DATETIME2 NOT NULL,                   -- ngày hẹn lúc 21:00 (giờ đóng cửa)
+        note                NVARCHAR(1000) NULL,                  -- ghi chú lúc tạo / ghi chú Manager xử lý task quá hạn
+        created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+        claimed_at          DATETIME2 NULL,
+        completed_at        DATETIME2 NULL,
+        CONSTRAINT FK_tasks_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),
+        CONSTRAINT FK_tasks_contract FOREIGN KEY (contract_id)        REFERENCES rental_contracts(id),
+        CONSTRAINT FK_tasks_support  FOREIGN KEY (support_request_id) REFERENCES support_requests(id),
+        CONSTRAINT FK_tasks_staff    FOREIGN KEY (staff_id)           REFERENCES users(id),
+        CONSTRAINT CK_tasks_type     CHECK (task_type IN ('CHECK_IN', 'CHECK_OUT', 'SUPPORT')),
+        CONSTRAINT CK_tasks_status   CHECK (status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED', 'CANCELLED')),
+        -- Check-in/out phải gắn hợp đồng, task hỗ trợ phải gắn yêu cầu hỗ trợ
+        CONSTRAINT CK_tasks_target   CHECK (
+            (task_type IN ('CHECK_IN', 'CHECK_OUT') AND contract_id IS NOT NULL)
+            OR (task_type = 'SUPPORT' AND support_request_id IS NOT NULL)
+        )
+    );
+    CREATE INDEX IX_tasks_facility_status ON staff_tasks(facility_id, status);
+    CREATE INDEX IX_tasks_contract        ON staff_tasks(contract_id);
+END
 GO
 
 /* ---------- 12. activity_logs ---------- */

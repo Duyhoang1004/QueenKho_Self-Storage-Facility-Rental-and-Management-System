@@ -47,6 +47,9 @@ public class ReservationService {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private StaffTaskService staffTaskService;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
@@ -263,8 +266,11 @@ public class ReservationService {
         } else {
             contract.setDepositHeldAmount(java.math.BigDecimal.ZERO);
         }
-        contract.setStatus("ACTIVE");
+        // UC-16: hợp đồng chờ nhân viên check-in, check-in xong (UC-18) mới ACTIVE
+        contract.setStatus("PENDING_CHECK_IN");
         rentalContractRepository.save(contract);
+
+        staffTaskService.createCheckInTask(contract);
     }
 
     public CancelPreviewResponse previewCancel(Integer reservationId) {
@@ -399,6 +405,8 @@ public class ReservationService {
         rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
             contract.setStatus("TERMINATED");
             rentalContractRepository.save(contract);
+            // UC-16: khách không đến → bỏ task check-in khỏi bảng công việc
+            staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
         });
 
 
@@ -456,6 +464,8 @@ public class ReservationService {
                 contract.setEndDate(request.getNewStartDate().plusMonths(reservation.getDurationMonths()));
             }
             rentalContractRepository.save(contract);
+            // UC-16: hạn check-in theo ngày nhận kho mới
+            staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", request.getNewStartDate());
         });
         //ghi log
         String logAction = "Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()

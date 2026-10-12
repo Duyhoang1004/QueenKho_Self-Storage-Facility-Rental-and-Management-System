@@ -23,6 +23,11 @@ import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
 import StorageManagementPage from './pages/manager/StorageManagementPage';
 import CustomerContractsPage from './pages/manager/CustomerContractsPage';
 import ContractDetailPage from './pages/manager/ContractDetailPage';
+import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
+
+// Import Staff Pages (UC-16, UC-17, UC-18)
+import StaffLayout from './layouts/StaffLayout';
+import StaffTaskBoardPage from './pages/staff/StaffTaskBoardPage';
 
 
 export default function App() {
@@ -58,6 +63,12 @@ export default function App() {
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
         <Route path="/manager/customers" element={<CustomerContractsPage />} />
         <Route path="/manager/contracts/:id" element={<ContractDetailPage />} />
+        <Route path="/manager/tasks" element={<ManagerTaskBoardPage />} />
+      </Route>
+
+      {/* ========== Staff Portal (UC-16) ========== */}
+      <Route element={<StaffLayout />}>
+        <Route path="/staff" element={<StaffTaskBoardPage />} />
       </Route>
     </Routes>
   );

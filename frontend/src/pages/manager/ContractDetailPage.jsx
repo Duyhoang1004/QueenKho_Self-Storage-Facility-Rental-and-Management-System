@@ -14,7 +14,8 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
-  ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]', icon: 'check_circle' },
+  PENDING_CHECK_IN:    { label: 'Chờ check-in',          cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]', icon: 'schedule' },
+  ACTIVE:             { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]', icon: 'check_circle' },
   TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'schedule' },
   OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'warning' },
   TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]', icon: 'cancel' },

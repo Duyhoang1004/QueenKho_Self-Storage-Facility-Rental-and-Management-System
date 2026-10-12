@@ -261,3 +261,55 @@
 # | Tao don dat kho  | POST   | /api/v1/reservations  | { customerId, facilityId, unitTypeId, startDate, durationMonths } | 201: { id, reservationCode, depositAmount, status }  |
 # | Thanh toan coc   | POST   | /api/v1/payments      | { reservationCode, amount, paymentMethod }                        | 200: { paymentId, reservationCode, status, paidAt }  |
 
+
+# ==============================================================================
+# UC-16: BANG CONG VIEC TAI CO SO (Staff Task Board)
+# ==============================================================================
+# Endpoint:  GET /api/v1/staff-tasks?facilityId={id}[&status={STATUS}]
+# Muc dich:  Staff va Facility Manager xem cac viec check-in / check-out cua co so minh
+# ==============================================================================
+#
+# Task duoc SINH TU DONG, khong co API tao tay:
+#   - CHECK_IN : khi Manager gan o (UC-14). Hop dong tao ra o trang thai PENDING_CHECK_IN
+#   - CHECK_OUT: khi khach yeu cau tra kho (UC-22). Chi cho phep khi hop dong ACTIVE / OVERDUE
+#   - Khach gia han (UC-21, ke ca qua VNPAY) khi dang TERMINATION_PENDING -> task CHECK_OUT dang mo bi CANCELLED
+#   - dueAt = 21:00 ngay hen (check-in: expectedAppointmentTime, check-out: checkoutDate).
+#     Moc do da qua -> truoc 21h: 21:00 hom nay, sau 21h: 21:00 hom sau
+#   - Job moi phut: task OPEN / IN_PROGRESS qua dueAt -> OVERDUE
+#
+# Query params:
+#   - facilityId (BAT BUOC): lay tu sessionStorage user.facilityId (login da tra ve)
+#   - status (tuy chon): OPEN | IN_PROGRESS | OVERDUE | COMPLETED | CANCELLED. Khong truyen = tat ca
+#
+# --- RESPONSE THANH CONG ---
+# HTTP Status: 200 OK  (sap xep dueAt tang dan)
+#
+# [
+#   {
+#     "id": 1,
+#     "taskType": "CHECK_IN",              // CHECK_IN | CHECK_OUT
+#     "status": "OPEN",
+#     "dueAt": "2026-10-14T21:00:00",
+#     "createdAt": "2026-10-12T21:51:23",
+#     "claimedAt": null,
+#     "completedAt": null,
+#     "note": null,                        // CHECK_OUT: ngay tra kho + STK hoan coc + ghi chu cua khach
+#     "staffId": null,                     // nhan vien da nhan viec (UC-17), null = chua ai nhan
+#     "staffName": null,
+#     "contractId": 4,
+#     "contractCode": "HD-383974",
+#     "contractStatus": "PENDING_CHECK_IN",
+#     "customerName": "Nguyen Van A",
+#     "customerPhone": "0354401156",
+#     "storageUnitId": "KV-TB-T901",
+#     "unitTypeName": "Kho Mini M"
+#   }
+# ]
+#
+# --- RESPONSE LOI ---
+# HTTP 400 Bad Request:
+# { "error": "INVALID_INPUT", "message": "Trạng thái không hợp lệ: abc" }
+#
+# --- THAY DOI LIEN QUAN ---
+# POST /api/v1/auth/login tra them: "facilityId", "facilityName" (null voi CUSTOMER)
+# rental_contracts.status them gia tri: PENDING_CHECK_IN (sau UC-14, truoc khi check-in)

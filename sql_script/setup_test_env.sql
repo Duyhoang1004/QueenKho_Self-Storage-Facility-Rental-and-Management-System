@@ -1,8 +1,9 @@
 ﻿USE QueenKhoDB;
 GO
 
-DELETE FROM rental_contracts;
+DELETE FROM staff_tasks;
 DELETE FROM handover_records;
+DELETE FROM rental_contracts;
 DELETE FROM payment_transactions;
 DELETE FROM reservations;
 
@@ -38,6 +39,47 @@ BEGIN
     INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
     VALUES (N'Quản lý Quận 9', 'fm2@gmail.com', '123456', '0909876543', (SELECT id FROM roles WHERE name='FACILITY_MANAGER'), 2, 'ACTIVE');
 END
+GO
+
+-- Mỗi cơ sở một Facility Manager: fm<tên cơ sở>@gmail.com / 123456 (BCrypt)
+DECLARE @fmRole INT = (SELECT id FROM roles WHERE name = 'FACILITY_MANAGER');
+DECLARE @pw NVARCHAR(255) = '$2a$10$Qr7dzmVD2myZYzHxhs4pd.I9CjytDRaXJMhSEkYdVEJ5v91FC2ZKu';
+
+INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
+SELECT m.full_name, m.email, @pw, m.phone, @fmRole, f.id, 'ACTIVE'
+FROM (VALUES
+    (N'QueenKho Tân Bình',  N'Quản lý Tân Bình',  'fmtanbinh@gmail.com',  '0901000001'),
+    (N'QueenKho Bình Thạnh', N'Quản lý Bình Thạnh', 'fmbinhthanh@gmail.com', '0901000002'),
+    (N'QueenKho Thủ Đức',   N'Quản lý Thủ Đức',   'fmthuduc@gmail.com',   '0901000003'),
+    (N'QueenKho Gò Vấp',    N'Quản lý Gò Vấp',    'fmgovap@gmail.com',    '0901000004'),
+    (N'QueenKho Cầu Giấy',  N'Quản lý Cầu Giấy',  'fmcaugiay@gmail.com',  '0901000005'),
+    (N'QueenKho Quận 7',    N'Quản lý Quận 7',    'fmquan7@gmail.com',    '0901000006')
+) AS m(facility_name, full_name, email, phone)
+JOIN facilities f ON f.name = m.facility_name
+WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.email = m.email);
+GO
+
+-- UC-16: Mỗi cơ sở 3 nhân viên: staff<tên cơ sở><1..3>@gmail.com / 123456 (BCrypt)
+DECLARE @staffRole INT = (SELECT id FROM roles WHERE name = 'STAFF');
+DECLARE @staffPw NVARCHAR(255) = '$2a$10$Qr7dzmVD2myZYzHxhs4pd.I9CjytDRaXJMhSEkYdVEJ5v91FC2ZKu';
+
+INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
+SELECT N'Nhân viên ' + s.short_name + N' ' + CAST(n.no AS NVARCHAR(2)),
+       'staff' + s.slug + CAST(n.no AS VARCHAR(2)) + '@gmail.com',
+       @staffPw,
+       '09020' + s.code + CAST(n.no AS VARCHAR(2)),
+       @staffRole, f.id, 'ACTIVE'
+FROM (VALUES
+    (N'QueenKho Tân Bình',   N'Tân Bình',   'tanbinh',   '01'),
+    (N'QueenKho Bình Thạnh', N'Bình Thạnh', 'binhthanh', '02'),
+    (N'QueenKho Thủ Đức',    N'Thủ Đức',    'thuduc',    '03'),
+    (N'QueenKho Gò Vấp',     N'Gò Vấp',     'govap',     '04'),
+    (N'QueenKho Cầu Giấy',   N'Cầu Giấy',   'caugiay',   '05'),
+    (N'QueenKho Quận 7',     N'Quận 7',     'quan7',     '06')
+) AS s(facility_name, short_name, slug, code)
+CROSS JOIN (VALUES (1), (2), (3)) AS n(no)
+JOIN facilities f ON f.name = s.facility_name
+WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.email = 'staff' + s.slug + CAST(n.no AS VARCHAR(2)) + '@gmail.com');
 GO
 
 IF NOT EXISTS (SELECT 1 FROM unit_types WHERE id = 1)

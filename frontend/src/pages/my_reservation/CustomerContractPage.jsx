@@ -17,6 +17,7 @@ function formatDate(val) {
 }
 
 const STATUS_MAP = {
+  PENDING_CHECK_IN:    { label: 'Chờ check-in',          cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]', icon: 'schedule' },
   ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]',  icon: 'check_circle' },
   TERMINATION_PENDING: { label: 'Chờ trả kho',           cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'schedule' },
   OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'warning' },
@@ -180,7 +181,16 @@ export default function CustomerContractPage() {
                 </div>
               </div>
 
-              {/* Nut tuy chon hop dong */}
+              {/* UC-16: chưa check-in thì chưa gia hạn / trả kho được */}
+              {contract.status === 'PENDING_CHECK_IN' ? (
+              <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] rounded-2xl p-4 flex items-start gap-3 mt-2 text-left">
+                <span className="material-symbols-outlined text-[#1CB0F6] text-[22px]">info</span>
+                <span className="text-xs font-bold text-[#4B4B4B]">
+                  Hợp đồng sẽ kích hoạt sau khi nhân viên check-in và bàn giao ô kho cho bạn tại cơ sở. Mã PIN mở khoá được cấp ngay khi check-in xong.
+                </span>
+              </div>
+              ) : (
+              /* Nut tuy chon hop dong */
               <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-2 text-center">
                 <span className="text-xs font-bold text-[#AFAFAF]">Cần thêm thời gian hoặc trả kho sớm?</span>
                 <button
@@ -192,6 +202,7 @@ export default function CustomerContractPage() {
                   TÙY CHỌN HỢP ĐỒNG
                 </button>
               </div>
+              )}
             </div>
           </div>
         </div>

@@ -367,4 +367,108 @@ public class ReservationService {
                 actionLog,
                 reservation.getId());
     }
+
+    // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show Handling)
+    //neu nhan vien goi nhung khach k nghe may
+    @Transactional
+    public void handleNoShow(Integer reservationId, com.queenkho.api.dto.NoShowRequest request) {
+        // tim don dat cho trong db
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+
+        // 2no show handling voi don da dat coc, gan kho
+        if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"UNIT_ASSIGNED".equals(reservation.getStatus())) {
+            throw new IllegalStateException("Trạng thái đơn không hợp lệ để xử lý No-Show (chỉ áp dụng cho đơn đã cọc hoặc đã gán kho)");
+        }
+
+
+        reservation.setStatus("CANCELLED");
+        reservationRepository.save(reservation);
+
+        // tra ve available
+        String freedUnitId = null;
+        if (reservation.getStorageUnitId() != null) {
+            freedUnitId = reservation.getStorageUnitId();
+            storageUnitRepository.findById(freedUnitId).ifPresent(unit -> {
+                unit.setStatus("AVAILABLE");
+                storageUnitRepository.save(unit);
+            });
+        }
+
+        //da gan kho -> huy hop dong
+        rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
+            contract.setStatus("TERMINATED");
+            rentalContractRepository.save(contract);
+        });
+
+
+        //ghi log vao activitylog
+        String staffNote = (request != null && request.getNote() != null && !request.getNote().isBlank())
+                ? " - Ghi chú: " + request.getNote() : "";
+        String reasonStr = (request != null && request.getReason() != null) ? request.getReason() : "Khách không đến nhận kho";
+
+        String logAction = "[NO-SHOW] Hủy đơn " + reservation.getReservationCode()
+                + ". Lý do: " + reasonStr + staffNote
+                + ". Tịch thu cọc: " + (reservation.getDepositAmount() != null ? reservation.getDepositAmount() : "0") + "đ";
+
+        if (freedUnitId != null) {
+            logAction += ". Đã giải phóng ô kho " + freedUnitId + " về AVAILABLE";
+        }
+
+        if (logAction.length() > 500) {
+            logAction = logAction.substring(0, 497) + "...";
+        }
+
+        Integer operatorId = (request != null && request.getStaffId() != null)
+                ? request.getStaffId() : reservation.getCustomer().getId();
+
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
+                operatorId,
+                logAction,
+                reservation.getId()
+        );
+    }
+
+    //neu nhan vien goi va khach co nghe may
+    @Transactional
+    public void rescheduleReservation(Integer reservationId, com.queenkho.api.dto.RescheduleReservationRequest request) {
+        if (request == null || request.getNewStartDate() == null) {
+            throw new IllegalArgumentException("Vui lòng chọn ngày nhận kho mới");
+        }
+        if (request.getNewStartDate().isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Ngày nhận kho mới không được ở trong quá khứ");
+        }
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+        if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"UNIT_ASSIGNED".equals(reservation.getStatus())) {
+            throw new IllegalStateException("Đơn ở trạng thái này không thể dời lịch hẹn");
+        }
+        LocalDate oldDate = reservation.getStartDate();
+        reservation.setStartDate(request.getNewStartDate());
+        reservationRepository.save(reservation);
+
+        //cap nhat lai hop dong
+        rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
+            contract.setStartDate(request.getNewStartDate());
+            if (reservation.getDurationMonths() != null) {
+                contract.setEndDate(request.getNewStartDate().plusMonths(reservation.getDurationMonths()));
+            }
+            rentalContractRepository.save(contract);
+        });
+        //ghi log
+        String logAction = "Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()
+                + " từ " + oldDate + " sang " + request.getNewStartDate()
+                + (request.getReason() != null ? " (Lý do: " + request.getReason() + ")" : "");
+        if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
+                reservation.getCustomer().getId(),
+                logAction,
+                reservation.getId()
+        );
+    }
+
 }

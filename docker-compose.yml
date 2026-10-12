@@ -3,11 +3,14 @@ version: '3.8'
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    user: root
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: "12345678@Password"
     ports:
       - "1434:1433"
+    volumes:
+      - sql_data:/var/opt/mssql/data
     
   backend:
     build: ./backend/api
@@ -31,3 +34,6 @@ services:
       - VITE_API_URL=http://localhost:8080
     depends_on:
       - backend
+
+volumes:
+  sql_data:

@@ -88,4 +88,35 @@ public class ReservationController {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }
     }
+
+
+    // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show)
+    @PostMapping("/{reservationId}/no-show")
+    public ResponseEntity<?> handleNoShow(
+            @PathVariable Integer reservationId,
+            @RequestBody(required = false) com.queenkho.api.dto.NoShowRequest request) {
+        try {
+            reservationService.handleNoShow(reservationId, request);
+            return ResponseEntity.ok(Map.of("message", "Đã xử lý No-Show, hủy đơn và giải phóng ô kho thành công"));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_ACTION", "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "INTERNAL_ERROR", "message", e.getMessage()));
+        }
+    }
+
+    // Hỗ trợ khách dời ngày hẹn nhận kho
+    @PutMapping("/{reservationId}/reschedule")
+    public ResponseEntity<?> rescheduleReservation(
+            @PathVariable Integer reservationId,
+            @RequestBody com.queenkho.api.dto.RescheduleReservationRequest request) {
+        try {
+            reservationService.rescheduleReservation(reservationId, request);
+            return ResponseEntity.ok(Map.of("message", "Đã cập nhật ngày hẹn nhận kho mới thành công"));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "INTERNAL_ERROR", "message", e.getMessage()));
+        }
+    }
 }

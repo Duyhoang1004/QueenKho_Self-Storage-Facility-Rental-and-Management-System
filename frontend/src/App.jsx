@@ -28,6 +28,7 @@ import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
 // Import Staff Pages (UC-16, UC-17, UC-18)
 import StaffLayout from './layouts/StaffLayout';
 import StaffTaskBoardPage from './pages/staff/StaffTaskBoardPage';
+import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
 
 
 export default function App() {
@@ -69,6 +70,7 @@ export default function App() {
       {/* ========== Staff Portal (UC-16) ========== */}
       <Route element={<StaffLayout />}>
         <Route path="/staff" element={<StaffTaskBoardPage />} />
+        <Route path="/staff/tasks/:id" element={<StaffTaskDetailPage />} />
       </Route>
     </Routes>
   );

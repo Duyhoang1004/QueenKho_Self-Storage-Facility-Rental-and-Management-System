@@ -329,7 +329,7 @@
 #               2 nguoi bam cung luc: chi 1 nguoi thanh cong (UPDATE co dieu kien), nguoi kia nhan 409
 #   - unassign: chi role FACILITY_MANAGER, cung co so, task phai IN_PROGRESS
 #               -> status OPEN, staffId = null, claimedAt = null (nhan vien khac nhan lai duoc)
-#   - Task OVERDUE: khong claim / unassign duoc (FM xu ly o UC-18)
+#   - Task OVERDUE: khong claim / unassign duoc (xu ly o UC khac)
 #
 # --- RESPONSE THANH CONG ---
 # HTTP 200 OK: 1 object task da cap nhat, cung format voi phan tu cua GET /api/v1/staff-tasks
@@ -345,3 +345,73 @@
 # 409 TASK_NOT_CLAIMABLE     : task da COMPLETED / CANCELLED
 # 409 TASK_NOT_ASSIGNED      : unassign task chua co nguoi nhan
 # 409 TASK_NOT_UNASSIGNABLE  : unassign task da dong
+
+
+# ==============================================================================
+# UC-18: CHECK-IN & LAP BIEN BAN BAN GIAO (Handover Record)
+# ==============================================================================
+# Endpoint 1: GET  /api/v1/staff-tasks/{id}?userId={userId}           (chi tiet task - Staff / FM cung co so)
+# Endpoint 2: GET  /api/v1/staff-tasks/pin-suggestion                 (goi y ma PIN 6 so chua bi dung)
+# Endpoint 3: POST /api/v1/staff-tasks/{id}/check-in?staffId={userId} (Staff check-in + lap bien ban)
+# ==============================================================================
+#
+# Quy tac check-in:
+#   - Chi role STAFF, cung co so, task CHECK_IN dang IN_PROGRESS, dung nguoi da nhan (UC-17), chua qua dueAt
+#   - Hop dong phai PENDING_CHECK_IN
+#   - Du 5 muc checklist = true; PIN dung 6 chu so; RFID bat buoc (<= 50 ky tu); notes <= 1000 ky tu
+#   - PIN / RFID khong trung voi hop dong ACTIVE / OVERDUE / TERMINATION_PENDING
+#   - Thanh cong (1 transaction):
+#       handover_records  : INSERT (record_type CHECK_IN, staff_id, 5 cot BIT = 1, notes)
+#       rental_contracts  : status ACTIVE, access_pin_code, rfid_card_code
+#       staff_tasks       : status COMPLETED, completed_at = now
+#       activity_logs     : "Check-in HĐ <ma>, ô <ma o>"
+#     reservations (UNIT_ASSIGNED) va storage_units (OCCUPIED) giu nguyen
+#
+# --- Endpoint 2 RESPONSE ---
+# HTTP 200: { "accessPinCode": "483920" }
+# 409 PIN_UNAVAILABLE: khong sinh duoc PIN (thu lai)
+#
+# --- Endpoint 3 REQUEST BODY ---
+# {
+#   "identityVerified": true,             // da xac minh CCCD
+#   "unitEmpty": true,                    // o kho trong
+#   "unitClean": true,                    // o kho sach
+#   "lockIntact": true,                   // khoa nguyen ven
+#   "customerSignatureConfirmed": true,   // khach da ky bien ban
+#   "accessPinCode": "483920",            // lay tu endpoint 2
+#   "rfidCardCode": "RFID-TD-000201",
+#   "notes": "..."                        // tuy chon
+# }
+#
+# --- RESPONSE THANH CONG (Endpoint 1 va 3) ---
+# HTTP 200 OK:
+# {
+#   "id": 5, "taskType": "CHECK_IN", "status": "COMPLETED",
+#   "dueAt": "...", "createdAt": "...", "claimedAt": "...", "completedAt": "...", "note": null,
+#   "staffId": 21, "staffName": "Nhân viên Thủ Đức 1",
+#   "contractId": 5, "contractCode": "HD-805337", "contractStatus": "ACTIVE",
+#   "contractStartDate": "2026-10-14", "contractEndDate": "2026-11-14",
+#   "accessPinCode": "122005", "rfidCardCode": "RFID-TD-000201",
+#   "customerName": "...", "customerPhone": "...", "customerEmail": "...",
+#   "storageUnitId": "KV-TD-B201", "unitTypeName": "Kho Gia Đình", "facilityName": "QueenKho Thủ Đức",
+#   "handoverRecord": {                   // null neu task chua COMPLETED / khong co bien ban
+#     "id": 2, "recordType": "CHECK_IN",
+#     "identityVerified": true, "unitEmpty": true, "unitClean": true, "lockIntact": true,
+#     "customerSignatureConfirmed": true, "notes": null,
+#     "staffId": 21, "staffName": "Nhân viên Thủ Đức 1", "createdAt": "2026-10-13T08:33:10"
+#   }
+# }
+#
+# --- RESPONSE LOI ---  { "error": "CODE", "message": "..." }
+# 400 INVALID_INPUT           : thieu userId / staffId / body, PIN sai dinh dang, thieu RFID, qua do dai
+# 400 CHECKLIST_INCOMPLETE    : chua tick du 5 muc
+# 404 USER_NOT_FOUND / TASK_NOT_FOUND
+# 403 FORBIDDEN_ROLE          : khong phai STAFF (check-in) / khong phai STAFF, FM (xem chi tiet)
+# 403 FORBIDDEN_FACILITY      : task khong thuoc co so
+# 409 TASK_NOT_CHECK_IN       : task khong phai CHECK_IN
+# 409 TASK_NOT_IN_PROGRESS    : task chua nhan / da huy
+# 409 TASK_NOT_YOURS          : task do nhan vien khac phu trach
+# 409 TASK_OVERDUE            : task da qua han
+# 409 TASK_ALREADY_COMPLETED  : da check-in roi (bam 2 lan)
+# 409 CONTRACT_STATUS_INVALID : hop dong khong o PENDING_CHECK_IN
+# 409 PIN_TAKEN / RFID_TAKEN  : ma da duoc cap cho hop dong khac

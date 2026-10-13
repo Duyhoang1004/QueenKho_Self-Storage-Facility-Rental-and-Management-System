@@ -1,5 +1,6 @@
 package com.queenkho.api.controller;
 
+import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.service.StaffTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,42 @@ public class StaffTaskController {
     public ResponseEntity<?> unassign(@PathVariable Integer id, @RequestParam(required = false) Integer managerId) {
         try {
             return ResponseEntity.ok(staffTaskService.unassignTask(id, managerId));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-18: gợi ý mã PIN 6 số chưa bị dùng (nút "Sinh lại" trên form biên bản)
+    // GET /api/v1/staff-tasks/pin-suggestion
+    @GetMapping("/pin-suggestion")
+    public ResponseEntity<?> suggestPin() {
+        try {
+            return ResponseEntity.ok(Map.of("accessPinCode", staffTaskService.suggestPin()));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-18: chi tiết task (kèm biên bản nếu đã check-in)
+    // GET /api/v1/staff-tasks/12?userId=5
+    // {id:\\d+}: chỉ khớp khi id là số → "/pin-suggestion" không bị hiểu nhầm thành id
+    @GetMapping("/{id:\\d+}")
+    public ResponseEntity<?> getDetail(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
+        try {
+            return ResponseEntity.ok(staffTaskService.getTaskDetail(id, userId));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-18: Staff check-in cho khách + lập biên bản bàn giao
+    // POST /api/v1/staff-tasks/12/check-in?staffId=5   body: CheckInRequest
+    @PostMapping("/{id}/check-in")
+    public ResponseEntity<?> checkIn(@PathVariable Integer id,
+                                     @RequestParam(required = false) Integer staffId,
+                                     @RequestBody(required = false) CheckInRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.checkIn(id, staffId, request));
         } catch (StaffTaskException e) {
             return toError(e);
         }

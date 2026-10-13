@@ -18,3 +18,21 @@ export async function unassignStaffTask(taskId, managerId) {
   const res = await api.post(`/staff-tasks/${taskId}/unassign`, null, { params: { managerId } })
   return res.data
 }
+
+// UC-18: Chi tiết 1 task (kèm biên bản nếu đã check-in). userId = người đang xem (Staff / FM)
+export async function getStaffTaskDetail(taskId, userId) {
+  const res = await api.get(`/staff-tasks/${taskId}`, { params: { userId } })
+  return res.data
+}
+
+// UC-18: Gợi ý mã PIN 6 số chưa bị dùng → { accessPinCode }
+export async function suggestAccessPin() {
+  const res = await api.get('/staff-tasks/pin-suggestion')
+  return res.data
+}
+
+// UC-18: Staff check-in + lập biên bản bàn giao → trả chi tiết task đã COMPLETED (kèm PIN, RFID, biên bản)
+export async function checkInStaffTask(taskId, staffId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/check-in`, payload, { params: { staffId } })
+  return res.data
+}

@@ -20,6 +20,7 @@ export default function ManagerLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
+  if (currentUser.role === 'STAFF') return <Navigate to="/staff" replace />;
   const isManagerRole = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(currentUser.role);
   if (!isManagerRole) return <Navigate to="/login" replace />;
 

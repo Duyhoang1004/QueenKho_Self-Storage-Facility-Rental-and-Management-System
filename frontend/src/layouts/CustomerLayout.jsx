@@ -33,6 +33,12 @@ export default function CustomerLayout() {
       return;
     }
 
+    // UC-16: Nhân viên cơ sở thì chuyển về bảng công việc
+    if (user.role === 'STAFF') {
+      navigate('/staff', { replace: true });
+      return;
+    }
+
     // Nếu không phải Khách hàng thì đẩy ra đăng nhập
     if (user.role !== 'CUSTOMER') {
       alert('Bạn không có quyền truy cập trang này!');

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
+import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
 
 const STATUS_META = {
@@ -41,6 +42,17 @@ function formatDateTimeSplit(value) {
   return { date: dateStr, time: timeStr };
 }
 
+// Hàm tính số tháng thuê thực tế giữa ngày bắt đầu và ngày kết thúc
+function getActualMonths(r) {
+  if (r.endDate && r.startDate) {
+    const [y1, m1] = String(r.startDate).split('-').map(Number);
+    const [y2, m2] = String(r.endDate).split('-').map(Number);
+    const diff = (y2 - y1) * 12 + (m2 - m1);
+    if (diff > 0) return diff;
+  }
+  return Number(r.durationMonths || 1);
+}
+
 function readUserId() {
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   return user.userId ?? null;
@@ -49,7 +61,7 @@ function readUserId() {
 export default function MyReservationsPage() {
   const [selectedResToCancel, setSelectedResToCancel] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
-    const userId = readUserId();
+  const userId = readUserId();
   const navigate = useNavigate();
 
   const [reservations, setReservations] = useState([]);
@@ -62,10 +74,37 @@ export default function MyReservationsPage() {
     if (!userId) return;
     let cancelled = false;
 
-    getMyReservations(userId)
-      .then((data) => {
+    // Lấy song song cả đơn đặt chỗ và hợp đồng để đồng bộ ngày kết thúc chính xác
+    Promise.all([
+      getMyReservations(userId),
+      api.get('/contracts', { params: { customerId: userId } }).then(res => res.data).catch(() => [])
+    ])
+      .then(([resData, contractsData]) => {
         if (cancelled) return;
-        setReservations(data);
+
+        // Tạo map hợp đồng theo mã đơn
+        const contractsByResCode = {};
+        (contractsData || []).forEach(c => {
+          if (c.reservationCode) {
+            contractsByResCode[c.reservationCode] = c;
+          }
+        });
+
+        // Gộp ngày kết thúc thực tế của HĐ vào từng đơn đặt chỗ
+        const merged = (resData || []).map(r => {
+          const c = contractsByResCode[r.reservationCode];
+          if (c) {
+            return {
+              ...r,
+              endDate: c.endDate,
+              contractId: c.contractId,
+              contractCode: c.contractCode,
+            };
+          }
+          return r;
+        });
+
+        setReservations(merged);
         setError("");
       })
       .catch(() => {
@@ -260,7 +299,7 @@ export default function MyReservationsPage() {
 
         {!loading && !error && visibleReservations.length > 0 && (
           <div className="overflow-x-auto bg-white custom-scrollbar pb-2">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+            <table className="w-full text-left border-collapse min-w-[1000px]">
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
                   <th className="px-3 py-3 whitespace-nowrap">Mã đơn</th>
@@ -269,7 +308,7 @@ export default function MyReservationsPage() {
                   <th className="px-3 py-3 whitespace-nowrap">Ô kho</th>
                   <th className="px-3 py-3 whitespace-nowrap">Bắt đầu</th>
                   <th className="px-3 py-3 whitespace-nowrap text-center">T/gian</th>
-                  <th className="px-3 py-3 whitespace-nowrap">Tiền cọc</th>
+                  <th className="px-3 py-3 whitespace-nowrap">Tổng thanh toán</th>
                   <th className="px-3 py-3 whitespace-nowrap">Ngày đặt</th>
                   <th className="px-3 py-3 whitespace-nowrap">Trạng thái</th>
                   <th className="px-3 py-3 whitespace-nowrap text-center">Thao tác</th>
@@ -283,15 +322,31 @@ export default function MyReservationsPage() {
                   const isLast = index === visibleReservations.length - 1;
                   const dt = formatDateTimeSplit(r.createdAt);
 
+                  // 1. Số tháng thực tế (đồng bộ theo hợp đồng nếu đã gia hạn)
+                  const actualMonths = getActualMonths(r);
+                  const isRenewed = r.endDate && actualMonths > Number(r.durationMonths || 0);
+
+                  // 2. Tính tiền: Tiền cọc = 1 tháng, Tiền thuê = cọc * số tháng thực tế
+                  const deposit = Number(r.depositAmount || 0);
+                  const rentTotal = deposit * actualMonths;
+                  const totalPaid = deposit + rentTotal;
+
                   return (
                     <tr key={r.id} className={`transition-colors hover:bg-[#F7F7F7] ${!isLast ? 'border-b-2 border-[#F0F0F0]' : ''} ${isExpiringSoon ? 'bg-[#FFFBEB] hover:bg-[#FFF3C7]' : ''}`}>
+                      {/* Cột 1: Mã đơn */}
                       <td className="px-3 py-3 whitespace-nowrap">
                         <span className="font-mono font-black text-[#1CB0F6] bg-[#DDF4FF] px-1.5 py-0.5 rounded border border-[#84D8FF]">{r.reservationCode}</span>
                       </td>
+
+                      {/* Cột 2: Cơ sở */}
                       <td className="px-3 py-3 whitespace-nowrap font-extrabold text-[#4B4B4B]">
                         {r.facilityName.replace('QueenKho ', '')}
                       </td>
+
+                      {/* Cột 3: Loại kho */}
                       <td className="px-3 py-3 whitespace-nowrap text-[#777777]">{r.unitTypeName}</td>
+
+                      {/* Cột 4: Ô kho */}
                       <td className="px-3 py-3 whitespace-nowrap">
                         {r.storageUnitId ? (
                           <span className="font-mono font-black text-[#4B4B4B]">{r.storageUnitId}</span>
@@ -299,15 +354,41 @@ export default function MyReservationsPage() {
                           <span className="text-[#AFAFAF] italic">Chưa gán</span>
                         )}
                       </td>
+
+                      {/* Cột 5: Bắt đầu */}
                       <td className="px-3 py-3 whitespace-nowrap font-bold text-[#4B4B4B]">{formatDate(r.startDate)}</td>
-                      <td className="px-3 py-3 whitespace-nowrap text-center font-extrabold">{r.durationMonths}T</td>
-                      <td className="px-3 py-3 whitespace-nowrap font-black text-[#58CC02]">{formatVND(r.depositAmount)}</td>
+                      
+                      {/* Cột 6: T/gian (Hiển thị số tháng thực tế của hợp đồng) */}
+                      <td className="px-3 py-3 whitespace-nowrap text-center">
+                        <span className="font-extrabold">{actualMonths}T</span>
+                        {isRenewed && (
+                          <span className="block text-[9px] font-black text-[#1CB0F6] bg-[#DDF4FF] rounded px-1 mt-0.5 whitespace-nowrap border border-[#84D8FF]">
+                            Đã gia hạn
+                          </span>
+                        )}
+                      </td>
+                      
+                      {/* Cột 7: Tổng thanh toán (Khớp 5tr với trang hợp đồng) */}
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <div className="flex flex-col leading-tight">
+                          <span className="font-black text-[#58CC02] text-sm">
+                            {formatVND(totalPaid)}
+                          </span>
+                          <span className="text-[10px] font-bold text-[#AFAFAF]">
+                            Cọc {formatVND(deposit)} + {actualMonths}T thuê
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Cột 8: Ngày đặt (ĐÃ BỔ SUNG LẠI, KHÔNG CÒN BỊ LỆCH) */}
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex flex-col leading-tight">
                           <span className="text-[11px] font-bold text-[#777777]">{dt.time}</span>
                           <span className="text-[11px] font-bold text-[#AFAFAF]">{dt.date}</span>
                         </div>
                       </td>
+
+                      {/* Cột 9: Trạng thái (Đứng đúng cột Trạng thái) */}
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex flex-col items-start gap-1">
                           <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${meta.className}`}>
@@ -321,31 +402,33 @@ export default function MyReservationsPage() {
                           )}
                         </div>
                       </td>
+
+                      {/* Cột 10: Thao tác (Đứng đúng cột Thao tác ngoài cùng bên phải) */}
                       <td className="px-3 py-3 whitespace-nowrap text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
-                              <button
-                                onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
-                                className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">description</span>
-                                XEM HĐ
-                              </button>
-                            )}
-                            {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
-                              <button
-                                onClick={() => {
-                                  setSelectedResToCancel(r);
-                                  setIsCancelModalOpen(true);
-                                }}
-                                className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">cancel</span>
-                                HỦY ĐƠN
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                        <div className="flex items-center justify-center gap-2">
+                          {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && (
+                            <button
+                              onClick={() => navigate(`/kho-cua-toi/hop-dong/${r.id}`)}
+                              className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">description</span>
+                              XEM HĐ
+                            </button>
+                          )}
+                          {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
+                            <button
+                              onClick={() => {
+                                setSelectedResToCancel(r);
+                                setIsCancelModalOpen(true);
+                              }}
+                              className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">cancel</span>
+                              HỦY ĐƠN
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}

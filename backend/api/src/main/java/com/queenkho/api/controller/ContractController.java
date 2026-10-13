@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -18,11 +19,30 @@ public class ContractController {
     private RentalContractRepository rentalContractRepository;
 
     @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private com.queenkho.api.service.ContractService contractService;
 
     private CustomerContractResponse toDto(RentalContract rc) {
         var su = rc.getStorageUnit();
         var ut = su.getUnitType();
+
+        // Tính tổng tiền thực tế đã đóng từ payment_transactions
+        BigDecimal totalPaid = BigDecimal.ZERO;
+        try {
+            totalPaid = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE (contract_id = ? OR reservation_id = ?) AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                    BigDecimal.class,
+                    rc.getId(), rc.getReservation().getId());
+        } catch (Exception ignored) {
+        }
+
+        // Tiền thuê thực tế = Tổng đã đóng - Tiền cọc đang giữ
+        BigDecimal deposit = rc.getDepositHeldAmount() != null ? rc.getDepositHeldAmount() : BigDecimal.ZERO;
+        BigDecimal rentPaid = totalPaid.compareTo(deposit) >= 0 ? totalPaid.subtract(deposit) : BigDecimal.ZERO;
+
         return new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
@@ -44,14 +64,15 @@ public class ContractController {
                 rc.getAccessPinCode(),
                 rc.getRfidCardCode(),
                 ut.getBasePriceMonthly(),
-                rc.getReservation() != null ? rc.getReservation().getId() : null
-        );
+                rc.getReservation().getId(),
+                totalPaid,
+                rentPaid);
     }
 
     // GET /api/v1/contracts?managerId=3
     // GET /api/v1/contracts?facilityId=1
-    // GET /api/v1/contracts?customerId=5  (customer xem HĐ của mình)
-    // GET /api/v1/contracts?reservationId=1  (lấy HĐ theo đơn đặt chỗ)
+    // GET /api/v1/contracts?customerId=5 (customer xem HĐ của mình)
+    // GET /api/v1/contracts?reservationId=1 (lấy HĐ theo đơn đặt chỗ)
     @GetMapping
     public ResponseEntity<?> getContracts(
             @RequestParam(required = false) Integer facilityId,
@@ -72,7 +93,8 @@ public class ContractController {
             } else if (customerId != null) {
                 contracts = rentalContractRepository.findAllByCustomerId(customerId);
             } else {
-                return ResponseEntity.badRequest().body(Map.of("error", "Cần truyền facilityId, managerId, customerId hoặc reservationId"));
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Cần truyền facilityId, managerId, customerId hoặc reservationId"));
             }
             return ResponseEntity.ok(contracts.stream().map(this::toDto).toList());
         } catch (Exception e) {
@@ -90,25 +112,29 @@ public class ContractController {
 
     // UC-21: Khách hàng gia hạn hợp đồng thuê
     @PostMapping("/{id}/renew")
-    public ResponseEntity<?> renewContract(@PathVariable Integer id, @RequestBody com.queenkho.api.dto.RenewContractRequest request) {
+    public ResponseEntity<?> renewContract(@PathVariable Integer id,
+            @RequestBody com.queenkho.api.dto.RenewContractRequest request) {
         try {
             return ResponseEntity.ok(contractService.renewContract(id, request));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
         }
     }
 
     // UC-22: Khách hàng yêu cầu trả kho & hẹn ngày checkout
     @PostMapping("/{id}/request-checkout")
-    public ResponseEntity<?> requestCheckout(@PathVariable Integer id, @RequestBody com.queenkho.api.dto.RequestCheckoutRequest request) {
+    public ResponseEntity<?> requestCheckout(@PathVariable Integer id,
+            @RequestBody com.queenkho.api.dto.RequestCheckoutRequest request) {
         try {
             return ResponseEntity.ok(contractService.requestCheckout(id, request));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
         }
     }
 }

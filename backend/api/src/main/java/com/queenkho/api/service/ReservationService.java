@@ -56,21 +56,31 @@ public class ReservationService {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
                 .stream()
                 .map(r -> {
-                    LocalDate endDate = null;
-                    String effectiveStatus = r.getStatus();
-                    if ("UNIT_ASSIGNED".equals(r.getStatus()) || "TERMINATION_PENDING".equals(r.getStatus())) {
-                        var contractOpt = rentalContractRepository.findByReservationId(r.getId());
-                        if (contractOpt.isPresent()) {
-                            var contract = contractOpt.get();
-                            endDate = contract.getEndDate();
-                            if ("TERMINATION_PENDING".equals(contract.getStatus())) {
-                                effectiveStatus = "TERMINATION_PENDING";
-                            }
-                        }
+                    // 1. Tính tổng tiền thực tế khách đã thanh toán thành công từ
+                    // payment_transactions
+                    BigDecimal actualTotalPaid;
+                    try {
+                        actualTotalPaid = jdbcTemplate.queryForObject(
+                                "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                                        "WHERE (reservation_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE reservation_id = ?)) "
+                                        +
+                                        "AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                                BigDecimal.class,
+                                r.getId(), r.getId());
+                    } catch (Exception e) {
+                        actualTotalPaid = BigDecimal.ZERO;
                     }
-                    if (endDate == null && r.getStartDate() != null && r.getDurationMonths() != null) {
-                        endDate = r.getStartDate().plusMonths(r.getDurationMonths());
+
+                    // 2. Lấy endDate nếu đơn đã có hợp đồng
+                    LocalDate contractEndDate = null;
+                    try {
+                        contractEndDate = jdbcTemplate.queryForObject(
+                                "SELECT TOP 1 end_date FROM rental_contracts WHERE reservation_id = ?",
+                                LocalDate.class,
+                                r.getId());
+                    } catch (Exception ignored) {
                     }
+
                     return new MyReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
@@ -80,9 +90,10 @@ public class ReservationService {
                             r.getStartDate(),
                             r.getDurationMonths(),
                             r.getDepositAmount(),
-                            effectiveStatus,
+                            r.getStatus(),
                             r.getCreatedAt(),
-                            endDate);
+                            contractEndDate,
+                            actualTotalPaid);
                 })
                 .toList();
     }
@@ -242,7 +253,7 @@ public class ReservationService {
         contract.setReservation(reservation);
         contract.setCustomer(reservation.getCustomer());
         contract.setStorageUnit(storageUnit);
-        
+
         // Lấy chính sách của chính cơ sở đó từ DB
         Integer facilityId = reservation.getFacility().getId();
         Integer activePolicyId;
@@ -277,27 +288,51 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
 
+        // 🌟 1. LẤY MỐC GIỜ HẸN: NẾU NULL THÌ BẮT BUỘC LẤY 09:00 SÁNG NGÀY BẮT ĐẦU
         LocalDateTime appointmentTime = reservation.getExpectedAppointmentTime();
-        if (appointmentTime == null) {
-            // Nếu chưa có giờ hẹn chi tiết trong DB, mặc định lấy 09:00 sáng ngày bắt đầu
+        if (appointmentTime == null && reservation.getStartDate() != null) {
             appointmentTime = reservation.getStartDate().atTime(9, 0);
         }
-        java.math.BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount()
-                : java.math.BigDecimal.ZERO;
-        java.math.BigDecimal penalty;
-        java.math.BigDecimal refund;
-        // So sánh thời gian hiện tại với (Giờ nhận phòng - 24 giờ)
-        if (LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
-            // TH1: Hủy hợp lệ (Trước 24h)
-            penalty = java.math.BigDecimal.ZERO;
-            refund = deposit;
-        } else {
-            // TH2: Hủy trễ (Trong vòng 24h hoặc trễ hơn) -> Phạt 50% cọc
-            penalty = deposit.multiply(new java.math.BigDecimal("0.5"));
-            refund = deposit.subtract(penalty);
+
+        // 1. LẤY TỔNG TIỀN THỰC TẾ KHÁCH ĐÃ ĐÓNG TỪ PAYMENT_TRANSACTIONS
+        BigDecimal totalPaid;
+        try {
+            totalPaid = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE reservation_id = ? AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                    BigDecimal.class,
+                    reservationId);
+        } catch (Exception e) {
+            totalPaid = BigDecimal.ZERO;
         }
 
-        return new CancelPreviewResponse(deposit, penalty, refund, appointmentTime);
+        // Tiền cọc gốc (dùng để tính phạt nếu hủy trễ)
+        BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
+
+        // Fallback nếu test data chưa có trong payment_transactions
+        if (totalPaid.compareTo(BigDecimal.ZERO) == 0) {
+            totalPaid = reservation.getTotalDepositPaid() != null
+                    && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                            ? reservation.getTotalDepositPaid()
+                            : deposit;
+        }
+
+        BigDecimal penalty;
+        BigDecimal refund;
+
+        // 2. TÍNH TOÁN HOÀN TIỀN DỰA TRÊN MỐC 24H
+        if (LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
+            // TH1: HỦY SỚM (Trước 24h) -> Hoàn 100% TOÀN BỘ TIỀN ĐÃ ĐÓNG (Cọc + Tiền thuê)
+            penalty = BigDecimal.ZERO;
+            refund = totalPaid;
+        } else {
+            // TH2: HỦY TRỄ (Trong vòng 24h) -> Chỉ phạt 50% TIỀN CỌC, tiền thuê hoàn lại
+            // 100%
+            penalty = deposit.multiply(new BigDecimal("0.5"));
+            refund = totalPaid.compareTo(penalty) >= 0 ? totalPaid.subtract(penalty) : BigDecimal.ZERO;
+        }
+
+        return new CancelPreviewResponse(totalPaid, penalty, refund, appointmentTime);
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -307,7 +342,7 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
 
-        // 2. Kiểm tra trạng thái hợp lệ để hủy
+        // 2. Kiểm tra trạng thái hợp lệ
         if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"PENDING".equals(reservation.getStatus())) {
             throw new IllegalStateException("Trạng thái đơn không hợp lệ để hủy");
         }
@@ -318,12 +353,14 @@ public class ReservationService {
         reservation.setStatus("CANCELLED");
         reservationRepository.save(reservation);
 
-        // 4. Nếu khách đã đóng cọc -> Tính hoàn cọc và tạo phiếu REFUND
+        // 4. Nếu khách đã đóng cọc -> Tạo giao dịch REFUND & Đẩy Task hoàn cọc sang
+        // staff_tasks
         CancelPreviewResponse preview = null;
         if (wasDepositPaid) {
             preview = previewCancel(reservationId);
             java.math.BigDecimal refundAmount = preview.getRefundAmount();
 
+            // 4.1. Tạo bản ghi giao dịch trong payment_transactions
             String txnCode = "REF-" + reservation.getReservationCode()
                     + "-" + (System.currentTimeMillis() % 100000);
 
@@ -336,34 +373,66 @@ public class ReservationService {
                     reservation.getId(),
                     reservation.getCustomer().getId(),
                     refundAmount);
-        }
 
-        // 5. Ghi vết hệ thống vào activity_logs (kèm nội dung task cho nhân viên)
-        String actionLog = "Hủy đặt chỗ " + reservation.getReservationCode()
-                + ". Lý do: " + request.getReason();
+            // 4.2. Tính deadline 24h (không tính Chủ Nhật)
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime deadline = calculateRefundDeadline(now);
 
-        if (request.getOtherReason() != null && !request.getOtherReason().trim().isEmpty()) {
-            actionLog += " (" + request.getOtherReason().trim() + ")";
-        }
+            // 4.3. Soạn nội dung ghi chú chuyển khoản chi tiết cho Staff
+            String refundTaskNote;
+            boolean hasBankInfo = request.getBankName() != null && !request.getBankName().trim().isEmpty();
+            String reasonText = request.getReason() +
+                    (request.getOtherReason() != null && !request.getOtherReason().trim().isEmpty()
+                            ? " (" + request.getOtherReason().trim() + ")"
+                            : "");
 
-        if (wasDepositPaid && preview != null) {
-            boolean hasBankInfo = request.getBankName() != null
-                    && !request.getBankName().trim().isEmpty();
+            String penaltyNote = preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
+                    ? " (Đã trừ phạt trễ 50% cọc: " + preview.getPenaltyAmount().toPlainString() + " VND)"
+                    : " (Hoàn 100% - Hủy trước 24h)";
+
             if (hasBankInfo) {
-                actionLog += ". [HOÀN CỌC - CK] Chuyển tiền về tài khoản: "
-                        + request.getBankName().trim()
-                        + " - STK: " + request.getBankAccountNumber().trim()
-                        + " - " + request.getBankAccountName().trim()
-                        + ". Số tiền: " + preview.getRefundAmount().toPlainString() + " VND.";
+                refundTaskNote = String.format(
+                        "[HOÀN CỌC CK] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Ngân hàng: %s | STK: %s | Chủ TK: %s | Lý do: %s",
+                        reservation.getReservationCode(),
+                        reservation.getCustomer().getFullName(),
+                        reservation.getCustomer().getPhone(),
+                        refundAmount.toPlainString(),
+                        penaltyNote,
+                        request.getBankName().trim(),
+                        request.getBankAccountNumber().trim(),
+                        request.getBankAccountName().trim(),
+                        reasonText);
             } else {
-                actionLog += ". [HOÀN CỌC - TIỀN MẶT] Khách nhận hoàn cọc trực tiếp tại quầy."
-                        + " Số tiền: " + preview.getRefundAmount().toPlainString() + " VND."
-                        + " Liên hệ khách để xếp lịch.";
+                refundTaskNote = String.format(
+                        "[HOÀN CỌC TIỀN MẶT] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Khách nhận tiền mặt trực tiếp tại quầy | Lý do: %s",
+                        reservation.getReservationCode(),
+                        reservation.getCustomer().getFullName(),
+                        reservation.getCustomer().getPhone(),
+                        refundAmount.toPlainString(),
+                        penaltyNote,
+                        reasonText);
             }
+
+            if (refundTaskNote.length() > 1000) {
+                refundTaskNote = refundTaskNote.substring(0, 997) + "...";
+            }
+
+            // 4.4. ĐẨY DATA VÀO BẢNG staff_tasks
+            jdbcTemplate.update(
+                    "INSERT INTO staff_tasks (facility_id, task_type, contract_id, status, due_at, note, created_at) " +
+                            "VALUES (?, 'REFUND', NULL, 'OPEN', ?, ?, SYSDATETIME())",
+                    reservation.getFacility().getId(),
+                    deadline,
+                    refundTaskNote);
         }
 
-        if (actionLog.length() > 500) {
-            actionLog = actionLog.substring(0, 497) + "...";
+        // 5. Ghi nhật ký RÚT GỌN vào activity_logs (chỉ lưu vết cơ bản)
+        String actionLog = "Người dùng ID " + reservation.getCustomer().getId()
+                + " yêu cầu hủy đơn " + reservation.getReservationCode();
+        if (wasDepositPaid && preview != null) {
+            actionLog += " (Có hoàn cọc: " + preview.getRefundAmount().toPlainString() + " VND)";
+        } else {
+            actionLog += " (Không hoàn cọc)";
         }
 
         jdbcTemplate.update(
@@ -375,7 +444,7 @@ public class ReservationService {
     }
 
     // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show Handling)
-    //neu nhan vien goi nhung khach k nghe may
+    // neu nhan vien goi nhung khach k nghe may
     @Transactional
     public void handleNoShow(Integer reservationId, com.queenkho.api.dto.NoShowRequest request) {
         // tim don dat cho trong db
@@ -384,9 +453,9 @@ public class ReservationService {
 
         // 2no show handling voi don da dat coc, gan kho
         if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"UNIT_ASSIGNED".equals(reservation.getStatus())) {
-            throw new IllegalStateException("Trạng thái đơn không hợp lệ để xử lý No-Show (chỉ áp dụng cho đơn đã cọc hoặc đã gán kho)");
+            throw new IllegalStateException(
+                    "Trạng thái đơn không hợp lệ để xử lý No-Show (chỉ áp dụng cho đơn đã cọc hoặc đã gán kho)");
         }
-
 
         reservation.setStatus("CANCELLED");
         reservationRepository.save(reservation);
@@ -401,7 +470,7 @@ public class ReservationService {
             });
         }
 
-        //da gan kho -> huy hop dong
+        // da gan kho -> huy hop dong
         rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
             contract.setStatus("TERMINATED");
             rentalContractRepository.save(contract);
@@ -409,15 +478,17 @@ public class ReservationService {
             staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
         });
 
-
-        //ghi log vao activitylog
+        // ghi log vao activitylog
         String staffNote = (request != null && request.getNote() != null && !request.getNote().isBlank())
-                ? " - Ghi chú: " + request.getNote() : "";
-        String reasonStr = (request != null && request.getReason() != null) ? request.getReason() : "Khách không đến nhận kho";
+                ? " - Ghi chú: " + request.getNote()
+                : "";
+        String reasonStr = (request != null && request.getReason() != null) ? request.getReason()
+                : "Khách không đến nhận kho";
 
         String logAction = "[NO-SHOW] Hủy đơn " + reservation.getReservationCode()
                 + ". Lý do: " + reasonStr + staffNote
-                + ". Tịch thu cọc: " + (reservation.getDepositAmount() != null ? reservation.getDepositAmount() : "0") + "đ";
+                + ". Tịch thu cọc: " + (reservation.getDepositAmount() != null ? reservation.getDepositAmount() : "0")
+                + "đ";
 
         if (freedUnitId != null) {
             logAction += ". Đã giải phóng ô kho " + freedUnitId + " về AVAILABLE";
@@ -428,20 +499,21 @@ public class ReservationService {
         }
 
         Integer operatorId = (request != null && request.getStaffId() != null)
-                ? request.getStaffId() : reservation.getCustomer().getId();
+                ? request.getStaffId()
+                : reservation.getCustomer().getId();
 
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
                 operatorId,
                 logAction,
-                reservation.getId()
-        );
+                reservation.getId());
     }
 
-    //neu nhan vien goi va khach co nghe may
+    // neu nhan vien goi va khach co nghe may
     @Transactional
-    public void rescheduleReservation(Integer reservationId, com.queenkho.api.dto.RescheduleReservationRequest request) {
+    public void rescheduleReservation(Integer reservationId,
+            com.queenkho.api.dto.RescheduleReservationRequest request) {
         if (request == null || request.getNewStartDate() == null) {
             throw new IllegalArgumentException("Vui lòng chọn ngày nhận kho mới");
         }
@@ -457,7 +529,7 @@ public class ReservationService {
         reservation.setStartDate(request.getNewStartDate());
         reservationRepository.save(reservation);
 
-        //cap nhat lai hop dong
+        // cap nhat lai hop dong
         rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
             contract.setStartDate(request.getNewStartDate());
             if (reservation.getDurationMonths() != null) {
@@ -467,18 +539,31 @@ public class ReservationService {
             // UC-16: hạn check-in theo ngày nhận kho mới
             staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", request.getNewStartDate());
         });
-        //ghi log
+        // ghi log
         String logAction = "Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()
                 + " từ " + oldDate + " sang " + request.getNewStartDate()
                 + (request.getReason() != null ? " (Lý do: " + request.getReason() + ")" : "");
-        if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
+        if (logAction.length() > 500)
+            logAction = logAction.substring(0, 497) + "...";
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
                 reservation.getCustomer().getId(),
                 logAction,
-                reservation.getId()
-        );
+                reservation.getId());
+    }
+
+    // Hàm phụ trợ: Tính deadline 24h bỏ qua Chủ Nhật
+    private LocalDateTime calculateRefundDeadline(LocalDateTime requestTime) {
+        LocalDateTime deadline = requestTime.plusHours(24);
+
+        if (requestTime.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+            deadline = requestTime.plusDays(1).plusHours(24);
+        } else if (deadline.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+            deadline = deadline.plusDays(1);
+        }
+
+        return deadline;
     }
 
 }

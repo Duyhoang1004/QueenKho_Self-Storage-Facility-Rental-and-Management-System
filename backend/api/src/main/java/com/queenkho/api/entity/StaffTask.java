@@ -47,7 +47,8 @@ public class StaffTask {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
-
+    @Column(name = "evidence_image_url", length = 1000)
+    private String evidenceImageUrl;
 
 
 

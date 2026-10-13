@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
 
@@ -53,4 +54,26 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     @Query("UPDATE StaffTask t SET t.status = 'OPEN', t.staff = NULL, t.claimedAt = NULL " +
             "WHERE t.id = :taskId AND t.status = 'IN_PROGRESS'")
     int unassign(@Param("taskId") Integer taskId);
+
+    // UC-18: chi tiết 1 task (trang /staff/tasks/:id) — fetch sẵn hợp đồng, khách, ô, cơ sở, người nhận
+    @Query("SELECT t FROM StaffTask t " +
+            "LEFT JOIN FETCH t.contract c " +
+            "LEFT JOIN FETCH c.customer " +
+            "LEFT JOIN FETCH c.storageUnit su " +
+            "LEFT JOIN FETCH su.unitType " +
+            "LEFT JOIN FETCH su.facility " +
+            "LEFT JOIN FETCH t.staff " +
+            "WHERE t.id = :id")
+    Optional<StaffTask> findDetailById(@Param("id") Integer id);
+
+    // UC-18: đóng task check-in — 1 câu UPDATE có điều kiện (giống claim ở UC-17).
+    // Chỉ ăn dòng khi task còn IN_PROGRESS, đúng người nhận, chưa quá hạn
+    // → bấm 2 lần / no-show huỷ trước / job quá hạn chạy trước thì 0 dòng → không tạo biên bản trùng
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now " +
+            "WHERE t.id = :taskId AND t.taskType = 'CHECK_IN' AND t.status = 'IN_PROGRESS' " +
+            "AND t.staff.id = :staffId AND t.dueAt > :now")
+    int completeCheckIn(@Param("taskId") Integer taskId,
+                        @Param("staffId") Integer staffId,
+                        @Param("now") LocalDateTime now);
 }

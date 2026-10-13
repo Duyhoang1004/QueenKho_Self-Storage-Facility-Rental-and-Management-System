@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
 import TaskBoard from '../../components/TaskBoard';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import { claimStaffTask } from '../../services/staffTaskService';
@@ -30,13 +31,29 @@ export default function StaffTaskBoardPage() {
       });
   };
 
+  // UC-18: mọi thẻ có "Xem chi tiết"; task check-in mình đang giữ thì nút chính là "Lập biên bản"
   const renderActions = task => {
-    if (task.status !== 'OPEN') return null;
+    const canHandover = task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS' && task.staffId === user.userId;
     return (
-      <button onClick={() => setConfirmTask(task)} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5">
-        <span className="material-symbols-outlined text-[18px]">front_hand</span>
-        Nhận việc
-      </button>
+      <>
+        {canHandover ? (
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+            Lập biên bản
+          </Link>
+        ) : (
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-5 py-2.5 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Xem chi tiết
+          </Link>
+        )}
+        {task.status === 'OPEN' && (
+          <button onClick={() => setConfirmTask(task)} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">front_hand</span>
+            Nhận việc
+          </button>
+        )}
+      </>
     );
   };
 

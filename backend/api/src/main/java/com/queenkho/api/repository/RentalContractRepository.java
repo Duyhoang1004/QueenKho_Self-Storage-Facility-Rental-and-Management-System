@@ -28,4 +28,9 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     // Chi tiết 1 hợp đồng
     @Query("SELECT rc FROM RentalContract rc JOIN FETCH rc.customer JOIN FETCH rc.storageUnit su JOIN FETCH su.unitType JOIN FETCH su.facility JOIN FETCH rc.reservation WHERE rc.id = :id")
     Optional<RentalContract> findDetailById(@Param("id") Integer id);
+
+    // UC-18: PIN / thẻ RFID không được trùng với hợp đồng còn hiệu lực
+    boolean existsByAccessPinCodeAndStatusIn(String accessPinCode, List<String> statuses);
+
+    boolean existsByRfidCardCodeAndStatusIn(String rfidCardCode, List<String> statuses);
 }

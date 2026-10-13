@@ -33,12 +33,14 @@ public class StaffTaskService {
 
     // Giờ đóng cửa: hạn chót của mọi task
     private static final LocalTime CLOSING_TIME = LocalTime.of(21, 0);
-    // Các trạng thái được coi là "task chưa đóng" (kể cả quá hạn — Manager vẫn phải xử lý)
+    // Các trạng thái được coi là "task chưa đóng" (kể cả quá hạn — Manager vẫn phải
+    // xử lý)
     private static final List<String> OPEN_STATUSES = List.of("OPEN", "IN_PROGRESS", "OVERDUE");
-    private static final List<String> VALID_STATUSES =
-            List.of("OPEN", "IN_PROGRESS", "OVERDUE", "COMPLETED", "CANCELLED");
+    private static final List<String> VALID_STATUSES = List.of("OPEN", "IN_PROGRESS", "OVERDUE", "COMPLETED",
+            "CANCELLED");
 
-    // UC-18: hợp đồng "còn hiệu lực" — PIN / thẻ RFID của chúng không được cấp trùng
+    // UC-18: hợp đồng "còn hiệu lực" — PIN / thẻ RFID của chúng không được cấp
+    // trùng
     private static final List<String> LIVE_CONTRACT_STATUSES = List.of("ACTIVE", "OVERDUE", "TERMINATION_PENDING");
     private static final int PIN_MAX_ATTEMPTS = 20;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -80,8 +82,10 @@ public class StaffTaskService {
         createTask(contract, "CHECK_OUT", checkoutDate, note);
     }
 
-    // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi được khách).
-    // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận → IN_PROGRESS
+    // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi
+    // được khách).
+    // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
+    // IN_PROGRESS
     @Transactional
     public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
         List<StaffTask> tasks = staffTaskRepository
@@ -95,7 +99,8 @@ public class StaffTaskService {
         staffTaskRepository.saveAll(tasks);
     }
 
-    // UC-16: huỷ task chưa đóng — gọi khi khách gia hạn (không trả kho nữa) hoặc khi xử lý No-Show
+    // UC-16: huỷ task chưa đóng — gọi khi khách gia hạn (không trả kho nữa) hoặc
+    // khi xử lý No-Show
     @Transactional
     public void cancelOpenTasks(Integer contractId, String taskType) {
         List<StaffTask> tasks = staffTaskRepository
@@ -123,7 +128,8 @@ public class StaffTaskService {
     }
 
     // Hạn = ngày hẹn lúc 21:00.
-    // Nếu mốc đó đã qua (vd: Manager gán ô trễ) → trước 21h thì hạn hôm nay, sau 21h thì hạn hôm sau.
+    // Nếu mốc đó đã qua (vd: Manager gán ô trễ) → trước 21h thì hạn hôm nay, sau
+    // 21h thì hạn hôm sau.
     LocalDateTime computeDueAt(LocalDate appointmentDate) {
         LocalDateTime now = LocalDateTime.now();
         if (appointmentDate != null) {
@@ -138,7 +144,8 @@ public class StaffTaskService {
 
     // ================== UC-16: BẢNG CÔNG VIỆC ==================
 
-    // readOnly = true: báo cho Hibernate là chỉ đọc → bỏ qua dirty checking, nhẹ hơn
+    // readOnly = true: báo cho Hibernate là chỉ đọc → bỏ qua dirty checking, nhẹ
+    // hơn
     @Transactional(readOnly = true)
     public List<StaffTaskResponse> getBoard(Integer facilityId, String status) {
         if (facilityId == null) {
@@ -158,14 +165,17 @@ public class StaffTaskService {
     }
 
     // Entity → DTO. Không trả thẳng entity ra API vì:
-    // (1) quan hệ LAZY sẽ lỗi khi Jackson serialize, (2) lộ field không cần thiết (password của User...)
+    // (1) quan hệ LAZY sẽ lỗi khi Jackson serialize, (2) lộ field không cần thiết
+    // (password của User...)
     private StaffTaskResponse toResponse(StaffTask task) {
         RentalContract contract = task.getContract();
         User staff = task.getStaff();
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
+        User customer = contract != null ? contract.getCustomer() : null;
 
         return StaffTaskResponse.builder()
                 .id(task.getId())
+                .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
                 .dueAt(task.getDueAt())
@@ -173,13 +183,14 @@ public class StaffTaskService {
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
                 .note(task.getNote())
+                .evidenceImageUrl(task.getEvidenceImageUrl())
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
                 .contractId(contract != null ? contract.getId() : null)
                 .contractCode(contract != null ? contract.getContractCode() : null)
                 .contractStatus(contract != null ? contract.getStatus() : null)
-                .customerName(contract != null ? contract.getCustomer().getFullName() : null)
-                .customerPhone(contract != null ? contract.getCustomer().getPhone() : null)
+                .customerName(customer != null ? customer.getFullName() : null)
+                .customerPhone(customer != null ? customer.getPhone() : null)
                 .storageUnitId(unit != null ? unit.getId() : null)
                 .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null)
                 .build();
@@ -217,7 +228,8 @@ public class StaffTaskService {
                 throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
                         "Task đã quá hạn, không thể gỡ người nhận");
             }
-            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_UNASSIGNABLE", "Task đã đóng, không thể gỡ người nhận");
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_UNASSIGNABLE",
+                    "Task đã đóng, không thể gỡ người nhận");
         }
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
@@ -227,7 +239,8 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
         }
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND",
+                        "Không tìm thấy tài khoản"));
         if (!role.equals(user.getRole().getName())) {
             throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", forbiddenMessage);
         }
@@ -237,7 +250,8 @@ public class StaffTaskService {
     // Task phải thuộc cùng cơ sở với người thao tác
     private StaffTask findTaskInFacility(Integer taskId, Integer facilityId) {
         StaffTask task = staffTaskRepository.findById(taskId)
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Không tìm thấy task"));
+                .orElseThrow(
+                        () -> new StaffTaskException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Không tìm thấy task"));
         if (facilityId == null || !facilityId.equals(task.getFacilityId())) {
             throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Task không thuộc cơ sở của bạn");
         }
@@ -262,7 +276,8 @@ public class StaffTaskService {
         return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_CLAIMABLE", "Task đã đóng hoặc đã bị huỷ");
     }
 
-    // ================== UC-18: CHI TIẾT TASK + CHECK-IN & BIÊN BẢN BÀN GIAO ==================
+    // ================== UC-18: CHI TIẾT TASK + CHECK-IN & BIÊN BẢN BÀN GIAO
+    // ==================
 
     // UC-18: chi tiết task — Staff hoặc Facility Manager cùng cơ sở được xem
     @Transactional(readOnly = true)
@@ -271,13 +286,16 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người xem");
         }
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND",
+                        "Không tìm thấy tài khoản"));
         String role = user.getRole().getName();
         if (!"STAFF".equals(role) && !"FACILITY_MANAGER".equals(role)) {
-            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Bạn không có quyền xem công việc này");
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                    "Bạn không có quyền xem công việc này");
         }
         StaffTask task = staffTaskRepository.findDetailById(taskId)
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Không tìm thấy task"));
+                .orElseThrow(
+                        () -> new StaffTaskException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Không tìm thấy task"));
         if (user.getFacilityId() == null || !user.getFacilityId().equals(task.getFacilityId())) {
             throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Task không thuộc cơ sở của bạn");
         }
@@ -285,7 +303,8 @@ public class StaffTaskService {
     }
 
     // UC-18: gợi ý 1 mã PIN 6 số chưa bị hợp đồng còn hiệu lực nào dùng.
-    // Sinh ở backend vì chỉ backend kiểm tra được trùng; lúc lưu vẫn kiểm tra lại (có thể bị người khác lấy mất giữa chừng)
+    // Sinh ở backend vì chỉ backend kiểm tra được trùng; lúc lưu vẫn kiểm tra lại
+    // (có thể bị người khác lấy mất giữa chừng)
     @Transactional(readOnly = true)
     public String suggestPin() {
         for (int i = 0; i < PIN_MAX_ATTEMPTS; i++) {
@@ -295,11 +314,13 @@ public class StaffTaskService {
                 return pin;
             }
         }
-        throw new StaffTaskException(HttpStatus.CONFLICT, "PIN_UNAVAILABLE", "Không sinh được mã PIN, vui lòng thử lại");
+        throw new StaffTaskException(HttpStatus.CONFLICT, "PIN_UNAVAILABLE",
+                "Không sinh được mã PIN, vui lòng thử lại");
     }
 
     // UC-18: Staff check-in cho khách + lập biên bản bàn giao.
-    // Tất cả trong 1 transaction: ném exception ở bất kỳ bước nào → rollback hết (kể cả câu UPDATE task)
+    // Tất cả trong 1 transaction: ném exception ở bất kỳ bước nào → rollback hết
+    // (kể cả câu UPDATE task)
     @Transactional
     public StaffTaskDetailResponse checkIn(Integer taskId, Integer staffId, CheckInRequest request) {
         User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được check-in cho khách");
@@ -314,16 +335,19 @@ public class StaffTaskService {
         String rfid = request.getRfidCardCode().trim();
         String notes = request.getNotes() == null || request.getNotes().isBlank() ? null : request.getNotes().trim();
 
-        // 2. Đóng task bằng UPDATE có điều kiện — chặn bấm 2 lần / task vừa bị huỷ / vừa quá hạn
+        // 2. Đóng task bằng UPDATE có điều kiện — chặn bấm 2 lần / task vừa bị huỷ /
+        // vừa quá hạn
         LocalDateTime now = LocalDateTime.now();
         if (staffTaskRepository.completeCheckIn(taskId, staffId, now) == 0) {
             throw explainCheckInFailure(taskId, staffId);
         }
 
         // 3. Hợp đồng phải đang chờ check-in.
-        // Đọc lại sau UPDATE vì clearAutomatically đã xoá cache Hibernate → entity cũ không còn được theo dõi
+        // Đọc lại sau UPDATE vì clearAutomatically đã xoá cache Hibernate → entity cũ
+        // không còn được theo dõi
         RentalContract contract = rentalContractRepository.findDetailById(task.getContract().getId())
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND",
+                        "Không tìm thấy hợp đồng"));
         if (!"PENDING_CHECK_IN".equals(contract.getStatus())) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
                     "Hợp đồng không ở trạng thái chờ check-in");
@@ -331,10 +355,12 @@ public class StaffTaskService {
 
         // 4. PIN / thẻ RFID không trùng với hợp đồng còn hiệu lực
         if (rentalContractRepository.existsByAccessPinCodeAndStatusIn(pin, LIVE_CONTRACT_STATUSES)) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "PIN_TAKEN", "Mã PIN vừa bị cấp cho hợp đồng khác, hãy sinh mã mới");
+            throw new StaffTaskException(HttpStatus.CONFLICT, "PIN_TAKEN",
+                    "Mã PIN vừa bị cấp cho hợp đồng khác, hãy sinh mã mới");
         }
         if (rentalContractRepository.existsByRfidCardCodeAndStatusIn(rfid, LIVE_CONTRACT_STATUSES)) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "RFID_TAKEN", "Thẻ RFID này đang được dùng cho hợp đồng khác");
+            throw new StaffTaskException(HttpStatus.CONFLICT, "RFID_TAKEN",
+                    "Thẻ RFID này đang được dùng cho hợp đồng khác");
         }
 
         // 5. Lưu biên bản
@@ -357,7 +383,8 @@ public class StaffTaskService {
         contract.setRfidCardCode(rfid);
         rentalContractRepository.save(contract);
 
-        // 7. Ghi log (cột action ở QueenKho.sql chỉ 100 ký tự → giữ ngắn). Lỗi log không làm hỏng check-in
+        // 7. Ghi log (cột action ở QueenKho.sql chỉ 100 ký tự → giữ ngắn). Lỗi log
+        // không làm hỏng check-in
         try {
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -369,8 +396,10 @@ public class StaffTaskService {
             // bỏ qua lỗi ghi log
         }
 
-        // created_at của biên bản do DB tự điền (insertable = false) nên entity trong cache Hibernate vẫn đang null.
-        // flush: đẩy INSERT/UPDATE xuống DB; clear: bỏ cache → lần đọc dưới lấy bản mới từ DB
+        // created_at của biên bản do DB tự điền (insertable = false) nên entity trong
+        // cache Hibernate vẫn đang null.
+        // flush: đẩy INSERT/UPDATE xuống DB; clear: bỏ cache → lần đọc dưới lấy bản mới
+        // từ DB
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
@@ -380,7 +409,8 @@ public class StaffTaskService {
         if (request == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu nội dung biên bản");
         }
-        // Boolean.TRUE.equals: null cũng tính là chưa tick (tránh NullPointerException khi unboxing)
+        // Boolean.TRUE.equals: null cũng tính là chưa tick (tránh NullPointerException
+        // khi unboxing)
         boolean allChecked = Boolean.TRUE.equals(request.getIdentityVerified())
                 && Boolean.TRUE.equals(request.getUnitEmpty())
                 && Boolean.TRUE.equals(request.getUnitClean())
@@ -412,19 +442,24 @@ public class StaffTaskService {
             return new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_COMPLETED", "Task đã được check-in xong");
         }
         if ("OVERDUE".equals(status)) {
-            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE", "Task đã quá hạn, không thể lập biên bản");
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Task đã quá hạn, không thể lập biên bản");
         }
         if ("IN_PROGRESS".equals(status)) {
             if (current.getStaff() == null || !current.getStaff().getId().equals(staffId)) {
-                return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_YOURS", "Task này do nhân viên khác phụ trách");
+                return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_YOURS",
+                        "Task này do nhân viên khác phụ trách");
             }
-            // Đúng người, đang xử lý nhưng UPDATE vẫn trượt → đã qua hạn mà job chưa kịp chạy
-            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE", "Task đã quá hạn, không thể lập biên bản");
+            // Đúng người, đang xử lý nhưng UPDATE vẫn trượt → đã qua hạn mà job chưa kịp
+            // chạy
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Task đã quá hạn, không thể lập biên bản");
         }
         if ("CANCELLED".equals(status)) {
             return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS", "Task đã bị huỷ");
         }
-        return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS", "Bạn cần nhận việc trước khi lập biên bản");
+        return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
+                "Bạn cần nhận việc trước khi lập biên bản");
     }
 
     private StaffTaskDetailResponse toDetailResponse(StaffTask task) {

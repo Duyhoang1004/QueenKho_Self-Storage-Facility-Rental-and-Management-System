@@ -29,4 +29,6 @@ public class CustomerContractResponse {
     private String rfidCardCode;
     private BigDecimal basePriceMonthly;
     private Integer reservationId;
+    private BigDecimal totalPaid;     // 🌟 Tổng thực tế đã đóng
+    private BigDecimal rentPaid;
 }

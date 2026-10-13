@@ -20,4 +20,5 @@ public class MyReservationResponse {
     private String status;
     private LocalDateTime createdAt;
     private LocalDate endDate;
+    private BigDecimal totalPaid; 
 }

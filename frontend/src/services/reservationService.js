@@ -2,8 +2,8 @@ import api from './api'
 
 export async function createReservation(data) {
   const response = await api.post('/reservations', data)
-  return response.data
-}
+  return response.data 
+}     
 
 // UC-12: khách hàng xem đơn đặt chỗ của mình
 export async function getMyReservations(customerId) {
@@ -36,3 +36,20 @@ export const cancelReservation = (reservationId, data) => {
     return api.post(`/reservations/${reservationId}/cancel`, data).then(res => res.data);
 };
 
+// [EXCEPTION] No-Show: lấy đơn UNIT_ASSIGNED đã quá ngày hẹn nhận kho
+export async function getOverdueNoShowReservations({ facilityId, managerId } = {}) {
+  const response = await api.get('/reservations/overdue-no-show', { params: { facilityId, managerId } })
+  return response.data
+}
+
+// [EXCEPTION] No-Show: xác nhận khách không đến, hủy đơn và giải phóng ô kho
+export async function noShowReservation(reservationId, data = {}) {
+  const response = await api.post(`/reservations/${reservationId}/no-show`, data)
+  return response.data
+}
+
+// [EXCEPTION] No-Show: dời lịch hẹn nhận kho sang ngày mới
+export async function rescheduleReservation(reservationId, data) {
+  const response = await api.put(`/reservations/${reservationId}/reschedule`, data)
+  return response.data
+}

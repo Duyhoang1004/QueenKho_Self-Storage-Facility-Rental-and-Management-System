@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getPendingReservations } from '../../services/reservationService'
+import { getPendingReservations, getOverdueNoShowReservations } from '../../services/reservationService'
 import AssignUnitModal from '../../components/AssignUnitModal'
 
 function formatVND(amount) {
@@ -49,10 +49,19 @@ function readUserId() {
 
 export default function PendingReservationsPage() {
   const userId = readUserId()
+  const [activeTab, setActiveTab] = useState('pending')
+
+  // Tab 1: đơn chờ gán ô
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(Boolean(userId))
   const [error, setError] = useState(userId ? '' : 'Bạn cần đăng nhập để xem danh sách đơn chờ gán ô.')
   const [reloadKey, setReloadKey] = useState(0)
+
+  // Tab 2: đơn quá hạn no-show
+  const [overdueItems, setOverdueItems] = useState([])
+  const [overdueLoading, setOverdueLoading] = useState(Boolean(userId))
+  const [overdueError, setOverdueError] = useState('')
+  const [overdueReloadKey, setOverdueReloadKey] = useState(0)
 
   const [selectedReservation, setSelectedReservation] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -85,6 +94,23 @@ export default function PendingReservationsPage() {
     setError('')
     setLoading(true)
     setReloadKey((k) => k + 1)
+  }
+
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    setOverdueLoading(true)
+    getOverdueNoShowReservations({ managerId: userId })
+      .then((data) => { if (!cancelled) { setOverdueItems(data); setOverdueError('') } })
+      .catch((err) => { if (!cancelled) setOverdueError(err.response?.data?.message || 'Không tải được danh sách quá hạn.') })
+      .finally(() => { if (!cancelled) setOverdueLoading(false) })
+    return () => { cancelled = true }
+  }, [userId, overdueReloadKey])
+
+  const reloadOverdue = () => {
+    setOverdueError('')
+    setOverdueLoading(true)
+    setOverdueReloadKey((k) => k + 1)
   }
 
   const openAssign = (item) => {
@@ -122,6 +148,32 @@ export default function PendingReservationsPage() {
             </button>
           </div>
         )}
+
+        {/* Tab switcher */}
+        <div className="flex gap-2 border-b-2 border-[#E5E5E5] pb-0">
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-xl border-2 border-b-0 transition-colors ${
+              activeTab === 'pending'
+                ? 'bg-white border-[#E5E5E5] text-[#FF9600]'
+                : 'bg-[#F7F7F7] border-transparent text-[#AFAFAF] hover:text-[#4B4B4B]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[15px] mr-1 align-middle">pending_actions</span>
+            Chờ gán ô {!loading && <span className="ml-1 bg-[#FFE8CC] text-[#E58800] px-1.5 py-0.5 rounded-full text-[10px]">{items.length}</span>}
+          </button>
+          <button
+            onClick={() => setActiveTab('overdue')}
+            className={`px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-t-xl border-2 border-b-0 transition-colors ${
+              activeTab === 'overdue'
+                ? 'bg-white border-[#E5E5E5] text-[#FF4B4B]'
+                : 'bg-[#F7F7F7] border-transparent text-[#AFAFAF] hover:text-[#4B4B4B]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[15px] mr-1 align-middle">warning</span>
+            Quá hạn No-Show {!overdueLoading && overdueItems.length > 0 && <span className="ml-1 bg-[#FFDFDF] text-[#FF4B4B] px-1.5 py-0.5 rounded-full text-[10px]">{overdueItems.length}</span>}
+          </button>
+        </div>
 
         {/* Banner tiêu đề Duolingo Card */}
         <div className="duo-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -162,6 +214,7 @@ export default function PendingReservationsPage() {
         </div>
 
         {/* Bảng danh sách Duolingo Card */}
+        {activeTab === 'pending' && (
         <div className="duo-card overflow-hidden">
           {loading && <p className="p-8 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách hàng đợi...</p>}
 
@@ -256,6 +309,83 @@ export default function PendingReservationsPage() {
             </div>
           )}
         </div>
+        )}
+
+        {/* Tab Quá hạn No-Show */}
+        {activeTab === 'overdue' && (
+        <div className="duo-card overflow-hidden">
+          {overdueLoading && <p className="p-8 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách quá hạn...</p>}
+
+          {!overdueLoading && overdueError && (
+            <div className="p-8 flex flex-col items-center gap-3 text-center">
+              <p className="text-xs font-black text-[#FF4B4B]">{overdueError}</p>
+              <button type="button" onClick={reloadOverdue} className="duo-btn-green px-5 py-2.5 text-xs">THỬ LẠI</button>
+            </div>
+          )}
+
+          {!overdueLoading && !overdueError && overdueItems.length === 0 && (
+            <div className="p-12 flex flex-col items-center gap-2 text-center">
+              <span className="material-symbols-outlined text-[48px] text-[#58CC02]">task_alt</span>
+              <p className="text-sm font-black text-[#4B4B4B]">Không có đơn nào quá hạn nhận kho.</p>
+            </div>
+          )}
+
+          {!overdueLoading && !overdueError && overdueItems.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#FFF5F5] border-b-2 border-[#FFDFDF] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3.5 px-5">Mã đơn</th>
+                    <th className="py-3.5 px-5">Khách hàng</th>
+                    <th className="py-3.5 px-5">Điện thoại</th>
+                    <th className="py-3.5 px-5">Loại kho</th>
+                    <th className="py-3.5 px-5">Thời hạn</th>
+                    <th className="py-3.5 px-5">Hẹn nhận</th>
+                    <th className="py-3.5 px-5">Tiền cọc</th>
+                    <th className="py-3.5 px-5 text-right">Xử lý</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y-2 divide-[#FFDFDF] text-xs font-bold text-[#4B4B4B]">
+                  {overdueItems.map((r) => {
+                    const hint = startHint(daysUntil(r.startDate))
+                    return (
+                      <tr key={r.id} className="hover:bg-[#FFF8F8] transition-colors">
+                        <td className="py-4 px-5 font-black text-[#FF4B4B]">{r.reservationCode}</td>
+                        <td className="py-4 px-5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs">
+                              {initials(r.customerName)}
+                            </div>
+                            <span className="font-black">{r.customerName}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 px-5">{r.customerPhone || '—'}</td>
+                        <td className="py-4 px-5">
+                          <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
+                            {r.unitTypeName}
+                          </span>
+                        </td>
+                        <td className="py-4 px-5 font-black">{r.durationMonths} tháng</td>
+                        <td className="py-4 px-5">
+                          <div className="flex flex-col">
+                            <span>{formatDate(r.startDate)}</span>
+                            {hint && <span className={`text-[10px] ${hint.className}`}>{hint.text}</span>}
+                          </div>
+                        </td>
+                        <td className="py-4 px-5 font-black text-[#FF4B4B]">{formatVND(r.depositAmount)}</td>
+                        <td className="py-4 px-5 text-right whitespace-nowrap flex gap-2 justify-end">
+                          {/* Nút No-Show và Dời lịch sẽ gắn ở Commit 3 */}
+                          <span className="text-[10px] text-[#AFAFAF] font-bold italic">Coming in next commit...</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        )}
       </div>
 
       <AssignUnitModal
@@ -266,4 +396,4 @@ export default function PendingReservationsPage() {
       />
     </div>
   )
-}
+}

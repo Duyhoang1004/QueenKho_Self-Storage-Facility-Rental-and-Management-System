@@ -3,6 +3,7 @@ import { getStaffTasks } from '../services/staffTaskService'
 
 // UC-16: Bảng công việc tại cơ sở — dùng chung cho trang Staff và trang Manager.
 // renderActions(task) (tuỳ chọn): trang cha truyền vào để gắn nút thao tác cho từng thẻ (UC-17, UC-18...)
+// currentStaffId (tuỳ chọn, UC-17): có thì hiện bộ lọc "Việc của tôi" + badge "Của bạn" trên thẻ mình đã nhận
 
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
@@ -61,13 +62,14 @@ function dueHint(task) {
   return { text: `Còn ${Math.floor(hours / 24)} ngày`, urgent: false }
 }
 
-export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) {
+export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, currentStaffId }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('ACTIVE')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [search, setSearch] = useState('')
+  const [mineOnly, setMineOnly] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
 
   // Chỉ setState trong callback của promise (không set đồng bộ trong effect)
@@ -121,12 +123,13 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) 
     return tasks
       .filter(t => statuses.includes(t.status))
       .filter(t => typeFilter === 'ALL' || t.taskType === typeFilter)
+      .filter(t => !mineOnly || t.staffId === currentStaffId)
       .filter(t => !keyword
         || t.contractCode?.toLowerCase().includes(keyword)
         || t.customerName?.toLowerCase().includes(keyword)
         || t.customerPhone?.includes(keyword)
         || t.storageUnitId?.toLowerCase().includes(keyword))
-  }, [tasks, tab, typeFilter, search])
+  }, [tasks, tab, typeFilter, search, mineOnly, currentStaffId])
 
   return (
     <div className="flex flex-col gap-6">
@@ -189,6 +192,16 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) 
             <option value="CHECK_IN">Check-in</option>
             <option value="CHECK_OUT">Check-out</option>
           </select>
+          {currentStaffId && (
+            <label
+              className={`px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer select-none ${
+                mineOnly ? 'bg-[#F3E8FF] border-[#CE82FF] text-[#A560E8]' : 'bg-white border-[#E5E5E5] text-[#777777] hover:bg-[#F7F7F7]'
+              }`}
+            >
+              <input type="checkbox" checked={mineOnly} onChange={e => setMineOnly(e.target.checked)} className="accent-[#A560E8]" />
+              Việc của tôi
+            </label>
+          )}
           <button
             onClick={handleRefresh}
             className="px-4 py-2 rounded-2xl bg-white border-2 border-b-4 border-[#E5E5E5] text-[#777777] hover:bg-[#F7F7F7] active:border-b-2 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer"
@@ -215,7 +228,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) 
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">
           <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">inventory</span>
           <p className="text-sm font-black text-[#4B4B4B]">
-            {search || typeFilter !== 'ALL' ? 'Không có công việc phù hợp bộ lọc.' : 'Không có công việc nào trong mục này.'}
+            {search || typeFilter !== 'ALL' || mineOnly ? 'Không có công việc phù hợp bộ lọc.' : 'Không có công việc nào trong mục này.'}
           </p>
         </div>
       ) : (
@@ -225,10 +238,11 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) 
             const status = STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' }
             const hint = dueHint(task)
             const actions = renderActions ? renderActions(task) : null
+            const isMine = Boolean(currentStaffId) && task.staffId === currentStaffId
             return (
               <div
                 key={task.id}
-                className={`duo-card p-5 flex flex-col gap-4 ${task.status === 'OVERDUE' ? 'border-[#FF4B4B]' : ''}`}
+                className={`duo-card p-5 flex flex-col gap-4 ${task.status === 'OVERDUE' ? 'border-[#FF4B4B]' : isMine ? 'border-[#CE82FF]' : ''}`}
               >
                 {/* Dòng đầu: loại việc + trạng thái */}
                 <div className="flex items-start justify-between gap-3">
@@ -243,7 +257,14 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0 }) 
                       </p>
                     </div>
                   </div>
-                  <span className={`duo-badge whitespace-nowrap ${status.cls}`}>{status.label}</span>
+                  <div className="flex flex-col items-end gap-1.5">
+                    <span className={`duo-badge whitespace-nowrap ${status.cls}`}>{status.label}</span>
+                    {isMine && (
+                      <span className="duo-badge whitespace-nowrap bg-[#A560E8] text-white border-2 border-[#A560E8] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">person_check</span>Của bạn
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Thông tin khách + ô kho */}

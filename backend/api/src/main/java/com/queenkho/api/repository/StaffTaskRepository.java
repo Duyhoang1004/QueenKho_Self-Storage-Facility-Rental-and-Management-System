@@ -1,6 +1,7 @@
 package com.queenkho.api.repository;
 
 import com.queenkho.api.entity.StaffTask;
+import com.queenkho.api.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -36,4 +37,20 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     @Query("UPDATE StaffTask t SET t.status = 'OVERDUE' " +
             "WHERE t.status IN ('OPEN', 'IN_PROGRESS') AND t.dueAt < :now")
     int markOverdue(@Param("now") LocalDateTime now);
+
+    // UC-17: nhận việc — 1 câu UPDATE có điều kiện để chống 2 người nhận cùng lúc.
+    // DB khoá dòng khi UPDATE: người thứ 2 chạy sau sẽ thấy status đã là IN_PROGRESS → 0 dòng bị ảnh hưởng.
+    // clearAutomatically: xoá cache Hibernate sau UPDATE để lần findById sau đọc dữ liệu mới từ DB
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'IN_PROGRESS', t.staff = :staff, t.claimedAt = :now " +
+            "WHERE t.id = :taskId AND t.status = 'OPEN' AND t.staff IS NULL AND t.dueAt > :now")
+    int claim(@Param("taskId") Integer taskId,
+              @Param("staff") User staff,
+              @Param("now") LocalDateTime now);
+
+    // UC-17: Manager gỡ người nhận → task về OPEN cho nhân viên khác nhận
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'OPEN', t.staff = NULL, t.claimedAt = NULL " +
+            "WHERE t.id = :taskId AND t.status = 'IN_PROGRESS'")
+    int unassign(@Param("taskId") Integer taskId);
 }

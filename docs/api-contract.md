@@ -313,3 +313,35 @@
 # --- THAY DOI LIEN QUAN ---
 # POST /api/v1/auth/login tra them: "facilityId", "facilityName" (null voi CUSTOMER)
 # rental_contracts.status them gia tri: PENDING_CHECK_IN (sau UC-14, truoc khi check-in)
+
+
+# ==============================================================================
+# UC-17: NHAN VIEC / GO NGUOI NHAN (Staff Task Claim)
+# ==============================================================================
+# Endpoint 1: POST /api/v1/staff-tasks/{id}/claim?staffId={userId}       (Staff nhan viec)
+# Endpoint 2: POST /api/v1/staff-tasks/{id}/unassign?managerId={userId}  (Facility Manager go nguoi nhan)
+# Khong co request body. staffId / managerId = sessionStorage user.userId
+# ==============================================================================
+#
+# Quy tac:
+#   - claim   : chi role STAFF, cung co so voi task, task phai OPEN + chua co nguoi nhan + chua qua dueAt
+#               -> status IN_PROGRESS, staffId = nguoi nhan, claimedAt = now. Nhan roi khong tu tra lai.
+#               2 nguoi bam cung luc: chi 1 nguoi thanh cong (UPDATE co dieu kien), nguoi kia nhan 409
+#   - unassign: chi role FACILITY_MANAGER, cung co so, task phai IN_PROGRESS
+#               -> status OPEN, staffId = null, claimedAt = null (nhan vien khac nhan lai duoc)
+#   - Task OVERDUE: khong claim / unassign duoc (FM xu ly o UC-18)
+#
+# --- RESPONSE THANH CONG ---
+# HTTP 200 OK: 1 object task da cap nhat, cung format voi phan tu cua GET /api/v1/staff-tasks
+#
+# --- RESPONSE LOI ---  { "error": "CODE", "message": "..." }
+# 400 INVALID_INPUT          : thieu staffId / managerId
+# 404 USER_NOT_FOUND         : khong tim thay tai khoan
+# 404 TASK_NOT_FOUND         : khong tim thay task
+# 403 FORBIDDEN_ROLE         : sai role (FM goi claim, Staff goi unassign...)
+# 403 FORBIDDEN_FACILITY     : task khong thuoc co so cua nguoi thao tac
+# 409 TASK_ALREADY_CLAIMED   : "Task đã được <ten> nhận trước" / "Bạn đã nhận task này rồi"
+# 409 TASK_OVERDUE           : task da qua han
+# 409 TASK_NOT_CLAIMABLE     : task da COMPLETED / CANCELLED
+# 409 TASK_NOT_ASSIGNED      : unassign task chua co nguoi nhan
+# 409 TASK_NOT_UNASSIGNABLE  : unassign task da dong

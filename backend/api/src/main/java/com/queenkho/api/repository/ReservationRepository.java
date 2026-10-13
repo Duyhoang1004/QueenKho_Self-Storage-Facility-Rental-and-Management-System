@@ -29,4 +29,14 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
     List<Object[]> countPendingGroupedByUnitType(
         @Param("facilityId") Integer facilityId,
         @Param("statuses") List<String> statuses);
+
+    // [EXCEPTION] No-Show: đơn đã gán ô nhưng startDate đã qua → khách không đến
+    @Query("SELECT r FROM Reservation r " +
+           "WHERE r.facility.id = :facilityId " +
+           "AND r.status = 'UNIT_ASSIGNED' " +
+           "AND r.startDate < :today " +
+           "ORDER BY r.startDate ASC")
+    List<Reservation> findOverdueNoShowByFacility(
+        @Param("facilityId") Integer facilityId,
+        @Param("today") java.time.LocalDate today);
 }

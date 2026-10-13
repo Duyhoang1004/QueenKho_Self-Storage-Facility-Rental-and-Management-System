@@ -49,6 +49,18 @@ public class ReservationController {
         }
     }
 
+    // [EXCEPTION] No-Show: lấy đơn UNIT_ASSIGNED đã quá hạn nhận kho
+    @GetMapping("/overdue-no-show")
+    public ResponseEntity<?> getOverdueNoShowReservations(
+            @RequestParam(required = false) Integer facilityId,
+            @RequestParam(required = false) Integer managerId) {
+        try {
+            return ResponseEntity.ok(reservationService.getOverdueNoShowReservations(facilityId, managerId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        }
+    }
+
     // UC-14: Lấy danh sách kho trống
     @GetMapping("/{reservationId}/available-units")
     public ResponseEntity<?> getAvailableUnits(@PathVariable Integer reservationId) {

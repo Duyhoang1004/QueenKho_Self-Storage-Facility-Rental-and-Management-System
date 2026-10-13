@@ -129,6 +129,34 @@ public class ReservationService {
                 .toList();
     }
 
+    // [EXCEPTION] No-Show: lấy đơn đã gán ô nhưng startDate đã qua (khách không đến nhận)
+    @Transactional(readOnly = true)
+    public List<PendingReservationResponse> getOverdueNoShowReservations(Integer facilityId, Integer managerId) {
+        Integer targetFacilityId = facilityId;
+        if (targetFacilityId == null && managerId != null) {
+            User manager = userRepository.findById(managerId)
+                    .orElseThrow(() -> new IllegalArgumentException("Người dùng không tồn tại"));
+            targetFacilityId = manager.getFacilityId();
+        }
+        if (targetFacilityId == null) {
+            throw new IllegalArgumentException("Tài khoản chưa được gán cơ sở");
+        }
+        return reservationRepository
+                .findOverdueNoShowByFacility(targetFacilityId, LocalDate.now())
+                .stream()
+                .map(r -> new PendingReservationResponse(
+                        r.getId(),
+                        r.getReservationCode(),
+                        r.getCustomer().getFullName(),
+                        r.getCustomer().getPhone(),
+                        r.getUnitType().getName(),
+                        r.getStartDate(),
+                        r.getDurationMonths(),
+                        r.getDepositAmount(),
+                        r.getCreatedAt()))
+                .toList();
+    }
+
     @Transactional
     public CreateReservationResponse createReservation(CreateReservationRequest request) {
         // Kiem tra hop le

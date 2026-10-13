@@ -5,8 +5,11 @@ import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StaffTask;
 import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.entity.User;
+import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.StaffTaskRepository;
+import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,9 @@ public class StaffTaskService {
 
     @Autowired
     private StaffTaskRepository staffTaskRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // ================== SINH TASK (gọi từ service khác) ==================
 
@@ -150,6 +156,83 @@ public class StaffTaskService {
                 .storageUnitId(unit != null ? unit.getId() : null)
                 .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null)
                 .build();
+    }
+
+    // ================== UC-17: NHẬN VIỆC / GỠ NGƯỜI NHẬN ==================
+
+    // UC-17: Staff nhận 1 task OPEN của cơ sở mình
+    @Transactional
+    public StaffTaskResponse claimTask(Integer taskId, Integer staffId) {
+        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được nhận việc");
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+
+        int updated = staffTaskRepository.claim(task.getId(), staff, LocalDateTime.now());
+        if (updated == 0) {
+            // UPDATE không ăn dòng nào → đọc lại để báo đúng lý do
+            throw explainClaimFailure(taskId, staffId);
+        }
+        return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
+    }
+
+    // UC-17: Facility Manager gỡ nhân viên khỏi task đang xử lý → task về OPEN
+    @Transactional
+    public StaffTaskResponse unassignTask(Integer taskId, Integer managerId) {
+        User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được gỡ người nhận");
+        StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
+
+        int updated = staffTaskRepository.unassign(task.getId());
+        if (updated == 0) {
+            StaffTask current = staffTaskRepository.findById(taskId).orElseThrow();
+            if ("OPEN".equals(current.getStatus())) {
+                throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_ASSIGNED", "Task chưa có người nhận");
+            }
+            if ("OVERDUE".equals(current.getStatus())) {
+                throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                        "Task đã quá hạn, không thể gỡ người nhận");
+            }
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_UNASSIGNABLE", "Task đã đóng, không thể gỡ người nhận");
+        }
+        return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
+    }
+
+    private User findUserWithRole(Integer userId, String role, String forbiddenMessage) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        if (!role.equals(user.getRole().getName())) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", forbiddenMessage);
+        }
+        return user;
+    }
+
+    // Task phải thuộc cùng cơ sở với người thao tác
+    private StaffTask findTaskInFacility(Integer taskId, Integer facilityId) {
+        StaffTask task = staffTaskRepository.findById(taskId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND", "Không tìm thấy task"));
+        if (facilityId == null || !facilityId.equals(task.getFacilityId())) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Task không thuộc cơ sở của bạn");
+        }
+        return task;
+    }
+
+    private StaffTaskException explainClaimFailure(Integer taskId, Integer staffId) {
+        StaffTask current = staffTaskRepository.findById(taskId).orElseThrow();
+        User owner = current.getStaff();
+        if (owner != null) {
+            String message = owner.getId().equals(staffId)
+                    ? "Bạn đã nhận task này rồi"
+                    : "Task đã được " + owner.getFullName() + " nhận trước";
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_CLAIMED", message);
+        }
+        // OVERDUE, hoặc còn OPEN nhưng đã qua hạn mà job chưa kịp chạy
+        if ("OVERDUE".equals(current.getStatus())
+                || ("OPEN".equals(current.getStatus()) && !current.getDueAt().isAfter(LocalDateTime.now()))) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Task đã quá hạn, chỉ quản lý cơ sở được xử lý");
+        }
+        return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_CLAIMABLE", "Task đã đóng hoặc đã bị huỷ");
     }
 
     // ================== JOB QUÁ HẠN ==================

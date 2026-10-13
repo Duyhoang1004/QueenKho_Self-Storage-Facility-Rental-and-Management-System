@@ -103,19 +103,33 @@ Nếu hiện ra password bạn vừa đặt -> Thành công.
 
 ## 3. Cấu Hình Database
 
-### Bước 1: Tạo database và các bảng
-Mở SQL Server Management Studio (SSMS), mở file `sql_script/QueenKho.sql` và **chạy toàn bộ**.  
+### Bước 1: Tạo database đầy đủ (1 file duy nhất)
+Mở SQL Server Management Studio (SSMS), mở file **`sql_script/QueenKho_full.sql`** và **chạy toàn bộ** (F5).
+
+> ⚠️ Script **xoá `QueenKhoDB` cũ rồi tạo lại từ đầu** → mất hết dữ liệu local (đơn, hợp đồng, task...). Chạy xong nhớ **đăng nhập lại** trên FE.
+
 Script sẽ tự động:
-- Tạo database `QueenKhoDB`
-- Tạo 12 bảng (theo thứ tự phụ thuộc Khóa ngoại)
+- Tạo database `QueenKhoDB` + 13 bảng (theo thứ tự phụ thuộc khoá ngoại, gồm cả `staff_tasks`)
 - Seed 5 roles: `CUSTOMER`, `STAFF`, `FACILITY_MANAGER`, `BOM`, `ADMIN`
+- Seed dữ liệu nền (id cố định):
+
+| Dữ liệu       | Số lượng | Ghi chú                                                                 |
+|---------------|----------|-------------------------------------------------------------------------|
+| Cơ sở         | 6        | 1 Tân Bình · 2 Bình Thạnh · 3 Thủ Đức · 4 Gò Vấp · 5 Cầu Giấy · 6 Quận 7 |
+| Loại kho      | 6        | Mini M, Tiêu Chuẩn, Gia Đình, Lớn, Đặc Biệt XL, Nhỏ 2m²                 |
+| Chính sách    | 6        | Mỗi cơ sở 1 chính sách thuê                                             |
+| Ô kho         | 42       | Mã `KV-<cơ sở>-<zone><phòng>`, vd `KV-TB-A101`                          |
+| Tài khoản     | 29       | Xem mục 4 — Tài khoản kiểm thử                                          |
+
+> Các file cũ (`QueenKho.sql`, `QueenKhoDuLieuMau_UC09.sql`, `rental_policies_data.sql`, `Update_activity_logs.sql`, `setup_test_env.sql`) đã được gộp vào `QueenKho_full.sql`.  
+> Khi thêm bảng / cột mới: sửa **`QueenKho_full.sql`** (backend dùng `ddl-auto: validate` nên schema phải khớp Entity).
 
 ### Bước 2: Kiểm tra
 ```sql
 USE QueenKhoDB;
-SELECT * FROM roles;
+SELECT r.name, COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id GROUP BY r.name;
 ```
-Thấy 5 dòng dữ liệu -> Thành công.
+Thấy `CUSTOMER 5`, `FACILITY_MANAGER 6`, `STAFF 18` -> Thành công.
 
 ---
 
@@ -137,12 +151,17 @@ npm run dev
 Frontend chạy tại: `http://localhost:5173`
 
 ### Tài khoản kiểm thử (Dev Account)
-Để thuận tiện test các luồng giao diện nội bộ (Protected Route), hệ thống đã cấy sẵn tài khoản Quản lý:
-*   **Email:** `admin123@gmail.com`
-*   **Mật khẩu:** `1234`
-*   **Vai trò (Role):** `MANAGER`
+Sau khi chạy `QueenKho_full.sql`, tất cả tài khoản đều có **mật khẩu `123456`** (đã băm BCrypt trong DB):
 
-*(Ghi chú: Mật khẩu này đã được băm bằng BCrypt trong DB, bạn chỉ cần nhập "1234" ở trang Login để tự động được điều hướng vào màn hình `/manager`).*
+| Vai trò                       | Số lượng           | Email                              | Ví dụ                     | Vào trang    |
+|-------------------------------|--------------------|------------------------------------|---------------------------|--------------|
+| Khách hàng (`CUSTOMER`)       | 5                  | `khachhang<1..5>@gmail.com`        | `khachhang1@gmail.com`    | `/`          |
+| Quản lý cơ sở (`FACILITY_MANAGER`) | 1 / cơ sở (6) | `fm<cơ sở>@gmail.com`              | `fmtanbinh@gmail.com`     | `/manager`   |
+| Nhân viên (`STAFF`)           | 3 / cơ sở (18)     | `staff<cơ sở><1..3>@gmail.com`     | `stafftanbinh1@gmail.com` | `/staff`     |
+
+`<cơ sở>` = `tanbinh` · `binhthanh` · `thuduc` · `govap` · `caugiay` · `quan7`
+
+*(Quản lý và nhân viên được gán sẵn vào cơ sở tương ứng → chỉ thấy bảng công việc / đơn của cơ sở mình.)*
 
 ---
 

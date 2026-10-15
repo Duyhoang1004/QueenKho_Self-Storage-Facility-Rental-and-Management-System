@@ -36,3 +36,9 @@ export async function checkInStaffTask(taskId, staffId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/check-in`, payload, { params: { staffId } })
   return res.data
 }
+
+// Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
+export async function submitContactReport(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)
+  return res.data
+}

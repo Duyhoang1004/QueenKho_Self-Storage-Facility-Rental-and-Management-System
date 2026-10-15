@@ -87,6 +87,20 @@ public class StaffTaskController {
         }
     }
 
+    // Staff báo cáo kết quả liên hệ khách hàng (No-Show workflow)
+    // POST /api/v1/staff-tasks/12/contact-report
+    @PostMapping("/{id}/contact-report")
+    public ResponseEntity<?> submitContactReport(@PathVariable Integer id,
+                                                 @RequestBody com.queenkho.api.dto.ContactReportRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.submitContactReport(id, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "INTERNAL_ERROR", "message", e.getMessage()));
+        }
+    }
+
     private ResponseEntity<?> toError(StaffTaskException e) {
         return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
     }

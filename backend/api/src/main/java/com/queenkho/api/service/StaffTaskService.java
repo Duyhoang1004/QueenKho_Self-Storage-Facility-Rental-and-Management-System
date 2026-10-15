@@ -1,6 +1,7 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CheckInRequest;
+import com.queenkho.api.dto.ContactReportRequest;
 import com.queenkho.api.dto.HandoverRecordResponse;
 import com.queenkho.api.dto.StaffTaskDetailResponse;
 import com.queenkho.api.dto.StaffTaskResponse;
@@ -520,6 +521,51 @@ public class StaffTaskService {
                 .staffName(staff.getFullName())
                 .createdAt(record.getCreatedAt())
                 .build();
+    }
+
+    // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
+    @Transactional
+    public StaffTaskResponse submitContactReport(Integer taskId, ContactReportRequest request) {
+        if (request == null || request.getStaffId() == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin nhân viên thao tác");
+        }
+        User staff = userRepository.findById(request.getStaffId())
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+
+        String outcome = (request.getCallOutcome() != null && !request.getCallOutcome().isBlank())
+                ? request.getCallOutcome().trim()
+                : "Đã liên hệ khách";
+        String detail = (request.getNote() != null && !request.getNote().isBlank())
+                ? request.getNote().trim()
+                : "";
+
+        String formattedNote = "[" + outcome + "]" + (detail.isEmpty() ? "" : " - " + detail);
+        if (formattedNote.length() > 500) {
+            formattedNote = formattedNote.substring(0, 497) + "...";
+        }
+
+        task.setNote(formattedNote);
+        if (task.getStaff() == null) {
+            task.setStaff(staff);
+            task.setClaimedAt(LocalDateTime.now());
+        }
+        staffTaskRepository.save(task);
+
+        // Ghi nhật ký hoạt động
+        String logAction = "Nhân viên " + staff.getFullName() + " báo cáo liên hệ task #" + task.getId()
+                + ": " + formattedNote;
+        if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
+
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'staff_tasks', ?, SYSDATETIME())",
+                staff.getId(),
+                logAction,
+                task.getId());
+
+        return toResponse(task);
     }
 
     // ================== JOB QUÁ HẠN ==================

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import TaskBoard from '../../components/TaskBoard';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
+import ContactReportModal from '../../components/ContactReportModal';
 import { claimStaffTask } from '../../services/staffTaskService';
 
 const TYPE_LABEL = { CHECK_IN: 'check-in', CHECK_OUT: 'check-out' };
@@ -12,6 +13,7 @@ export default function StaffTaskBoardPage() {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
 
   const [confirmTask, setConfirmTask] = useState(null);
+  const [reportTask, setReportTask] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -35,25 +37,36 @@ export default function StaffTaskBoardPage() {
   const renderActions = task => {
     const canHandover = task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS' && task.staffId === user.userId;
     return (
-      <>
+      <div className="flex flex-wrap items-center gap-2">
+        {task.taskType === 'CHECK_IN' && ['OVERDUE', 'IN_PROGRESS', 'OPEN'].includes(task.status) && (
+          <button
+            type="button"
+            onClick={() => setReportTask(task)}
+            className="duo-btn-blue px-3 py-2 text-xs flex items-center gap-1.5"
+            title="Báo cáo kết quả liên hệ khách hàng cho Quản lý"
+          >
+            <span className="material-symbols-outlined text-[16px]">phone_in_talk</span>
+            Báo cáo liên hệ
+          </button>
+        )}
         {canHandover ? (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5">
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
             <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
             Lập biên bản
           </Link>
         ) : (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-5 py-2.5 text-xs gap-1.5">
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5 flex items-center">
             <span className="material-symbols-outlined text-[18px]">visibility</span>
             Xem chi tiết
           </Link>
         )}
         {task.status === 'OPEN' && (
-          <button onClick={() => setConfirmTask(task)} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5">
+          <button onClick={() => setConfirmTask(task)} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
             <span className="material-symbols-outlined text-[18px]">front_hand</span>
             Nhận việc
           </button>
         )}
-      </>
+      </div>
     );
   };
 
@@ -93,6 +106,17 @@ export default function StaffTaskBoardPage() {
         onConfirm={handleClaim}
         onCancel={() => setConfirmTask(null)}
       />
+
+      <ContactReportModal
+        isOpen={Boolean(reportTask)}
+        task={reportTask}
+        onClose={() => setReportTask(null)}
+        onSuccess={(taskId, outcome) => {
+          setToast({ type: 'success', message: `Đã gửi báo cáo cho Quản lý cơ sở thành công: [${outcome}]` });
+          setReloadKey(k => k + 1);
+        }}
+      />
+
       <TaskToast toast={toast} onClose={closeToast} />
     </div>
   );

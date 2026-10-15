@@ -8,6 +8,7 @@ import com.queenkho.api.dto.MyReservationResponse;
 import com.queenkho.api.dto.PendingReservationResponse;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.Reservation;
+import com.queenkho.api.entity.StaffTask;
 import com.queenkho.api.entity.UnitType;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.repository.ReservationRepository;
@@ -49,6 +50,9 @@ public class ReservationService {
 
     @Autowired
     private StaffTaskService staffTaskService;
+
+    @Autowired
+    private com.queenkho.api.repository.StaffTaskRepository staffTaskRepository;
 
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
@@ -144,16 +148,37 @@ public class ReservationService {
         return reservationRepository
                 .findOverdueNoShowByFacility(targetFacilityId, LocalDate.now())
                 .stream()
-                .map(r -> new PendingReservationResponse(
-                        r.getId(),
-                        r.getReservationCode(),
-                        r.getCustomer().getFullName(),
-                        r.getCustomer().getPhone(),
-                        r.getUnitType().getName(),
-                        r.getStartDate(),
-                        r.getDurationMonths(),
-                        r.getDepositAmount(),
-                        r.getCreatedAt()))
+                .map(r -> {
+                    String staffNote = null;
+                    String staffName = null;
+                    try {
+                        var contractOpt = rentalContractRepository.findByReservationId(r.getId());
+                        if (contractOpt.isPresent()) {
+                            var tasks = staffTaskRepository.findByContractIdAndTaskTypeAndStatusIn(
+                                    contractOpt.get().getId(), "CHECK_IN", List.of("OPEN", "IN_PROGRESS", "OVERDUE", "COMPLETED", "CANCELLED"));
+                            if (!tasks.isEmpty()) {
+                                StaffTask task = tasks.get(0);
+                                staffNote = task.getNote();
+                                if (task.getStaff() != null) {
+                                    staffName = task.getStaff().getFullName();
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    return new PendingReservationResponse(
+                            r.getId(),
+                            r.getReservationCode(),
+                            r.getCustomer().getFullName(),
+                            r.getCustomer().getPhone(),
+                            r.getUnitType().getName(),
+                            r.getStartDate(),
+                            r.getDurationMonths(),
+                            r.getDepositAmount(),
+                            r.getCreatedAt(),
+                            staffNote,
+                            staffName);
+                })
                 .toList();
     }
 

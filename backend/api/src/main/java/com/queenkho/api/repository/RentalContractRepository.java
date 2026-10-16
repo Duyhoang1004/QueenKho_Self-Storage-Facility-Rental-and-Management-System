@@ -33,10 +33,4 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     boolean existsByAccessPinCodeAndStatusIn(String accessPinCode, List<String> statuses);
 
     boolean existsByRfidCardCodeAndStatusIn(String rfidCardCode, List<String> statuses);
-
-    // Tự động chuyển các hợp đồng ACTIVE có ngày kết thúc trước hôm nay sang OVERDUE
-    @org.springframework.data.jpa.repository.Modifying
-    @org.springframework.transaction.annotation.Transactional
-    @Query("UPDATE RentalContract rc SET rc.status = 'OVERDUE' WHERE rc.status = 'ACTIVE' AND rc.endDate < :today")
-    int markOverdueContracts(@Param("today") java.time.LocalDate today);
 }

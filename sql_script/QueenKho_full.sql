@@ -407,11 +407,3 @@ UNION ALL SELECT 'rental_policy', COUNT(*) FROM rental_policy
 UNION ALL SELECT 'storage_units', COUNT(*) FROM storage_units
 UNION ALL SELECT 'users',         COUNT(*) FROM users;
 GO
-
-
-USE QueenKhoDB;
-GO
-
-ALTER TABLE dbo.staff_tasks
-ADD evidence_image_url NVARCHAR(1000) NULL;
-GO

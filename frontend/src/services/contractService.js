@@ -35,9 +35,3 @@ export async function requestCheckout(contractId, data) {
   const res = await api.post(`/contracts/${contractId}/request-checkout`, data)
   return res.data
 }
-
-// UC-22: Khách hàng hủy yêu cầu trả kho (hủy chờ trả kho)
-export async function cancelCheckout(contractId) {
-  const res = await api.post(`/contracts/${contractId}/cancel-checkout`)
-  return res.data
-}

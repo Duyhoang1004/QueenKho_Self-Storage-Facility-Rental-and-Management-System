@@ -26,32 +26,24 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
 
-  const isTerminationPending = contract?.status === 'TERMINATION_PENDING'
-  const today = new Date().toISOString().split('T')[0]
-  const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
-  const prevScheduledDate = contract?.scheduledCheckoutDate || contract?.endDate
-
   useEffect(() => {
     if (contract) {
-      if (contract.status === 'TERMINATION_PENDING') {
-        setActiveTab('checkout')
-      }
-      const initialDate = contract.scheduledCheckoutDate || (isOverdue ? today : contract.endDate)
-      if (initialDate && initialDate >= today) {
-        setCheckoutDate(initialDate)
+      if (contract.endDate) {
+        setCheckoutDate(contract.endDate)
       } else {
+        const today = new Date().toISOString().split('T')[0]
         setCheckoutDate(today)
       }
     }
-  }, [contract, isOverdue, today])
+  }, [contract])
 
-  const basePrice = Number(contract?.basePriceMonthly || 0)
-  const depositAmount = contract?.depositHeldAmount != null ? formatVND(contract.depositHeldAmount) : '—'
+  const basePrice = Number(contract.basePriceMonthly || 0)
+  const depositAmount = contract.depositHeldAmount != null ? formatVND(contract.depositHeldAmount) : '—'
 
   // Tính hạn mới sau gia hạn
   const calculateNewEndDate = (months) => {
     let base = new Date()
-    if (contract?.endDate) {
+    if (contract.endDate) {
       const [y, m, d] = contract.endDate.split('-').map(Number)
       const endD = new Date(y, m - 1, d)
       if (endD > base) {
@@ -103,7 +95,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
-  // UC-22: Xử lý Hẹn ngày trả kho & dời ngày sớm hơn
+  // UC-22: Xử lý Hẹn ngày trả kho
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault()
     if (!checkoutDate) {
@@ -111,38 +103,14 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
-    if (checkoutDate < today) {
-      setCheckoutError('Ngày hẹn trả kho không thể là ngày trong quá khứ.')
-      return
-    }
-
-    if (isOverdue && checkoutDate > today) {
-      setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong ngày hôm nay.`)
-      return
-    }
-
-    if (!isTerminationPending && contract.endDate && checkoutDate > contract.endDate) {
-      setCheckoutError(`Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (${formatDate(contract.endDate)}). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.`)
-      return
-    }
-
-    if (isTerminationPending && prevScheduledDate && checkoutDate > prevScheduledDate) {
-      setCheckoutError(`Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (${formatDate(prevScheduledDate)}).`)
-      return
-    }
-
     setCheckoutLoading(true)
     setCheckoutError('')
     try {
-      const res = await requestCheckout(contract.contractId, {
+      await requestCheckout(contract.contractId, {
         checkoutDate,
         notes: `Hẹn trả kho ngày ${checkoutDate}`,
       })
-      const successMsg = res.message || (isTerminationPending
-        ? `Đã dời ngày trả kho cho hợp đồng ${contract.contractCode} sang ngày ${formatDate(checkoutDate)}.`
-        : `Yêu cầu trả kho cho hợp đồng ${contract.contractCode} đã được ghi nhận. Hẹn bàn giao ngày ${formatDate(checkoutDate)}.`
-      )
-      onSuccess?.(successMsg)
+      onSuccess?.(`Yêu cầu trả kho cho hợp đồng ${contract.contractCode} đã được ghi nhận. Hẹn bàn giao ngày ${formatDate(checkoutDate)}.`)
       onClose()
     } catch (err) {
       setCheckoutError(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi gửi yêu cầu trả kho.')
@@ -216,138 +184,116 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
         {/* Tab 1: Gia Hạn Thuê (UC-21) */}
         {activeTab === 'renew' && (
-          isTerminationPending ? (
-            <div className="px-6 py-10 flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center text-amber-600">
-                <span className="material-symbols-outlined text-[32px]">warning</span>
+          <form onSubmit={handleRenewSubmit} className="px-6 pt-2 pb-5 space-y-4">
+            {renewError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-red-600 text-[18px]">error</span>
+                <span>{renewError}</span>
               </div>
-              <h3 className="font-title-md text-base font-bold text-slate-800">
-                Không thể gia hạn vì HĐ đã vào trạng thái chờ trả kho.
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md leading-relaxed">
-                Hợp đồng này đang trong tiến trình chờ trả kho và kiểm tra khoang. Quý khách có thể chuyển sang phần <strong className="text-slate-700">"Hẹn Ngày Trả Kho"</strong> để dời ngày trả kho sớm hơn nếu cần.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('checkout')}
-                className="mt-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <span className="material-symbols-outlined text-[18px]">event_available</span>
-                Chuyển sang Hẹn Ngày Trả Kho
-              </button>
+            )}
+
+            {/* Chọn gói gia hạn */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-title-md text-xs sm:text-sm text-slate-800 font-semibold">
+                  Chọn gói thời gian gia hạn thêm:
+                </span>
+                <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến 10%</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { m: 1, label: '+1 Tháng', desc: 'Chu kỳ gốc', discount: 0 },
+                  { m: 3, label: '+3 Tháng', desc: 'Không ưu đãi', discount: 0 },
+                  { m: 6, label: '+6 Tháng', desc: 'Giảm 5%', popular: true, discount: 5 },
+                  { m: 12, label: '+12 Tháng', desc: 'Giảm 10%', best: true, discount: 10 },
+                ].map((item) => {
+                  const isSelected = selectedMonths === item.m
+                  return (
+                    <button
+                      key={item.m}
+                      type="button"
+                      onClick={() => setSelectedMonths(item.m)}
+                      className={`relative flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50/80 text-primary border-primary font-bold shadow-sm ring-1 ring-primary'
+                          : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      {item.popular && (
+                        <span className="absolute -top-2.5 px-2 py-0.5 bg-blue-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
+                          PHỔ BIẾN
+                        </span>
+                      )}
+                      {item.best && (
+                        <span className="absolute -top-2.5 px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
+                          TIẾT KIỆM
+                        </span>
+                      )}
+                      <span className="font-title-md text-sm font-semibold">{item.label}</span>
+                      <span className={`text-[11px] mt-0.5 ${item.discount > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>
+                        {item.desc}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleRenewSubmit} className="px-6 pt-2 pb-5 space-y-4">
-              {renewError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
-                  <span className="material-symbols-outlined text-red-600 text-[18px]">error</span>
-                  <span>{renewError}</span>
+
+            {/* Bảng tính chi phí */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs sm:text-sm">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <span className="text-slate-500 flex items-center gap-1.5 text-xs">
+                  <span className="material-symbols-outlined text-[16px] text-primary">event</span>
+                  Hạn mới sau gia hạn:
+                </span>
+                <span className="font-title-md text-slate-800 font-bold font-mono">
+                  {calculateNewEndDate(selectedMonths)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>Đơn giá thuê:</span>
+                <span className="text-slate-700">
+                  {formatVND(basePrice)} × {selectedMonths} tháng
+                </span>
+              </div>
+              {currentPricing.discountPercent > 0 && (
+                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
+                  <span>Chiết khấu kỳ hạn dài:</span>
+                  <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
                 </div>
               )}
-
-              {/* Chọn gói gia hạn */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-title-md text-xs sm:text-sm text-slate-800 font-semibold">
-                    Chọn gói thời gian gia hạn thêm:
+              <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
+                    TỔNG THANH TOÁN
                   </span>
-                  <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến 10%</span>
+                  <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { m: 1, label: '+1 Tháng', desc: 'Chu kỳ gốc', discount: 0 },
-                    { m: 3, label: '+3 Tháng', desc: 'Không ưu đãi', discount: 0 },
-                    { m: 6, label: '+6 Tháng', desc: 'Giảm 5%', popular: true, discount: 5 },
-                    { m: 12, label: '+12 Tháng', desc: 'Giảm 10%', best: true, discount: 10 },
-                  ].map((item) => {
-                    const isSelected = selectedMonths === item.m
-                    return (
-                      <button
-                        key={item.m}
-                        type="button"
-                        onClick={() => setSelectedMonths(item.m)}
-                        className={`relative flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-50/80 text-primary border-primary font-bold shadow-sm ring-1 ring-primary'
-                            : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                        }`}
-                      >
-                        {item.popular && (
-                          <span className="absolute -top-2.5 px-2 py-0.5 bg-blue-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
-                            PHỔ BIẾN
-                          </span>
-                        )}
-                        {item.best && (
-                          <span className="absolute -top-2.5 px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
-                            TIẾT KIỆM
-                          </span>
-                        )}
-                        <span className="font-title-md text-sm font-semibold">{item.label}</span>
-                        <span className={`text-[11px] mt-0.5 ${item.discount > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>
-                          {item.desc}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
+                <span className="text-lg sm:text-xl font-extrabold text-primary">
+                  {formatVND(currentPricing.total)}
+                </span>
               </div>
+            </div>
 
-              {/* Bảng tính chi phí */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs sm:text-sm">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <span className="text-slate-500 flex items-center gap-1.5 text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-primary">event</span>
-                    Hạn mới sau gia hạn:
-                  </span>
-                  <span className="font-title-md text-slate-800 font-bold font-mono">
-                    {calculateNewEndDate(selectedMonths)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>Đơn giá thuê:</span>
-                  <span className="text-slate-700">
-                    {formatVND(basePrice)} × {selectedMonths} tháng
-                  </span>
-                </div>
-                {currentPricing.discountPercent > 0 && (
-                  <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
-                    <span>Chiết khấu kỳ hạn dài:</span>
-                    <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
-                  </div>
-                )}
-                <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
-                      TỔNG THANH TOÁN
-                    </span>
-                    <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
-                  </div>
-                  <span className="text-lg sm:text-xl font-extrabold text-primary">
-                    {formatVND(currentPricing.total)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={renewLoading}
-                className="w-full py-3 px-6 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {renewLoading ? (
-                  <>
-                    <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-                    <span>Đang xử lý...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[20px]">credit_card</span>
-                    <span>Thanh Toán & Gia Hạn Ngay</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={renewLoading}
+              className="w-full py-3 px-6 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {renewLoading ? (
+                <>
+                  <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                  <span>Đang xử lý...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">credit_card</span>
+                  <span>Thanh Toán & Gia Hạn Ngay</span>
+                </>
+              )}
+            </button>
+          </form>
         )}
 
         {/* Tab 2: Hẹn Ngày Trả Kho (UC-22) - Chuẩn 100% Stitch */}
@@ -362,11 +308,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
             {/* Date Selection Section */}
             <label className="text-xs sm:text-sm text-slate-800 font-semibold mb-2 block" htmlFor="checkoutDateInput">
-              {isOverdue
-                ? 'Hợp đồng đã quá hạn - Chọn ngày trả kho:'
-                : isTerminationPending
-                ? 'Chọn ngày dời trả kho sớm hơn:'
-                : 'Chọn ngày dọn đồ & trả kho:'}
+              Chọn ngày dọn đồ &amp; trả kho:
             </label>
             <div className="relative flex items-center bg-slate-100 rounded-lg px-3.5 py-2.5 transition-all border border-slate-200">
               <div className="flex items-center gap-2.5 text-slate-800 text-sm flex-1">
@@ -375,24 +317,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   id="checkoutDateInput"
                   type="date"
                   value={checkoutDate}
-                  min={today}
-                  max={isOverdue ? today : (isTerminationPending ? prevScheduledDate : contract?.endDate || undefined)}
+                  min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setCheckoutDate(e.target.value)}
                   className="bg-transparent border-0 p-0 text-slate-800 font-semibold text-sm focus:outline-none w-full cursor-pointer"
                   required
                 />
               </div>
-              {isOverdue && (
-                <span className="text-[11px] text-red-700 bg-red-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Chỉ trong ngày (Quá hạn)
-                </span>
-              )}
-              {!isOverdue && isTerminationPending && prevScheduledDate && checkoutDate === prevScheduledDate && (
-                <span className="text-[11px] text-amber-700 bg-amber-100 font-medium px-2 py-0.5 rounded shrink-0">
-                  Ngày hẹn trước đó
-                </span>
-              )}
-              {!isOverdue && !isTerminationPending && isMatchedExpiry && (
+              {isMatchedExpiry && (
                 <span className="text-[11px] text-slate-600 font-medium uppercase px-2 py-0.5 rounded bg-slate-200 shrink-0">
                   Khớp hạn HĐ
                 </span>
@@ -402,38 +333,18 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             {/* Warning Box */}
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-4 flex items-start gap-3">
               <span className="material-symbols-outlined text-red-600 text-[22px] shrink-0 mt-0.5">
-                {isOverdue ? 'error' : 'warning'}
+                warning
               </span>
               <div className="flex flex-col">
-                {isOverdue ? (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">
-                      Hợp đồng đã quá hạn trả kho
-                    </span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Hợp đồng đã hết hạn vào ngày <strong className="text-red-700">{formatDate(contract.endDate)}</strong> ({contract.overdueDays || 1} ngày trễ).
-                      Phí phạt trễ hạn là <strong className="text-red-700">{formatVND(contract.lateFeeAmount || 50000)}</strong> (50.000đ/ngày) và sẽ được khấu trừ trực tiếp vào tiền cọc (<strong className="font-semibold text-red-700">{depositAmount}</strong>) khi nhân viên nghiệm thu khoang. Tiền cọc ước tính còn lại: <strong className="text-emerald-700 font-bold">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</strong>.
-                    </p>
-                  </>
-                ) : isTerminationPending ? (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">
-                      Có thể dời ngày trả kho sớm hơn
-                    </span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Hệ thống không cho phép dời ngày qua sau ngày trả kho đã thực hiện trước đó ({formatDate(prevScheduledDate)}). Quý khách vui lòng chọn ngày sớm hơn hoặc bằng ngày đã hẹn và dọn sạch tài sản trước thời gian này để được hoàn 100% tiền cọc (<strong className="font-semibold text-red-700">{depositAmount}</strong>).
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">Quy định bàn giao & Hoàn cọc</span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Lưu ý: Ngày hẹn trả kho không được vượt quá ngày hết hạn hợp đồng (<strong className="text-red-700">{formatDate(contract.endDate)}</strong>). Quý khách vui lòng dọn sạch tài sản trước ngày hẹn. Tiền cọc giữ chỗ (<strong className="font-semibold text-red-700">{depositAmount}</strong>) sẽ được hoàn trả 100% vào tài khoản sau khi nhân viên nghiệm thu khoang trống.
-                    </p>
-                  </>
-                )}
+                <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">Quy định bàn giao</span>
+                <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
+                  Lưu ý: Quý khách vui lòng dọn sạch tài sản trước ngày hẹn. Tiền cọc giữ chỗ (<strong className="font-semibold text-red-700">{depositAmount}</strong>) sẽ được hoàn trả 100% vào tài khoản sau khi nhân viên nghiệm thu khoang trống.
+                </p>
               </div>
             </div>
+
+            {/* Inspection Workflow Checklist */}
+      
 
             {/* Action Buttons Row */}
             <div className="flex items-center justify-end gap-3 pt-2">
@@ -457,7 +368,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-[18px]">verified</span>
-                    <span>{isTerminationPending ? 'Xác nhận dời ngày' : 'Xác nhận trả kho'}</span>
+                    <span>Xác nhận trả kho</span>
                   </>
                 )}
               </button>

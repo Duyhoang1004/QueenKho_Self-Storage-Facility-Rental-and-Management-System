@@ -16,7 +16,7 @@ function formatDate(val) {
 const STATUS_MAP = {
   PENDING_CHECK_IN:    { label: 'Chờ check-in',          cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
   ACTIVE:              { label: 'Đang hoạt động',        cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]' },
-  TERMINATION_PENDING: { label: 'Chờ trả kho',           cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
+  TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
   OVERDUE:             { label: 'Quá hạn',               cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
   TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
   LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
@@ -184,12 +184,7 @@ export default function CustomerContractsPage() {
 
                       {/* Ngày KT */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        <p className="font-bold text-[#4B4B4B]">{formatDate(c.endDate)}</p>
-                        {c.status === 'OVERDUE' && (c.overdueDays || 0) > 0 && (
-                          <p className="text-[10px] font-black text-[#FF4B4B]">
-                            Trễ {c.overdueDays} ngày (+{formatVND(c.lateFeeAmount)})
-                          </p>
-                        )}
+                        {formatDate(c.endDate)}
                       </td>
 
                       {/* Tiền cọc */}

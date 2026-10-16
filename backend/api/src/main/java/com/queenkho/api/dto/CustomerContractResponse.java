@@ -31,8 +31,4 @@ public class CustomerContractResponse {
     private Integer reservationId;
     private BigDecimal totalPaid;     // 🌟 Tổng thực tế đã đóng
     private BigDecimal rentPaid;
-    private LocalDate scheduledCheckoutDate; // 🌟 Ngày đã hẹn trả kho (nếu TERMINATION_PENDING)
-    private Long overdueDays;                 // Số ngày trễ hạn
-    private BigDecimal lateFeeAmount;         // Phí phạt trễ hạn tính theo chính sách
-    private BigDecimal estimatedDepositRefund;// Tiền hoàn cọc ước tính sau khi trừ phạt
 }

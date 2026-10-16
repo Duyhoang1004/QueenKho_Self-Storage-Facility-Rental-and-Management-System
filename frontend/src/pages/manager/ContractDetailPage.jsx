@@ -125,38 +125,6 @@ export default function ContractDetailPage() {
         </div>
       </div>
 
-      {/* Cảnh báo quá hạn cho Quản lý theo Business Rule */}
-      {contract.status === 'OVERDUE' && (
-        <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 mb-6 shadow-xs flex items-start gap-4">
-          <span className="material-symbols-outlined text-[#FF4B4B] text-[36px] shrink-0 mt-0.5">
-            warning
-          </span>
-          <div className="flex-1">
-            <h3 className="text-sm font-black text-[#FF4B4B] uppercase tracking-wide">
-              Hợp đồng này đang quá hạn {contract.overdueDays || 1} ngày
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Phí phạt lũy kế</span>
-                <span className="text-sm font-black text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 50000)}</span>
-                <span className="text-[10px] text-[#AFAFAF] block">(50.000đ / ngày)</span>
-              </div>
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Tiền hoàn cọc ước tính</span>
-                <span className="text-sm font-black text-[#58CC02]">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</span>
-                <span className="text-[10px] text-[#AFAFAF] block">(Cọc - Phí phạt)</span>
-              </div>
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Chế tài SmartLock</span>
-                <span className={`text-xs font-black block mt-0.5 ${(contract.overdueDays || 0) >= 5 ? 'text-[#FF4B4B]' : 'text-[#FF9600]'}`}>
-                  {(contract.overdueDays || 0) >= 5 ? 'Đã khóa PIN SmartLock' : `Cảnh báo (còn ${5 - (contract.overdueDays || 1)} ngày)`}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Info Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 

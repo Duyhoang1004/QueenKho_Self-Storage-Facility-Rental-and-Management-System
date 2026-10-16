@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getContractByReservation, cancelCheckout } from "../../services/contractService";
+import { getContractByReservation } from "../../services/contractService";
 import { getVnpayStatus } from "../../services/vnpayService";
 import ContractOptionsModal from "../../components/ContractOptionsModal";
 
@@ -139,31 +139,6 @@ export default function CustomerContractPage() {
     fetchContract();
   };
 
-  // State cho modal Xác nhận Hủy chờ trả kho
-  const [isCancelCheckoutModalOpen, setIsCancelCheckoutModalOpen] = useState(false);
-  const [cancelCheckoutLoading, setCancelCheckoutLoading] = useState(false);
-  const [cancelCheckoutError, setCancelCheckoutError] = useState("");
-
-  const handleConfirmCancelCheckout = async () => {
-    const targetId = contract?.contractId || contract?.id;
-    if (!targetId) {
-      setCancelCheckoutError("Không tìm thấy mã hợp đồng.");
-      return;
-    }
-    setCancelCheckoutLoading(true);
-    setCancelCheckoutError("");
-    try {
-      const res = await cancelCheckout(targetId);
-      setIsCancelCheckoutModalOpen(false);
-      setToastMessage(res.message || "Đã hủy yêu cầu trả kho thành công. Hợp đồng trở lại trạng thái đang hoạt động.");
-      fetchContract();
-    } catch (err) {
-      setCancelCheckoutError(err.response?.data?.message || err.message || "Có lỗi xảy ra khi hủy yêu cầu trả kho.");
-    } finally {
-      setCancelCheckoutLoading(false);
-    }
-  };
-
   if (loading)
     return (
       <div className="p-8 text-sm font-bold text-[#AFAFAF] text-center max-w-[1240px] mx-auto">
@@ -250,35 +225,6 @@ export default function CustomerContractPage() {
           {statusInfo.label}
         </span>
       </div>
-
-      {/* Cảnh báo quá hạn (OVERDUE) theo Business Rule */}
-      {contract.status === "OVERDUE" && (
-        <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined text-[#FF4B4B] text-[32px] shrink-0 mt-0.5">
-              warning
-            </span>
-            <div>
-              <h3 className="text-sm font-black text-[#FF4B4B] uppercase tracking-wide">
-                Hợp đồng đã quá hạn {contract.overdueDays || 1} ngày
-              </h3>
-              <p className="text-xs text-[#777777] mt-1 leading-relaxed">
-                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 50000)}</strong> (50.000đ/ngày). Tiền cọc hoàn ước tính còn lại: <strong className="text-[#58A700]">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</strong>.
-                {contract.overdueDays >= 5
-                  ? " Mã PIN SmartLock của khoang đã bị tạm khóa do trễ hạn quá 5 ngày."
-                  : ` Lưu ý: Sau 5 ngày trễ hạn (${5 - (contract.overdueDays || 1)} ngày nữa), mã PIN sẽ bị tạm khóa theo quy định.`}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsOptionsModalOpen(true)}
-            className="duo-btn-red px-4 py-2.5 text-xs uppercase tracking-wider shrink-0 flex items-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">event_available</span>
-            <span>Xử lý trả kho ngay</span>
-          </button>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Ô kho đã thuê */}
@@ -393,39 +339,21 @@ export default function CustomerContractPage() {
                   </span>
                 </div>
               ) : (
-                /* Nút tùy chọn hợp đồng / Hủy chờ trả kho */
+                /* Nút tùy chọn hợp đồng */
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-1 text-center">
                   <span className="text-xs font-bold text-[#AFAFAF]">
-                    {contract.status === "TERMINATION_PENDING"
-                      ? "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?"
-                      : "Cần thêm thời gian hoặc trả kho sớm?"}
+                    Cần thêm thời gian hoặc trả kho sớm?
                   </span>
-                  {contract.status === "TERMINATION_PENDING" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelCheckoutError("");
-                        setIsCancelCheckoutModalOpen(true);
-                      }}
-                      className="duo-btn-red w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        cancel
-                      </span>
-                      HỦY CHỜ TRẢ KHO
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setIsOptionsModalOpen(true)}
-                      className="duo-btn-blue w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        tune
-                      </span>
-                      TÙY CHỌN HỢP ĐỒNG
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsOptionsModalOpen(true)}
+                    className="duo-btn-blue w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      tune
+                    </span>
+                    TÙY CHỌN HỢP ĐỒNG
+                  </button>
                 </div>
               )}
             </div>
@@ -450,16 +378,7 @@ export default function CustomerContractPage() {
                 </span>{" "}
                 Mã PIN SmartLock
               </span>
-              {contract.status === "OVERDUE" && (contract.overdueDays || 0) >= 5 ? (
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-xl font-mono font-black text-[#FF4B4B] tracking-wider">
-                    BỊ TẠM KHÓA
-                  </span>
-                  <span className="text-[10px] text-[#FF4B4B] font-bold">
-                    (Quá hạn trên 5 ngày - Vui lòng đến quầy)
-                  </span>
-                </div>
-              ) : contract.accessPinCode ? (
+              {contract.accessPinCode ? (
                 <span className="text-3xl font-mono font-black tracking-[0.3em] text-[#4B4B4B]">
                   {contract.accessPinCode}
                 </span>
@@ -510,69 +429,6 @@ export default function CustomerContractPage() {
         contract={contract}
         onSuccess={handleModalSuccess}
       />
-
-      {/* Modal xác nhận Hủy chờ trả kho */}
-      {isCancelCheckoutModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-[480px] max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3 mb-4 text-[#FF4B4B]">
-              <div className="w-10 h-10 rounded-full bg-[#FFDFDF] flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[24px]">cancel</span>
-              </div>
-              <h3 className="text-base font-black text-[#4B4B4B] uppercase tracking-wide">
-                Xác nhận hủy chờ trả kho
-              </h3>
-            </div>
-            
-            <p className="text-xs text-[#777777] leading-relaxed mb-4">
-              Bạn có chắc chắn muốn hủy yêu cầu trả kho cho hợp đồng{" "}
-              <strong className="font-mono text-[#4B4B4B]">#{contract.contractCode}</strong>?
-            </p>
-            <p className="text-xs text-[#777777] leading-relaxed mb-6 bg-slate-50 border border-slate-200 rounded-xl p-3">
-              Sau khi hủy, hợp đồng sẽ trở lại trạng thái <strong className="text-[#58A700]">Đang hoạt động</strong>. Bạn có thể tiếp tục thực hiện <strong className="text-[#1CB0F6]">Tùy chọn hợp đồng</strong> để gia hạn thuê kho hoặc hẹn ngày trả kho mới.
-            </p>
-
-            {cancelCheckoutError && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
-                <span className="material-symbols-outlined text-red-600 text-[18px]">error</span>
-                <span>{cancelCheckoutError}</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCancelCheckoutModalOpen(false);
-                  setCancelCheckoutError("");
-                }}
-                disabled={cancelCheckoutLoading}
-                className="duo-btn-gray px-4 py-2 text-xs"
-              >
-                QUAY LẠI
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCancelCheckout}
-                disabled={cancelCheckoutLoading}
-                className="duo-btn-red px-5 py-2 text-xs flex items-center gap-1.5 shadow-sm font-black"
-              >
-                {cancelCheckoutLoading ? (
-                  <>
-                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                    ĐANG HỦY...
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">check</span>
-                    XÁC NHẬN HỦY
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

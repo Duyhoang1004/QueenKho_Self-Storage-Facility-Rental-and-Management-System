@@ -42,3 +42,15 @@ export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)
   return res.data
 }
+
+// UC-23, UC-24: Staff nghiệm thu trả kho (check-out)
+export async function checkOutStaffTask(taskId, staffId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })
+  return res.data
+}
+
+// UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
+export async function completeRefundTask(taskId, userId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, payload, { params: { userId } })
+  return res.data
+}

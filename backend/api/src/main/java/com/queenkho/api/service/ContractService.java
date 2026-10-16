@@ -194,12 +194,17 @@ public class ContractService {
         // Build notes
         StringBuilder noteBuilder = new StringBuilder();
         noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(checkoutDate);
+        if (contract.getCustomer() != null) {
+            noteBuilder.append(" | Khách: ").append(contract.getCustomer().getFullName())
+                    .append(" (SĐT: ").append(contract.getCustomer().getPhone() != null ? contract.getCustomer().getPhone() : "").append(")");
+        }
         if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
-            noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber())
-                    .append(" (").append(request.getBankName()).append(" - ").append(request.getBankAccountName()).append(")");
+            noteBuilder.append(" | Ngân hàng: ").append(request.getBankName().trim())
+                    .append(" | STK: ").append(request.getBankAccountNumber() != null ? request.getBankAccountNumber().trim() : "")
+                    .append(" | Chủ TK: ").append(request.getBankAccountName() != null ? request.getBankAccountName().trim().toUpperCase() : "");
         }
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            noteBuilder.append(" | Ghi chú: ").append(request.getNotes());
+            noteBuilder.append(" | Ghi chú: ").append(request.getNotes().trim());
         }
         String noteStr = noteBuilder.toString();
 
@@ -208,7 +213,7 @@ public class ContractService {
             staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_OUT", checkoutDate);
             try {
                 jdbcTemplate.update(
-                        "UPDATE staff_tasks SET note = ? WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
+                        "UPDATE facility_tasks SET note = ? WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
                         noteStr, contract.getId());
             } catch (Exception ignored) {
             }

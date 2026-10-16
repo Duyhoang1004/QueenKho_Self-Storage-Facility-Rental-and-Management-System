@@ -35,4 +35,6 @@ public class CustomerContractResponse {
     private Long overdueDays;                 // Số ngày trễ hạn
     private BigDecimal lateFeeAmount;         // Phí phạt trễ hạn tính theo chính sách
     private BigDecimal estimatedDepositRefund;// Tiền hoàn cọc ước tính sau khi trừ phạt
+    private BigDecimal originalDeposit;
+    private BigDecimal refundAmount;
 }

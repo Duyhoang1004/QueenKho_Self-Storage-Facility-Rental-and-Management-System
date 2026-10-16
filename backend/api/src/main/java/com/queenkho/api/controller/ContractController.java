@@ -49,7 +49,7 @@ public class ContractController {
         if ("TERMINATION_PENDING".equalsIgnoreCase(rc.getStatus())) {
             try {
                 var dueAtTimestamp = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 due_at FROM staff_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
+                        "SELECT TOP 1 due_at FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
                         java.sql.Timestamp.class,
                         rc.getId());
                 if (dueAtTimestamp != null) {
@@ -87,6 +87,23 @@ public class ContractController {
             estimatedDepositRefund = BigDecimal.ZERO;
         }
 
+        // Tính tổng tiền hoàn cọc thực tế (nếu hợp đồng đã kết thúc hoặc có giao dịch REFUND)
+        BigDecimal refundAmount = BigDecimal.ZERO;
+        try {
+            refundAmount = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE (contract_id = ? OR reservation_id = ?) AND status = 'SUCCESS' AND payment_type = 'REFUND'",
+                    BigDecimal.class,
+                    rc.getId(), rc.getReservation().getId());
+        } catch (Exception ignored) {
+        }
+
+        BigDecimal originalDeposit = (rc.getReservation() != null && rc.getReservation().getDepositAmount() != null)
+                ? rc.getReservation().getDepositAmount()
+                : (rc.getDepositHeldAmount() != null && rc.getDepositHeldAmount().compareTo(BigDecimal.ZERO) > 0
+                        ? rc.getDepositHeldAmount()
+                        : ut.getBasePriceMonthly());
+
         return new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
@@ -114,7 +131,9 @@ public class ContractController {
                 scheduledCheckoutDate,
                 overdueDays,
                 lateFeeAmount,
-                estimatedDepositRefund);
+                estimatedDepositRefund,
+                originalDeposit,
+                refundAmount);
     }
 
     // GET /api/v1/contracts?managerId=3

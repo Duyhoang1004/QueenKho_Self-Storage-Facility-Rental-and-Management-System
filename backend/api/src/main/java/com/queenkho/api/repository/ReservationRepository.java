@@ -39,4 +39,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
     List<Reservation> findOverdueNoShowByFacility(
         @Param("facilityId") Integer facilityId,
         @Param("today") java.time.LocalDate today);
+
+    java.util.Optional<Reservation> findByReservationCode(String reservationCode);
 }

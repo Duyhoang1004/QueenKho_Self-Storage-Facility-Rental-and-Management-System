@@ -15,6 +15,10 @@ import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.StaffTaskRepository;
 import com.queenkho.api.repository.UserRepository;
+import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.CompleteRefundRequest;
+import com.queenkho.api.repository.FacilityRepository;
+import com.queenkho.api.repository.StorageUnitRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +27,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -56,7 +61,16 @@ public class StaffTaskService {
     private RentalContractRepository rentalContractRepository;
 
     @Autowired
+    private com.queenkho.api.repository.ReservationRepository reservationRepository;
+
+    @Autowired
     private HandoverRecordRepository handoverRecordRepository;
+
+    @Autowired
+    private StorageUnitRepository storageUnitRepository;
+
+    @Autowired
+    private FacilityRepository facilityRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -174,6 +188,45 @@ public class StaffTaskService {
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
         User customer = contract != null ? contract.getCustomer() : null;
 
+        String customerName = customer != null ? customer.getFullName() : null;
+        String customerPhone = customer != null ? customer.getPhone() : null;
+        String unitTypeName = unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null;
+        String contractCode = contract != null ? contract.getContractCode() : null;
+
+        // Nếu contract null (ví dụ: task hoàn cọc hủy đơn) -> Tìm qua reservation hoặc parse note
+        if (contract == null && task.getNote() != null) {
+            java.util.regex.Matcher mRes = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)").matcher(task.getNote());
+            if (mRes.find()) {
+                String resCode = mRes.group(1).trim();
+                contractCode = resCode;
+                java.util.Optional<com.queenkho.api.entity.Reservation> resOpt = reservationRepository.findByReservationCode(resCode);
+                if (resOpt.isPresent()) {
+                    com.queenkho.api.entity.Reservation res = resOpt.get();
+                    if (res.getCustomer() != null) {
+                        customerName = res.getCustomer().getFullName();
+                        customerPhone = res.getCustomer().getPhone();
+                    }
+                    if (unitTypeName == null && res.getUnitType() != null) {
+                        unitTypeName = res.getUnitType().getName();
+                    }
+                }
+            }
+
+            // Fallback parse từ note nếu không tìm thấy reservation
+            if (customerName == null) {
+                java.util.regex.Matcher mName = java.util.regex.Pattern.compile("Khách:\\s*([^|(]+)").matcher(task.getNote());
+                if (mName.find()) {
+                    customerName = mName.group(1).trim();
+                }
+            }
+            if (customerPhone == null) {
+                java.util.regex.Matcher mPhone = java.util.regex.Pattern.compile("SĐT:\\s*([^)]+)").matcher(task.getNote());
+                if (mPhone.find()) {
+                    customerPhone = mPhone.group(1).trim();
+                }
+            }
+        }
+
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .facilityId(task.getFacilityId())
@@ -188,27 +241,42 @@ public class StaffTaskService {
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
                 .contractId(contract != null ? contract.getId() : null)
-                .contractCode(contract != null ? contract.getContractCode() : null)
+                .contractCode(contractCode)
                 .contractStatus(contract != null ? contract.getStatus() : null)
-                .customerName(customer != null ? customer.getFullName() : null)
-                .customerPhone(customer != null ? customer.getPhone() : null)
+                .customerName(customerName)
+                .customerPhone(customerPhone)
                 .storageUnitId(unit != null ? unit.getId() : null)
-                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null)
+                .unitTypeName(unitTypeName)
                 .build();
     }
 
     // ================== UC-17: NHẬN VIỆC / GỠ NGƯỜI NHẬN ==================
 
-    // UC-17: Staff nhận 1 task OPEN của cơ sở mình
+    // UC-17: Staff / Manager nhận 1 task OPEN của cơ sở mình
     @Transactional
-    public StaffTaskResponse claimTask(Integer taskId, Integer staffId) {
-        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được nhận việc");
-        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+    public StaffTaskResponse claimTask(Integer taskId, Integer userId) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
 
-        int updated = staffTaskRepository.claim(task.getId(), staff, LocalDateTime.now());
+        String role = user.getRole() != null ? user.getRole().getName() : "";
+        if ("REFUND".equals(task.getTaskType())) {
+            if (!"FACILITY_MANAGER".equals(role) && !"STAFF".equals(role) && !"ADMIN".equals(role)) {
+                throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý hoặc Nhân viên mới được nhận task hoàn tiền");
+            }
+        } else {
+            if (!"STAFF".equals(role)) {
+                throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ nhân viên mới được nhận việc này");
+            }
+        }
+
+        int updated = staffTaskRepository.claim(task.getId(), user, LocalDateTime.now());
         if (updated == 0) {
             // UPDATE không ăn dòng nào → đọc lại để báo đúng lý do
-            throw explainClaimFailure(taskId, staffId);
+            throw explainClaimFailure(taskId, userId);
         }
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
@@ -469,6 +537,56 @@ public class StaffTaskService {
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
         User customer = contract != null ? contract.getCustomer() : null;
 
+        String customerName = customer != null ? customer.getFullName() : null;
+        String customerPhone = customer != null ? customer.getPhone() : null;
+        String customerEmail = customer != null ? customer.getEmail() : null;
+        String unitTypeName = unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null;
+        String reservationCode = null;
+
+        String facName = null;
+        if (unit != null && unit.getFacility() != null) {
+            facName = unit.getFacility().getName();
+        } else if (task.getFacilityId() != null) {
+            facName = facilityRepository.findById(task.getFacilityId()).map(f -> f.getName()).orElse(null);
+        }
+
+        // Nếu contract null (task hoàn cọc đơn đặt chỗ bị hủy) -> Tìm qua reservation hoặc parse note
+        if (contract == null && task.getNote() != null) {
+            java.util.regex.Matcher mRes = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)").matcher(task.getNote());
+            if (mRes.find()) {
+                reservationCode = mRes.group(1).trim();
+                java.util.Optional<com.queenkho.api.entity.Reservation> resOpt = reservationRepository.findByReservationCode(reservationCode);
+                if (resOpt.isPresent()) {
+                    com.queenkho.api.entity.Reservation res = resOpt.get();
+                    if (res.getCustomer() != null) {
+                        customerName = res.getCustomer().getFullName();
+                        customerPhone = res.getCustomer().getPhone();
+                        customerEmail = res.getCustomer().getEmail();
+                    }
+                    if (facName == null && res.getFacility() != null) {
+                        facName = res.getFacility().getName();
+                    }
+                    if (unitTypeName == null && res.getUnitType() != null) {
+                        unitTypeName = res.getUnitType().getName();
+                    }
+                }
+            }
+
+            // Fallback parse từ note nếu không tìm thấy reservation
+            if (customerName == null) {
+                java.util.regex.Matcher mName = java.util.regex.Pattern.compile("Khách:\\s*([^|(]+)").matcher(task.getNote());
+                if (mName.find()) {
+                    customerName = mName.group(1).trim();
+                }
+            }
+            if (customerPhone == null) {
+                java.util.regex.Matcher mPhone = java.util.regex.Pattern.compile("SĐT:\\s*([^)]+)").matcher(task.getNote());
+                if (mPhone.find()) {
+                    customerPhone = mPhone.group(1).trim();
+                }
+            }
+        }
+
         // Chỉ task đã hoàn thành mới có biên bản
         HandoverRecordResponse handover = null;
         if (contract != null && "COMPLETED".equals(task.getStatus())) {
@@ -480,30 +598,214 @@ public class StaffTaskService {
 
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
+                .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
                 .dueAt(task.getDueAt())
                 .createdAt(task.getCreatedAt())
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
+                .evidenceImageUrl(task.getEvidenceImageUrl())
                 .note(task.getNote())
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
                 .contractId(contract != null ? contract.getId() : null)
                 .contractCode(contract != null ? contract.getContractCode() : null)
+                .reservationCode(reservationCode)
                 .contractStatus(contract != null ? contract.getStatus() : null)
                 .contractStartDate(contract != null ? contract.getStartDate() : null)
                 .contractEndDate(contract != null ? contract.getEndDate() : null)
                 .accessPinCode(contract != null ? contract.getAccessPinCode() : null)
                 .rfidCardCode(contract != null ? contract.getRfidCardCode() : null)
-                .customerName(customer != null ? customer.getFullName() : null)
-                .customerPhone(customer != null ? customer.getPhone() : null)
-                .customerEmail(customer != null ? customer.getEmail() : null)
+                .customerName(customerName)
+                .customerPhone(customerPhone)
+                .customerEmail(customerEmail)
                 .storageUnitId(unit != null ? unit.getId() : null)
-                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null)
-                .facilityName(unit != null && unit.getFacility() != null ? unit.getFacility().getName() : null)
+                .unitTypeName(unitTypeName)
+                .facilityName(facName)
                 .handoverRecord(handover)
                 .build();
+    }
+
+    // ================== UC-25: HOÀN TẤT HOÀN CỌC (REFUND) ==================
+    @Transactional
+    public StaffTaskDetailResponse completeRefund(Integer taskId, Integer userId, CompleteRefundRequest request) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
+
+        if (!"REFUND".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_TASK_TYPE", "Task này không phải loại hoàn tiền");
+        }
+        if ("COMPLETED".equals(task.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_COMPLETED", "Task đã được hoàn thành trước đó");
+        }
+        if ("CANCELLED".equals(task.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_CANCELLED", "Task đã bị huỷ");
+        }
+
+        task.setStatus("COMPLETED");
+        task.setStaff(user);
+        task.setCompletedAt(LocalDateTime.now());
+        if (request != null && request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()) {
+            task.setEvidenceImageUrl(request.getEvidenceImageUrl().trim());
+        }
+        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
+            String current = task.getNote() != null ? task.getNote() : "";
+            task.setNote(current + " | " + request.getNotes().trim());
+        }
+        staffTaskRepository.save(task);
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. Trường hợp hoàn cọc trả kho (UC-25): có gắn hợp đồng
+        if (task.getContract() != null) {
+            RentalContract contract = task.getContract();
+            contract.setStatus("TERMINATED");
+            BigDecimal deposit = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
+            contract.setDepositHeldAmount(BigDecimal.ZERO);
+            rentalContractRepository.save(contract);
+
+            if (contract.getStorageUnit() != null) {
+                StorageUnit unit = contract.getStorageUnit();
+                unit.setStatus("AVAILABLE");
+                storageUnitRepository.save(unit);
+            }
+
+            BigDecimal refundAmount = (request != null && request.getRefundAmount() != null)
+                    ? request.getRefundAmount() : deposit;
+            String txnCode = "REF-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
+                                "VALUES (?, ?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'SUCCESS', ?)",
+                        txnCode,
+                        contract.getCustomer().getId(),
+                        contract.getId(),
+                        contract.getReservation() != null ? contract.getReservation().getId() : null,
+                        refundAmount,
+                        now
+                );
+            } catch (Exception ignored) {}
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                                "VALUES (?, ?, 'rental_contracts', ?, ?)",
+                        user.getId(),
+                        "Quản lý " + user.getFullName() + " đã chuyển tiền hoàn cọc " + refundAmount + "₫ cho HĐ " + contract.getContractCode(),
+                        contract.getId(),
+                        now
+                );
+            } catch (Exception ignored) {}
+        }
+        // 2. Trường hợp hoàn cọc hủy đơn đặt cọc (UC-15): không gắn hợp đồng
+        else {
+            try {
+                String resCode = null;
+                if (task.getNote() != null) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Đơn|Don):\\s*([A-Za-z0-9_-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
+                    if (m.find()) {
+                        resCode = m.group(1).trim();
+                    }
+                }
+                if (resCode != null) {
+                    Integer resId = null;
+                    try {
+                        resId = jdbcTemplate.queryForObject("SELECT id FROM reservations WHERE reservation_code = ?", Integer.class, resCode);
+                    } catch (Exception ignored) {}
+
+                    if (resId != null) {
+                        jdbcTemplate.update(
+                                "UPDATE payment_transactions SET status = 'SUCCESS', paid_at = ? WHERE reservation_id = ? AND payment_type = 'REFUND'",
+                                now, resId
+                        );
+                        jdbcTemplate.update(
+                                "UPDATE reservations SET status = 'REFUNDED' WHERE id = ?",
+                                resId
+                        );
+                    }
+                }
+            } catch (Exception ignored) {}
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                                "VALUES (?, ?, 'facility_tasks', ?, ?)",
+                        user.getId(),
+                        "Quản lý " + user.getFullName() + " đã chuyển tiền hoàn cho task #" + task.getId(),
+                        task.getId(),
+                        now
+                );
+            } catch (Exception ignored) {}
+        }
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
+    }
+
+    // ================== UC-23, UC-24: STAFF NGHIỆM THU TRẢ KHO (CHECK-OUT) ==================
+    @Transactional
+    public StaffTaskDetailResponse checkOut(Integer taskId, Integer staffId, CheckOutRequest request) {
+        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được nghiệm thu trả kho");
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+        if (!"CHECK_OUT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_TASK_TYPE", "Task này không phải loại check-out");
+        }
+        if (task.getContract() == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CONTRACT_MISSING", "Task không gắn với hợp đồng nào");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        task.setStatus("COMPLETED");
+        task.setCompletedAt(now);
+        if (request != null && request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()) {
+            task.setEvidenceImageUrl(request.getEvidenceImageUrl().trim());
+        }
+        staffTaskRepository.save(task);
+
+        RentalContract contract = rentalContractRepository.findDetailById(task.getContract().getId())
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
+
+        HandoverRecord record = new HandoverRecord();
+        record.setContract(contract);
+        record.setStaff(userRepository.getReferenceById(staffId));
+        record.setRecordType("CHECK_OUT");
+        record.setIdentityVerified(request != null && Boolean.TRUE.equals(request.getIdentityVerified()));
+        record.setUnitEmpty(request != null && Boolean.TRUE.equals(request.getUnitEmpty()));
+        record.setUnitClean(request != null && Boolean.TRUE.equals(request.getUnitClean()));
+        record.setLockIntact(request != null && Boolean.TRUE.equals(request.getLockIntact()));
+        record.setCustomerSignatureConfirmed(request != null && Boolean.TRUE.equals(request.getCustomerSignatureConfirmed()));
+        record.setNotes(request != null ? request.getNotes() : null);
+        handoverRecordRepository.save(record);
+
+        BigDecimal heldDeposit = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
+        BigDecimal damageFee = (request != null && request.getDamageFee() != null && request.getDamageFee().compareTo(BigDecimal.ZERO) > 0)
+                ? request.getDamageFee() : BigDecimal.ZERO;
+        BigDecimal netRefund = heldDeposit.subtract(damageFee);
+        if (netRefund.compareTo(BigDecimal.ZERO) < 0) {
+            netRefund = BigDecimal.ZERO;
+        }
+
+        // Tự động sinh task REFUND cho Quản lý cơ sở xử lý (Hạn 24h)
+        StaffTask refundTask = new StaffTask();
+        refundTask.setFacilityId(contract.getStorageUnit().getFacility().getId());
+        refundTask.setContract(contract);
+        refundTask.setTaskType("REFUND");
+        refundTask.setStatus("OPEN");
+        refundTask.setDueAt(now.plusHours(24));
+        String refundNote = (task.getNote() != null ? task.getNote() : "") + 
+                String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ = THỰC HOÀN %,.0f₫", heldDeposit, damageFee, netRefund);
+        refundTask.setNote(refundNote);
+        staffTaskRepository.save(refundTask);
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
     }
 
     private HandoverRecordResponse toHandoverResponse(HandoverRecord record) {

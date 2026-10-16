@@ -134,6 +134,19 @@ public class ContractController {
             }
         }
 
+        boolean isInspectionCompleted = false;
+        try {
+            Integer refundCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' AND status != 'CANCELLED'",
+                    Integer.class, rc.getId());
+            Integer handoverCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM handover_records WHERE contract_id = ? AND record_type = 'CHECK_OUT'",
+                    Integer.class, rc.getId());
+            isInspectionCompleted = (refundCount != null && refundCount > 0)
+                    || (handoverCount != null && handoverCount > 0);
+        } catch (Exception ignored) {
+        }
+
         return new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
@@ -164,7 +177,8 @@ public class ContractController {
                 estimatedDepositRefund,
                 originalDeposit,
                 refundAmount,
-                damageFee);
+                damageFee,
+                isInspectionCompleted);
     }
 
     // GET /api/v1/contracts?managerId=3

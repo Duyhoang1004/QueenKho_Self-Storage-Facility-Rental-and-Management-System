@@ -217,6 +217,7 @@ export default function CustomerContractPage() {
   const actualDamageFee = damageFee > 0
     ? damageFee
     : (depositAmount > refundedDeposit ? depositAmount - refundedDeposit : 0);
+  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0);
 
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
   const monthlyRent = Number(
@@ -432,15 +433,11 @@ export default function CustomerContractPage() {
                           <span className="text-xs font-black text-[#4B4B4B]">
                             {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền hoàn cọc (dự kiến)"}
                           </span>
-                          {hasRefunded ? (
+                          {hasRefunded && (
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
                               Đã hoàn cọc
                             </span>
-                          ) : contract.status === "TERMINATION_PENDING" ? (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#E58800] border border-[#FF9600]">
-                              Chờ hoàn cọc
-                            </span>
-                          ) : null}
+                          )}
                         </div>
                         <span className="text-[10px] font-bold text-[#AFAFAF]">
                           {hasRefunded
@@ -449,18 +446,14 @@ export default function CustomerContractPage() {
                         </span>
                       </div>
                       <div className="flex flex-col items-end">
-                        <span className={`text-sm font-black ${hasRefunded ? "text-[#A560E8]" : "text-[#E58800]"}`}>
+                        <span className={`text-sm font-black ${hasRefunded ? "text-[#A560E8]" : "text-[#58CC02]"}`}>
                           {formatVND(refundedDeposit)}
                         </span>
-                        {hasRefunded ? (
+                        {hasRefunded && (
                           <span className="text-[10px] font-black text-[#A560E8]">
                             ✓ Đã hoàn cọc
                           </span>
-                        ) : contract.status === "TERMINATION_PENDING" ? (
-                          <span className="text-[10px] font-black text-[#E58800]">
-                            ⏳ Chờ chuyển khoản
-                          </span>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   </>
@@ -469,23 +462,17 @@ export default function CustomerContractPage() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-[#4B4B4B]">
-                          Tiền cọc giữ kho
+                          {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền cọc giữ kho"}
                         </span>
-                        {hasRefunded ? (
+                        {hasRefunded && (
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
                             Đã hoàn cọc
                           </span>
-                        ) : contract.status === "TERMINATION_PENDING" ? (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#E58800] border border-[#FF9600]">
-                            Chờ hoàn cọc
-                          </span>
-                        ) : null}
+                        )}
                       </div>
                       <span className="text-[10px] font-bold text-[#AFAFAF]">
                         {hasRefunded
                           ? `Đã hoàn trả ${formatVND(refundedDeposit)} khi trả kho`
-                          : contract.status === "TERMINATION_PENDING"
-                          ? "Dự kiến hoàn trả 100% cọc vào STK sau khi Quản lý đối soát"
                           : "Hoàn lại 100% khi thanh lý kho"}
                       </span>
                     </div>
@@ -494,22 +481,16 @@ export default function CustomerContractPage() {
                         className={`text-sm font-black ${
                           hasRefunded
                             ? "text-[#A560E8]"
-                            : contract.status === "TERMINATION_PENDING"
-                            ? "text-[#E58800]"
                             : "text-[#1CB0F6]"
                         }`}
                       >
                         {formatVND(depositAmount)}
                       </span>
-                      {hasRefunded ? (
+                      {hasRefunded && (
                         <span className="text-[10px] font-black text-[#A560E8]">
                           ✓ Đã hoàn cọc
                         </span>
-                      ) : contract.status === "TERMINATION_PENDING" ? (
-                        <span className="text-[10px] font-black text-[#E58800]">
-                          ⏳ Chờ hoàn cọc
-                        </span>
-                      ) : null}
+                      )}
                     </div>
                   </div>
                 )}
@@ -580,23 +561,35 @@ export default function CustomerContractPage() {
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-1 text-center">
                   <span className="text-xs font-bold text-[#AFAFAF]">
                     {contract.status === "TERMINATION_PENDING"
-                      ? "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?"
+                      ? (isInspectionDone ? "Tiến trình thanh lý & hoàn tất cọc" : "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?")
                       : "Cần thêm thời gian hoặc trả kho sớm?"}
                   </span>
                   {contract.status === "TERMINATION_PENDING" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelCheckoutError("");
-                        setIsCancelCheckoutModalOpen(true);
-                      }}
-                      className="duo-btn-red w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        cancel
-                      </span>
-                      HỦY CHỜ TRẢ KHO
-                    </button>
+                    isInspectionDone ? (
+                      <div className="w-full bg-[#FAF5FF] border-2 border-[#E9D8FD] rounded-2xl p-4 flex flex-col items-center gap-2 text-center">
+                        <div className="flex items-center gap-1.5 text-[#805AD5] font-black text-xs uppercase tracking-wide">
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                          Khoang đã hoàn tất nghiệm thu &amp; bàn giao
+                        </div>
+                        <p className="text-[11px] font-bold text-[#777777] leading-relaxed">
+                          Nhân viên đã hoàn tất kiểm tra khoang. Quản lý cơ sở đang thực hiện đối soát và chuyển khoản hoàn cọc cho bạn (dự kiến trong 24h).
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelCheckoutError("");
+                          setIsCancelCheckoutModalOpen(true);
+                        }}
+                        className="duo-btn-red w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          cancel
+                        </span>
+                        HỦY CHỜ TRẢ KHO
+                      </button>
+                    )
                   ) : (
                     <button
                       type="button"

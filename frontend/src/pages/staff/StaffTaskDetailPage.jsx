@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import {
   checkInStaffTask,
@@ -135,8 +135,11 @@ function CodeBox({ icon, label, value, big }) {
 
 export default function StaffTaskDetailPage() {
   const { id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
   const userId = user.userId;
+  const isManager = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(user.role);
 
   const [task, setTask] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -220,6 +223,16 @@ export default function StaffTaskDetailPage() {
   useEffect(() => {
     loadTask();
   }, [loadTask]);
+
+  // Đồng bộ route prefix cho Quản lý: Task REFUND luôn nằm ở /manager/refunds/:id, Task khác ở /manager/tasks/:id
+  useEffect(() => {
+    if (!task || !isManager) return;
+    if (task.taskType === 'REFUND' && location.pathname.startsWith('/manager/tasks/')) {
+      navigate(`/manager/refunds/${task.id}`, { replace: true });
+    } else if (task.taskType !== 'REFUND' && location.pathname.startsWith('/manager/refunds/')) {
+      navigate(`/manager/tasks/${task.id}`, { replace: true });
+    }
+  }, [task, isManager, location.pathname, navigate]);
 
   // Submit Check-in (UC-18)
   const allCheckedIn = CHECKLIST_IN.every(item => checks[item.key]);
@@ -314,12 +327,18 @@ export default function StaffTaskDetailPage() {
   }
 
   if (loadError || !task) {
+    const isRefundPath = location.pathname.startsWith('/manager/refunds');
     return (
       <div className="max-w-[1240px] mx-auto px-8 py-8">
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-3 text-center">
           <span className="material-symbols-outlined text-[#FF4B4B] text-[40px]">error</span>
           <p className="text-sm font-black text-[#FF4B4B]">{loadError || 'Không tìm thấy công việc.'}</p>
-          <Link to="/staff" className="duo-btn-gray px-5 py-2.5 text-xs">Về bảng công việc</Link>
+          <Link
+            to={isManager ? (isRefundPath ? "/manager/refunds" : "/manager/tasks") : "/staff"}
+            className="duo-btn-gray px-5 py-2.5 text-xs"
+          >
+            {isRefundPath ? 'Về danh sách hoàn tiền' : 'Về bảng công việc'}
+          </Link>
         </div>
       </div>
     );
@@ -332,18 +351,17 @@ export default function StaffTaskDetailPage() {
     : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
   const reason = blockedReason(task, userId);
   const record = task.handoverRecord;
-  const isManager = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(user.role);
   const parsedRefund = isRefund ? parseRefundNote(task.note) : null;
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
       {/* Header breadcrumb */}
       <Link
-        to={isManager ? (task.taskType === 'REFUND' ? "/manager/refunds" : "/manager/tasks") : "/staff"}
+        to={isManager ? (task.taskType === 'REFUND' || location.pathname.startsWith('/manager/refunds') ? "/manager/refunds" : "/manager/tasks") : "/staff"}
         className="inline-flex items-center gap-1 text-xs font-black uppercase text-[#AFAFAF] hover:text-[#1CB0F6] mb-4"
       >
         <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-        {isManager ? (task.taskType === 'REFUND' ? "Quản lý hoàn tiền" : "Bảng công việc cơ sở") : "Bảng công việc nhân viên"}
+        {isManager ? (task.taskType === 'REFUND' || location.pathname.startsWith('/manager/refunds') ? "Quản lý hoàn tiền" : "Bảng công việc cơ sở") : "Bảng công việc nhân viên"}
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4 pb-4 mb-6 border-b-2 border-[#E5E5E5]">
@@ -843,7 +861,7 @@ export default function StaffTaskDetailPage() {
                     )}
                   </div>
 
-                  <Link to="/staff" className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
+                  <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
                 </div>
               ) : reason ? (
                 <div className="duo-card p-6 flex flex-col items-center justify-center gap-3 text-center py-12">
@@ -981,7 +999,7 @@ export default function StaffTaskDetailPage() {
                     )}
                   </div>
 
-                  <Link to="/staff" className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
+                  <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
                 </div>
               ) : reason ? (
                 <div className="duo-card p-6 flex flex-col items-center justify-center gap-3 text-center py-12">

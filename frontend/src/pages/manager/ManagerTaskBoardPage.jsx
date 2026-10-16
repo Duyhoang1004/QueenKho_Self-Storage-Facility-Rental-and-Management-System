@@ -29,10 +29,16 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       })
   }
 
+  const isRefundMode = initialTypeFilter === 'REFUND'
+
   const renderActions = task => {
+    const detailUrl = (isRefundMode || task.taskType === 'REFUND')
+      ? `/manager/refunds/${task.id}`
+      : `/manager/tasks/${task.id}`
+
     if (task.taskType === 'REFUND' && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
       return (
-        <Link to={`/manager/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
+        <Link to={detailUrl} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
           <span className="material-symbols-outlined text-[18px]">payments</span>
           Xử lý hoàn tiền
         </Link>
@@ -41,7 +47,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     if (task.status === 'IN_PROGRESS') {
       return (
         <div className="flex items-center gap-2">
-          <Link to={`/manager/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
             <span className="material-symbols-outlined text-[18px]">visibility</span>
             Chi tiết
           </Link>
@@ -53,14 +59,12 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
     return (
-      <Link to={`/manager/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+      <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
         <span className="material-symbols-outlined text-[18px]">visibility</span>
         Xem chi tiết
       </Link>
     )
   }
-
-  const isRefundMode = initialTypeFilter === 'REFUND'
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">

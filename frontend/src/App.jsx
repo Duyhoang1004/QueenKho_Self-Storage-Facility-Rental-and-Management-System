@@ -67,6 +67,7 @@ export default function App() {
         <Route path="/manager/tasks" element={<ManagerTaskBoardPage key="tasks" initialTypeFilter="ALL" />} />
         <Route path="/manager/tasks/:id" element={<StaffTaskDetailPage />} />
         <Route path="/manager/refunds" element={<ManagerTaskBoardPage key="refunds" initialTypeFilter="REFUND" />} />
+        <Route path="/manager/refunds/:id" element={<StaffTaskDetailPage />} />
       </Route>
 
       {/* ========== Staff Portal (UC-16) ========== */}

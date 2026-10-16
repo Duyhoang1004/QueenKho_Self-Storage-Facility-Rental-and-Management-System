@@ -127,12 +127,16 @@ export default function MyReservationsPage() {
           }
         });
 
-        // Gộp ngày kết thúc thực tế của HĐ vào từng đơn đặt chỗ
+        // Gộp ngày kết thúc thực tế của HĐ và đồng bộ trạng thái vào từng đơn đặt chỗ
         const merged = (resData || []).map((r) => {
           const c = contractsByResCode[r.reservationCode];
           if (c) {
             return {
               ...r,
+              status:
+                c.status === "TERMINATION_PENDING"
+                  ? "TERMINATION_PENDING"
+                  : r.status,
               endDate: c.endDate,
               contractId: c.contractId,
               contractCode: c.contractCode,

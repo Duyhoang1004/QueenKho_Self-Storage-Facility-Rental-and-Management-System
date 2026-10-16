@@ -125,8 +125,8 @@ public class ContractService {
         RentalContract contract = rentalContractRepository.findDetailById(contractId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hợp đồng"));
 
-        // UC-16: chỉ hợp đồng đang thuê mới được yêu cầu trả kho
-        if (!"ACTIVE".equals(contract.getStatus()) && !"OVERDUE".equals(contract.getStatus())) {
+        // UC-16 & UC-22: chỉ hợp đồng ACTIVE, OVERDUE, hoặc TERMINATION_PENDING (để dời ngày) mới được yêu cầu trả kho
+        if (!"ACTIVE".equals(contract.getStatus()) && !"OVERDUE".equals(contract.getStatus()) && !"TERMINATION_PENDING".equals(contract.getStatus())) {
             throw new IllegalStateException("Hợp đồng không ở trạng thái có thể trả kho");
         }
 
@@ -134,6 +134,46 @@ public class ContractService {
                 ? request.getCheckoutDate() : contract.getEndDate();
         if (checkoutDate == null) {
             checkoutDate = LocalDate.now();
+        }
+
+        LocalDate today = LocalDate.now();
+        if (checkoutDate.isBefore(today)) {
+            throw new IllegalArgumentException("Ngày hẹn trả kho không thể là ngày trong quá khứ (" + checkoutDate + ").");
+        }
+
+        boolean isAlreadyPending = "TERMINATION_PENDING".equals(contract.getStatus());
+
+        // Kiểm tra business rule:
+        if (isAlreadyPending) {
+            // Nếu đã ở trạng thái TERMINATION_PENDING, không được dời ngày muộn hơn ngày đã hẹn trước đó
+            LocalDate prevCheckoutDate = null;
+            try {
+                var dueAtTimestamp = jdbcTemplate.queryForObject(
+                        "SELECT TOP 1 due_at FROM staff_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
+                        java.sql.Timestamp.class,
+                        contract.getId());
+                if (dueAtTimestamp != null) {
+                    prevCheckoutDate = dueAtTimestamp.toLocalDateTime().toLocalDate();
+                }
+            } catch (Exception ignored) {
+            }
+            if (prevCheckoutDate == null) {
+                prevCheckoutDate = contract.getEndDate();
+            }
+
+            if (prevCheckoutDate != null && checkoutDate.isAfter(prevCheckoutDate)) {
+                throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + prevCheckoutDate + ").");
+            }
+        } else if ("ACTIVE".equals(contract.getStatus())) {
+            // HĐ đang ACTIVE: Không được hẹn ngày trả kho vượt quá ngày kết thúc HĐ
+            if (contract.getEndDate() != null && checkoutDate.isAfter(contract.getEndDate())) {
+                throw new IllegalArgumentException("Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (" + contract.getEndDate() + "). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.");
+            }
+        } else if ("OVERDUE".equals(contract.getStatus())) {
+            // HĐ đang OVERDUE: Đã quá hạn nên chỉ được hẹn trả kho ngay trong ngày hôm nay
+            if (checkoutDate.isAfter(today)) {
+                throw new IllegalArgumentException("Hợp đồng đã quá hạn, quý khách chỉ có thể hẹn trả kho trong ngày hôm nay (" + today + ").");
+            }
         }
 
         contract.setStatus("TERMINATION_PENDING");
@@ -144,10 +184,16 @@ public class ContractService {
             res.setStatus("TERMINATION_PENDING");
             reservationRepository.save(res);
         }
+        try {
+            jdbcTemplate.update(
+                    "UPDATE reservations SET status = 'TERMINATION_PENDING' WHERE id = (SELECT reservation_id FROM rental_contracts WHERE id = ?)",
+                    contract.getId());
+        } catch (Exception ignored) {
+        }
 
         // Build notes
         StringBuilder noteBuilder = new StringBuilder();
-        noteBuilder.append("Yêu cầu trả kho ngày: ").append(checkoutDate);
+        noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(checkoutDate);
         if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
             noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber())
                     .append(" (").append(request.getBankName()).append(" - ").append(request.getBankAccountName()).append(")");
@@ -157,12 +203,24 @@ public class ContractService {
         }
         String noteStr = noteBuilder.toString();
 
-        // UC-16: sinh task CHECK_OUT cho nhân viên (biên bản do nhân viên lập khi check-out),
-        // ghi chú chứa thông tin hoàn cọc
-        staffTaskService.createCheckOutTask(contract, checkoutDate, noteStr);
+        if (isAlreadyPending) {
+            // Dời lịch task CHECK_OUT đang mở và cập nhật ghi chú
+            staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_OUT", checkoutDate);
+            try {
+                jdbcTemplate.update(
+                        "UPDATE staff_tasks SET note = ? WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
+                        noteStr, contract.getId());
+            } catch (Exception ignored) {
+            }
+        } else {
+            // UC-16: sinh task CHECK_OUT cho nhân viên (biên bản do nhân viên lập khi check-out),
+            // ghi chú chứa thông tin hoàn cọc
+            staffTaskService.createCheckOutTask(contract, checkoutDate, noteStr);
+        }
 
         // Log activity
-        String logDesc = "Yêu cầu trả kho và hẹn ngày checkout cho HĐ " + contract.getContractCode() + " vào ngày " + checkoutDate;
+        String logDesc = (isAlreadyPending ? "Dời ngày hẹn checkout cho HĐ " : "Yêu cầu trả kho và hẹn ngày checkout cho HĐ ")
+                + contract.getContractCode() + " vào ngày " + checkoutDate;
         try {
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -175,13 +233,77 @@ public class ContractService {
             // ignore log error
         }
 
+        String responseMsg = isAlreadyPending
+                ? "Dời ngày trả kho thành công sang ngày " + checkoutDate + "."
+                : "Yêu cầu trả kho đã được tiếp nhận. Nhân viên sẽ tiến hành kiểm tra khoang vào ngày đã hẹn.";
+
         return new RequestCheckoutResponse(
                 contract.getId(),
                 contract.getContractCode(),
                 checkoutDate,
                 "TERMINATION_PENDING",
-                "Yêu cầu trả kho đã được tiếp nhận. Nhân viên sẽ tiến hành kiểm tra khoang vào ngày đã hẹn."
+                responseMsg
         );
+    }
+
+    @Transactional
+    public java.util.Map<String, Object> cancelCheckout(Integer contractId) {
+        RentalContract contract = rentalContractRepository.findDetailById(contractId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy hợp đồng"));
+
+        if (!"TERMINATION_PENDING".equals(contract.getStatus())) {
+            throw new IllegalStateException("Hợp đồng không ở trạng thái chờ trả kho để có thể hủy");
+        }
+
+        // Khôi phục trạng thái ACTIVE (hoặc OVERDUE nếu ngày kết thúc đã qua)
+        String newStatus = "ACTIVE";
+        if (contract.getEndDate() != null && contract.getEndDate().isBefore(LocalDate.now())) {
+            newStatus = "OVERDUE";
+        }
+        contract.setStatus(newStatus);
+        rentalContractRepository.save(contract);
+
+        // Đồng bộ trạng thái đơn đặt chỗ về UNIT_ASSIGNED
+        if (contract.getReservation() != null) {
+            var res = contract.getReservation();
+            res.setStatus("UNIT_ASSIGNED");
+            reservationRepository.save(res);
+        }
+        try {
+            jdbcTemplate.update(
+                    "UPDATE reservations SET status = 'UNIT_ASSIGNED' WHERE id = (SELECT reservation_id FROM rental_contracts WHERE id = ?)",
+                    contract.getId());
+        } catch (Exception ignored) {
+        }
+
+        // Hủy task CHECK_OUT đang mở trong staff_tasks
+        staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
+
+        // Ghi activity log
+        String logDesc = "Khách hàng hủy yêu cầu trả kho cho HĐ " + contract.getContractCode() + ". Hợp đồng trở lại trạng thái " + newStatus;
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                            "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
+                    contract.getCustomer().getId(),
+                    logDesc,
+                    contract.getId()
+            );
+        } catch (Exception ignored) {
+        }
+
+        return java.util.Map.of(
+                "contractId", contract.getId(),
+                "contractCode", contract.getContractCode(),
+                "status", newStatus,
+                "message", "Đã hủy yêu cầu trả kho thành công. Hợp đồng trở lại trạng thái đang hoạt động."
+        );
+    }
+
+    // Tự động quét và cập nhật các hợp đồng ACTIVE đã hết hạn sang OVERDUE
+    @Transactional
+    public int markOverdueContracts() {
+        return rentalContractRepository.markOverdueContracts(LocalDate.now());
     }
 }
 

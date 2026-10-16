@@ -54,3 +54,15 @@ export async function completeRefundTask(taskId, userId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, payload, { params: { userId } })
   return res.data
 }
+
+// Upload file ảnh (biên lai hoàn cọc, nghiệm thu)
+export async function uploadImageFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await api.post('/uploads', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return res.data // { url: '...', fileName: '...' }
+}

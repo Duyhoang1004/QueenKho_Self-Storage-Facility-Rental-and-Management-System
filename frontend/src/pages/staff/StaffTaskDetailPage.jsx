@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import {
@@ -6,7 +6,8 @@ import {
   checkOutStaffTask,
   completeRefundTask,
   getStaffTaskDetail,
-  suggestAccessPin
+  suggestAccessPin,
+  uploadImageFile
 } from '../../services/staffTaskService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
@@ -154,8 +155,37 @@ export default function StaffTaskDetailPage() {
 
   // Form Refund (UC-25)
   const [evidenceImageUrl, setEvidenceImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef(null);
   const [refundNotes, setRefundNotes] = useState('');
   const [copiedField, setCopiedField] = useState(null);
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setToast({ type: 'error', message: 'Vui lòng chọn file hình ảnh (PNG, JPG, WEBP).' });
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setToast({ type: 'error', message: 'Dung lượng file tối đa là 10MB.' });
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const res = await uploadImageFile(file);
+      setEvidenceImageUrl(res.url);
+      setToast({ type: 'success', message: 'Tải ảnh biên lai lên thành công!' });
+    } catch (err) {
+      setToast({ type: 'error', message: err.response?.data?.message || 'Lỗi khi tải ảnh lên máy chủ.' });
+    } finally {
+      setUploadingImage(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // Modals & Status
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -647,18 +677,113 @@ export default function StaffTaskDetailPage() {
 
                   {/* Form xác nhận của Quản lý */}
                   <div className="flex flex-col gap-3">
-                    <label className="flex flex-col gap-1.5">
-                      <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
-                        Link ảnh biên lai chuyển tiền (Bằng chứng - Tùy chọn)
-                      </span>
+                    {/* Upload ảnh biên lai chuyển tiền (Bằng chứng) */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-black uppercase text-[#AFAFAF] flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">receipt_long</span>
+                          Ảnh chụp biên lai chuyển khoản (Bằng chứng)
+                        </span>
+                        {evidenceImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setEvidenceImageUrl('')}
+                            className="text-[11px] font-bold text-[#FF4B4B] hover:underline cursor-pointer"
+                          >
+                            Xóa ảnh
+                          </button>
+                        )}
+                      </div>
+
                       <input
-                        type="url"
-                        placeholder="VD: https://i.imgur.com/... hoặc link ảnh biên lai"
-                        value={evidenceImageUrl}
-                        onChange={e => setEvidenceImageUrl(e.target.value)}
-                        className="duo-input text-xs font-mono"
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                        className="hidden"
                       />
-                    </label>
+
+                      {evidenceImageUrl ? (
+                        <div className="rounded-2xl border-2 border-[#58CC02] bg-[#EBFBEF] p-3.5 flex items-center justify-between gap-3 shadow-xs">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <a
+                              href={evidenceImageUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative shrink-0 w-16 h-16 rounded-xl overflow-hidden border border-[#58CC02] bg-white cursor-pointer hover:opacity-90 transition-opacity"
+                              title="Bấm để xem ảnh phóng to"
+                            >
+                              <img
+                                src={evidenceImageUrl}
+                                alt="Biên lai chuyển khoản"
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-xs font-black text-[#58A700] flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                Đã tải ảnh biên lai thành công
+                              </span>
+                              <span className="text-[11px] text-[#4B4B4B]/80 font-mono truncate max-w-[240px] sm:max-w-[320px]">
+                                {evidenceImageUrl.split('/').pop()}
+                              </span>
+                              <a
+                                href={evidenceImageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] text-[#1CB0F6] font-bold hover:underline mt-0.5 inline-flex items-center gap-0.5"
+                              >
+                                Xem ảnh gốc <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                              </a>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingImage}
+                            className="shrink-0 px-3 py-1.5 rounded-xl bg-white border border-[#58CC02] text-xs font-bold text-[#58A700] hover:bg-[#D7FFB8] transition-colors cursor-pointer"
+                          >
+                            Đổi ảnh
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => !uploadingImage && fileInputRef.current?.click()}
+                          className={`border-2 border-dashed rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer ${
+                            uploadingImage
+                              ? 'bg-slate-50 border-slate-300 pointer-events-none'
+                              : 'bg-[#F7F7F7] border-[#CECECE] hover:border-[#1CB0F6] hover:bg-[#DDF4FF]/40'
+                          }`}
+                        >
+                          {uploadingImage ? (
+                            <>
+                              <span className="material-symbols-outlined text-[36px] text-[#1CB0F6] animate-spin">
+                                progress_activity
+                              </span>
+                              <span className="text-xs font-black text-[#1CB0F6]">
+                                Đang tải ảnh biên lai lên...
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-12 h-12 rounded-full bg-white shadow-xs border border-slate-200 flex items-center justify-center text-[#1CB0F6]">
+                                <span className="material-symbols-outlined text-[28px]">
+                                  cloud_upload
+                                </span>
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-xs font-black text-[#4B4B4B]">
+                                  Bấm để chọn file ảnh biên lai chuyển tiền
+                                </span>
+                                <span className="text-[11px] text-[#AFAFAF] font-bold">
+                                  Hỗ trợ JPG, PNG, WEBP (Tối đa 10MB)
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     <label className="flex flex-col gap-1.5">
                       <span className="text-[11px] font-black uppercase text-[#AFAFAF]">

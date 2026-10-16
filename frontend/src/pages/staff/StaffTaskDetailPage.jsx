@@ -283,21 +283,30 @@ export default function StaffTaskDetailPage() {
       });
   };
 
+  const isRefund = task?.taskType === 'REFUND';
+  const parsedRefund = isRefund ? parseRefundNote(task?.note) : null;
+
   // Submit Refund (UC-25)
   const handleSubmitRefund = () => {
     setSubmitting(true);
+    const amount = parsedRefund?.refundAmountNum > 0 ? parsedRefund.refundAmountNum : undefined;
     completeRefundTask(task.id, userId, {
-      refundAmount: refundParsed.refundAmountNum > 0 ? refundParsed.refundAmountNum : undefined,
+      refundAmount: amount,
       evidenceImageUrl: evidenceImageUrl.trim(),
       notes: refundNotes.trim()
     })
       .then(data => {
         setTask(data);
         setJustCompleted(true);
-        setToast({ type: 'success', message: 'Xác nhận hoàn tiền cọc thành công! Hợp đồng đã kết thúc và khoang được giải phóng.' });
+        setToast({
+          type: 'success',
+          message: task.contractId
+            ? 'Xác nhận hoàn tiền cọc thành công! Hợp đồng đã kết thúc và khoang được giải phóng.'
+            : 'Xác nhận hoàn tiền thành công! Trạng thái đơn đặt chỗ đã chuyển sang ĐÃ HOÀN TIỀN.'
+        });
       })
       .catch(err => {
-        setToast({ type: 'error', message: err.response?.data?.message || 'Không thể xác nhận hoàn cọc, vui lòng thử lại.' });
+        setToast({ type: 'error', message: err.response?.data?.message || 'Không thể xác nhận hoàn tiền, vui lòng thử lại.' });
         loadTask();
       })
       .finally(() => {
@@ -344,14 +353,12 @@ export default function StaffTaskDetailPage() {
     );
   }
 
-  const isRefund = task.taskType === 'REFUND';
   const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' };
   const status = isRefund && task.status === 'OPEN'
     ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
     : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
   const reason = blockedReason(task, userId);
   const record = task.handoverRecord;
-  const parsedRefund = isRefund ? parseRefundNote(task.note) : null;
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">

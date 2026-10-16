@@ -85,6 +85,19 @@ public class ReservationService {
                     } catch (Exception ignored) {
                     }
 
+                    // 3. Đồng bộ trạng thái từ hợp đồng nếu HĐ đang TERMINATION_PENDING
+                    String effectiveStatus = r.getStatus();
+                    try {
+                        String cStatus = jdbcTemplate.queryForObject(
+                                "SELECT TOP 1 status FROM rental_contracts WHERE reservation_id = ?",
+                                String.class,
+                                r.getId());
+                        if ("TERMINATION_PENDING".equalsIgnoreCase(cStatus)) {
+                            effectiveStatus = "TERMINATION_PENDING";
+                        }
+                    } catch (Exception ignored) {
+                    }
+
                     return new MyReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
@@ -94,7 +107,7 @@ public class ReservationService {
                             r.getStartDate(),
                             r.getDurationMonths(),
                             r.getDepositAmount(),
-                            r.getStatus(),
+                            effectiveStatus,
                             r.getCreatedAt(),
                             contractEndDate,
                             actualTotalPaid);

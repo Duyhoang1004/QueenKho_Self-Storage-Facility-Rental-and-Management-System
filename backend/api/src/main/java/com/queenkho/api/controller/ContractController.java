@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -43,6 +44,49 @@ public class ContractController {
         BigDecimal deposit = rc.getDepositHeldAmount() != null ? rc.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal rentPaid = totalPaid.compareTo(deposit) >= 0 ? totalPaid.subtract(deposit) : BigDecimal.ZERO;
 
+        // Ngày hẹn trả kho nếu hợp đồng đang TERMINATION_PENDING
+        java.time.LocalDate scheduledCheckoutDate = null;
+        if ("TERMINATION_PENDING".equalsIgnoreCase(rc.getStatus())) {
+            try {
+                var dueAtTimestamp = jdbcTemplate.queryForObject(
+                        "SELECT TOP 1 due_at FROM staff_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
+                        java.sql.Timestamp.class,
+                        rc.getId());
+                if (dueAtTimestamp != null) {
+                    scheduledCheckoutDate = dueAtTimestamp.toLocalDateTime().toLocalDate();
+                }
+            } catch (Exception ignored) {
+            }
+            if (scheduledCheckoutDate == null) {
+                scheduledCheckoutDate = rc.getEndDate();
+            }
+        }
+
+        // Tính số ngày trễ hạn và phí phạt trễ hạn nếu hợp đồng quá hạn
+        long overdueDays = 0;
+        BigDecimal lateFeePerDay = BigDecimal.valueOf(50000); // 50.000 VNĐ / ngày theo rental_policy
+        try {
+            Integer polFee = jdbcTemplate.queryForObject(
+                    "SELECT late_fee_per_day FROM rental_policy WHERE facility_id = ?",
+                    Integer.class,
+                    su.getFacility().getId());
+            if (polFee != null) {
+                lateFeePerDay = BigDecimal.valueOf(polFee);
+            }
+        } catch (Exception ignored) {
+        }
+
+        LocalDate today = LocalDate.now();
+        if (("OVERDUE".equalsIgnoreCase(rc.getStatus()) || "ACTIVE".equalsIgnoreCase(rc.getStatus()))
+                && rc.getEndDate() != null && today.isAfter(rc.getEndDate())) {
+            overdueDays = java.time.temporal.ChronoUnit.DAYS.between(rc.getEndDate(), today);
+        }
+        BigDecimal lateFeeAmount = lateFeePerDay.multiply(BigDecimal.valueOf(overdueDays));
+        BigDecimal estimatedDepositRefund = deposit.subtract(lateFeeAmount);
+        if (estimatedDepositRefund.compareTo(BigDecimal.ZERO) < 0) {
+            estimatedDepositRefund = BigDecimal.ZERO;
+        }
+
         return new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
@@ -66,7 +110,11 @@ public class ContractController {
                 ut.getBasePriceMonthly(),
                 rc.getReservation().getId(),
                 totalPaid,
-                rentPaid);
+                rentPaid,
+                scheduledCheckoutDate,
+                overdueDays,
+                lateFeeAmount,
+                estimatedDepositRefund);
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -132,6 +180,19 @@ public class ContractController {
             return ResponseEntity.ok(contractService.requestCheckout(id, request));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
+        }
+    }
+
+    // UC-22: Khách hàng hủy yêu cầu trả kho (hủy chờ trả kho)
+    @PostMapping("/{id}/cancel-checkout")
+    public ResponseEntity<?> cancelCheckout(@PathVariable Integer id) {
+        try {
+            return ResponseEntity.ok(contractService.cancelCheckout(id));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_ACTION", "message", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));

@@ -188,11 +188,11 @@ export default function CustomerContractPage() {
   if (!contract) return null;
 
   const isTerminated = contract.status === "TERMINATED";
-  const hasRefunded = isTerminated || Number(contract.refundAmount || 0) > 0;
+  const hasRefunded = isTerminated;
 
   const statusInfo = isTerminated
     ? {
-        label: hasRefunded ? "Đã kết thúc (Đã hoàn cọc)" : "Đã kết thúc",
+        label: "Đã kết thúc (Đã hoàn cọc)",
         cls: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
         icon: "payments",
       }
@@ -430,23 +430,37 @@ export default function CustomerContractPage() {
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-[#4B4B4B]">
-                            Thực nhận hoàn cọc
+                            {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền hoàn cọc (dự kiến)"}
                           </span>
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
-                            Đã hoàn cọc
-                          </span>
+                          {hasRefunded ? (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
+                              Đã hoàn cọc
+                            </span>
+                          ) : contract.status === "TERMINATION_PENDING" ? (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#E58800] border border-[#FF9600]">
+                              Chờ hoàn cọc
+                            </span>
+                          ) : null}
                         </div>
                         <span className="text-[10px] font-bold text-[#AFAFAF]">
-                          Đã chuyển {formatVND(refundedDeposit)} vào tài khoản ngân hàng
+                          {hasRefunded
+                            ? `Đã chuyển ${formatVND(refundedDeposit)} vào tài khoản ngân hàng`
+                            : "Dự kiến hoàn trả vào STK sau khi Quản lý hoàn tất đối soát"}
                         </span>
                       </div>
                       <div className="flex flex-col items-end">
-                        <span className="text-sm font-black text-[#A560E8]">
+                        <span className={`text-sm font-black ${hasRefunded ? "text-[#A560E8]" : "text-[#E58800]"}`}>
                           {formatVND(refundedDeposit)}
                         </span>
-                        <span className="text-[10px] font-black text-[#A560E8]">
-                          ✓ Đã hoàn cọc
-                        </span>
+                        {hasRefunded ? (
+                          <span className="text-[10px] font-black text-[#A560E8]">
+                            ✓ Đã hoàn cọc
+                          </span>
+                        ) : contract.status === "TERMINATION_PENDING" ? (
+                          <span className="text-[10px] font-black text-[#E58800]">
+                            ⏳ Chờ chuyển khoản
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   </>
@@ -470,22 +484,32 @@ export default function CustomerContractPage() {
                       <span className="text-[10px] font-bold text-[#AFAFAF]">
                         {hasRefunded
                           ? `Đã hoàn trả ${formatVND(refundedDeposit)} khi trả kho`
+                          : contract.status === "TERMINATION_PENDING"
+                          ? "Dự kiến hoàn trả 100% cọc vào STK sau khi Quản lý đối soát"
                           : "Hoàn lại 100% khi thanh lý kho"}
                       </span>
                     </div>
                     <div className="flex flex-col items-end">
                       <span
                         className={`text-sm font-black ${
-                          hasRefunded ? "text-[#A560E8]" : "text-[#1CB0F6]"
+                          hasRefunded
+                            ? "text-[#A560E8]"
+                            : contract.status === "TERMINATION_PENDING"
+                            ? "text-[#E58800]"
+                            : "text-[#1CB0F6]"
                         }`}
                       >
                         {formatVND(depositAmount)}
                       </span>
-                      {hasRefunded && (
+                      {hasRefunded ? (
                         <span className="text-[10px] font-black text-[#A560E8]">
                           ✓ Đã hoàn cọc
                         </span>
-                      )}
+                      ) : contract.status === "TERMINATION_PENDING" ? (
+                        <span className="text-[10px] font-black text-[#E58800]">
+                          ⏳ Chờ hoàn cọc
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 )}

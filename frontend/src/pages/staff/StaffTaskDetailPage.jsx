@@ -244,6 +244,7 @@ export default function StaffTaskDetailPage() {
   const handleSubmitRefund = () => {
     setSubmitting(true);
     completeRefundTask(task.id, userId, {
+      refundAmount: refundParsed.refundAmountNum > 0 ? refundParsed.refundAmountNum : undefined,
       evidenceImageUrl: evidenceImageUrl.trim(),
       notes: refundNotes.trim()
     })

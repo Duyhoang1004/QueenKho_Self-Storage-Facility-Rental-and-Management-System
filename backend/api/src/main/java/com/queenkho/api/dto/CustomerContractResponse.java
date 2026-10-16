@@ -37,4 +37,5 @@ public class CustomerContractResponse {
     private BigDecimal estimatedDepositRefund;// Tiền hoàn cọc ước tính sau khi trừ phạt
     private BigDecimal originalDeposit;
     private BigDecimal refundAmount;
+    private BigDecimal damageFee;
 }

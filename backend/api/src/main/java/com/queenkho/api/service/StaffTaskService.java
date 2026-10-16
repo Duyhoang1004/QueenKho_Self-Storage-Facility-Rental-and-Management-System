@@ -676,7 +676,20 @@ public class StaffTaskService {
             }
 
             BigDecimal refundAmount = (request != null && request.getRefundAmount() != null)
-                    ? request.getRefundAmount() : deposit;
+                    ? request.getRefundAmount() : null;
+
+            if (refundAmount == null && task.getNote() != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:THỰC HOÀN|TH\\?C HOAN|THUC HOAN)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
+                if (m.find()) {
+                    try {
+                        String val = m.group(1).replace(",", "").replace(".", "");
+                        refundAmount = new BigDecimal(val);
+                    } catch (Exception ignored) {}
+                }
+            }
+            if (refundAmount == null) {
+                refundAmount = deposit;
+            }
             String txnCode = "REF-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
             try {
                 jdbcTemplate.update(

@@ -104,6 +104,36 @@ public class ContractController {
                         ? rc.getDepositHeldAmount()
                         : ut.getBasePriceMonthly());
 
+        BigDecimal damageFee = BigDecimal.ZERO;
+        try {
+            String refundNote = jdbcTemplate.queryForObject(
+                    "SELECT TOP 1 note FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' ORDER BY id DESC",
+                    String.class,
+                    rc.getId());
+            if (refundNote != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
+                if (m.find()) {
+                    String val = m.group(1).replace(",", "").replace(".", "");
+                    damageFee = new BigDecimal(val);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (damageFee.compareTo(BigDecimal.ZERO) == 0 && originalDeposit != null && refundAmount != null
+                && refundAmount.compareTo(BigDecimal.ZERO) > 0 && originalDeposit.compareTo(refundAmount) > 0) {
+            damageFee = originalDeposit.subtract(refundAmount);
+        }
+
+        if ("TERMINATED".equals(rc.getStatus()) && (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) == 0)) {
+            if (originalDeposit != null) {
+                refundAmount = originalDeposit.subtract(damageFee);
+                if (refundAmount.compareTo(BigDecimal.ZERO) < 0) {
+                    refundAmount = BigDecimal.ZERO;
+                }
+            }
+        }
+
         return new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
@@ -133,7 +163,8 @@ public class ContractController {
                 lateFeeAmount,
                 estimatedDepositRefund,
                 originalDeposit,
-                refundAmount);
+                refundAmount,
+                damageFee);
     }
 
     // GET /api/v1/contracts?managerId=3

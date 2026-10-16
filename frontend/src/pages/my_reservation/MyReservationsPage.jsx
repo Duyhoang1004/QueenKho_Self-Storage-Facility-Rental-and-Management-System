@@ -31,7 +31,7 @@ const STATUS_META = {
   },
   REFUNDED: {
     label: "Đã hoàn tiền",
-    className: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]",
+    className: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
   },
   EXPIRED: {
     label: "Hết hạn",

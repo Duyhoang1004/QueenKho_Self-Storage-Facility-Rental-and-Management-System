@@ -162,14 +162,28 @@ export default function CustomerContractPage() {
     );
   if (!contract) return null;
 
-  const statusInfo = STATUS_MAP[contract.status] || {
-    label: contract.status,
-    cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
-    icon: "info",
-  };
+  const isTerminated = contract.status === "TERMINATED";
+  const hasRefunded = isTerminated || Number(contract.refundAmount || 0) > 0;
 
-  // Tính toán các khoản chi phí của hợp đồng
-  const depositAmount = Number(contract.depositHeldAmount || 0);
+  const statusInfo = isTerminated
+    ? {
+        label: hasRefunded ? "Đã kết thúc (Đã hoàn cọc)" : "Đã kết thúc",
+        cls: "bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]",
+        icon: "task_alt",
+      }
+    : (STATUS_MAP[contract.status] || {
+        label: contract.status,
+        cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
+        icon: "info",
+      });
+
+  // Tính toán các khoản chi phí của hợp đồng (ưu tiên originalDeposit nếu hợp đồng đã kết thúc)
+  const depositAmount = Number(
+    contract.originalDeposit != null
+      ? contract.originalDeposit
+      : (contract.depositHeldAmount || contract.basePriceMonthly || 0)
+  );
+  const refundedDeposit = Number(contract.refundAmount || depositAmount);
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
   const monthlyRent = Number(
     contract.basePriceMonthly || contract.depositHeldAmount || 0,
@@ -194,6 +208,34 @@ export default function CustomerContractPage() {
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
+        </div>
+      )}
+
+      {/* Thông báo hợp đồng đã thanh lý & hoàn cọc nếu TERMINATED */}
+      {isTerminated && (
+        <div className="bg-[#EBFBEF] border-2 border-[#58CC02] rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-[#D7FFB8] flex items-center justify-center shrink-0 border-2 border-[#58CC02]">
+            <span className="material-symbols-outlined text-[#58A700] text-[28px]">
+              verified
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-black text-[#58A700]">
+                Hợp đồng đã kết thúc & Đã hoàn cọc thành công
+              </span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#58CC02] text-white">
+                ĐÃ HOÀN CỌC
+              </span>
+            </div>
+            <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
+              Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Số tiền cọc{" "}
+              <strong className="text-[#58A700] font-black">
+                {formatVND(refundedDeposit)}
+              </strong>{" "}
+              đã được quản lý cơ sở chuyển hoàn đầy đủ vào tài khoản ngân hàng của bạn.
+            </span>
+          </div>
         </div>
       )}
 
@@ -281,16 +323,40 @@ export default function CustomerContractPage() {
                 {/* 1. Tiền cọc */}
                 <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-[#4B4B4B]">
-                      Tiền cọc giữ kho
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-[#4B4B4B]">
+                        Tiền cọc giữ kho
+                      </span>
+                      {hasRefunded ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#D7FFB8] text-[#58A700] border border-[#58CC02]">
+                          Đã hoàn cọc
+                        </span>
+                      ) : contract.status === "TERMINATION_PENDING" ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#E58800] border border-[#FF9600]">
+                          Chờ hoàn cọc
+                        </span>
+                      ) : null}
+                    </div>
                     <span className="text-[10px] font-bold text-[#AFAFAF]">
-                      Hoàn lại 100% khi thanh lý kho
+                      {hasRefunded
+                        ? `Đã hoàn trả ${formatVND(refundedDeposit)} khi trả kho`
+                        : "Hoàn lại 100% khi thanh lý kho"}
                     </span>
                   </div>
-                  <span className="text-sm font-black text-[#1CB0F6]">
-                    {formatVND(depositAmount)}
-                  </span>
+                  <div className="flex flex-col items-end">
+                    <span
+                      className={`text-sm font-black ${
+                        hasRefunded ? "text-[#58A700]" : "text-[#1CB0F6]"
+                      }`}
+                    >
+                      {formatVND(depositAmount)}
+                    </span>
+                    {hasRefunded && (
+                      <span className="text-[10px] font-black text-[#58A700]">
+                        ✓ Đã hoàn cọc
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* 2. Tiền thuê đã đóng thực tế từ payment_transactions */}
@@ -338,6 +404,15 @@ export default function CustomerContractPage() {
                     check-in xong.
                   </span>
                 </div>
+              ) : isTerminated || contract.status === "LIQUIDATED" ? (
+                <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex items-start gap-3 mt-1 text-left">
+                  <span className="material-symbols-outlined text-[#58A700] text-[22px]">
+                    task_alt
+                  </span>
+                  <span className="text-xs font-bold text-[#777777]">
+                    Hợp đồng này đã kết thúc. Bạn đã hoàn tất trả kho và nhận lại tiền cọc.
+                  </span>
+                </div>
               ) : (
                 /* Nút tùy chọn hợp đồng */
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-1 text-center">
@@ -378,7 +453,11 @@ export default function CustomerContractPage() {
                 </span>{" "}
                 Mã PIN SmartLock
               </span>
-              {contract.accessPinCode ? (
+              {isTerminated ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã vô hiệu hoá (Đã trả kho)
+                </span>
+              ) : contract.accessPinCode ? (
                 <span className="text-3xl font-mono font-black tracking-[0.3em] text-[#4B4B4B]">
                   {contract.accessPinCode}
                 </span>
@@ -396,7 +475,11 @@ export default function CustomerContractPage() {
                 </span>{" "}
                 Mã thẻ RFID
               </span>
-              {contract.rfidCardCode ? (
+              {isTerminated ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã thu hồi thẻ
+                </span>
+              ) : contract.rfidCardCode ? (
                 <span className="text-lg font-mono font-black tracking-widest text-[#4B4B4B]">
                   {contract.rfidCardCode}
                 </span>

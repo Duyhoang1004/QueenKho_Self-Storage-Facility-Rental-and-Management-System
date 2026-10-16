@@ -21,4 +21,5 @@ public class MyReservationResponse {
     private LocalDateTime createdAt;
     private LocalDate endDate;
     private BigDecimal totalPaid; 
+    private Integer contractId; 
 }

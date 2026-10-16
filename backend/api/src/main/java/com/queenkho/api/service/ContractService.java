@@ -147,13 +147,19 @@ public class ContractService {
 
         // Build notes
         StringBuilder noteBuilder = new StringBuilder();
-        noteBuilder.append("Yêu cầu trả kho ngày: ").append(checkoutDate);
+        noteBuilder.append("HĐ: ").append(contract.getContractCode());
+        if (contract.getCustomer() != null) {
+            noteBuilder.append(" | Khách: ").append(contract.getCustomer().getFullName())
+                    .append(" (SĐT: ").append(contract.getCustomer().getPhone() != null ? contract.getCustomer().getPhone() : "").append(")");
+        }
+        noteBuilder.append(" | Yêu cầu trả kho ngày: ").append(checkoutDate);
         if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
-            noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber())
-                    .append(" (").append(request.getBankName()).append(" - ").append(request.getBankAccountName()).append(")");
+            noteBuilder.append(" | Ngân hàng: ").append(request.getBankName().trim())
+                    .append(" | STK: ").append(request.getBankAccountNumber() != null ? request.getBankAccountNumber().trim() : "")
+                    .append(" | Chủ TK: ").append(request.getBankAccountName() != null ? request.getBankAccountName().trim().toUpperCase() : "");
         }
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            noteBuilder.append(" | Ghi chú: ").append(request.getNotes());
+            noteBuilder.append(" | Ghi chú: ").append(request.getNotes().trim());
         }
         String noteStr = noteBuilder.toString();
 

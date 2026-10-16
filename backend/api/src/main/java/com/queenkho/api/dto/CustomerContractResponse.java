@@ -31,4 +31,6 @@ public class CustomerContractResponse {
     private Integer reservationId;
     private BigDecimal totalPaid;     // 🌟 Tổng thực tế đã đóng
     private BigDecimal rentPaid;
+    private BigDecimal originalDeposit;
+    private BigDecimal refundAmount;
 }

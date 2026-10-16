@@ -71,14 +71,60 @@ public class ReservationService {
                         actualTotalPaid = BigDecimal.ZERO;
                     }
 
-                    // 2. Lấy endDate nếu đơn đã có hợp đồng
+                    // 2. Lấy contractId và endDate nếu đơn đã có hợp đồng
+                    Integer contractId = null;
                     LocalDate contractEndDate = null;
                     try {
-                        contractEndDate = jdbcTemplate.queryForObject(
-                                "SELECT TOP 1 end_date FROM rental_contracts WHERE reservation_id = ?",
-                                LocalDate.class,
+                        var contractRow = jdbcTemplate.queryForMap(
+                                "SELECT TOP 1 id, end_date FROM rental_contracts WHERE reservation_id = ?",
                                 r.getId());
+                        contractId = (Integer) contractRow.get("id");
+                        var ed = contractRow.get("end_date");
+                        if (ed instanceof java.sql.Date) {
+                            contractEndDate = ((java.sql.Date) ed).toLocalDate();
+                        } else if (ed instanceof LocalDate) {
+                            contractEndDate = (LocalDate) ed;
+                        }
                     } catch (Exception ignored) {
+                    }
+
+                    // 3. Trạng thái hiển thị theo giao dịch hoàn tiền và task hoàn tiền
+                    String displayStatus = r.getStatus();
+
+                    Integer openRefundTasks = 0;
+                    Integer completedRefundTasks = 0;
+                    try {
+                        openRefundTasks = jdbcTemplate.queryForObject(
+                                "SELECT COUNT(1) FROM facility_tasks WHERE task_type = 'REFUND' AND status IN ('OPEN', 'CLAIMED', 'PENDING', 'OVERDUE') AND note LIKE ?",
+                                Integer.class,
+                                "%" + r.getReservationCode() + "%");
+                        completedRefundTasks = jdbcTemplate.queryForObject(
+                                "SELECT COUNT(1) FROM facility_tasks WHERE task_type = 'REFUND' AND status = 'COMPLETED' AND note LIKE ?",
+                                Integer.class,
+                                "%" + r.getReservationCode() + "%");
+                    } catch (Exception ignored) {
+                    }
+
+                    if (openRefundTasks != null && openRefundTasks > 0) {
+                        // Vẫn còn task hoàn tiền đang mở / chờ Manager xử lý -> BẮT BUỘC LÀ REFUND_PENDING (Chờ hoàn tiền)
+                        displayStatus = "REFUND_PENDING";
+                    } else if (completedRefundTasks != null && completedRefundTasks > 0) {
+                        // Manager đã bấm xác nhận hoàn tất task hoàn tiền -> ĐÃ HOÀN TIỀN
+                        displayStatus = "REFUNDED";
+                    } else {
+                        // Nếu không gắn với task trong facility_tasks, fallback theo payment_transactions hoặc r.getStatus()
+                        try {
+                            String refundStatus = jdbcTemplate.queryForObject(
+                                    "SELECT TOP 1 status FROM payment_transactions WHERE reservation_id = ? AND payment_type = 'REFUND' ORDER BY id DESC",
+                                    String.class,
+                                    r.getId());
+                            if ("SUCCESS".equalsIgnoreCase(refundStatus)) {
+                                displayStatus = "REFUNDED";
+                            } else if ("PENDING".equalsIgnoreCase(refundStatus)) {
+                                displayStatus = "REFUND_PENDING";
+                            }
+                        } catch (Exception ignored) {
+                        }
                     }
 
                     return new MyReservationResponse(
@@ -90,10 +136,11 @@ public class ReservationService {
                             r.getStartDate(),
                             r.getDurationMonths(),
                             r.getDepositAmount(),
-                            r.getStatus(),
+                            displayStatus,
                             r.getCreatedAt(),
                             contractEndDate,
-                            actualTotalPaid);
+                            actualTotalPaid,
+                            contractId);
                 })
                 .toList();
     }
@@ -375,10 +422,21 @@ public class ReservationService {
             throw new IllegalStateException("Trạng thái đơn không hợp lệ để hủy");
         }
 
-        boolean wasDepositPaid = "DEPOSIT_PAID".equals(reservation.getStatus());
+        BigDecimal actualDepositOrTotalPaid = BigDecimal.ZERO;
+        try {
+            actualDepositOrTotalPaid = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE reservation_id = ? AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                    BigDecimal.class,
+                    reservationId);
+        } catch (Exception ignored) {
+        }
 
-        // 3. Cập nhật trạng thái đơn thành CANCELLED
-        reservation.setStatus("CANCELLED");
+        boolean wasDepositPaid = "DEPOSIT_PAID".equals(reservation.getStatus())
+                || (actualDepositOrTotalPaid != null && actualDepositOrTotalPaid.compareTo(BigDecimal.ZERO) > 0);
+
+        // 3. Cập nhật trạng thái đơn: nếu đã cọc -> REFUND_PENDING (Chờ hoàn tiền), nếu chưa cọc -> CANCELLED (Đã hủy)
+        reservation.setStatus(wasDepositPaid ? "REFUND_PENDING" : "CANCELLED");
         reservationRepository.save(reservation);
 
         // 4. Nếu khách đã đóng cọc -> Tạo giao dịch REFUND & Đẩy Task hoàn cọc sang
@@ -445,9 +503,9 @@ public class ReservationService {
                 refundTaskNote = refundTaskNote.substring(0, 997) + "...";
             }
 
-            // 4.4. ĐẨY DATA VÀO BẢNG staff_tasks
+            // 4.4. ĐẨY DATA VÀO BẢNG facility_tasks
             jdbcTemplate.update(
-                    "INSERT INTO staff_tasks (facility_id, task_type, contract_id, status, due_at, note, created_at) " +
+                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, status, due_at, note, created_at) " +
                             "VALUES (?, 'REFUND', NULL, 'OPEN', ?, ?, SYSDATETIME())",
                     reservation.getFacility().getId(),
                     deadline,

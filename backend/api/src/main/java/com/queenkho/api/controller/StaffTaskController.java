@@ -87,6 +87,32 @@ public class StaffTaskController {
         }
     }
 
+    // UC-23, UC-24: Staff nghiệm thu trả kho (check-out)
+    // POST /api/v1/staff-tasks/12/check-out?staffId=5   body: CheckOutRequest
+    @PostMapping("/{id}/check-out")
+    public ResponseEntity<?> checkOut(@PathVariable Integer id,
+                                      @RequestParam(required = false) Integer staffId,
+                                      @RequestBody(required = false) com.queenkho.api.dto.CheckOutRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.checkOut(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-25: Quản lý / Staff hoàn tất hoàn tiền cọc
+    // POST /api/v1/staff-tasks/12/complete-refund?userId=3   body: CompleteRefundRequest
+    @PostMapping("/{id}/complete-refund")
+    public ResponseEntity<?> completeRefund(@PathVariable Integer id,
+                                            @RequestParam(required = false) Integer userId,
+                                            @RequestBody(required = false) com.queenkho.api.dto.CompleteRefundRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.completeRefund(id, userId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     private ResponseEntity<?> toError(StaffTaskException e) {
         return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
     }

@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react'
+import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
 import { unassignStaffTask } from '../../services/staffTaskService'
 
 // UC-16: Manager theo dõi bảng công việc của nhân viên tại cơ sở mình
 // UC-17: Manager gỡ nhân viên khỏi task đang xử lý → task về "Chờ nhận" cho người khác nhận
-export default function ManagerTaskBoardPage() {
+// UC-25: Manager theo dõi và xử lý các task hoàn cọc (REFUND) của cơ sở mình
+export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
 
   const [confirmTask, setConfirmTask] = useState(null)
@@ -28,26 +30,59 @@ export default function ManagerTaskBoardPage() {
   }
 
   const renderActions = task => {
-    if (task.status !== 'IN_PROGRESS') return null
+    if (task.taskType === 'REFUND' && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
+      return (
+        <Link to={`/manager/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">payments</span>
+          Xử lý hoàn tiền
+        </Link>
+      )
+    }
+    if (task.status === 'IN_PROGRESS') {
+      return (
+        <div className="flex items-center gap-2">
+          <Link to={`/manager/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Chi tiết
+          </Link>
+          <button onClick={() => setConfirmTask(task)} className="duo-btn-red px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">person_remove</span>
+            Gỡ người nhận
+          </button>
+        </div>
+      )
+    }
     return (
-      <button onClick={() => setConfirmTask(task)} className="duo-btn-red px-5 py-2.5 text-xs gap-1.5">
-        <span className="material-symbols-outlined text-[18px]">person_remove</span>
-        Gỡ người nhận
-      </button>
+      <Link to={`/manager/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+        <span className="material-symbols-outlined text-[18px]">visibility</span>
+        Xem chi tiết
+      </Link>
     )
   }
+
+  const isRefundMode = initialTypeFilter === 'REFUND'
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
       <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5]">
-        <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Bảng công việc nhân viên</h1>
+        <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">
+          {isRefundMode ? 'Quản lý hoàn tiền' : 'Bảng công việc cơ sở'}
+        </h1>
         <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
-          Theo dõi check-in / check-out tại {user.facilityName || 'cơ sở của bạn'}. Task quá hạn được đánh dấu đỏ.
+          {isRefundMode
+            ? `Danh sách yêu cầu hoàn tiền (hủy đơn & trả kho) tại ${user.facilityName || 'cơ sở của bạn'}.`
+            : `Theo dõi check-in / check-out tại ${user.facilityName || 'cơ sở của bạn'}. Task quá hạn được đánh dấu đỏ.`}
         </p>
       </div>
 
       {user.facilityId ? (
-        <TaskBoard facilityId={user.facilityId} renderActions={renderActions} reloadKey={reloadKey} />
+        <TaskBoard
+          key={initialTypeFilter}
+          facilityId={user.facilityId}
+          renderActions={renderActions}
+          reloadKey={reloadKey}
+          initialTypeFilter={initialTypeFilter}
+        />
       ) : (
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">
           <span className="material-symbols-outlined text-[#FF9600] text-[40px]">location_off</span>

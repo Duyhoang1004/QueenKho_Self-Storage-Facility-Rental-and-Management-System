@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { clearSession } from '../services/authService';
+import { clearSession, getHomePath } from '../services/authService';
 
 // UC-16: Layout cho nhân viên cơ sở (STAFF)
 const staffMenuItems = [
@@ -15,7 +15,7 @@ export default function StaffLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
-  if (currentUser.role !== 'STAFF') return <Navigate to="/login" replace />;
+  if (currentUser.role !== 'STAFF') return <Navigate to={getHomePath(currentUser.role)} replace />;
 
   const facilityName = currentUser.facilityName || 'Chưa gán cơ sở';
 

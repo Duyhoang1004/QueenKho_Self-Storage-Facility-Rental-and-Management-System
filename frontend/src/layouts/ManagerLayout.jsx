@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { clearSession } from '../services/authService';
+import { clearSession, getHomePath } from '../services/authService';
 
 const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
@@ -20,9 +20,8 @@ export default function ManagerLayout() {
   const userStr = sessionStorage.getItem('user');
   if (!userStr) return <Navigate to="/login" replace />;
   const currentUser = JSON.parse(userStr);
-  if (currentUser.role === 'STAFF') return <Navigate to="/staff" replace />;
-  const isManagerRole = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(currentUser.role);
-  if (!isManagerRole) return <Navigate to="/login" replace />;
+  // Vào sai portal → chuyển về trang chủ của role (Admin có portal /admin riêng)
+  if (currentUser.role !== 'FACILITY_MANAGER') return <Navigate to={getHomePath(currentUser.role)} replace />;
 
   const handleLogout = () => {
     clearSession();

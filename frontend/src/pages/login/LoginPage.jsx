@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { login, saveSession } from '../../services/authService'
+import { login, saveSession, getHomePath } from '../../services/authService'
 
 function DuoBrandMark() {
   return (
@@ -62,14 +62,7 @@ export default function LoginPage() {
       })
 
       saveSession(response, form.email.trim())
-      const role = response.role
-      if (role === 'FACILITY_MANAGER' || role === 'MANAGER' || role === 'ADMIN') {
-        navigate('/manager', { replace: true })
-      } else if (role === 'STAFF') {
-        navigate('/staff', { replace: true })
-      } else {
-        navigate('/', { replace: true })
-      }
+      navigate(getHomePath(response.role), { replace: true })
     } catch (requestError) {
       const status = requestError.response?.status
       const errorCode = requestError.response?.data?.error

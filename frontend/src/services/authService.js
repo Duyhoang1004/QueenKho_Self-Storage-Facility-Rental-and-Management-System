@@ -18,6 +18,19 @@ export function saveSession(loginResponse, emailInput = '') {
   sessionStorage.setItem('user', JSON.stringify({ userId, fullName, email, role, facilityId, facilityName }))
 }
 
+// Trang chủ của từng role — dùng chung cho Login và các Layout khi vào sai portal.
+// BOM chưa có portal riêng → rơi về '/', CustomerLayout sẽ báo không có quyền.
+const HOME_PATH_BY_ROLE = {
+  CUSTOMER: '/',
+  STAFF: '/staff',
+  FACILITY_MANAGER: '/manager',
+  ADMIN: '/admin',
+}
+
+export function getHomePath(role) {
+  return HOME_PATH_BY_ROLE[role] || '/'
+}
+
 export function clearSession() {
   sessionStorage.removeItem('accessToken')
   sessionStorage.removeItem('user')

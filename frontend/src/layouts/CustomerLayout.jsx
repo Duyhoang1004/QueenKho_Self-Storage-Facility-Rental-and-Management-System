@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
-import { clearSession } from '../services/authService';
+import { clearSession, getHomePath } from '../services/authService';
 
 // Menu items cho Customer portal
 const customerMenuItems = [
@@ -27,19 +27,14 @@ export default function CustomerLayout() {
 
     const user = JSON.parse(userStr);
     
-    // Kiểm tra phân quyền: Nếu là quản lý / admin thì tự động chuyển sang trang quản lý
-    if (['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(user.role)) {
-      navigate('/manager', { replace: true });
+    // Role nội bộ có portal riêng (Staff, FM, Admin) → chuyển về portal đó
+    const homePath = getHomePath(user.role);
+    if (user.role !== 'CUSTOMER' && homePath !== '/') {
+      navigate(homePath, { replace: true });
       return;
     }
 
-    // UC-16: Nhân viên cơ sở thì chuyển về bảng công việc
-    if (user.role === 'STAFF') {
-      navigate('/staff', { replace: true });
-      return;
-    }
-
-    // Nếu không phải Khách hàng thì đẩy ra đăng nhập
+    // Role chưa có portal (BOM) thì đẩy ra đăng nhập
     if (user.role !== 'CUSTOMER') {
       alert('Bạn không có quyền truy cập trang này!');
       clearSession();

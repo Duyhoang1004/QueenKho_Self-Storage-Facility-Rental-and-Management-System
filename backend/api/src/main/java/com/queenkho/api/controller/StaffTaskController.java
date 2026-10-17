@@ -120,9 +120,11 @@ public class StaffTaskController {
     @PostMapping("/{id}/complete-refund")
     public ResponseEntity<?> completeRefund(@PathVariable Integer id,
                                            @RequestParam(required = false) Integer managerId,
+                                           @RequestParam(required = false) Integer userId,
                                            @RequestBody(required = false) com.queenkho.api.dto.CompleteRefundRequest request) {
         try {
-            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, managerId, request));
+            Integer effectiveUserId = managerId != null ? managerId : userId;
+            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, effectiveUserId, request));
         } catch (StaffTaskException e) {
             return toError(e);
         } catch (Exception e) {

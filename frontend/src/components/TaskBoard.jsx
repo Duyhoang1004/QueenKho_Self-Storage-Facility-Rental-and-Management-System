@@ -355,18 +355,23 @@ export default function TaskBoard({
                   <div className="flex items-center justify-between rounded-xl bg-[#FAF5FF] border border-[#E9D8FD] px-3.5 py-2 text-xs">
                     <span className="font-bold text-[#805AD5] flex items-center gap-1">
                       <span className="material-symbols-outlined text-[16px]">payments</span>
-                      Số tiền hoàn:
+                      Tổng tiền hoàn:
                     </span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <span className="font-mono font-black text-sm text-[#805AD5]">
                         {parsed.refundAmount}
                       </span>
+                      {parsed.earlyRentRefundNum > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[10px] font-black border border-[#86EFAC]">
+                          Cọc + Trả sớm ({parsed.earlyRentRefund})
+                        </span>
+                      )}
                       {parsed.isPenalty50 && (
                         <span className="px-2 py-0.5 rounded-md bg-[#FED7D7] text-[#C53030] text-[10px] font-black border border-[#FEB2B2]">
                           Trừ 50% cọc
                         </span>
                       )}
-                      {parsed.isFull100 && (
+                      {parsed.isFull100 && !parsed.earlyRentRefundNum && (
                         <span className="px-2 py-0.5 rounded-md bg-[#C6F6D5] text-[#22543D] text-[10px] font-black border border-[#9AE6B4]">
                           Hoàn 100%
                         </span>

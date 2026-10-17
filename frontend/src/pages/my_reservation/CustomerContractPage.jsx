@@ -211,14 +211,19 @@ export default function CustomerContractPage() {
   const damageFee = Number(contract.damageFee || 0);
   const lateFee = Number(contract.lateFeeAmount || 0);
   const actualLateFee = lateFee > 0 ? lateFee : 0;
+  const actualDamageFee = damageFee > 0 ? damageFee : 0;
+
+  const depositRefund = Number(
+    contract.depositRefund != null
+      ? contract.depositRefund
+      : Math.max(0, depositAmount - actualDamageFee - actualLateFee)
+  );
+  const earlyRentRefund = Number(contract.earlyRentRefund || 0);
   const refundedDeposit = Number(
     contract.refundAmount != null && Number(contract.refundAmount) > 0
       ? contract.refundAmount
-      : ((damageFee > 0 || actualLateFee > 0) ? Math.max(0, depositAmount - damageFee - actualLateFee) : depositAmount)
+      : (depositRefund + earlyRentRefund)
   );
-  const actualDamageFee = damageFee > 0
-    ? damageFee
-    : (depositAmount > (refundedDeposit + actualLateFee) ? depositAmount - refundedDeposit - actualLateFee : 0);
   const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0 || actualLateFee > 0);
 
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
@@ -248,7 +253,7 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* Thông báo hợp đồng đã thanh lý & hoàn cọc nếu TERMINATED */}
+      {/* Thông báo hợp đồng đã thanh lý & hoàn tiền nếu TERMINATED */}
       {isTerminated && (
         <div className="bg-[#FAF5FF] border-2 border-[#CE82FF] rounded-2xl p-5 flex items-start gap-4 shadow-sm">
           <div className="w-12 h-12 rounded-full bg-[#F3E8FF] flex items-center justify-center shrink-0 border-2 border-[#CE82FF]">
@@ -259,31 +264,36 @@ export default function CustomerContractPage() {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="text-base font-black text-[#A560E8]">
-                Hợp đồng đã kết thúc & Đã hoàn cọc thành công
+                Hợp đồng đã kết thúc & Đã hoàn tiền thành công
               </span>
               <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#A560E8] text-white">
-                ĐÃ HOÀN CỌC
+                ĐÃ HOÀN TIỀN
               </span>
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
-              Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Số tiền cọc{" "}
+              Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Tổng số tiền hoàn trả{" "}
               <strong className="text-[#A560E8] font-black">
                 {formatVND(refundedDeposit)}
               </strong>{" "}
-              {(actualDamageFee > 0 || actualLateFee > 0) ? (
+              (bao gồm <strong className="text-[#1CB0F6]">{formatVND(depositRefund)}</strong> tiền cọc hoàn lại
+              {earlyRentRefund > 0 && (
                 <span>
-                  (sau khi đã khấu trừ{" "}
+                  {" "}+ <strong className="text-[#58A700]">{formatVND(earlyRentRefund)}</strong> tiền thuê các tháng còn lại sau khi trừ {contract.usedMonths || 1} tháng đã dùng &amp; 1 tháng phí phạt trả sớm
+                </span>
+              )}
+              {(actualDamageFee > 0 || actualLateFee > 0) && (
+                <span>
+                  , đã khấu trừ{" "}
                   {actualDamageFee > 0 && (
-                    <span><strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại khoang</span>
+                    <span><strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại</span>
                   )}
                   {actualDamageFee > 0 && actualLateFee > 0 && " và "}
                   {actualLateFee > 0 && (
-                    <span><strong className="text-[#D97706]">{formatVND(actualLateFee)}</strong> phí phạt trễ hạn</span>
+                    <span><strong className="text-[#D97706]">{formatVND(actualLateFee)}</strong> phí trễ hạn</span>
                   )}
-                  )
                 </span>
-              ) : null}{" "}
-              đã được quản lý cơ sở chuyển hoàn vào tài khoản ngân hàng của bạn.
+              )}
+              ) đã được quản lý cơ sở chuyển hoàn cho bạn.
             </span>
           </div>
         </div>
@@ -465,29 +475,17 @@ export default function CustomerContractPage() {
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-black text-[#4B4B4B]">
-                            {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền hoàn cọc (dự kiến)"}
+                            {hasRefunded ? "Tiền cọc hoàn lại" : "Tiền hoàn cọc (dự kiến)"}
                           </span>
-                          {hasRefunded && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
-                              Đã hoàn cọc
-                            </span>
-                          )}
                         </div>
                         <span className="text-[10px] font-bold text-[#AFAFAF]">
-                          {hasRefunded
-                            ? `Đã chuyển ${formatVND(refundedDeposit)} vào tài khoản ngân hàng`
-                            : "Dự kiến hoàn trả vào STK sau khi Quản lý hoàn tất đối soát"}
+                          Khoản cọc sau khi trừ khấu trừ hư hại / trễ hạn
                         </span>
                       </div>
                       <div className="flex flex-col items-end">
-                        <span className={`text-sm font-black ${hasRefunded ? "text-[#A560E8]" : "text-[#58CC02]"}`}>
-                          {formatVND(refundedDeposit)}
+                        <span className="text-sm font-black text-[#1CB0F6]">
+                          {formatVND(depositRefund)}
                         </span>
-                        {hasRefunded && (
-                          <span className="text-[10px] font-black text-[#A560E8]">
-                            ✓ Đã hoàn cọc
-                          </span>
-                        )}
                       </div>
                     </div>
                   </>
@@ -496,35 +494,17 @@ export default function CustomerContractPage() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-[#4B4B4B]">
-                          {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền cọc giữ kho"}
+                          Tiền cọc giữ kho
                         </span>
-                        {hasRefunded && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
-                            Đã hoàn cọc
-                          </span>
-                        )}
                       </div>
                       <span className="text-[10px] font-bold text-[#AFAFAF]">
-                        {hasRefunded
-                          ? `Đã hoàn trả ${formatVND(refundedDeposit)} khi trả kho`
-                          : "Hoàn lại 100% khi thanh lý kho"}
+                        Hoàn lại 100% khi khoang nguyên vẹn
                       </span>
                     </div>
                     <div className="flex flex-col items-end">
-                      <span
-                        className={`text-sm font-black ${
-                          hasRefunded
-                            ? "text-[#A560E8]"
-                            : "text-[#1CB0F6]"
-                        }`}
-                      >
+                      <span className="text-sm font-black text-[#1CB0F6]">
                         {formatVND(depositAmount)}
                       </span>
-                      {hasRefunded && (
-                        <span className="text-[10px] font-black text-[#A560E8]">
-                          ✓ Đã hoàn cọc
-                        </span>
-                      )}
                     </div>
                   </div>
                 )}
@@ -540,7 +520,6 @@ export default function CustomerContractPage() {
                     </span>
                   </div>
                   <span className="text-sm font-black text-[#58CC02]">
-                    {/* Ưu tiên lấy số tiền thuê thực tế từ backend, nếu chưa có thì lấy công thức */}
                     {formatVND(
                       contract.rentPaid != null ? contract.rentPaid : rentPaid,
                     )}
@@ -560,6 +539,43 @@ export default function CustomerContractPage() {
                     )}
                   </span>
                 </div>
+
+                {/* 4. Bảng quyết toán hoàn trả (gồm cả hoàn cọc + hoàn tiền thuê trả sớm PR-O2) */}
+                {(hasRefunded || isInspectionDone) && (
+                  <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] bg-[#FAF5FF] -mx-4 -mb-4 p-4 rounded-b-2xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[#A560E8]">
+                        Quyết toán hoàn tiền khi trả kho
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
+                        {hasRefunded ? "✓ Đã hoàn tiền" : "Chờ chuyển khoản"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
+                      <span>• Hoàn tiền cọc giữ kho:</span>
+                      <span className="font-black text-[#1CB0F6]">+{formatVND(depositRefund)}</span>
+                    </div>
+                    {earlyRentRefund > 0 && (
+                      <div className="flex flex-col gap-0.5 bg-[#EAFBE0] border border-[#D0F8AB] rounded-xl p-2.5 text-xs">
+                        <div className="flex justify-between font-bold text-[#2B5300]">
+                          <span>• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                          <span className="font-black text-[#58A700]">+{formatVND(earlyRentRefund)}</span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-[#2B5300]/80">
+                          (Đã trừ {contract.usedMonths || 1} tháng sử dụng × {formatVND(monthlyRent)} và 1 tháng phí phạt trả sớm {formatVND(contract.breakFee || monthlyRent)})
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between pt-1 border-t border-[#E9D8FD]">
+                      <span className="text-xs font-black uppercase text-[#A560E8]">
+                        {hasRefunded ? "Tổng thực nhận hoàn trả" : "Tổng tiền hoàn trả dự kiến"}
+                      </span>
+                      <span className="text-lg font-black text-[#A560E8]">
+                        {formatVND(refundedDeposit)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* UC-16: chưa check-in thì chưa gia hạn / trả kho được */}
@@ -581,11 +597,12 @@ export default function CustomerContractPage() {
                   </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      Hợp đồng này đã kết thúc. Bạn đã hoàn tất trả kho và nhận lại tiền cọc.
+                      Hợp đồng này đã kết thúc. Tổng tiền hoàn trả cho bạn là{" "}
+                      <strong className="text-[#A560E8]">{formatVND(refundedDeposit)}</strong>.
                     </span>
                     {actualDamageFee > 0 && (
                       <span className="text-[11px] font-medium text-[#FF4B4B]">
-                        * Đã khấu trừ {formatVND(actualDamageFee)} chi phí hư hại theo biên bản nghiệm thu. Số tiền thực nhận hoàn: {formatVND(refundedDeposit)}.
+                        * Đã khấu trừ {formatVND(actualDamageFee)} chi phí hư hại theo biên bản nghiệm thu.
                       </span>
                     )}
                   </div>

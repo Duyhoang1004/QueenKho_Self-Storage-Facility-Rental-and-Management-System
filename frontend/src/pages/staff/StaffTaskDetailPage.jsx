@@ -4,6 +4,7 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import {
   checkInStaffTask,
   checkOutStaffTask,
+  completeRefundTask,
   getStaffTaskDetail,
   suggestAccessPin,
 } from '../../services/staffTaskService';
@@ -154,8 +155,12 @@ function createMockEvidenceDataUrl(label) {
 
 // Vì sao người đang xem không lập được biên bản (null = lập được)
 function blockedReason(task, userId) {
+  if (task.taskType === 'REFUND') {
+    if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
+    return null;
+  }
   if (task.taskType !== 'CHECK_IN' && task.taskType !== 'CHECK_OUT') {
-    return 'Trang này chỉ hỗ trợ lập biên bản cho task check-in hoặc nghiệm thu check-out.';
+    return 'Trang này chỉ hỗ trợ lập biên bản cho task check-in, nghiệm thu check-out hoặc hoàn tiền.';
   }
   switch (task.status) {
     case 'OPEN': return 'Task chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
@@ -167,10 +172,6 @@ function blockedReason(task, userId) {
       if (new Date(task.dueAt) <= new Date()) return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản.';
       return null;
   }
-  if (task.staffId && task.staffId !== userId) {
-    return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
-  }
-  return null;
 }
 
 function InfoRow({ label, value, mono, highlight }) {
@@ -245,8 +246,12 @@ export default function StaffTaskDetailPage() {
   const [coNotes, setCoNotes] = useState('');
   const [previewImage, setPreviewImage] = useState(null);
 
+  // State cho Refund (UC-25)
+  const [evidenceImageUrl, setEvidenceImageUrl] = useState('');
+  const [refundNotes, setRefundNotes] = useState('');
+  const [copiedField, setCopiedField] = useState(null);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmCheckoutOpen, setConfirmCheckoutOpen] = useState(false);
   const [confirmRefundOpen, setConfirmRefundOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
@@ -292,6 +297,7 @@ export default function StaffTaskDetailPage() {
         setToast({ type: 'success', message: `Check-in thành công. Hợp đồng ${data.contractCode} đã kích hoạt.` });
       })
       .catch(err => {
+        const code = err.response?.data?.error;
         setToast({ type: 'error', message: err.response?.data?.message || 'Không lưu được biên bản, vui lòng thử lại.' });
         if (code === 'PIN_TAKEN') {
           fetchPin();
@@ -540,40 +546,27 @@ export default function StaffTaskDetailPage() {
       });
   };
 
-  // Submit Check-out (UC-23, UC-24)
-  const allCheckedOut = CHECKLIST_OUT.every(item => checksOut[item.key]);
-  const canSubmitOut = allCheckedOut && !submitting;
-
-  const handleSubmitCheckOut = () => {
-    setSubmitting(true);
-    checkOutStaffTask(task.id, userId, {
-      ...checksOut,
-      damageFee: Number(damageFee) || 0,
-      notes,
-      evidenceImageUrl
-    })
-      .then(data => {
-        setTask(data);
-        setJustCompleted(true);
-        setToast({ type: 'success', message: 'Nghiệm thu trả kho thành công! Task hoàn cọc đã được tạo cho Quản lý cơ sở.' });
-      })
-      .catch(err => {
-        setToast({ type: 'error', message: err.response?.data?.message || 'Không thể nghiệm thu, vui lòng thử lại.' });
-        loadTask();
-      })
-      .finally(() => {
-        setSubmitting(false);
-        setConfirmCheckoutOpen(false);
-      });
-  };
-
   const isRefund = task?.taskType === 'REFUND';
   const parsedRefund = isRefund ? parseRefundNote(task?.note) : null;
+
+  const effectiveEarlyRentRefund = Number(task?.earlyRentRefund) > 0
+    ? Number(task.earlyRentRefund)
+    : (parsedRefund?.earlyRentRefundNum > 0 ? parsedRefund.earlyRentRefundNum : (isEarlyCheckout ? estimatedEarlyRentRefund : 0));
+
+  const effectiveDepositRefund = task?.depositRefund != null
+    ? Number(task.depositRefund)
+    : Math.max(0, Number(task?.depositHeldAmount || 0) - Number(task?.totalDamageCost || 0));
+
+  const effectiveRefundAmount = Number(task?.refundAmount) > 0
+    ? Number(task.refundAmount)
+    : (parsedRefund?.refundAmountNum > 0
+        ? Math.max(parsedRefund.refundAmountNum, effectiveDepositRefund + effectiveEarlyRentRefund)
+        : (effectiveDepositRefund + effectiveEarlyRentRefund));
 
   // Submit Refund (UC-25)
   const handleSubmitRefund = () => {
     setSubmitting(true);
-    const amount = parsedRefund?.refundAmountNum > 0 ? parsedRefund.refundAmountNum : undefined;
+    const amount = effectiveRefundAmount > 0 ? effectiveRefundAmount : undefined;
     completeRefundTask(task.id, userId, {
       refundAmount: amount,
       evidenceImageUrl: evidenceImageUrl.trim(),
@@ -585,7 +578,7 @@ export default function StaffTaskDetailPage() {
         setToast({
           type: 'success',
           message: task.contractId
-            ? 'Xác nhận hoàn tiền cọc thành công! Hợp đồng đã kết thúc và khoang được giải phóng.'
+            ? 'Xác nhận hoàn tiền thành công! Hợp đồng đã kết thúc và khoang được giải phóng.'
             : 'Xác nhận hoàn tiền thành công! Trạng thái đơn đặt chỗ đã chuyển sang ĐÃ HOÀN TIỀN.'
         });
       })
@@ -687,22 +680,6 @@ export default function StaffTaskDetailPage() {
             <InfoRow label="Trạng thái ô" value={UNIT_STATUS_LABEL[task.storageUnitStatus] || task.storageUnitStatus} />
             <InfoRow label="Cơ sở" value={task.facilityName} />
           </InfoCard>
-          <InfoCard icon="description" title="Hợp đồng">
-            <InfoRow label="Mã hợp đồng" value={task.contractCode} mono />
-            <InfoRow label="Trạng thái" value={CONTRACT_STATUS_LABEL[task.contractStatus] || task.contractStatus} />
-            <InfoRow label="Ngày bắt đầu" value={formatDate(task.contractStartDate)} />
-            <InfoRow label="Ngày kết thúc" value={formatDate(task.contractEndDate)} />
-            <InfoRow
-              label="Tiền cọc hợp đồng"
-              value={formatCurrency(task.depositHeldAmount)}
-              highlight="text-[#1CB0F6]"
-            />
-          </InfoCard>
-          {task.note && (
-            <InfoCard icon="sticky_note_2" title="Ghi chú & Thông tin hoàn cọc">
-              <p className="text-xs font-bold text-[#777777] leading-relaxed whitespace-pre-line">{task.note}</p>
-            </InfoCard>
-          )}
 
           {task.contractCode ? (
             <InfoCard icon="description" title="Hợp đồng">
@@ -710,6 +687,11 @@ export default function StaffTaskDetailPage() {
               <InfoRow label="Trạng thái" value={CONTRACT_STATUS_LABEL[task.contractStatus] || task.contractStatus} />
               <InfoRow label="Ngày bắt đầu" value={formatDate(task.contractStartDate)} />
               <InfoRow label="Ngày kết thúc" value={formatDate(task.contractEndDate)} />
+              <InfoRow
+                label="Tiền cọc hợp đồng"
+                value={formatCurrency(task.depositHeldAmount)}
+                highlight="text-[#1CB0F6]"
+              />
             </InfoCard>
           ) : (
             <InfoCard icon="inventory_2" title="Đối tượng">
@@ -726,14 +708,14 @@ export default function StaffTaskDetailPage() {
                 <div className="rounded-xl bg-[#F7F7F7] p-3.5 border border-[#E5E5E5] text-xs font-bold text-[#4B4B4B] leading-relaxed">
                   <span className="text-[11px] font-black uppercase text-[#AFAFAF] block mb-1">Lý do từ khách hàng</span>
                   <p className="text-sm font-black text-[#4B4B4B]">
-                    {parsedRefund?.reason || 'Khách yêu cầu hủy đơn / hoàn tiền.'}
+                    {parsedRefund?.reason || 'Khách yêu cầu trả kho / hoàn tiền.'}
                   </p>
                 </div>
 
                 {/* BẢNG CHÍNH SÁCH HOÀN TIỀN & KHẤU TRỪ */}
                 <div className={`rounded-xl p-3.5 border-2 flex flex-col gap-2.5 ${
-                  (parsedRefund?.isPenalty50 || parsedRefund?.isDamagePenalty) 
-                    ? 'bg-[#FFF5F5] border-[#FEB2B2]' 
+                  (parsedRefund?.isPenalty50 || parsedRefund?.isDamagePenalty)
+                    ? 'bg-[#FFF5F5] border-[#FEB2B2]'
                     : 'bg-[#F2FBF2] border-[#9AE6B4]'
                 }`}>
                   <div className="flex items-center justify-between pb-2 border-b border-[#E2E8F0]">
@@ -747,7 +729,7 @@ export default function StaffTaskDetailPage() {
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
                       (parsedRefund?.isPenalty50 || parsedRefund?.isDamagePenalty)
-                        ? 'bg-[#FED7D7] text-[#C53030] border-[#FEB2B2]' 
+                        ? 'bg-[#FED7D7] text-[#C53030] border-[#FEB2B2]'
                         : 'bg-[#C6F6D5] text-[#22543D] border-[#9AE6B4]'
                     }`}>
                       {parsedRefund?.policyBadge || (parsedRefund?.isPenalty50 ? 'Khấu trừ 50% tiền cọc' : 'Hoàn 100%')}
@@ -755,12 +737,14 @@ export default function StaffTaskDetailPage() {
                   </div>
 
                   <div className="flex flex-col gap-1.5 text-xs">
-                    {parsedRefund?.originalTotal && (
+                    {(Number(task.depositHeldAmount) > 0 || parsedRefund?.originalTotal) && (
                       <div className="flex justify-between py-0.5">
                         <span className="font-bold text-[#718096]">
-                          {parsedRefund?.isCheckout ? 'Tiền cọc giữ chỗ ban đầu:' : 'Tổng tiền khách đã đóng:'}
+                          {task.contractCode || parsedRefund?.isCheckout ? 'Tiền cọc giữ chỗ ban đầu:' : 'Tổng tiền khách đã đóng:'}
                         </span>
-                        <span className="font-black text-[#2D3748]">{parsedRefund.originalTotal}</span>
+                        <span className="font-black text-[#2D3748]">
+                          {Number(task.depositHeldAmount) > 0 ? formatCurrency(task.depositHeldAmount) : parsedRefund?.originalTotal}
+                        </span>
                       </div>
                     )}
 
@@ -776,11 +760,11 @@ export default function StaffTaskDetailPage() {
                       </div>
                     ) : (
                       <>
-                        {parsedRefund?.penaltyAmountNum > 0 && (
+                        {(Number(task.totalDamageCost) > 0 || parsedRefund?.penaltyAmountNum > 0) && (
                           <div className="flex justify-between items-center py-0.5">
                             <span className="font-bold text-[#718096]">Khấu trừ hư hại khoang:</span>
                             <span className="font-black text-[#E53E3E]">
-                              - {parsedRefund.penaltyAmount}
+                              - {Number(task.totalDamageCost) > 0 ? formatCurrency(task.totalDamageCost) : parsedRefund?.penaltyAmount}
                             </span>
                           </div>
                         )}
@@ -794,11 +778,19 @@ export default function StaffTaskDetailPage() {
                             </span>
                           </div>
                         )}
-                        {!parsedRefund?.penaltyAmountNum && !parsedRefund?.lateFeeNum && (
+                        {effectiveEarlyRentRefund > 0 && (
+                          <div className="flex justify-between items-center py-0.5 bg-[#EAFBE0] px-2 rounded-lg border border-[#9AE6B4]">
+                            <span className="font-bold text-[#22543D]">Hoàn tiền thuê trả sớm (PR-O2):</span>
+                            <span className="font-black text-[#2F855A]">
+                              + {formatCurrency(effectiveEarlyRentRefund)}
+                            </span>
+                          </div>
+                        )}
+                        {!parsedRefund?.penaltyAmountNum && !parsedRefund?.lateFeeNum && !(Number(task.totalDamageCost) > 0) && (
                           <div className="flex justify-between items-center py-0.5">
                             <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
                             <span className="font-black text-[#2F855A]">
-                              {parsedRefund?.policyApplied || (parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ hẹn > 24h (Hoàn 100%)')}
+                              {parsedRefund?.policyApplied || (task.contractCode || parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ hẹn > 24h (Hoàn 100%)')}
                             </span>
                           </div>
                         )}
@@ -810,13 +802,13 @@ export default function StaffTaskDetailPage() {
                         Số tiền thực tế hoàn trả:
                       </span>
                       <span className="text-xl font-black text-[#2F855A]">
-                        {parsedRefund?.refundAmount || '—'}
+                        {effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '—')}
                       </span>
                     </div>
 
                     <p className="text-[10px] text-[#A0AEC0] italic mt-0.5">
-                      {parsedRefund?.footerNote || (parsedRefund?.isCheckout 
-                        ? '* Tiền cọc giữ chỗ được hoàn trả 100% sau khi nhân viên cơ sở hoàn tất nghiệm thu khoang trống.'
+                      {parsedRefund?.footerNote || (task.contractCode || parsedRefund?.isCheckout
+                        ? '* Tổng tiền hoàn bao gồm tiền cọc hợp đồng và tiền thuê các tháng còn lại sau khi trừ thời gian đã dùng & phí phạt trả sớm (PR-O2).'
                         : '* Quý khách hủy đơn trước giờ hẹn > 24h được hoàn trả 100% tiền cọc.')}
                     </p>
                   </div>
@@ -832,10 +824,290 @@ export default function StaffTaskDetailPage() {
           ) : null}
         </div>
 
-        {/* Cột phải: biên bản Check-in (UC-18) hoặc Nghiệm thu trả kho & Sự cố (UC-23/24) */}
+        {/* Cột phải: Hoàn tiền (UC-25), Nghiệm thu trả kho & Sự cố (UC-23/24), hoặc Check-in (UC-18) */}
         <div className="flex flex-col gap-4">
-          {task.status === 'COMPLETED' ? (
-            /* ================== MÀN HÌNH ĐÃ HOÀN THÀNH ================== */
+          {isRefund ? (
+            /* ================== MÀN HÌNH XỬ LÝ HOÀN TIỀN (REFUND - UC-25) ================== */
+            <div className="duo-card p-6 flex flex-col gap-5">
+              {task.status === 'COMPLETED' ? (
+                <div className="flex flex-col gap-5">
+                  <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
+                    <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
+                    <div>
+                      <p className="text-sm font-black text-[#58A700]">Đã hoàn tất hoàn tiền cho khách hàng!</p>
+                      <p className="text-xs font-bold text-[#58A700]">
+                        Khoản tiền hoàn trả đã được ghi nhận thành công vào hệ thống.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Thông tin tài khoản thụ hưởng & số tiền đã hoàn */}
+                  <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between border-b border-[#BAE6FD] pb-2.5">
+                      <span className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[18px]">account_balance</span>
+                        Thông tin thụ hưởng &amp; Số tiền đã hoàn trả
+                      </span>
+                      <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
+                        Đã tất toán
+                      </span>
+                    </div>
+
+                    {parsedRefund?.isCash ? (
+                      <div className="flex justify-between text-xs py-1">
+                        <span className="font-bold text-[#64748B]">Hình thức nhận tiền:</span>
+                        <span className="font-black text-[#0F172A]">Nhận tiền mặt trực tiếp tại quầy cơ sở</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-xs py-0.5">
+                          <span className="font-bold text-[#64748B]">Ngân hàng:</span>
+                          <span className="font-black text-[#0F172A]">{parsedRefund?.bankName || '—'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs py-0.5">
+                          <span className="font-bold text-[#64748B]">Số tài khoản:</span>
+                          <span className="font-mono font-black text-[#0284C7] text-sm">{parsedRefund?.accountNumber || '—'}</span>
+                        </div>
+                        <div className="flex justify-between text-xs py-0.5">
+                          <span className="font-bold text-[#64748B]">Chủ tài khoản:</span>
+                          <span className="font-black text-[#0F172A] uppercase">{parsedRefund?.accountHolder || task.customerName || '—'}</span>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="border-t border-[#BAE6FD] pt-3 mt-1 flex flex-col gap-1.5">
+                      {(task.contractCode || parsedRefund?.isCheckout) && (
+                        <div className="flex justify-between text-xs text-[#475569]">
+                          <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
+                          <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
+                        </div>
+                      )}
+                      {effectiveEarlyRentRefund > 0 && (
+                        <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
+                          <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                          <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-baseline pt-1">
+                        <span className="text-xs font-black uppercase text-[#0284C7]">Tổng số tiền đã hoàn trả:</span>
+                        <span className="text-2xl font-black text-[#16A34A]">
+                          {effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '—')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ghi chú & Chứng từ xác nhận của Quản lý */}
+                  {(parsedRefund?.managerNote || parsedRefund?.evidenceUrl) && (
+                    <div className="rounded-2xl bg-[#F8FAFC] border-2 border-[#E2E8F0] p-4 flex flex-col gap-2.5 text-xs">
+                      <span className="text-[11px] font-black uppercase text-[#64748B] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px] text-[#0284C7]">receipt_long</span>
+                        Chứng từ &amp; Ghi chú xác nhận từ Quản lý
+                      </span>
+                      {parsedRefund?.managerNote && (
+                        <p className="font-bold text-[#334155] whitespace-pre-line">{parsedRefund.managerNote}</p>
+                      )}
+                      {parsedRefund?.evidenceUrl && (
+                        <div className="pt-1">
+                          <img
+                            src={parsedRefund.evidenceUrl}
+                            alt="Biên lai hoàn tiền"
+                            onClick={() => setPreviewImage(parsedRefund.evidenceUrl)}
+                            className="max-h-48 rounded-xl border-2 border-[#CBD5E1] object-contain cursor-pointer bg-white"
+                            title="Bấm để phóng to ảnh biên lai"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <Link
+                    to={isManager ? "/manager/refunds" : "/staff"}
+                    className="duo-btn-gray px-5 py-2.5 text-xs self-end"
+                  >
+                    Về danh sách hoàn tiền
+                  </Link>
+                </div>
+              ) : reason ? (
+                <div className="duo-card p-6 flex flex-col items-center justify-center gap-3 text-center py-12">
+                  <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
+                  <p className="text-sm font-black text-[#4B4B4B]">Không thể xử lý hoàn tiền</p>
+                  <p className="text-xs font-bold text-[#777777] max-w-[360px]">{reason}</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  <div>
+                    <h2 className="text-lg font-black text-[#4B4B4B]">Xác nhận hoàn tiền cho khách hàng (UC-25)</h2>
+                    <p className="text-xs font-bold text-[#AFAFAF]">
+                      Kiểm tra thông tin tài khoản thụ hưởng bên dưới và bấm xác nhận sau khi đã chuyển khoản hoàn tiền.
+                    </p>
+                  </div>
+
+                  {/* Thông tin tài khoản ngân hàng của khách */}
+                  <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-5 flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#BAE6FD] pb-2.5">
+                      <span className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[18px]">account_balance</span>
+                        Thông tin thụ hưởng của khách hàng
+                      </span>
+                      {!parsedRefund?.isCash && (parsedRefund?.bankName || parsedRefund?.accountNumber) && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyText(
+                              `${parsedRefund?.bankName || ''} - STK: ${parsedRefund?.accountNumber || ''} - ${parsedRefund?.accountHolder || ''} - Số tiền: ${effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '')}`,
+                              'all'
+                            )
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-white border border-[#7DD3FC] text-[11px] font-black text-[#0284C7] hover:bg-[#E0F2FE] flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copiedField === 'all' ? 'check' : 'content_copy'}
+                          </span>
+                          {copiedField === 'all' ? 'Đã sao chép!' : 'Sao chép toàn bộ'}
+                        </button>
+                      )}
+                    </div>
+
+                    {parsedRefund?.isCash ? (
+                      <div className="flex items-center gap-2.5 py-2 text-xs font-black text-[#0F172A]">
+                        <span className="material-symbols-outlined text-[20px] text-[#0284C7]">payments</span>
+                        Khách đăng ký nhận tiền mặt trực tiếp tại quầy cơ sở
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2 text-xs">
+                        <div className="flex justify-between items-center py-0.5">
+                          <span className="font-bold text-[#64748B]">Ngân hàng:</span>
+                          <span className="font-black text-[#0F172A]">{parsedRefund?.bankName || '—'}</span>
+                        </div>
+                        <div className="flex justify-between items-center py-0.5">
+                          <span className="font-bold text-[#64748B]">Số tài khoản:</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-sm text-[#0284C7]">
+                              {parsedRefund?.accountNumber || '—'}
+                            </span>
+                            {parsedRefund?.accountNumber && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(parsedRefund.accountNumber, 'stk')}
+                                className="px-2 py-0.5 rounded-md bg-white border border-[#BAE6FD] text-[10px] font-black text-[#0284C7] hover:bg-[#E0F2FE] cursor-pointer"
+                              >
+                                {copiedField === 'stk' ? 'Đã chép' : 'Copy STK'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center py-0.5">
+                          <span className="font-bold text-[#64748B]">Chủ tài khoản:</span>
+                          <span className="font-black text-[#0F172A] uppercase">
+                            {parsedRefund?.accountHolder || task.customerName || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tổng tiền cần chuyển */}
+                    <div className="border-t border-[#BAE6FD] pt-3 mt-1 flex flex-col gap-1.5">
+                      {(task.contractCode || parsedRefund?.isCheckout) && (
+                        <div className="flex justify-between text-xs text-[#475569]">
+                          <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
+                          <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
+                        </div>
+                      )}
+                      {effectiveEarlyRentRefund > 0 && (
+                        <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
+                          <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                          <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-baseline pt-1">
+                        <span className="text-xs font-black uppercase text-[#0284C7]">Tổng số tiền cần chuyển hoàn:</span>
+                        <span className="text-2xl font-black text-[#16A34A]">
+                          {effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '—')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Đính kèm ảnh biên lai chuyển khoản (Tuỳ chọn) */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
+                        Ảnh biên lai chuyển khoản / Chứng từ (Tuỳ chọn)
+                      </span>
+                      <label className="duo-btn-white px-3 py-1 text-xs gap-1 cursor-pointer">
+                        <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">upload_file</span>
+                        Tải ảnh biên lai
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={async e => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const dataUrl = await compressImageToDataUrl(file);
+                              setEvidenceImageUrl(dataUrl);
+                            } catch (err) {
+                              setToast({ type: 'error', message: err.message || 'Không đọc được ảnh biên lai.' });
+                            }
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    <input
+                      type="text"
+                      value={evidenceImageUrl}
+                      onChange={e => setEvidenceImageUrl(e.target.value)}
+                      placeholder="Hoặc dán link URL ảnh chụp màn hình chuyển khoản tại đây..."
+                      className="duo-input text-xs"
+                    />
+                    {evidenceImageUrl && (
+                      <div className="relative w-28 h-28 rounded-xl border-2 border-[#84D8FF] overflow-hidden bg-[#F7F7F7]">
+                        <img
+                          src={evidenceImageUrl}
+                          alt="Preview"
+                          onClick={() => setPreviewImage(evidenceImageUrl)}
+                          className="w-full h-full object-cover cursor-pointer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEvidenceImageUrl('')}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#FF4B4B] text-white flex items-center justify-center text-xs font-black cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ghi chú xác nhận hoàn tiền */}
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú xác nhận hoàn tiền</span>
+                    <textarea
+                      value={refundNotes}
+                      onChange={e => setRefundNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Nhập mã giao dịch ngân hàng (FT...) hoặc ghi chú tất toán..."
+                      className="duo-input resize-none text-xs"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRefundOpen(true)}
+                    disabled={submitting}
+                    className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">payments</span>
+                    Xác nhận đã hoàn tiền ({effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '')})
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : task.status === 'COMPLETED' ? (
+            /* ================== MÀN HÌNH ĐÃ HOÀN THÀNH (CHECK_OUT / CHECK_IN) ================== */
             isCheckOut ? (
               <div className="duo-card p-6 flex flex-col gap-5">
                 {justCompleted && (
@@ -845,8 +1117,8 @@ export default function StaffTaskDetailPage() {
                       <p className="text-sm font-black text-[#58A700]">Đã hoàn tất nghiệm thu trả kho!</p>
                       <p className="text-xs font-bold text-[#58A700]">
                         Hợp đồng đã chấm dứt, mã PIN/RFID đã bị thu hồi.
-                        {Number(task.refundAmount) > 0
-                          ? ` Đã tự động tạo task hoàn cọc (${formatCurrency(task.refundAmount)}) cho Quản lý cơ sở.`
+                        {effectiveRefundAmount > 0
+                          ? ` Đã tự động tạo task hoàn tiền (${formatCurrency(effectiveRefundAmount)}) cho Quản lý cơ sở.`
                           : ''}
                       </p>
                     </div>
@@ -858,7 +1130,7 @@ export default function StaffTaskDetailPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black uppercase text-[#1899D6] flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
-                      Quyết toán tài chính & Hoàn tiền
+                      Quyết toán tài chính &amp; Hoàn tiền
                     </span>
                     <span className="duo-badge bg-white text-[#4B4B4B] border border-[#E5E5E5] text-[10px]">
                       Ô kho: {UNIT_STATUS_LABEL[task.storageUnitStatus] || task.storageUnitStatus}
@@ -883,18 +1155,18 @@ export default function StaffTaskDetailPage() {
                   <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
                     <span>Tiền cọc hoàn lại:</span>
                     <span className="font-black text-[#026AA2]">
-                      {formatCurrency(task.depositRefund != null ? task.depositRefund : Math.max(0, Number(task.depositHeldAmount) - Number(task.totalDamageCost)))}
+                      {formatCurrency(effectiveDepositRefund)}
                     </span>
                   </div>
-                  {Number(task.earlyRentRefund) > 0 && (
+                  {effectiveEarlyRentRefund > 0 && (
                     <div className="flex justify-between text-xs font-bold text-[#58CC02] bg-[#EAFBE0] p-2 rounded-xl border border-[#D0F8AB]">
                       <span>Hoàn tiền thuê trả sớm (PR-O2):</span>
-                      <span className="font-black text-[#58A700]">+ {formatCurrency(task.earlyRentRefund)}</span>
+                      <span className="font-black text-[#58A700]">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
                     </div>
                   )}
                   <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
                     <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả khách:</span>
-                    <span className="text-xl font-black text-[#58A700]">{formatCurrency(task.refundAmount)}</span>
+                    <span className="text-xl font-black text-[#58A700]">{formatCurrency(effectiveRefundAmount)}</span>
                   </div>
                   {Number(task.excessDebtAmount) > 0 && (
                     <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex justify-between items-center text-xs">
@@ -986,7 +1258,7 @@ export default function StaffTaskDetailPage() {
                   )}
                 </div>
 
-                <Link to="/staff" className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
+                <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
               </div>
             ) : (
               /* Đã hoàn thành CHECK_IN */
@@ -1032,7 +1304,7 @@ export default function StaffTaskDetailPage() {
                   )}
                 </div>
 
-                <Link to="/staff" className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
+                <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
               </div>
             )
           ) : reason ? (
@@ -1173,7 +1445,7 @@ export default function StaffTaskDetailPage() {
                   <div>
                     <h3 className="text-sm font-black uppercase text-[#4B4B4B] flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[18px] text-[#FF4B4B]">build_circle</span>
-                      3. Ghi nhận sự cố hư hỏng & Ảnh bằng chứng (UC-24)
+                      3. Ghi nhận sự cố hư hỏng &amp; Ảnh bằng chứng (UC-24)
                     </h3>
                     <p className="text-[11px] font-bold text-[#AFAFAF]">
                       {conditionFailed
@@ -1465,35 +1737,10 @@ export default function StaffTaskDetailPage() {
           ) : (
             /* ================== FORM CHECK-IN (UC-18) ================== */
             <div className="duo-card p-6 flex flex-col gap-5">
-              {task.status === 'COMPLETED' ? (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
-                    <span className="material-symbols-outlined text-[32px] text-[#58A700]">check_circle</span>
-                    <div>
-                      <p className="text-sm font-black text-[#58A700]">Đã nghiệm thu trả kho thành công!</p>
-                      <p className="text-xs font-bold text-[#58A700]">Biên bản nghiệm thu đã được lưu. Task hoàn cọc đã được tạo cho Quản lý.</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h2 className="text-sm font-black uppercase text-[#4B4B4B] tracking-wide mb-3">Biên bản nghiệm thu</h2>
-                    {record ? (
-                      <ul className="flex flex-col gap-2">
-                        {CHECKLIST_OUT.map(item => (
-                          <li key={item.key} className="flex items-center gap-2 text-xs font-bold text-[#4B4B4B]">
-                            <span className={`material-symbols-outlined text-[20px] ${record[item.key] ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                              {record[item.key] ? 'check_circle' : 'cancel'}
-                            </span>
-                            {item.label}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs font-bold text-[#AFAFAF]">Biên bản nghiệm thu đã hoàn tất.</p>
-                    )}
-                  </div>
-
-                  <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao (UC-18)</h2>
+                  <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 5 mục, cấp mã PIN + thẻ RFID rồi xác nhận.</p>
                 </div>
                 <button
                   type="button"
@@ -1505,7 +1752,7 @@ export default function StaffTaskDetailPage() {
                 </button>
               </div>
 
-              {/* Checklist */}
+              {/* Checklist 5 mục */}
               <div className="flex flex-col gap-2">
                 {CHECKIN_CHECKLIST.map(item => (
                   <label
@@ -1515,16 +1762,14 @@ export default function StaffTaskDetailPage() {
                     }`}
                   >
                     <input
-                      type="number"
-                      min={0}
-                      step={10000}
-                      value={damageFee}
-                      onChange={e => setDamageFee(e.target.value)}
-                      placeholder="0"
-                      className="duo-input font-bold"
+                      type="checkbox"
+                      checked={checks[item.key]}
+                      onChange={e => setChecks(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                      className="mt-0.5 w-4 h-4 accent-[#58CC02]"
                     />
-                    <span className="text-[11px] font-bold text-[#777777]">
-                      Nếu khoang nguyên vẹn thì để 0₫. Khoản phí này sẽ được tự động trừ vào tiền cọc hoàn lại.
+                    <span className="flex flex-col flex-1">
+                      <span className="text-xs font-black text-[#4B4B4B]">{item.label}</span>
+                      <span className="text-[11px] font-bold text-[#AFAFAF]">{item.hint}</span>
                     </span>
                   </label>
                 ))}
@@ -1533,101 +1778,40 @@ export default function StaffTaskDetailPage() {
                 </p>
               </div>
 
-                  {/* Ghi chú */}
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú hiện trạng</span>
-                    <textarea
-                      value={notes}
-                      onChange={e => setNotes(e.target.value)}
-                      rows={2}
-                      placeholder="Ghi nhận hiện trạng, tình trạng hư hỏng nếu có..."
-                      className="duo-input resize-none text-xs"
-                    />
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCheckoutOpen(true)}
-                    disabled={!canSubmitOut}
-                    className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
-                    Xác nhận nghiệm thu trả kho
-                  </button>
-                </div>
-              )}
-            </div>
-
-          /* ==================== 3. LOẠI VIỆC: CHECK_IN (BÀN GIAO KHO) ==================== */
-          ) : (
-            <div className="duo-card p-6 flex flex-col gap-5">
-              {task.status === 'COMPLETED' ? (
-                <div className="flex flex-col gap-5">
-                  {justCompleted && (
-                    <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
-                      <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
-                      <div>
-                        <p className="text-sm font-black text-[#58A700]">Bàn giao thành công!</p>
-                        <p className="text-xs font-bold text-[#58A700]">Đọc mã PIN và mã thẻ RFID bên dưới cho khách, sau đó phát thẻ từ.</p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                    <CodeBox icon="pin" label="Mã PIN SmartLock" value={task.accessPinCode} big />
-                    <CodeBox icon="contactless" label="Mã thẻ RFID" value={task.rfidCardCode} />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-sm font-black uppercase text-[#4B4B4B] tracking-wide">Biên bản bàn giao</h2>
-                      {record && <span className="text-[11px] font-bold text-[#AFAFAF]">#{record.id} · {formatDateTime(record.createdAt)}</span>}
-                    </div>
-                    {record ? (
-                      <>
-                        <ul className="flex flex-col gap-2">
-                          {CHECKLIST_IN.map(item => (
-                            <li key={item.key} className="flex items-center gap-2 text-xs font-bold text-[#4B4B4B]">
-                              <span className={`material-symbols-outlined text-[20px] ${record[item.key] ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                                {record[item.key] ? 'check_circle' : 'cancel'}
-                              </span>
-                              {item.label}
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-4 rounded-2xl bg-[#F7F7F7] px-4 py-3 text-xs">
-                          <p><span className="font-black text-[#AFAFAF] uppercase mr-1">Người lập:</span><span className="font-black text-[#4B4B4B]">{record.staffName}</span></p>
-                          <p className="mt-1 whitespace-pre-line"><span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span><span className="font-bold text-[#777777]">{record.notes || 'Không có'}</span></p>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-xs font-bold text-[#AFAFAF]">Task này không có biên bản bàn giao.</p>
-                    )}
-                  </div>
-
-                  <Link to={isManager ? "/manager/tasks" : "/staff"} className="duo-btn-gray px-5 py-2.5 text-xs self-end">Về bảng công việc</Link>
-                </div>
-              ) : reason ? (
-                <div className="duo-card p-6 flex flex-col items-center justify-center gap-3 text-center py-12">
-                  <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
-                  <p className="text-sm font-black text-[#4B4B4B]">Không thể lập biên bản</p>
-                  <p className="text-xs font-bold text-[#777777] max-w-[360px]">{reason}</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao</h2>
-                      <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 5 mục, cấp mã PIN + thẻ RFID rồi xác nhận.</p>
-                    </div>
+              {/* Cấp mã PIN & thẻ RFID */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF]/50 p-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-[#1899D6] flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px]">pin</span>
+                      Mã PIN SmartLock (6 số)
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setChecks(CHECKLIST_IN.reduce((acc, item) => ({ ...acc, [item.key]: true }), {}))}
-                      className="duo-btn-white px-4 py-2 text-xs gap-1.5"
+                      onClick={fetchPin}
+                      disabled={pinLoading}
+                      className="text-[11px] font-black text-[#1CB0F6] hover:underline cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
-                      Giả lập hoàn thiện
+                      {pinLoading ? 'Đang tạo...' : 'Đổi mã'}
                     </button>
                   </div>
+                  <div className="font-mono text-2xl font-black tracking-[0.25em] text-[#4B4B4B] text-center py-1">
+                    {pin || '------'}
+                  </div>
+                </div>
+
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Mã thẻ từ RFID *</span>
+                  <input
+                    type="text"
+                    value={rfid}
+                    onChange={e => setRfid(e.target.value)}
+                    placeholder="VD: RFID-001234"
+                    className="duo-input font-mono font-bold"
+                  />
+                  <span className="text-[10px] font-bold text-[#AFAFAF]">Quẹt thẻ lên đầu đọc hoặc nhập mã in trên thẻ.</span>
+                </label>
+              </div>
 
               {/* Ghi chú */}
               <label className="flex flex-col gap-1.5">
@@ -1718,18 +1902,6 @@ export default function StaffTaskDetailPage() {
         onCancel={() => setConfirmOpen(false)}
       />
 
-      {/* Dialog xác nhận Check-out */}
-      <TaskConfirmDialog
-        open={confirmCheckoutOpen}
-        icon="assignment_turned_in"
-        title="Xác nhận nghiệm thu trả kho?"
-        message={`Xác nhận nghiệm thu trả khoang cho hợp đồng ${task.contractCode || ''}. Sau khi nghiệm thu, hệ thống sẽ tự động tạo Task Hoàn tiền cọc cho Quản lý cơ sở xử lý trong vòng 24 giờ.`}
-        confirmLabel="Xác nhận nghiệm thu"
-        submitting={submitting}
-        onConfirm={handleSubmitCheckOut}
-        onCancel={() => setConfirmCheckoutOpen(false)}
-      />
-
       {/* Dialog xác nhận Hoàn tiền (Refund) */}
       <TaskConfirmDialog
         open={confirmRefundOpen}
@@ -1738,7 +1910,7 @@ export default function StaffTaskDetailPage() {
         title="Xác nhận đã chuyển tiền hoàn trả?"
         message={
           task.contractCode
-            ? "Quản lý đã chuyển khoản thành công tiền hoàn cho khách. Hệ thống sẽ chính thức đóng hợp đồng, giải phóng ô kho về trạng thái Sẵn sàng và cập nhật giao dịch."
+            ? `Quản lý đã chuyển khoản thành công tổng số tiền hoàn (${effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '')}) cho khách ${task.customerName || ''}. Hệ thống sẽ chính thức đóng công việc hoàn tiền và cập nhật giao dịch.`
             : `Quản lý đã chuyển tiền hoàn (${parsedRefund?.refundAmount || ''}) cho khách ${task.customerName || parsedRefund?.customerName || ''}. Hệ thống sẽ đóng công việc và cập nhật giao dịch sang THÀNH CÔNG.`
         }
         confirmLabel="Xác nhận đã chuyển tiền"

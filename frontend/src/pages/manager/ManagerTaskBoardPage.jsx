@@ -90,21 +90,56 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       })
   }
 
+  const isRefundMode = initialTypeFilter === 'REFUND'
+
   const renderActions = task => {
-    // Task REFUND: Manager xác nhận đã thực hiện chuyển khoản / hoàn tiền cọc
+    const detailUrl = task.taskType === 'REFUND' ? `/manager/refunds/${task.id}` : `/manager/tasks/${task.id}`
+
+    // Task REFUND: Manager xem chi tiết hoặc xác nhận đã thực hiện chuyển khoản / hoàn tiền cọc
     if (task.taskType === 'REFUND') {
       if (['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)) {
         return (
+          <div className="flex items-center gap-2">
+            <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+              <span className="material-symbols-outlined text-[18px]">visibility</span>
+              Xem chi tiết
+            </Link>
+            <button
+              onClick={() => openRefundModal(task)}
+              className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">payments</span>
+              Xác nhận đã hoàn tiền
+            </button>
+          </div>
+        )
+      }
+      return (
+        <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">visibility</span>
+          Xem chi tiết
+        </Link>
+      )
+    }
+
+    if (task.status === 'IN_PROGRESS') {
+      return (
+        <div className="flex items-center gap-2">
+          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Xem chi tiết
+          </Link>
           <button
-            onClick={() => openRefundModal(task)}
-            className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            onClick={() => setConfirmTask(task)}
+            className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">payments</span>
-            Xác nhận đã hoàn tiền
+            <span className="material-symbols-outlined text-[18px]">person_remove</span>
+            Gỡ người nhận
           </button>
         </div>
       )
     }
+
     return (
       <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
         <span className="material-symbols-outlined text-[18px]">visibility</span>

@@ -18,4 +18,6 @@ public class CompleteRefundRequest {
     private String evidenceImageUrl; // Link ảnh chụp ủy nhiệm chi / chuyển khoản
     private Boolean cashReceiptConfirmed; // Khách đã ký nhận tiền mặt tại quầy
     private String note; // Ghi chú thêm
+    private String notes; // Alias tương thích ngược
+    private java.math.BigDecimal refundAmount; // Số tiền hoàn tùy chỉnh (nếu có)
 }

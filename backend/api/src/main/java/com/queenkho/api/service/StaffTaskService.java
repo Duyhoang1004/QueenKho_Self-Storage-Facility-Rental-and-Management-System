@@ -15,24 +15,21 @@ import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.DamageCaseRepository;
+import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.ReservationRepository;
 import com.queenkho.api.repository.StaffTaskRepository;
 import com.queenkho.api.repository.StorageUnitRepository;
 import com.queenkho.api.repository.UserRepository;
-import com.queenkho.api.dto.CheckOutRequest;
 import com.queenkho.api.dto.CompleteRefundRequest;
-import com.queenkho.api.repository.FacilityRepository;
-import com.queenkho.api.repository.StorageUnitRepository;
+import com.queenkho.api.dto.RefundCalculationResult;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import com.queenkho.api.dto.CompleteRefundRequest;
-import com.queenkho.api.dto.RefundCalculationResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -78,7 +75,7 @@ public class StaffTaskService {
     private RentalContractRepository rentalContractRepository;
 
     @Autowired
-    private com.queenkho.api.repository.ReservationRepository reservationRepository;
+    private FacilityRepository facilityRepository;
 
     @Autowired
     private HandoverRecordRepository handoverRecordRepository;
@@ -247,6 +244,11 @@ public class StaffTaskService {
             }
         }
 
+        String taskNote = task.getNote();
+        if (contract != null && "REFUND".equals(task.getTaskType())) {
+            taskNote = buildEnrichedRefundNote(contract, taskNote, task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now());
+        }
+
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .facilityId(task.getFacilityId())
@@ -256,7 +258,7 @@ public class StaffTaskService {
                 .createdAt(task.getCreatedAt())
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
-                .note(task.getNote())
+                .note(taskNote)
                 .evidenceImageUrl(task.getEvidenceImageUrl())
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
@@ -987,11 +989,16 @@ public class StaffTaskService {
                     .orElse(null);
         }
 
-        // UC-24: Lấy danh sách sự cố hư hỏng (nếu là task CHECK_OUT)
+        // UC-24: Lấy danh sách sự cố hư hỏng (nếu là task CHECK_OUT hoặc REFUND của hợp đồng)
         List<DamageCaseResponse> damageResponses = Collections.emptyList();
         BigDecimal totalDamageCost = BigDecimal.ZERO;
-        if ("CHECK_OUT".equals(task.getTaskType())) {
-            List<DamageCase> cases = damageCaseRepository.findByTask_IdOrderByIdAsc(task.getId());
+        if ("CHECK_OUT".equals(task.getTaskType()) || ("REFUND".equals(task.getTaskType()) && contract != null)) {
+            List<DamageCase> cases = "CHECK_OUT".equals(task.getTaskType())
+                    ? damageCaseRepository.findByTask_IdOrderByIdAsc(task.getId())
+                    : damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());
+            if (cases.isEmpty() && contract != null) {
+                cases = damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());
+            }
             List<DamageCaseResponse> mapped = new ArrayList<>();
             for (DamageCase dc : cases) {
                 BigDecimal cost = dc.getEstimatedCost() != null ? dc.getEstimatedCost() : BigDecimal.ZERO;
@@ -1023,10 +1030,14 @@ public class StaffTaskService {
         Integer cycleMonths = null;
         BigDecimal baseMonthlyPrice = null;
         String refundBreakdownNote = null;
+        String taskNote = task.getNote();
 
-        if (contract != null && "CHECK_OUT".equals(task.getTaskType())) {
-            LocalDate refDate = task.getCompletedAt() != null ? task.getCompletedAt().toLocalDate() : LocalDate.now();
+        if (contract != null && ("CHECK_OUT".equals(task.getTaskType()) || "REFUND".equals(task.getTaskType()))) {
+            LocalDate refDate = task.getCompletedAt() != null
+                    ? task.getCompletedAt().toLocalDate()
+                    : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now());
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, totalDamageCost);
+            depositHeld = calc.getDepositHeld();
             refundAmount = calc.getTotalRefundAmount();
             excessDebtAmount = calc.getExcessDebtAmount();
             depositRefund = calc.getDepositRefund();
@@ -1039,6 +1050,10 @@ public class StaffTaskService {
             cycleMonths = calc.getCycleMonths();
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
             refundBreakdownNote = calc.getBreakdownDescription();
+
+            if ("REFUND".equals(task.getTaskType())) {
+                taskNote = buildEnrichedRefundNote(contract, taskNote, refDate);
+            }
         }
 
         return StaffTaskDetailResponse.builder()
@@ -1051,7 +1066,7 @@ public class StaffTaskService {
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
                 .evidenceImageUrl(task.getEvidenceImageUrl())
-                .note(task.getNote())
+                .note(taskNote)
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
                 .contractId(contract != null ? contract.getId() : null)
@@ -1087,302 +1102,6 @@ public class StaffTaskService {
                 .baseMonthlyPrice(baseMonthlyPrice)
                 .refundBreakdownNote(refundBreakdownNote)
                 .build();
-    }
-
-    // ================== UC-25: HOÀN TẤT HOÀN CỌC (REFUND) ==================
-    @Transactional
-    public StaffTaskDetailResponse completeRefund(Integer taskId, Integer userId, CompleteRefundRequest request) {
-        if (userId == null) {
-            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
-        }
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
-        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
-
-        if (!"REFUND".equals(task.getTaskType())) {
-            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_TASK_TYPE", "Task này không phải loại hoàn tiền");
-        }
-        if ("COMPLETED".equals(task.getStatus())) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_COMPLETED", "Task đã được hoàn thành trước đó");
-        }
-        if ("CANCELLED".equals(task.getStatus())) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_CANCELLED", "Task đã bị huỷ");
-        }
-
-        task.setStatus("COMPLETED");
-        task.setStaff(user);
-        task.setCompletedAt(LocalDateTime.now());
-        if (request != null && request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()) {
-            task.setEvidenceImageUrl(request.getEvidenceImageUrl().trim());
-        }
-        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            String current = task.getNote() != null ? task.getNote() : "";
-            task.setNote(current + " | " + request.getNotes().trim());
-        }
-        staffTaskRepository.save(task);
-
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1. Trường hợp hoàn cọc trả kho (UC-25): có gắn hợp đồng
-        if (task.getContract() != null) {
-            RentalContract contract = task.getContract();
-            contract.setStatus("TERMINATED");
-            BigDecimal deposit = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
-            contract.setDepositHeldAmount(BigDecimal.ZERO);
-            rentalContractRepository.save(contract);
-
-            if (contract.getStorageUnit() != null) {
-                StorageUnit unit = contract.getStorageUnit();
-                unit.setStatus("AVAILABLE");
-                storageUnitRepository.save(unit);
-            }
-
-            BigDecimal refundAmount = (request != null && request.getRefundAmount() != null)
-                    ? request.getRefundAmount() : null;
-
-            if (refundAmount == null && task.getNote() != null) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:THỰC HOÀN|TH\\?C HOAN|THUC HOAN)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
-                if (m.find()) {
-                    try {
-                        String val = m.group(1).replace(",", "").replace(".", "");
-                        refundAmount = new BigDecimal(val);
-                    } catch (Exception ignored) {}
-                }
-            }
-            if (refundAmount == null) {
-                refundAmount = deposit;
-            }
-
-            // Bóc tách phí hư hại & phí trễ từ note để ghi nhận giao dịch khấu trừ cọc (PR-O9 & PR-Q4)
-            BigDecimal damageFee = BigDecimal.ZERO;
-            BigDecimal lateFee = BigDecimal.ZERO;
-            if (task.getNote() != null) {
-                java.util.regex.Matcher mDmg = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
-                if (mDmg.find()) {
-                    try {
-                        damageFee = new BigDecimal(mDmg.group(1).replace(",", "").replace(".", ""));
-                    } catch (Exception ignored) {}
-                }
-                java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
-                if (mLate.find()) {
-                    try {
-                        lateFee = new BigDecimal(mLate.group(1).replace(",", "").replace(".", ""));
-                    } catch (Exception ignored) {}
-                }
-            }
-
-            // Ghi nhận khấu trừ phí hư hại vào cọc (PR-O9: DAMAGE_FEE, DEPOSIT_OFFSET)
-            if (damageFee.compareTo(BigDecimal.ZERO) > 0) {
-                String dmgTxnCode = "DMG-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
-                try {
-                    jdbcTemplate.update(
-                            "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
-                                    "VALUES (?, ?, ?, ?, ?, 'DAMAGE_FEE', 'DEPOSIT_OFFSET', 'SUCCESS', ?)",
-                            dmgTxnCode,
-                            contract.getCustomer().getId(),
-                            contract.getId(),
-                            contract.getReservation() != null ? contract.getReservation().getId() : null,
-                            damageFee,
-                            now
-                    );
-                } catch (Exception ignored) {}
-            }
-
-            // Ghi nhận khấu trừ phí trễ vào cọc (PR-Q4: LATE_FEE, DEPOSIT_OFFSET)
-            if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
-                String lateTxnCode = "LF-" + contract.getContractCode() + "-" + ((System.currentTimeMillis() + 1) % 100000);
-                try {
-                    jdbcTemplate.update(
-                            "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
-                                    "VALUES (?, ?, ?, ?, ?, 'LATE_FEE', 'DEPOSIT_OFFSET', 'SUCCESS', ?)",
-                            lateTxnCode,
-                            contract.getCustomer().getId(),
-                            contract.getId(),
-                            contract.getReservation() != null ? contract.getReservation().getId() : null,
-                            lateFee,
-                            now
-                    );
-                } catch (Exception ignored) {}
-            }
-
-            boolean isCash = task.getNote() != null && (
-                    task.getNote().contains("HOÀN CỌC TIỀN MẶT") || 
-                    task.getNote().toLowerCase().contains("tiền mặt"));
-            String refundMethod = isCash ? "CASH" : "BANK_TRANSFER";
-
-            String txnCode = "REF-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
-            try {
-                jdbcTemplate.update(
-                        "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
-                                "VALUES (?, ?, ?, ?, ?, 'REFUND', ?, 'SUCCESS', ?)",
-                        txnCode,
-                        contract.getCustomer().getId(),
-                        contract.getId(),
-                        contract.getReservation() != null ? contract.getReservation().getId() : null,
-                        refundAmount,
-                        refundMethod,
-                        now
-                );
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.update(
-                        "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
-                                "VALUES (?, ?, 'rental_contracts', ?, ?)",
-                        user.getId(),
-                        "Quản lý " + user.getFullName() + " đã chuyển tiền hoàn cọc " + refundAmount + "₫ cho HĐ " + contract.getContractCode(),
-                        contract.getId(),
-                        now
-                );
-            } catch (Exception ignored) {}
-        }
-        // 2. Trường hợp hoàn cọc hủy đơn đặt cọc (UC-15): không gắn hợp đồng
-        else {
-            try {
-                String resCode = null;
-                if (task.getNote() != null) {
-                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Đơn|Don):\\s*([A-Za-z0-9_-]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
-                    if (m.find()) {
-                        resCode = m.group(1).trim();
-                    }
-                }
-                if (resCode != null) {
-                    Integer resId = null;
-                    try {
-                        resId = jdbcTemplate.queryForObject("SELECT id FROM reservations WHERE reservation_code = ?", Integer.class, resCode);
-                    } catch (Exception ignored) {}
-
-                    if (resId != null) {
-                        jdbcTemplate.update(
-                                "UPDATE payment_transactions SET status = 'SUCCESS', paid_at = ? WHERE reservation_id = ? AND payment_type = 'REFUND'",
-                                now, resId
-                        );
-                        jdbcTemplate.update(
-                                "UPDATE reservations SET status = 'REFUNDED' WHERE id = ?",
-                                resId
-                        );
-                    }
-                }
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.update(
-                        "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
-                                "VALUES (?, ?, 'facility_tasks', ?, ?)",
-                        user.getId(),
-                        "Quản lý " + user.getFullName() + " đã chuyển tiền hoàn cho task #" + task.getId(),
-                        task.getId(),
-                        now
-                );
-            } catch (Exception ignored) {}
-        }
-
-        entityManager.flush();
-        entityManager.clear();
-        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
-    }
-
-    // ================== UC-23, UC-24: STAFF NGHIỆM THU TRẢ KHO (CHECK-OUT) ==================
-    @Transactional
-    public StaffTaskDetailResponse checkOut(Integer taskId, Integer staffId, CheckOutRequest request) {
-        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được nghiệm thu trả kho");
-        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
-        if (!"CHECK_OUT".equals(task.getTaskType())) {
-            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_TASK_TYPE", "Task này không phải loại check-out");
-        }
-        if (task.getContract() == null) {
-            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CONTRACT_MISSING", "Task không gắn với hợp đồng nào");
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        task.setStatus("COMPLETED");
-        task.setCompletedAt(now);
-        if (request != null && request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()) {
-            task.setEvidenceImageUrl(request.getEvidenceImageUrl().trim());
-        }
-        staffTaskRepository.save(task);
-
-        RentalContract contract = rentalContractRepository.findDetailById(task.getContract().getId())
-                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
-
-        HandoverRecord record = new HandoverRecord();
-        record.setContract(contract);
-        record.setStaff(userRepository.getReferenceById(staffId));
-        record.setRecordType("CHECK_OUT");
-        record.setIdentityVerified(request != null && Boolean.TRUE.equals(request.getIdentityVerified()));
-        record.setUnitEmpty(request != null && Boolean.TRUE.equals(request.getUnitEmpty()));
-        record.setUnitClean(request != null && Boolean.TRUE.equals(request.getUnitClean()));
-        record.setLockIntact(request != null && Boolean.TRUE.equals(request.getLockIntact()));
-        record.setCustomerSignatureConfirmed(request != null && Boolean.TRUE.equals(request.getCustomerSignatureConfirmed()));
-        record.setNotes(request != null ? request.getNotes() : null);
-        handoverRecordRepository.save(record);
-
-        BigDecimal heldDeposit = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
-        BigDecimal damageFee = (request != null && request.getDamageFee() != null && request.getDamageFee().compareTo(BigDecimal.ZERO) > 0)
-                ? request.getDamageFee() : BigDecimal.ZERO;
-
-        // Tính phí trễ hạn nếu trả kho sau ngày kết thúc hợp đồng (PR-O11 & PR-Q3)
-        LocalDate today = now.toLocalDate();
-        long overdueDays = 0;
-        if (contract.getEndDate() != null && today.isAfter(contract.getEndDate())) {
-            overdueDays = java.time.temporal.ChronoUnit.DAYS.between(contract.getEndDate(), today);
-        }
-        BigDecimal lateFeeAmount = BigDecimal.ZERO;
-        if (overdueDays > 0) {
-            BigDecimal lateFeePerDay = BigDecimal.valueOf(50000);
-            try {
-                Integer polFee = jdbcTemplate.queryForObject(
-                        "SELECT late_fee_per_day FROM rental_policy WHERE facility_id = ?",
-                        Integer.class,
-                        contract.getStorageUnit().getFacility().getId());
-                if (polFee != null && polFee > 0) {
-                    lateFeePerDay = BigDecimal.valueOf(polFee);
-                }
-            } catch (Exception ignored) {}
-            lateFeeAmount = lateFeePerDay.multiply(BigDecimal.valueOf(overdueDays));
-            // Trần phí trễ tối đa 50% tiền cọc theo PR-Q3
-            BigDecimal maxLateFee = heldDeposit.multiply(new BigDecimal("0.5"));
-            if (lateFeeAmount.compareTo(maxLateFee) > 0) {
-                lateFeeAmount = maxLateFee;
-            }
-        }
-
-        // PR-O11: Thực hoàn = Cọc đang giữ - Phí sự cố - Phí trễ, >= 0
-        BigDecimal netRefund = heldDeposit.subtract(damageFee).subtract(lateFeeAmount);
-        if (netRefund.compareTo(BigDecimal.ZERO) < 0) {
-            netRefund = BigDecimal.ZERO;
-        }
-
-        // Tự động sinh task REFUND cho Quản lý cơ sở xử lý (Hạn 24h không tính CN - PR-93)
-        StaffTask refundTask = new StaffTask();
-        refundTask.setFacilityId(contract.getStorageUnit().getFacility().getId());
-        refundTask.setContract(contract);
-        refundTask.setTaskType("REFUND");
-        refundTask.setStatus("OPEN");
-        refundTask.setDueAt(ReservationService.calculateRefundDeadline(now));
-
-        String refundBreakdown;
-        if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0 && damageFee.compareTo(BigDecimal.ZERO) > 0) {
-            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ - Phí trễ %,.0f₫ (%d ngày) = THỰC HOÀN %,.0f₫",
-                    heldDeposit, damageFee, lateFeeAmount, overdueDays, netRefund);
-        } else if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
-            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí trễ %,.0f₫ (%d ngày) = THỰC HOÀN %,.0f₫",
-                    heldDeposit, lateFeeAmount, overdueDays, netRefund);
-        } else if (damageFee.compareTo(BigDecimal.ZERO) > 0) {
-            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ = THỰC HOÀN %,.0f₫",
-                    heldDeposit, damageFee, netRefund);
-        } else {
-            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ = THỰC HOÀN %,.0f₫",
-                    heldDeposit, netRefund);
-        }
-
-        String refundNote = (task.getNote() != null ? task.getNote() : "") + refundBreakdown;
-        refundTask.setNote(refundNote);
-        staffTaskRepository.save(refundTask);
-
-        entityManager.flush();
-        entityManager.clear();
-        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
     }
 
     private HandoverRecordResponse toHandoverResponse(HandoverRecord record) {
@@ -1449,7 +1168,7 @@ public class StaffTaskService {
 
     // Manager hoàn tất task hoàn tiền (REFUND) - Tuân thủ PR-O15 & L-24
     @Transactional
-    public StaffTaskResponse completeRefundTask(Integer taskId, Integer managerId, CompleteRefundRequest request) {
+    public StaffTaskDetailResponse completeRefundTask(Integer taskId, Integer managerId, CompleteRefundRequest request) {
         User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được xác nhận hoàn tiền");
         StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
 
@@ -1464,21 +1183,33 @@ public class StaffTaskService {
             request = new CompleteRefundRequest();
         }
 
+        boolean isTaskCash = task.getNote() != null && (
+                task.getNote().contains("HOÀN CỌC TIỀN MẶT") ||
+                task.getNote().toLowerCase().contains("tiền mặt"));
         String method = (request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank())
                 ? request.getPaymentMethod().trim().toUpperCase()
-                : "BANK_TRANSFER";
+                : (isTaskCash ? "CASH" : "BANK_TRANSFER");
 
-        // PR-O15: Bắt buộc bằng chứng hoàn tiền
+        String extraNote = request.getNote() != null && !request.getNote().isBlank()
+                ? request.getNote().trim()
+                : (request.getNotes() != null ? request.getNotes().trim() : "");
+
+        // PR-O15: Bắt buộc bằng chứng hoàn tiền (chấp nhận cả khi upload ảnh chứng từ trên trang chi tiết)
+        boolean hasEvidenceImg = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank();
+        String ftCode = request.getBankTransactionCode() != null ? request.getBankTransactionCode().trim() : "";
+
         if ("CASH".equals(method)) {
-            if (!Boolean.TRUE.equals(request.getCashReceiptConfirmed())) {
+            if (!Boolean.TRUE.equals(request.getCashReceiptConfirmed()) && !hasEvidenceImg && extraNote.isEmpty()) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_EVIDENCE_REQUIRED",
                         "Bắt buộc xác nhận khách hàng đã ký nhận tiền mặt tại quầy");
             }
         } else {
-            // Mặc định là BANK_TRANSFER: bắt buộc mã FT ngân hàng
-            if (request.getBankTransactionCode() == null || request.getBankTransactionCode().isBlank()) {
+            if (ftCode.isEmpty() && !hasEvidenceImg) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_EVIDENCE_REQUIRED",
-                        "Bắt buộc nhập mã giao dịch ngân hàng (mã FT) khi hoàn tiền qua chuyển khoản");
+                        "Bắt buộc nhập mã giao dịch ngân hàng (mã FT) hoặc tải ảnh biên lai khi hoàn tiền qua chuyển khoản");
+            }
+            if (ftCode.isEmpty() && hasEvidenceImg) {
+                ftCode = "UNC-IMAGE";
             }
         }
 
@@ -1489,7 +1220,7 @@ public class StaffTaskService {
             task.setClaimedAt(LocalDateTime.now());
         }
 
-        if (request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()) {
+        if (hasEvidenceImg) {
             task.setEvidenceImageUrl(request.getEvidenceImageUrl().trim());
         }
 
@@ -1498,10 +1229,10 @@ public class StaffTaskService {
         if ("CASH".equals(method)) {
             appendNote.append(" | [ĐÃ HOÀN TIỀN MẶT - Khách đã ký nhận]");
         } else {
-            appendNote.append(" | [ĐÃ HOÀN TIỀN CK - Mã FT: ").append(request.getBankTransactionCode().trim()).append("]");
+            appendNote.append(" | [ĐÃ HOÀN TIỀN CK - Mã FT: ").append(ftCode).append("]");
         }
-        if (request.getNote() != null && !request.getNote().isBlank()) {
-            appendNote.append(" - ").append(request.getNote().trim());
+        if (!extraNote.isEmpty()) {
+            appendNote.append(" - ").append(extraNote);
         }
         String fullNote = currentNote + appendNote.toString();
         if (fullNote.length() > 1000) {
@@ -1531,7 +1262,7 @@ public class StaffTaskService {
         // Ghi activity log (PR-A8, PR-A9)
         try {
             String logAction = "Quản lý " + manager.getFullName() + " xác nhận hoàn tất hoàn tiền task #" + task.getId()
-                    + " (Phương thức: " + ("CASH".equals(method) ? "Tiền mặt" : "Chuyển khoản " + request.getBankTransactionCode().trim()) + ")";
+                    + " (Phương thức: " + ("CASH".equals(method) ? "Tiền mặt" : "Chuyển khoản " + ftCode) + ")";
             if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -1542,12 +1273,14 @@ public class StaffTaskService {
         } catch (Exception ignored) {
         }
 
-        return toResponse(task);
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
     }
 
     // Overload cho backward compatibility
     @Transactional
-    public StaffTaskResponse completeRefundTask(Integer taskId, Integer managerId, String note) {
+    public StaffTaskDetailResponse completeRefundTask(Integer taskId, Integer managerId, String note) {
         CompleteRefundRequest req = new CompleteRefundRequest();
         req.setNote(note);
         req.setPaymentMethod("BANK_TRANSFER");
@@ -1558,7 +1291,6 @@ public class StaffTaskService {
     // ================== HỆ THỐNG TÍNH TOÁN QUYẾT TOÁN HOÀN TIỀN (PR-O2, PR-O11, PR-O14, PR-Q3) ==================
 
     public RefundCalculationResult calculateCheckoutRefund(RentalContract contract, LocalDate actualCheckoutDate, BigDecimal totalDamageCost) {
-        BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         if (totalDamageCost == null) {
             totalDamageCost = BigDecimal.ZERO;
         }
@@ -1571,6 +1303,17 @@ public class StaffTaskService {
         } else if (contract.getReservation() != null && contract.getReservation().getUnitType() != null
                 && contract.getReservation().getUnitType().getBasePriceMonthly() != null) {
             baseMonthlyPrice = contract.getReservation().getUnitType().getBasePriceMonthly();
+        }
+
+        // Nếu hợp đồng đã TERMINATED và trigger SQL đã set deposit_held_amount = 0 thì lấy cọc gốc từ reservation hoặc baseMonthlyPrice
+        BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
+        if (depositHeld.compareTo(BigDecimal.ZERO) <= 0) {
+            if (contract.getReservation() != null && contract.getReservation().getDepositAmount() != null
+                    && contract.getReservation().getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+                depositHeld = contract.getReservation().getDepositAmount();
+            } else if (baseMonthlyPrice.compareTo(BigDecimal.ZERO) > 0) {
+                depositHeld = baseMonthlyPrice;
+            }
         }
         if (baseMonthlyPrice.compareTo(BigDecimal.ZERO) <= 0) {
             baseMonthlyPrice = depositHeld;
@@ -1686,35 +1429,32 @@ public class StaffTaskService {
             }
         }
 
-        // Tạo mô tả chi tiết bảng tính
+        // Tạo mô tả chi tiết bảng tính (tương thích cả refundParser.js lẫn hiển thị chi tiết)
         NumberFormat vndFmt = NumberFormat.getInstance(new Locale("vi", "VN"));
         StringBuilder desc = new StringBuilder();
-        desc.append("Hoàn tiền trả kho HĐ ").append(contract.getContractCode())
+        desc.append("Hoàn tiền trả kho | HĐ: ").append(contract.getContractCode())
                 .append(" (Ô ").append(contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "—").append(")")
-                .append(" | Tổng hoàn: ").append(vndFmt.format(totalRefund)).append("đ");
+                .append(" | Cọc gốc ").append(vndFmt.format(depositHeld)).append("đ");
 
-        desc.append(" [Cọc hoàn: ").append(vndFmt.format(depositRefund)).append("đ");
-        if (totalDepositDeductions.compareTo(BigDecimal.ZERO) > 0) {
-            desc.append(" (Cọc gốc: ").append(vndFmt.format(depositHeld)).append("đ");
-            if (totalDamageCost.compareTo(BigDecimal.ZERO) > 0) {
-                desc.append(" - Sự cố: ").append(vndFmt.format(totalDamageCost)).append("đ");
-            }
-            if (graceFee.compareTo(BigDecimal.ZERO) > 0) {
-                desc.append(" - Phí ân hạn ").append(daysPast - 1).append(" ngày: ").append(vndFmt.format(graceFee)).append("đ");
-            }
-            if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
-                desc.append(" - Phí trễ hạn: ").append(vndFmt.format(lateFee)).append("đ");
-            }
-            desc.append(")");
+        if (totalDamageCost.compareTo(BigDecimal.ZERO) > 0) {
+            desc.append(" - Phí hư hại ").append(vndFmt.format(totalDamageCost)).append("đ");
         }
-        desc.append("]");
+        if (graceFee.compareTo(BigDecimal.ZERO) > 0) {
+            desc.append(" - Phí ân hạn ").append(daysPast - 1).append(" ngày: ").append(vndFmt.format(graceFee)).append("đ");
+        }
+        if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
+            desc.append(" - Phí trễ ").append(vndFmt.format(lateFee)).append("đ (").append(daysPast).append(" ngày)");
+        }
+        desc.append(" => Cọc hoàn: ").append(vndFmt.format(depositRefund)).append("đ");
 
         if (earlyRentRefund.compareTo(BigDecimal.ZERO) > 0) {
-            desc.append(" [Hoàn tiền thuê trả sớm: ").append(vndFmt.format(earlyRentRefund)).append("đ")
-                    .append(" (Đã trả: ").append(vndFmt.format(rentPaid)).append("đ")
+            desc.append(" + Hoàn tiền thuê trả sớm: ").append(vndFmt.format(earlyRentRefund)).append("đ")
+                    .append(" (Đã trả ").append(cycleMonths).append("T: ").append(vndFmt.format(rentPaid)).append("đ")
                     .append(" - Đã dùng ").append(usedMonths).append("T: ").append(vndFmt.format(baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths)))).append("đ")
-                    .append(" - Phí hủy HĐ: ").append(vndFmt.format(breakFee)).append("đ)]");
+                    .append(" - Phí hủy HĐ: ").append(vndFmt.format(breakFee)).append("đ)");
         }
+
+        desc.append(" => THỰC HOÀN ").append(vndFmt.format(totalRefund)).append("đ");
 
         if (excessDebt.compareTo(BigDecimal.ZERO) > 0) {
             desc.append(" [Nợ vượt cọc cần truy thu: ").append(vndFmt.format(excessDebt)).append("đ]");
@@ -1739,6 +1479,42 @@ public class StaffTaskService {
                 .excessDebtAmount(excessDebt)
                 .breakdownDescription(desc.toString())
                 .build();
+    }
+
+    private String buildEnrichedRefundNote(RentalContract contract, String rawNote, LocalDate refDate) {
+        try {
+            BigDecimal dmg = BigDecimal.ZERO;
+            List<DamageCase> cases = damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());
+            for (DamageCase dc : cases) {
+                if (dc.getEstimatedCost() != null) {
+                    dmg = dmg.add(dc.getEstimatedCost());
+                }
+            }
+            if (dmg.compareTo(BigDecimal.ZERO) == 0 && rawNote != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Sự cố:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(rawNote);
+                if (m.find()) {
+                    dmg = new BigDecimal(m.group(1).replace(",", "").replace(".", ""));
+                }
+            }
+            RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, dmg);
+            StringBuilder enriched = new StringBuilder(calc.getBreakdownDescription());
+            if (rawNote != null && !rawNote.isBlank()) {
+                // Giữ lại thông tin STK ngân hàng / tiền mặt và xác nhận hoàn tiền từ note cũ
+                String[] parts = rawNote.split("\\|");
+                for (String part : parts) {
+                    String p = part.trim();
+                    if (p.startsWith("Ngân hàng:") || p.startsWith("STK:") || p.startsWith("Chủ TK:")
+                            || p.startsWith("Hoàn cọc STK:") || p.startsWith("Hoàn tiền:")
+                            || p.startsWith("Khách:") || p.startsWith("Lý do:")
+                            || p.startsWith("[ĐÃ HOÀN")) {
+                        enriched.append(" | ").append(p);
+                    }
+                }
+            }
+            return enriched.toString();
+        } catch (Exception e) {
+            return rawNote;
+        }
     }
 
     // PR-93: Deadline xử lý hoàn tiền là 24h, không tính Chủ Nhật

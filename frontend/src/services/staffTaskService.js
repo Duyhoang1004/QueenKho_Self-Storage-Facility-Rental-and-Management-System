@@ -49,15 +49,7 @@ export async function submitContactReport(taskId, payload) {
   return res.data
 }
 
-// Manager hoàn thành task hoàn tiền (REFUND) - PR-O15 & L-24
-export async function completeRefundTask(taskId, managerId, payload) {
-  const body = typeof payload === 'string' ? { note: payload } : (payload || {})
-  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, { params: { managerId } })
-  return res.data
-}
-
-// UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
-// Hỗ trợ cả 2 signature: (taskId, userId, payloadObj) và (taskId, managerId, noteString)
+// UC-25: Quản lý cơ sở hoàn tất hoàn trả tiền (REFUND) - PR-O15 & L-24
 export async function completeRefundTask(taskId, userId, payload) {
   const body = typeof payload === 'string' ? { note: payload } : (payload || {})
   const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, {

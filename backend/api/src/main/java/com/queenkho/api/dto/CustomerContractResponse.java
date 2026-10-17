@@ -41,4 +41,8 @@ public class CustomerContractResponse {
     private BigDecimal refundAmount;
     private BigDecimal damageFee;
     private Boolean isInspectionCompleted;    // 🌟 Đã hoàn tất biên bản nghiệm thu (CHECK_OUT)
+    private BigDecimal depositRefund;         // 🌟 Tiền cọc hoàn lại sau khấu trừ
+    private BigDecimal earlyRentRefund;       // 🌟 Tiền thuê các tháng còn lại được hoàn khi trả sớm (PR-O2)
+    private Integer usedMonths;               // 🌟 Số tháng đã sử dụng (làm tròn lên)
+    private BigDecimal breakFee;              // 🌟 Phí phạt trả kho sớm (1 tháng giá gốc)
 }

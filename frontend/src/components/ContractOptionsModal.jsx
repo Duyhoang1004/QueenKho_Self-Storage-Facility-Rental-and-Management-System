@@ -29,10 +29,6 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const [bankAccountName, setBankAccountName] = useState('')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
-  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
-  const [bankName, setBankName] = useState('')
-  const [bankAccountNumber, setBankAccountNumber] = useState('')
-  const [bankAccountName, setBankAccountName] = useState('')
 
   const isTerminationPending = contract?.status === 'TERMINATION_PENDING'
   const today = new Date().toISOString().split('T')[0]
@@ -533,13 +529,20 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                     <span className="font-bold text-red-600">- {formatVND(earlyRefundCalc.breakFee)}</span>
                   </div>
                   <div className="flex justify-between border-t border-[#D0F8AB] pt-1 text-xs">
-                    <span className="font-black text-[#2B5300]">Tiền thuê dự kiến hoàn lại:</span>
+                    <span className="font-black text-[#2B5300]">Tiền thuê còn lại hoàn trả:</span>
                     <span className="font-black text-sm text-[#58A700]">+{formatVND(earlyRefundCalc.earlyRentRefund)}</span>
                   </div>
+                  <div className="flex justify-between text-xs pt-0.5">
+                    <span className="font-black text-[#2B5300]">Tiền cọc giữ kho hoàn lại (dự kiến):</span>
+                    <span className="font-black text-sm text-[#1899D6]">+{depositAmount}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-[#D0F8AB] pt-1 text-xs">
+                    <span className="font-black uppercase text-[#2B5300]">Tổng dự kiến hoàn trả khách:</span>
+                    <span className="font-black text-base text-[#58A700]">
+                      {formatVND(Number(contract.depositHeldAmount || 0) + earlyRefundCalc.earlyRentRefund)}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-[#2B5300]/80">
-                  * Tiền cọc giữ chỗ ({depositAmount}) sẽ được hoàn trả riêng sau khi nhân viên nghiệm thu khoang trống.
-                </span>
               </div>
             )}
 
@@ -573,78 +576,6 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             )}
 
-            {/* Chọn phương thức nhận tiền hoàn (PR-O3, L-18) */}
-            <div className="flex flex-col gap-2 my-2 pt-2 border-t border-slate-100">
-              <label className="text-xs font-bold text-slate-700">Phương thức nhận lại tiền cọc / tiền hoàn:</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRefundMethod('BANK_TRANSFER')}
-                  className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                    refundMethod === 'BANK_TRANSFER' ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">account_balance</span>
-                  Chuyển khoản ngân hàng
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRefundMethod('CASH')}
-                  className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all ${
-                    refundMethod === 'CASH' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">payments</span>
-                  Tiền mặt tại quầy
-                </button>
-              </div>
-
-              {refundMethod === 'BANK_TRANSFER' ? (
-                <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Tên ngân hàng thụ hưởng *:</label>
-                    <input
-                      type="text"
-                      placeholder="VD: Vietcombank, Techcombank, MB Bank..."
-                      value={bankName}
-                      onChange={e => setBankName(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">Số tài khoản *:</label>
-                      <input
-                        type="text"
-                        placeholder="Số tài khoản..."
-                        value={bankAccountNumber}
-                        onChange={e => setBankAccountNumber(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">Tên chủ tài khoản *:</label>
-                      <input
-                        type="text"
-                        placeholder="NGUYEN VAN A"
-                        value={bankAccountName}
-                        onChange={e => setBankAccountName(e.target.value)}
-                        className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary uppercase"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-900 leading-relaxed">
-                  Quý khách sẽ ký nhận tiền mặt trực tiếp từ Quản lý cơ sở sau khi nhân viên hoàn tất biên bản nghiệm thu trả kho tại quầy.
-                </div>
-              )}
-            </div>
-
-            {/* Form thông tin ngân hàng nhận hoàn tiền */}
             {/* Phương thức nhận tiền hoàn cọc (PR-O3: Chuyển khoản hoặc Tiền mặt tại quầy) */}
             {Number(contract.depositHeldAmount || 0) > 0 && (
               <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] rounded-xl p-4 mb-3 flex flex-col gap-3">

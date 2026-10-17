@@ -243,21 +243,21 @@ GO
 CREATE TABLE facility_tasks (
     id                  INT IDENTITY(1,1) PRIMARY KEY,
     facility_id         INT NOT NULL,
-    task_type           NVARCHAR(50) NOT NULL,                -- CHECK_IN, CHECK_OUT, SUPPORT, REFUND, MAINTENANCE...
-    contract_id         INT NULL,                             -- Bắt buộc với CHECK_IN / CHECK_OUT
-    support_request_id  INT NULL,                             -- Bắt buộc với SUPPORT
+    task_type           NVARCHAR(50) NOT NULL,                -- CHECK_IN, CHECK_OUT, SUPPORT, REFUND, MAINTENANCE
+    contract_id         INT NULL,                             -- bắt buộc với CHECK_IN / CHECK_OUT
+    support_request_id  INT NULL,                             -- bắt buộc với SUPPORT
     status              NVARCHAR(30) NOT NULL DEFAULT 'OPEN', -- OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
     staff_id            INT NULL,                             -- ID người phụ trách (Staff hoặc Facility Manager)
-    due_at              DATETIME2(7) NOT NULL,                -- Deadline hoàn thành
-    evidence_image_url  NVARCHAR(1000) NULL,                  -- Ảnh bằng chứng chuyển khoản / nghiệm thu
-    note                NVARCHAR(1000) NULL,                  -- Chi tiết STK, thông tin hoàn cọc
-    created_at          DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
-    claimed_at          DATETIME2(7) NULL,
-    completed_at        DATETIME2(7) NULL,
-    CONSTRAINT FK_facilitytasks_facility FOREIGN KEY (facility_id) REFERENCES facilities(id),
-    CONSTRAINT FK_facilitytasks_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
+    due_at              DATETIME2 NOT NULL,                   -- deadline hoàn thành
+    evidence_image_url  NVARCHAR(1000) NULL,                  -- ảnh bằng chứng chuyển khoản / nghiệm thu
+    note                NVARCHAR(1000) NULL,                  -- chi tiết STK, thông tin hoàn cọc
+    created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    claimed_at          DATETIME2 NULL,
+    completed_at        DATETIME2 NULL,
+    CONSTRAINT FK_facilitytasks_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),
+    CONSTRAINT FK_facilitytasks_contract FOREIGN KEY (contract_id)        REFERENCES rental_contracts(id),
     CONSTRAINT FK_facilitytasks_support  FOREIGN KEY (support_request_id) REFERENCES support_requests(id),
-    CONSTRAINT FK_facilitytasks_user     FOREIGN KEY (staff_id)    REFERENCES users(id),
+    CONSTRAINT FK_facilitytasks_user     FOREIGN KEY (staff_id)           REFERENCES users(id),
     CONSTRAINT CK_facilitytasks_type     CHECK (task_type IN ('CHECK_IN', 'CHECK_OUT', 'SUPPORT', 'REFUND', 'MAINTENANCE')),
     CONSTRAINT CK_facilitytasks_status   CHECK (status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED', 'CANCELLED')),
     CONSTRAINT CK_facilitytasks_target   CHECK (
@@ -268,6 +268,7 @@ CREATE TABLE facility_tasks (
 );
 GO
 CREATE INDEX IX_facilitytasks_facility_status ON facility_tasks(facility_id, status);
+CREATE INDEX IX_facilitytasks_contract        ON facility_tasks(contract_id);
 CREATE INDEX IX_facilitytasks_staff           ON facility_tasks(staff_id);
 GO
 
@@ -429,3 +430,79 @@ UNION ALL SELECT 'rental_policy', COUNT(*) FROM rental_policy
 UNION ALL SELECT 'storage_units', COUNT(*) FROM storage_units
 UNION ALL SELECT 'users',         COUNT(*) FROM users;
 GO
+/* ---------- 14. Đồng bộ bảng và Trigger Hoàn Cọc (UC-15, UC-22, UC-25) ---------- */
+-- Đảm bảo tương thích nếu database cũ dùng tên 'staff_tasks'
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'staff_tasks') 
+   AND NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'facility_tasks')
+BEGIN
+    EXEC sp_rename 'staff_tasks', 'facility_tasks';
+END
+GO
+
+IF EXISTS (SELECT * FROM sys.tables WHERE name = 'facility_tasks')
+   AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('facility_tasks') AND name = 'evidence_image_url')
+BEGIN
+    ALTER TABLE facility_tasks ADD evidence_image_url NVARCHAR(1000) NULL;
+END
+GO
+
+-- Trigger tự động đồng bộ trạng thái đơn và giao dịch hoàn tiền
+CREATE OR ALTER TRIGGER trg_payment_transactions_refund_sync
+ON payment_transactions
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    UPDATE r
+    SET r.status = 'REFUNDED'
+    FROM reservations r
+    INNER JOIN inserted i ON r.id = i.reservation_id
+    WHERE i.payment_type = 'REFUND' 
+      AND i.status = 'SUCCESS'
+      AND r.status <> 'REFUNDED';
+END;
+GO
+
+CREATE OR ALTER TRIGGER trg_facility_tasks_refund_sync
+ON facility_tasks
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- 1. Khi task REFUND chuyển sang COMPLETED gắn với hợp đồng: cập nhật contract = TERMINATED
+    UPDATE c
+    SET c.status = 'TERMINATED', c.deposit_held_amount = 0
+    FROM rental_contracts c
+    INNER JOIN inserted i ON c.id = i.contract_id
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND c.status <> 'TERMINATED';
+      
+    -- 2. Khi task REFUND chuyển sang COMPLETED (hủy đơn đặt chỗ): tìm reservation từ note và update REFUNDED
+    UPDATE r
+    SET r.status = 'REFUNDED'
+    FROM reservations r
+    INNER JOIN inserted i ON (
+        i.note LIKE '%' + r.reservation_code + '%'
+    )
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND r.status <> 'REFUNDED';
+      
+    -- 3. Cập nhật payment_transactions thành SUCCESS luôn nếu còn PENDING
+    UPDATE p
+    SET p.status = 'SUCCESS', p.paid_at = SYSDATETIME()
+    FROM payment_transactions p
+    INNER JOIN reservations r ON p.reservation_id = r.id
+    INNER JOIN inserted i ON (
+        i.note LIKE '%' + r.reservation_code + '%'
+    )
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND p.payment_type = 'REFUND'
+      AND p.status <> 'SUCCESS';
+END;
+GO
+

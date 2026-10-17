@@ -56,3 +56,25 @@ export async function completeRefundTask(taskId, managerId, payload) {
   return res.data
 }
 
+// UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
+// Hỗ trợ cả 2 signature: (taskId, userId, payloadObj) và (taskId, managerId, noteString)
+export async function completeRefundTask(taskId, userId, payload) {
+  const body = typeof payload === 'string' ? { note: payload } : (payload || {})
+  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, {
+    params: { userId, managerId: userId }
+  })
+  return res.data
+}
+
+// Upload file ảnh (biên lai hoàn cọc, nghiệm thu)
+export async function uploadImageFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await api.post('/uploads', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return res.data // { url: '...', fileName: '...' }
+}
+

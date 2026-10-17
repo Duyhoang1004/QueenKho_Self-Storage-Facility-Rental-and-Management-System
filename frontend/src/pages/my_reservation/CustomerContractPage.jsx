@@ -187,14 +187,40 @@ export default function CustomerContractPage() {
     );
   if (!contract) return null;
 
-  const statusInfo = STATUS_MAP[contract.status] || {
-    label: contract.status,
-    cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
-    icon: "info",
-  };
+  const isTerminated = contract.status === "TERMINATED";
+  const hasRefunded = isTerminated;
 
-  // Tính toán các khoản chi phí của hợp đồng
-  const depositAmount = Number(contract.depositHeldAmount || 0);
+  const statusInfo = isTerminated
+    ? {
+        label: "Đã kết thúc (Đã hoàn cọc)",
+        cls: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
+        icon: "payments",
+      }
+    : (STATUS_MAP[contract.status] || {
+        label: contract.status,
+        cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
+        icon: "info",
+      });
+
+  // Tính toán các khoản chi phí của hợp đồng (ưu tiên originalDeposit nếu hợp đồng đã kết thúc)
+  const depositAmount = Number(
+    contract.originalDeposit != null
+      ? contract.originalDeposit
+      : (contract.depositHeldAmount || contract.basePriceMonthly || 0)
+  );
+  const damageFee = Number(contract.damageFee || 0);
+  const lateFee = Number(contract.lateFeeAmount || 0);
+  const actualLateFee = lateFee > 0 ? lateFee : 0;
+  const refundedDeposit = Number(
+    contract.refundAmount != null && Number(contract.refundAmount) > 0
+      ? contract.refundAmount
+      : ((damageFee > 0 || actualLateFee > 0) ? Math.max(0, depositAmount - damageFee - actualLateFee) : depositAmount)
+  );
+  const actualDamageFee = damageFee > 0
+    ? damageFee
+    : (depositAmount > (refundedDeposit + actualLateFee) ? depositAmount - refundedDeposit - actualLateFee : 0);
+  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0 || actualLateFee > 0);
+
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
   const monthlyRent = Number(
     contract.basePriceMonthly || contract.depositHeldAmount || 0,
@@ -219,6 +245,47 @@ export default function CustomerContractPage() {
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
+        </div>
+      )}
+
+      {/* Thông báo hợp đồng đã thanh lý & hoàn cọc nếu TERMINATED */}
+      {isTerminated && (
+        <div className="bg-[#FAF5FF] border-2 border-[#CE82FF] rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-[#F3E8FF] flex items-center justify-center shrink-0 border-2 border-[#CE82FF]">
+            <span className="material-symbols-outlined text-[#A560E8] text-[28px]">
+              payments
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-black text-[#A560E8]">
+                Hợp đồng đã kết thúc & Đã hoàn cọc thành công
+              </span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#A560E8] text-white">
+                ĐÃ HOÀN CỌC
+              </span>
+            </div>
+            <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
+              Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Số tiền cọc{" "}
+              <strong className="text-[#A560E8] font-black">
+                {formatVND(refundedDeposit)}
+              </strong>{" "}
+              {(actualDamageFee > 0 || actualLateFee > 0) ? (
+                <span>
+                  (sau khi đã khấu trừ{" "}
+                  {actualDamageFee > 0 && (
+                    <span><strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại khoang</span>
+                  )}
+                  {actualDamageFee > 0 && actualLateFee > 0 && " và "}
+                  {actualLateFee > 0 && (
+                    <span><strong className="text-[#D97706]">{formatVND(actualLateFee)}</strong> phí phạt trễ hạn</span>
+                  )}
+                  )
+                </span>
+              ) : null}{" "}
+              đã được quản lý cơ sở chuyển hoàn vào tài khoản ngân hàng của bạn.
+            </span>
+          </div>
         </div>
       )}
 
@@ -333,19 +400,134 @@ export default function CustomerContractPage() {
                 </span>
 
                 {/* 1. Tiền cọc */}
-                <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-[#4B4B4B]">
-                      Tiền cọc giữ kho
-                    </span>
-                    <span className="text-[10px] font-bold text-[#AFAFAF]">
-                      Hoàn lại 100% khi thanh lý kho
-                    </span>
+                {(actualDamageFee > 0 || actualLateFee > 0) ? (
+                  <>
+                    <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black text-[#4B4B4B]">
+                          Tiền cọc giữ kho ban đầu
+                        </span>
+                        <span className="text-[10px] font-bold text-[#AFAFAF]">
+                          Khoản tiền cọc đã đóng khi tạo hợp đồng
+                        </span>
+                      </div>
+                      <span className="text-sm font-black text-[#4B4B4B]">
+                        {formatVND(depositAmount)}
+                      </span>
+                    </div>
+
+                    {/* Khấu trừ phí hư hại */}
+                    {actualDamageFee > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-red-50/60 -mx-4 px-4 py-2 rounded-lg">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#FF4B4B]">
+                              Khấu trừ phí hư hại / phát sinh
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FFDFDF] text-[#FF4B4B] border border-[#FF4B4B]/30">
+                              Biên bản nghiệm thu
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-[#FF4B4B]/80">
+                            Khấu trừ trực tiếp vào tiền cọc khi trả kho
+                          </span>
+                        </div>
+                        <span className="text-sm font-black text-[#FF4B4B]">
+                          -{formatVND(actualDamageFee)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Khấu trừ phí phạt trễ hạn */}
+                    {actualLateFee > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-amber-50/60 -mx-4 px-4 py-2 rounded-lg">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#D97706]">
+                              Khấu trừ phí phạt trễ hạn {contract.overdueDays ? `(${contract.overdueDays} ngày)` : ""}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF3C7] text-[#D97706] border border-[#F59E0B]/30">
+                              Quá hạn
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-[#D97706]/80">
+                            Khấu trừ trực tiếp vào tiền cọc khi trả kho trễ
+                          </span>
+                        </div>
+                        <span className="text-sm font-black text-[#D97706]">
+                          -{formatVND(actualLateFee)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Tiền cọc thực nhận hoàn */}
+                    <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-[#4B4B4B]">
+                            {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền hoàn cọc (dự kiến)"}
+                          </span>
+                          {hasRefunded && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
+                              Đã hoàn cọc
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-bold text-[#AFAFAF]">
+                          {hasRefunded
+                            ? `Đã chuyển ${formatVND(refundedDeposit)} vào tài khoản ngân hàng`
+                            : "Dự kiến hoàn trả vào STK sau khi Quản lý hoàn tất đối soát"}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className={`text-sm font-black ${hasRefunded ? "text-[#A560E8]" : "text-[#58CC02]"}`}>
+                          {formatVND(refundedDeposit)}
+                        </span>
+                        {hasRefunded && (
+                          <span className="text-[10px] font-black text-[#A560E8]">
+                            ✓ Đã hoàn cọc
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-[#4B4B4B]">
+                          {hasRefunded ? "Thực nhận hoàn cọc" : "Tiền cọc giữ kho"}
+                        </span>
+                        {hasRefunded && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#F3E8FF] text-[#A560E8] border border-[#CE82FF]">
+                            Đã hoàn cọc
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold text-[#AFAFAF]">
+                        {hasRefunded
+                          ? `Đã hoàn trả ${formatVND(refundedDeposit)} khi trả kho`
+                          : "Hoàn lại 100% khi thanh lý kho"}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span
+                        className={`text-sm font-black ${
+                          hasRefunded
+                            ? "text-[#A560E8]"
+                            : "text-[#1CB0F6]"
+                        }`}
+                      >
+                        {formatVND(depositAmount)}
+                      </span>
+                      {hasRefunded && (
+                        <span className="text-[10px] font-black text-[#A560E8]">
+                          ✓ Đã hoàn cọc
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-sm font-black text-[#1CB0F6]">
-                    {formatVND(depositAmount)}
-                  </span>
-                </div>
+                )}
 
                 {/* 2. Tiền thuê đã đóng thực tế từ payment_transactions */}
                 <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
@@ -392,28 +574,56 @@ export default function CustomerContractPage() {
                     check-in xong.
                   </span>
                 </div>
+              ) : isTerminated || contract.status === "LIQUIDATED" ? (
+                <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex items-start gap-3 mt-1 text-left">
+                  <span className="material-symbols-outlined text-[#58A700] text-[22px]">
+                    task_alt
+                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-[#4B4B4B]">
+                      Hợp đồng này đã kết thúc. Bạn đã hoàn tất trả kho và nhận lại tiền cọc.
+                    </span>
+                    {actualDamageFee > 0 && (
+                      <span className="text-[11px] font-medium text-[#FF4B4B]">
+                        * Đã khấu trừ {formatVND(actualDamageFee)} chi phí hư hại theo biên bản nghiệm thu. Số tiền thực nhận hoàn: {formatVND(refundedDeposit)}.
+                      </span>
+                    )}
+                  </div>
+                </div>
               ) : (
                 /* Nút tùy chọn hợp đồng / Hủy chờ trả kho */
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-1 text-center">
                   <span className="text-xs font-bold text-[#AFAFAF]">
                     {contract.status === "TERMINATION_PENDING"
-                      ? "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?"
+                      ? (isInspectionDone ? "Tiến trình thanh lý & hoàn tất cọc" : "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?")
                       : "Cần thêm thời gian hoặc trả kho sớm?"}
                   </span>
                   {contract.status === "TERMINATION_PENDING" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCancelCheckoutError("");
-                        setIsCancelCheckoutModalOpen(true);
-                      }}
-                      className="duo-btn-red w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        cancel
-                      </span>
-                      HỦY CHỜ TRẢ KHO
-                    </button>
+                    isInspectionDone ? (
+                      <div className="w-full bg-[#FAF5FF] border-2 border-[#E9D8FD] rounded-2xl p-4 flex flex-col items-center gap-2 text-center">
+                        <div className="flex items-center gap-1.5 text-[#805AD5] font-black text-xs uppercase tracking-wide">
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                          Khoang đã hoàn tất nghiệm thu &amp; bàn giao
+                        </div>
+                        <p className="text-[11px] font-bold text-[#777777] leading-relaxed">
+                          Nhân viên đã hoàn tất kiểm tra khoang. Quản lý cơ sở đang thực hiện đối soát và chuyển khoản hoàn cọc cho bạn (dự kiến trong 24h).
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelCheckoutError("");
+                          setIsCancelCheckoutModalOpen(true);
+                        }}
+                        className="duo-btn-red w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          cancel
+                        </span>
+                        HỦY CHỜ TRẢ KHO
+                      </button>
+                    )
                   ) : (
                     <button
                       type="button"
@@ -450,7 +660,11 @@ export default function CustomerContractPage() {
                 </span>{" "}
                 Mã PIN SmartLock
               </span>
-              {contract.status === "OVERDUE" && (contract.overdueDays || 0) >= 5 ? (
+              {isTerminated ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã vô hiệu hoá (Đã trả kho)
+                </span>
+              ) : contract.status === "OVERDUE" && (contract.overdueDays || 0) >= 5 ? (
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-xl font-mono font-black text-[#FF4B4B] tracking-wider">
                     BỊ TẠM KHÓA
@@ -477,7 +691,11 @@ export default function CustomerContractPage() {
                 </span>{" "}
                 Mã thẻ RFID
               </span>
-              {contract.rfidCardCode ? (
+              {isTerminated ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã thu hồi thẻ
+                </span>
+              ) : contract.rfidCardCode ? (
                 <span className="text-lg font-mono font-black tracking-widest text-[#4B4B4B]">
                   {contract.rfidCardCode}
                 </span>

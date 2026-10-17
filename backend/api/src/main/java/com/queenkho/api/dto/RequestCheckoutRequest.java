@@ -13,6 +13,7 @@ public class RequestCheckoutRequest {
     private String bankName;
     private String bankAccountNumber;
     private String bankAccountName;
+    private String refundMethod; // BANK_TRANSFER | CASH
     private String notes;
 }
 

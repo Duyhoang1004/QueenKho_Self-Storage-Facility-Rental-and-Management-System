@@ -20,14 +20,17 @@ public class StaffTaskDetailResponse {
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;
     private LocalDateTime completedAt;
+    private Integer facilityId;
+    private String evidenceImageUrl;
     private String note;
 
     private Integer staffId;
     private String staffName;
 
-    // Hợp đồng
+    // Hợp đồng / Đơn đặt chỗ
     private Integer contractId;
     private String contractCode;
+    private String reservationCode;
     private String contractStatus;
     private LocalDate contractStartDate;
     private LocalDate contractEndDate;

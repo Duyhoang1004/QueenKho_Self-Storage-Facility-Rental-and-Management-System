@@ -203,7 +203,7 @@ public class ContractService {
             noteBuilder.append(" | Hoàn tiền: Nhận tiền mặt trực tiếp tại quầy");
         }
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            noteBuilder.append(" | Ghi chú: ").append(request.getNotes());
+            noteBuilder.append(" | Ghi chú: ").append(request.getNotes().trim());
         }
         String noteStr = noteBuilder.toString();
 
@@ -257,6 +257,22 @@ public class ContractService {
 
         if (!"TERMINATION_PENDING".equals(contract.getStatus())) {
             throw new IllegalStateException("Hợp đồng không ở trạng thái chờ trả kho để có thể hủy");
+        }
+
+        // Kiểm tra xem nhân viên đã hoàn tất nghiệm thu (CHECK_OUT) hoặc đã tạo task hoàn tiền (REFUND) chưa
+        try {
+            Integer refundCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' AND status != 'CANCELLED'",
+                    Integer.class, contract.getId());
+            Integer handoverCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM handover_records WHERE contract_id = ? AND record_type = 'CHECK_OUT'",
+                    Integer.class, contract.getId());
+            if ((refundCount != null && refundCount > 0) || (handoverCount != null && handoverCount > 0)) {
+                throw new IllegalStateException("Khoang đã được nhân viên hoàn tất nghiệm thu bàn giao. Không thể hủy yêu cầu trả kho.");
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception ignored) {
         }
 
         // Khôi phục trạng thái ACTIVE (hoặc OVERDUE nếu ngày kết thúc đã qua)

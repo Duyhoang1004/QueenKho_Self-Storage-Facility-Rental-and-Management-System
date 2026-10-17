@@ -117,7 +117,7 @@ export default function StaffLayout() {
                   {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'S'}
                 </div>
                 <div className="hidden md:flex flex-col text-left">
-                  <span className="text-xs font-black text-[#4B4B4B] leading-tight">{currentUser.fullName}</span>
+                  <span className="text-xs font-black text-[#4B4B4B] leading-tight">{currentUser.fullName || 'Nhân viên'}</span>
                   <span className="text-[10px] font-extrabold text-[#AFAFAF] uppercase leading-tight">Nhân viên</span>
                 </div>
               </div>

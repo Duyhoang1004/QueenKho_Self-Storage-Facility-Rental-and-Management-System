@@ -149,7 +149,7 @@ public class ContractService {
             LocalDate prevCheckoutDate = null;
             try {
                 var dueAtTimestamp = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 due_at FROM staff_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
+                        "SELECT TOP 1 due_at FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
                         java.sql.Timestamp.class,
                         contract.getId());
                 if (dueAtTimestamp != null) {
@@ -208,7 +208,7 @@ public class ContractService {
             staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_OUT", checkoutDate);
             try {
                 jdbcTemplate.update(
-                        "UPDATE staff_tasks SET note = ? WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
+                        "UPDATE facility_tasks SET note = ? WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
                         noteStr, contract.getId());
             } catch (Exception ignored) {
             }

@@ -1,7 +1,7 @@
-﻿USE QueenKhoDB;
+USE QueenKhoDB;
 GO
 
-DELETE FROM staff_tasks;
+DELETE FROM facility_tasks;
 DELETE FROM handover_records;
 DELETE FROM rental_contracts;
 DELETE FROM payment_transactions;

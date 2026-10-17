@@ -30,6 +30,10 @@ import StaffLayout from './layouts/StaffLayout';
 import StaffTaskBoardPage from './pages/staff/StaffTaskBoardPage';
 import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
 
+// Import Admin Pages (UC-03, UC-08, UC-31)
+import AdminLayout from './layouts/AdminLayout';
+import AdminComingSoonPage from './pages/admin/AdminComingSoonPage';
+
 
 export default function App() {
   return (
@@ -74,6 +78,14 @@ export default function App() {
       <Route element={<StaffLayout />}>
         <Route path="/staff" element={<StaffTaskBoardPage />} />
         <Route path="/staff/tasks/:id" element={<StaffTaskDetailPage />} />
+      </Route>
+
+      {/* ========== Admin Portal (UC-03, UC-08, UC-31) ========== */}
+      <Route element={<AdminLayout />}>
+        <Route path="/admin" element={<AdminComingSoonPage title="Tổng quan" uc="Dashboard Admin" icon="space_dashboard" />} />
+        <Route path="/admin/users" element={<AdminComingSoonPage title="Người dùng" uc="UC-08" icon="manage_accounts" />} />
+        <Route path="/admin/roles" element={<AdminComingSoonPage title="Vai trò & phân quyền" uc="UC-03" icon="admin_panel_settings" />} />
+        <Route path="/admin/logs" element={<AdminComingSoonPage title="Nhật ký hoạt động" uc="UC-31" icon="history" />} />
       </Route>
     </Routes>
   );

@@ -1,6 +1,7 @@
 package com.queenkho.api.controller;
 
 import com.queenkho.api.dto.CheckInRequest;
+import com.queenkho.api.dto.CheckOutRequest;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.service.StaffTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,7 +63,7 @@ public class StaffTaskController {
         }
     }
 
-    // UC-18: chi tiết task (kèm biên bản nếu đã check-in)
+    // UC-18 / UC-23: chi tiết task (kèm biên bản & sự cố nếu đã hoàn thành)
     // GET /api/v1/staff-tasks/12?userId=5
     // {id:\\d+}: chỉ khớp khi id là số → "/pin-suggestion" không bị hiểu nhầm thành id
     @GetMapping("/{id:\\d+}")
@@ -87,6 +88,19 @@ public class StaffTaskController {
         }
     }
 
+    // UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có)
+    // POST /api/v1/staff-tasks/12/check-out?staffId=5   body: CheckOutRequest
+    @PostMapping("/{id}/check-out")
+    public ResponseEntity<?> checkOut(@PathVariable Integer id,
+                                      @RequestParam(required = false) Integer staffId,
+                                      @RequestBody(required = false) CheckOutRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.checkOut(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     // Staff báo cáo kết quả liên hệ khách hàng (No-Show workflow)
     // POST /api/v1/staff-tasks/12/contact-report
     @PostMapping("/{id}/contact-report")
@@ -101,15 +115,14 @@ public class StaffTaskController {
         }
     }
 
-    // Manager hoàn thành task hoàn tiền (REFUND)
+    // Manager hoàn thành task hoàn tiền (REFUND) - PR-O15 & L-24
     // POST /api/v1/staff-tasks/{id}/complete-refund?managerId=3
     @PostMapping("/{id}/complete-refund")
     public ResponseEntity<?> completeRefund(@PathVariable Integer id,
                                            @RequestParam(required = false) Integer managerId,
-                                           @RequestBody(required = false) Map<String, String> body) {
+                                           @RequestBody(required = false) com.queenkho.api.dto.CompleteRefundRequest request) {
         try {
-            String note = body != null ? body.get("note") : null;
-            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, managerId, note));
+            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, managerId, request));
         } catch (StaffTaskException e) {
             return toError(e);
         } catch (Exception e) {

@@ -1,6 +1,6 @@
 # QueenKho — Business Rules
 
-> Cập nhật: 16/10/2026 · Nguồn: code trên `main` (commit `7428cb8`) + file phân công `SWP391_Task` + các buổi chốt nghiệp vụ của nhóm.
+> Cập nhật: 17/10/2026 · Nguồn: code trên `main` (commit `e887c67`) + file phân công `SWP391_Task` + các buổi chốt nghiệp vụ + góp ý thành viên (17/10, mục 7).
 >
 > **Ký hiệu**
 > - **BR-xx** — rule **đang chạy trong code**. Dòng có ~~gạch~~ là rule cũ **đã bị thay** bởi PR ghi bên cạnh.
@@ -19,6 +19,7 @@
 4. [Lỗi trong code hiện tại](#4-lỗi-trong-code-hiện-tại)
 5. [Thay đổi schema cần làm](#5-thay-đổi-schema-cần-làm)
 6. [Mã lỗi API](#6-mã-lỗi-api)
+7. [Lịch sử thay đổi theo góp ý](#7-lịch-sử-thay-đổi-theo-góp-ý)
 
 ---
 
@@ -43,7 +44,7 @@
 ### 0.2 Việc tiên quyết
 - **Portal riêng `/bom` và `/admin`** (hiện BOM đăng nhập bị đá ra, Admin dùng chung `/manager`) → phải có trước khi làm UC-03/04/05/07/08/29/31.
 - **Entity `RentalPolicy`** (PR-Q13) → cần cho UC-07, UC-15 (PR-15), UC-28.
-- **Màn "Hoàn tiền" của FM** (PR-O12) → dùng chung cho UC-15, EX-03, UC-23, UC-28; đồng thời sửa L-01.
+- **Task `REFUND` cho FM** (PR-O12, đã có từ #55 / #57) → dùng chung cho UC-15, EX-03, UC-23, UC-28; các UC sau chỉ cần sinh task `REFUND`.
 
 ---
 
@@ -54,8 +55,8 @@
 |---|---|
 | PR-90 | Mọi API lấy người thao tác từ **token**, không nhận `customerId`/`managerId`/`staffId` qua query. Khách chỉ xem/thao tác **đơn & hợp đồng của mình**; FM/Staff chỉ dữ liệu **cơ sở mình**. *(nợ kỹ thuật, làm sau)* |
 | PR-91 | Mọi thay đổi trạng thái nằm trong 1 `@Transactional` và ghi `activity_logs` (chi tiết: PR-A9). |
-| PR-92 | Tiền VND, làm tròn đến đồng; giờ `Asia/Ho_Chi_Minh`; **giờ đóng cửa 21:00** là hạn của mọi task. |
-| PR-93 | Hạn xử lý tiền hoàn: **24h, không tính Chủ Nhật** (helper `calculateRefundDeadline` đã có trong `ReservationService`). |
+| PR-92 | Tiền VND, làm tròn đến đồng; giờ `Asia/Ho_Chi_Minh`. Tách 2 khung giờ: **Giờ quầy (Staff Desk Hours) đóng lúc 21:00** — là hạn của mọi task (check-in, nghiệm thu, hỗ trợ); **Giờ ra vào kho (Customer Access) 24/7** — khách có hợp đồng `ACTIVE` / `TERMINATION_PENDING` tự ra vào bằng PIN / RFID bất kể giờ nào (`OVERDUE` bị khoá PIN — PR-Q5). |
+| PR-93 | Hạn xử lý tiền hoàn: **24h, không tính Chủ Nhật** (`ReservationService.calculateRefundDeadline`). |
 
 ### 1.2 Quyết định lớn (đã chốt 16/10/2026)
 | Mã | Quyết định | Ảnh hưởng |
@@ -63,12 +64,14 @@
 | D-01 | **Trả trước theo kỳ**: lúc đặt trả **cọc** (mặc định 1 tháng; BOM chỉnh hệ số — PR-M6) **+ tiền thuê cả kỳ**. Hết kỳ muốn thuê tiếp thì trả kỳ mới, chọn lại 1 / 3 / 6 / 12 tháng. Không thu hằng tháng. | Code đã đúng (BR-24). UC-20 đổi phạm vi (PR-50). |
 | D-02 | Chỉ đặt được khi **còn suất** đúng loại + cơ sở. Đặt chỗ **giữ tạm** 1 suất, gán ô mới **trừ thật**. FM chỉ gán **đúng loại**. | PR-B1, PR-M10; sửa L-11, L-13. |
 | D-03 | Tài khoản `STAFF` do **cả FM và Admin** tạo. | PR-22. |
-| D-04 | **FM** thực hiện hoàn tiền. | PR-O12; sửa L-01. |
+| D-04 | **FM** thực hiện hoàn tiền, qua task `REFUND` trong `facility_tasks` (đã code ở #55, #57). | PR-O12; L-01 đã sửa. |
 | D-05 | **Bỏ cột** `rental_policy.lock_account_days`. | Nghĩa làm trong nhánh UC-07 (mục 5). |
 | D-06 | **Bỏ voucher.** | PR-B9; sửa L-04. |
-| D-07 | **No-Show**: mặc định tịch thu 100% cọc, **hoàn toàn bộ tiền thuê**. FM được **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. | PR-X1; sửa L-06. |
+| D-07 | **No-Show**: mặc định tịch thu 100% cọc, **hoàn toàn bộ tiền thuê**. FM được **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. Chỉ được bấm No-Show sau **≥ 2 lần liên hệ thất bại cách nhau ≥ 24h** và đã qua **48h** từ giờ hẹn. | PR-X1, PR-X3; sửa L-06. |
 | D-08 | **Giữ 2 bảng ưu đãi**: đặt mới 1/3/6/12T giảm **0/5/10/15%**; gia hạn **0/0/5/10%**. | Gom % về 1 chỗ ở BE, FE lấy từ API (hiện đang lặp ở `VnpayService`, `ContractService`, `CreateReservationPage.jsx`, `ContractOptionsModal.jsx`). |
 | D-09 | **Thanh lý**: trừ phí trễ 50% cọc; **50% còn lại tạm giữ**, chỉ hoàn khi khách đến cơ sở làm việc với FM. | PR-Q9. |
+| D-10 | **Trả kho sớm được hoàn tiền thuê** theo nguyên tắc *thu hồi ưu đãi + phí phá hợp đồng* (thay quy định "trả sớm không hoàn"). | PR-O2. |
+| D-11 | **Ân hạn dọn đồ**: miễn phí **1 ngày** sau `end_date`; ngày 2 → 5 tính **tiền thuê theo ngày**, trừ vào cọc. | PR-O1, PR-O14. |
 
 ### 1.3 Ma trận vai trò → màn hình
 | Nhóm màn hình | CUSTOMER | STAFF | FM | BOM | ADMIN |
@@ -95,7 +98,7 @@ PENDING ──(VNPAY OK)──▶ DEPOSIT_PAID ──(FM gán ô, UC-14)──�
    │ quá 15 phút → EXPIRED  │ khách huỷ (UC-15) → CANCELLED     │ No-Show (EX-03) → CANCELLED                  │ gia hạn (UC-21) / huỷ yêu cầu (PR-O4) → UNIT_ASSIGNED
    │ khách huỷ → CANCELLED  │ No-Show → CANCELLED
 ```
-⚙️ Hiện tại: hết hạn ghi `CANCELLED` sau 10 phút (L-08); VNPAY lỗi huỷ đơn ngay (BR-28).
+⚙️ Hiện tại: hết hạn ghi `CANCELLED` sau 10 phút (L-08); VNPAY lỗi huỷ đơn ngay (BR-28). Hoàn tiền xong cho đơn bị huỷ, code (#57) chuyển đơn `CANCELLED` → **`REFUNDED`** — trạng thái này cần thêm vào comment SQL (mục 5).
 
 ### 2.2 Hợp đồng — `rental_contracts.status`
 ```
@@ -122,11 +125,11 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ```
 `RESERVED` **không dùng** (PR-M9). Nhãn "Quá hạn" trên lưới ô là suy ra từ hợp đồng (PR-M11).
 
-### 2.4 Công việc — `staff_tasks`
-- Loại: `CHECK_IN` (sinh khi gán ô) · `CHECK_OUT` (sinh khi yêu cầu trả kho) · `SUPPORT` (sinh khi khách tạo ticket).
+### 2.4 Công việc — `facility_tasks` (đổi tên từ `staff_tasks` ở #55)
+- Loại: `CHECK_IN` (sinh khi gán ô) · `CHECK_OUT` (sinh khi yêu cầu trả kho) · `SUPPORT` (sinh khi khách tạo ticket) · `REFUND` (sinh khi phát sinh tiền hoàn — **FM xử lý**, PR-O12) · `MAINTENANCE` (có trong schema, chưa dùng).
 - `OPEN` ──nhận──▶ `IN_PROGRESS` ──xong──▶ `COMPLETED`; FM gỡ người nhận → `OPEN`; quá `due_at` → `OVERDUE`; huỷ → `CANCELLED`.
-- `OVERDUE` thoát ra: `CHECK_IN` — FM dời lịch (EX-03); `CHECK_OUT` — FM dời ngày trả kho (PR-O13); `SUPPORT` — FM gia hạn task (PR-S4).
-- **Không** còn task hoàn tiền trong `staff_tasks` (PR-O12).
+- `OVERDUE` thoát ra: `CHECK_IN` — FM dời lịch hoặc No-Show (EX-03); `CHECK_OUT` — FM dời ngày trả kho (PR-O13); `SUPPORT` — FM gia hạn task (PR-S4); `REFUND` — FM vẫn hoàn tất được (task hiện đỏ).
+- Cột `evidence_image_url` lưu bằng chứng hoàn tiền (PR-O12).
 
 ### 2.5 Ticket hỗ trợ — `support_requests.status`
 `OPEN` ──Staff nhận──▶ `IN_PROGRESS` ──Staff xong──▶ `RESOLVED` ──khách "Đã ổn" / 3 ngày──▶ `CLOSED`
@@ -214,7 +217,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-12 | Khách xem đơn của mình, mới nhất trước; mỗi đơn hiện "đã thanh toán thực tế" = Σ giao dịch `SUCCESS` (`DEPOSIT` + `MONTHLY_RENT`) và ngày kết thúc hợp đồng (nếu có). |
 | — | Đơn `PENDING` hiện nút "Thanh toán lại" (PR-B8) và "Huỷ"; đơn `DEPOSIT_PAID` hiện "Huỷ". |
 
-### UC-15 Huỷ đơn đặt chỗ ✅ (có lỗi L-01)
+### UC-15 Huỷ đơn đặt chỗ ✅
 **Đang chạy** (`ReservationService.previewCancel / cancelReservation`, `CancelReservationModal.jsx`)
 | Mã | Rule |
 |---|---|
@@ -222,7 +225,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-31 | Mốc tính phí = `expected_appointment_time`, trống → 09:00 ngày bắt đầu (PR-B10 làm cho luôn có giá trị). |
 | BR-32 | Trước mốc > `cancel_free_hours` → hoàn 100% số đã trả; trong khoảng đó → phạt `cancel_fee_percent` × cọc, hoàn phần còn lại. ⚠️ Hiện viết cứng 24h / 50% (L-03 → PR-15). |
 | BR-33 | Lý do: 4 lý do có sẵn hoặc "Lý do khác" (bắt buộc nhập). Có thông tin ngân hàng → hoàn chuyển khoản; không có → tiền mặt tại quầy. |
-| ~~BR-34~~ | ~~Tạo task REFUND trong staff_tasks~~ → **PR-O12** (L-01) |
+| BR-34 | Đơn đã thanh toán khi huỷ: tạo giao dịch `REFUND` `PENDING` + task `REFUND` trong `facility_tasks` (hạn PR-93) để FM hoàn — theo PR-O12. *(L-01 đã sửa nhờ #55 nới ràng buộc bảng task.)* |
 | BR-35 | Mọi lần huỷ ghi `activity_logs`. |
 
 **Đã chốt**
@@ -230,7 +233,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-15 | Đọc `cancel_free_hours`, `cancel_fee_percent` từ chính sách thay vì viết cứng. |
 | PR-M5 | Dùng chính sách **hiện hành của cơ sở lúc huỷ** (đơn chưa có hợp đồng nên chưa gắn chính sách). |
-| PR-O12 | Đơn đã thanh toán khi huỷ → tạo `REFUND` `PENDING`, FM xác nhận ở màn "Hoàn tiền". |
+| PR-O12 | Đơn đã thanh toán khi huỷ → task `REFUND` cho FM (BR-34), FM hoàn theo PR-O12 (có bằng chứng). |
 
 ### UC-13 / UC-14 Duyệt đơn & gán ô ✅
 | Mã | Rule |
@@ -247,12 +250,14 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-50 | Danh sách No-Show: đơn đã gán ô của cơ sở mà **ngày bắt đầu đã qua** (task check-in đã `OVERDUE`). |
 | BR-51 | No-Show (đơn `DEPOSIT_PAID`/`UNIT_ASSIGNED`): đơn `CANCELLED`; ô `AVAILABLE`; hợp đồng `TERMINATED`; huỷ task `CHECK_IN`; ghi log kèm lý do. ⚠️ Tiền xử lý theo PR-X1 (L-06). |
 | BR-52 | Dời lịch (gọi được khách): ngày mới không ở quá khứ; đơn `DEPOSIT_PAID`/`UNIT_ASSIGNED`; cập nhật start/end hợp đồng (giữ số tháng); dời hạn task `CHECK_IN`, task `OVERDUE` được mở lại. |
+| BR-53 | (#52) **Báo cáo liên hệ**: Staff cùng cơ sở ghi kết quả cuộc gọi + ghi chú trên task `CHECK_IN` quá hạn → lưu vào `note` của task (ghi đè lần trước) và `activity_logs` (`target_entity = 'facility_tasks'`); task chưa ai nhận thì gán cho Staff báo cáo. FM xem báo cáo để quyết định dời lịch / No-Show. |
 
 **Đã chốt**
 | Mã | Rule |
 |---|---|
 | PR-X1 | (D-07) No-Show: **tịch thu 100% cọc, hoàn toàn bộ tiền thuê** (tạo `REFUND` → PR-O12). FM chọn **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. FE hiện số tiền hoàn trước khi xác nhận. |
 | PR-X2 | API No-Show tự kiểm tra ngày bắt đầu đã qua (L-10). Log ghi **người thao tác là FM** (PR-A8). |
+| PR-X3 | **Điều kiện bấm No-Show**: có **≥ 2 báo cáo liên hệ thất bại** (BR-53) **cách nhau ≥ 24h**, **và** đã qua **48h** kể từ giờ hẹn (`expected_appointment_time`). Chưa đủ → nút No-Show bị khoá, BE trả 409 `NO_SHOW_NOT_ALLOWED_YET`. Số lần liên hệ đếm từ `activity_logs` của task (mã nghiệp vụ `[CONTACT]` — PR-A10), không dựa vào `note` vì `note` bị ghi đè. Trong thời gian chờ, ô vẫn giữ cho khách; liên hệ được thì dời lịch (BR-52). |
 | PR-C3 | Đây là **lối duy nhất** xử lý task `CHECK_IN` quá hạn (không có nút "hoàn thành task quá hạn"). |
 
 ### UC-16 / UC-17 Bảng công việc & nhận việc ✅
@@ -272,7 +277,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Rule |
 |---|---|
 | BR-70 | Chỉ Staff **đang giữ** task `CHECK_IN` `IN_PROGRESS`, chưa quá hạn, hợp đồng `PENDING_CHECK_IN`. |
-| BR-71 | Checklist 5 mục bắt buộc đủ: xác minh danh tính, ô trống, ô sạch, khoá nguyên vẹn, khách xác nhận ký. |
+| BR-71 | Checklist bắt buộc đủ: xác minh danh tính, ô trống, ô sạch, khoá nguyên vẹn, khách xác nhận ký (code hiện có 5 mục — thêm mục 6 theo PR-C7). |
 | BR-72 | PIN đúng 6 chữ số do BE gợi ý ("Sinh lại"); RFID bắt buộc, ≤ 50 ký tự; ghi chú ≤ 1000 ký tự. |
 | BR-73 | PIN và RFID không trùng với hợp đồng `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING`. |
 | BR-74 | 1 transaction: biên bản `CHECK_IN`; hợp đồng `ACTIVE` + PIN + RFID; task `COMPLETED`; log. Không đổi start/end. |
@@ -284,6 +289,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-C2 | Chi tiết task hiện **họ tên + SĐT + CCCD**; "xác minh danh tính" = CCCD khớp CCCD đã lưu (PR-B5). |
 | PR-C4 | Giữ nút **"Giả lập hoàn thiện"** (sản phẩm môn học). |
 | PR-C5 | Chỉ khách **chủ hợp đồng** xem PIN/RFID; Staff/FM không thấy sau check-in. *(làm cùng PR-90)* |
+| PR-C7 | **Mục 6 checklist — cam kết hàng cấm**: "Khách đã ký cam kết không lưu trữ chất cháy nổ (xăng, gas, pháo…), vũ khí, hoá chất độc hại, động vật sống, chất dễ phân huỷ / bốc mùi và hàng cấm theo quy định pháp luật." Bắt buộc tick; lưu vào cột mới `handover_records.is_prohibited_goods_committed`; nút "Giả lập hoàn thiện" tick cả mục này. Checkbox "đồng ý cam kết" lúc đặt chỗ (UC-10) ghi rõ cùng nội dung này. |
 
 ### UC-19 Hợp đồng của tôi ✅
 | Mã | Rule |
@@ -309,7 +315,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-R1 | Chỉ gia hạn khi `ACTIVE` / `TERMINATION_PENDING` / `OVERDUE` → khác 409 `CONTRACT_NOT_RENEWABLE`. FE ẩn tab Gia hạn tương ứng. (sửa L-23) |
 | PR-R2 | BE chỉ nhận **1 / 3 / 6 / 12**; số tháng lưu tường minh, không cắt từ mã giao dịch. (sửa L-20) |
-| PR-R3 | Giữ BR-82: ngày quá hạn trước đó không nằm trong kỳ mới → thu bằng **phí trễ** (PR-Q6). Ân hạn của `TERMINATION_PENDING` không tính phí. |
+| PR-R3 | Giữ BR-82: ngày quá hạn trước đó không nằm trong kỳ mới → thu bằng **phí trễ** (PR-Q6). Gia hạn khi đang trong ân hạn của `TERMINATION_PENDING`: kỳ mới tính từ hôm nay, các ngày ân hạn đã qua (từ ngày 2) tính theo PR-O14 và cộng vào lần thanh toán gia hạn. |
 | PR-R4 | Giá = giá niêm yết hiện tại (PR-12); FE báo nếu giá đã đổi so với lúc ký. |
 | PR-R5 | Mỗi hợp đồng **1 giao dịch gia hạn `PENDING`**; link mới → giao dịch cũ `FAILED`; IPN về muộn của giao dịch cũ → `SUCCESS` + yêu cầu hoàn tiền (PR-O12). |
 | PR-R6 | **Xoá** `POST /contracts/{id}/renew` — chỉ gia hạn qua VNPAY. (sửa L-02) |
@@ -327,8 +333,9 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 **Đã chốt**
 | Mã | Rule |
 |---|---|
-| PR-O1 | Ngày hẹn: **từ ngày mai đến `end_date` + 5 ngày** (5 ngày ân hạn chuyển đồ, **không tính phí**). Hợp đồng `OVERDUE` → hẹn trong **3 ngày tới**. Kiểm tra cả FE + BE. (sửa L-09) |
-| PR-O2 | **Trả sớm không hoàn tiền thuê còn lại**, chỉ hoàn cọc. FE cảnh báo số ngày bị bỏ. |
+| PR-O1 | Ngày hẹn: **từ ngày mai đến `end_date` + 5 ngày** (ân hạn chuyển đồ; phí theo PR-O14). Hợp đồng `OVERDUE` → hẹn trong **3 ngày tới**. Kiểm tra cả FE + BE. (sửa L-09) |
+| PR-O14 | (D-11) **Phí ân hạn**: ngày `end_date` + 1 **miễn phí**; ngày + 2 → + 5 tính **tiền thuê theo ngày = giá niêm yết lúc ký / 30** mỗi ngày (không phải phí phạt). Tính đến ngày nghiệm thu thực tế, **trừ vào cọc** khi hoàn (`LATE_FEE` method `DEPOSIT_OFFSET`). FE hiện số phí dự kiến khi khách chọn ngày hẹn sau `end_date` + 1. Lỡ ân hạn (qua + 5 chưa nghiệm thu) → chuyển sang phí trễ PR-Q3 (tính từ `end_date` + 1, **thay** phí ân hạn, không cộng dồn hai loại). |
+| PR-O2 | (D-10) **Trả sớm** (ngày hẹn < `end_date`) được hoàn tiền thuê theo công thức: **Hoàn tiền thuê = tiền thuê kỳ hiện tại đã trả − (số tháng đã dùng, làm tròn lên × giá niêm yết lúc ký, *không* ưu đãi) − phí phá hợp đồng (1 tháng giá niêm yết lúc ký)**, tối thiểu 0. "Số tháng đã dùng" tính từ ngày bắt đầu kỳ hiện tại đến ngày nghiệm thu. Cọc hoàn riêng theo PR-O11. FE hiện bảng tính dự kiến trước khi khách xác nhận. *Ví dụ*: gói 12T giá 1.850.000đ (ưu đãi 15% → đã trả 18.870.000đ), dùng 2 tháng → 18.870.000 − 2 × 1.850.000 − 1.850.000 = **13.320.000đ**. |
 | PR-O3 | Bắt buộc chọn cách nhận cọc: **chuyển khoản** (ngân hàng, số TK, chủ TK) hoặc **tiền mặt tại quầy**; FE gửi đủ field. (sửa L-18) |
 | PR-O4 | Khách **huỷ yêu cầu trả kho** được trước ngày hẹn nếu chưa quá `end_date` → hợp đồng `ACTIVE`, đơn `UNIT_ASSIGNED`, task `CANCELLED`. |
 | PR-O13 | Task `CHECK_OUT` `OVERDUE` → FM **dời ngày trả kho** (theo PR-O1) hoặc để nguyên; qua `end_date` + 5 → hợp đồng `OVERDUE` (PR-Q1). |
@@ -337,7 +344,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Rule |
 |---|---|
 | PR-O5 | Staff đang giữ task `CHECK_OUT` `IN_PROGRESS`, **trong ngày hẹn** (như PR-C1), hợp đồng `TERMINATION_PENDING`. Có nút "Giả lập hoàn thiện". |
-| PR-O6 | "Ô trống" + "Xác minh danh tính" **bắt buộc đạt** (không đạt → không nghiệm thu, hẹn lại). "Sạch" / "Khoá nguyên vẹn" được không đạt nhưng **bắt buộc lập sự cố** (UC-24). |
+| PR-O6 | "Ô trống" + "Xác minh danh tính" **bắt buộc đạt** (không đạt → không nghiệm thu, hẹn lại). "Sạch" / "Khoá nguyên vẹn" được không đạt nhưng **bắt buộc lập sự cố** (UC-24). Mục 6 (PR-C7) ở nghiệm thu đổi thành "Không phát hiện hàng cấm / chất nguy hiểm còn lại" — không đạt → bắt buộc lập sự cố. |
 | PR-O7 | 1 transaction: biên bản `CHECK_OUT`; hợp đồng `TERMINATED`; đơn `COMPLETED`; **xoá PIN/RFID**; task `COMPLETED`; ô `AVAILABLE` (hoặc `MAINTENANCE` nếu có sự cố); tạo yêu cầu hoàn cọc (PR-O11); đóng ticket hỗ trợ còn mở (PR-S8); log. |
 
 ### UC-24 Ghi nhận sự cố hư hỏng ⬜
@@ -350,8 +357,9 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ### UC-25 Hoàn tiền ⬜
 | Mã | Rule |
 |---|---|
-| PR-O11 | Hoàn khi trả kho = cọc đang giữ − phí sự cố − phí trễ, ≥ 0. Bằng 0 vẫn tạo bản ghi để đóng hồ sơ. |
-| PR-O12 | (D-04) Màn **"Hoàn tiền"** của FM gom mọi `REFUND` `PENDING` của cơ sở, từ: huỷ đơn (UC-15), No-Show (PR-X1), IPN về muộn (PR-B6, PR-R5), trả kho (UC-23), phần cọc còn giữ khi thanh lý (PR-Q9). Hiện cách nhận tiền (chuyển khoản / tiền mặt) và hạn (PR-93). FM bấm "Đã hoàn" → `SUCCESS`, log người xác nhận. **Không** dùng `staff_tasks` cho hoàn tiền (sửa L-01). |
+| PR-O11 | **Hoàn cọc** khi trả kho = cọc đang giữ − phí sự cố − phí ân hạn (PR-O14) **hoặc** phí trễ (PR-Q3), ≥ 0. Trả sớm thì cộng thêm **hoàn tiền thuê** (PR-O2) vào cùng task `REFUND`, ghi rõ 2 phần. Bằng 0 vẫn tạo task để FM đóng hồ sơ. |
+| PR-O12 | (D-04) Mỗi khoản cần hoàn sinh **1 task `REFUND`** trong `facility_tasks` của cơ sở, **FM xử lý** (không vào việc của Staff). Nguồn: huỷ đơn (UC-15), No-Show (PR-X1), IPN về muộn (PR-B6, PR-R5), trả kho thường / trả sớm (UC-23, PR-O2), phần cọc còn giữ khi thanh lý (PR-Q9). Task ghi số tiền, cách nhận (chuyển khoản / tiền mặt), thông tin tài khoản; hạn theo PR-93. FM hoàn tất → task `COMPLETED`, giao dịch `REFUND` `SUCCESS`, log người xác nhận. *(đã code ở #55, #57)* |
+| PR-O15 | **Bằng chứng hoàn tiền** (bắt buộc trước khi hoàn tất task `REFUND`): **chuyển khoản** → bắt buộc nhập **mã giao dịch ngân hàng (mã FT)**; ảnh chụp màn hình chuyển khoản không bắt buộc (dán link vào `evidence_image_url`). **Tiền mặt** → bắt buộc tick "Khách đã ký nhận tiền" + ghi chú. BOM xem lại được mã FT / ảnh / ghi chú khi đối soát (UC-29). Thiếu → 400 `REFUND_EVIDENCE_REQUIRED`. *(code #57 đang cho ảnh tuỳ chọn, chưa bắt buộc mã FT — L-24)* |
 
 ### UC-28 Hợp đồng quá hạn ⬜
 | Mã | Rule |
@@ -445,7 +453,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-07 | Chỉ **xem**, không sửa / xoá. |
 | PR-A8 | `user_id` = **người thực sự thao tác**; job ghi bằng tài khoản `system`. Sửa dời lịch & No-Show đang ghi nhầm id khách (L-21). |
-| PR-A9 | **Bắt buộc log**: đăng ký; tạo đơn; thanh toán thành công / thất bại; hết hạn giữ chỗ; huỷ đơn; gán ô; No-Show; dời lịch; nhận việc; gỡ người nhận; check-in; yêu cầu / huỷ trả kho; nghiệm thu; sự cố; gia hạn; chuyển quá hạn; thanh lý; hoàn tiền; ticket hỗ trợ; cấp lại PIN; mọi CRUD của BOM / FM / Admin. **Không** log đăng nhập. UC đã xong phải bổ sung: tạo đơn, thanh toán, hết hạn, gán ô, nhận việc, gỡ người nhận. |
+| PR-A9 | **Bắt buộc log**: đăng ký; tạo đơn; thanh toán thành công / thất bại; hết hạn giữ chỗ; huỷ đơn; gán ô; báo cáo liên hệ khách (`[CONTACT]`, PR-X3); No-Show; dời lịch; nhận việc; gỡ người nhận; check-in; yêu cầu / huỷ trả kho; nghiệm thu; sự cố; gia hạn; chuyển quá hạn; thanh lý; hoàn tiền; ticket hỗ trợ; cấp lại PIN; mọi CRUD của BOM / FM / Admin. **Không** log đăng nhập. UC đã xong phải bổ sung: tạo đơn, thanh toán, hết hạn, gán ô, nhận việc, gỡ người nhận. |
 | PR-A10 | Nội dung tiếng Việt, mở đầu **mã nghiệp vụ** (`[CHECK_IN] …`), ≤ 500 ký tự. Lỗi ghi log không làm hỏng nghiệp vụ. |
 | PR-A11 | Admin xem toàn hệ thống; lọc người thao tác, role, đối tượng, mã đối tượng, khoảng ngày. *(làm sau: FM xem log cơ sở mình)* |
 
@@ -475,7 +483,6 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 
 | Mã | Mức | Mô tả | Chỗ | Sửa theo |
 |---|---|---|---|---|
-| L-01 | 🔴 | Huỷ đơn đã cọc chèn `staff_tasks` `task_type='REFUND'`, `contract_id=NULL` → vi phạm `CK_tasks_type` / `CK_tasks_target` → rollback → **không huỷ được đơn `DEPOSIT_PAID`**. | `ReservationService.cancelReservation` | PR-O12 |
 | L-02 | 🔴 | `POST /contracts/{id}/renew` ghi giao dịch `SUCCESS` không thu tiền, không kiểm tra trạng thái hợp đồng. | `ContractService.renewContract` | PR-R6 |
 | L-13 | 🔴 | Tạo đơn không kiểm tra số suất → 2 khách cùng đặt suất cuối đều thành công. | `ReservationService.createReservation` | PR-B1 |
 | L-15 | 🔴 | Job huỷ đơn tính 10 phút từ lúc tạo đơn, link VNPAY sống 10 phút từ lúc tạo link → IPN thành công về sau khi đơn đã huỷ: **tiền đã trừ, đơn mất**, giao dịch kẹt `PENDING`. | `ReservationCleanupService`, `VnpayService.settleDeposit` | PR-B6 |
@@ -488,6 +495,10 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | L-18 | 🟠 | Form trả kho không gửi thông tin ngân hàng dù BE nhận được và FE hứa "hoàn vào tài khoản". | `ContractOptionsModal.jsx` | PR-O3 |
 | L-20 | 🟠 | Số tháng gia hạn không kiểm tra ở BE; số tháng bị cắt từ mã giao dịch (≥ 100 là hỏng). | `VnpayService.createRenewal / settleRenewal` | PR-R2 |
 | L-23 | 🟠 | FE hiện nút gia hạn / trả kho cho mọi trạng thái trừ `PENDING_CHECK_IN` (kể cả `TERMINATED`). | `CustomerContractPage.jsx` | PR-R1 |
+| L-24 | 🟠 | Hoàn tất task `REFUND` chỉ nhận ảnh bằng chứng **tuỳ chọn**, chưa bắt buộc mã FT (chuyển khoản) / xác nhận ký nhận (tiền mặt). | `StaffTaskService.completeRefund` (#57) | PR-O15 |
+| L-25 | 🟠 | No-Show bấm được ngay khi task quá hạn, chưa kiểm tra số lần liên hệ / 48h; báo cáo liên hệ ghi log không có mã `[CONTACT]` nên chưa đếm được. | `handleNoShow`, `submitContactReport` (#52) | PR-X3 |
+| L-26 | 🟡 | Checklist check-in mới 5 mục, thiếu cam kết hàng cấm. | `StaffTaskService.checkIn`, `StaffTaskDetailPage.jsx` | PR-C7 |
+| L-27 | 🟡 | Trả kho trước `end_date` không tính hoàn tiền thuê; ngày ân hạn chưa tính phí. | `ContractService.requestCheckout`, nghiệm thu (#57) | PR-O2, PR-O14 |
 | L-07 | 🟡 | Login không chặn `LOCKED` / `DISABLED`; lỗi trả chuỗi thuần và phân biệt "email không tồn tại" / "mật khẩu sai". | `AuthService.login`, `AuthController` | PR-L1, PR-L2 |
 | L-08 | 🟡 | Hết hạn giữ chỗ ghi `CANCELLED` thay `EXPIRED`; giao dịch `PENDING` không chuyển `FAILED`. | `ReservationCleanupService` | PR-B7 |
 | L-09 | 🟡 | Ngày bắt đầu: BE cho hôm nay, FE từ ngày mai; ngày hẹn trả kho không kiểm tra ở BE. | `createReservation`, `requestCheckout` | PR-B4, PR-O1 |
@@ -497,7 +508,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | L-22 | 🟡 | FE gửi `customerId: sessionUser.userId ?? 1` → mất phiên thì đặt hộ user 1. | `CreateReservationPage.jsx` | PR-B3 |
 | L-12 | 🟡 | Comment trạng thái trong SQL chưa khớp code (`TERMINATION_PENDING`, `COMPLETED` của reservation; `RESERVED` không dùng). | `QueenKho_full.sql` | Mục 5 |
 
-*(L-05 đã đóng — hai bảng ưu đãi khác nhau là cố ý, D-08. L-16 gộp vào PR-B2.)*
+*(Đã đóng: L-01 — #55 nới ràng buộc bảng task, cho phép task `REFUND`; L-05 — hai bảng ưu đãi khác nhau là cố ý, D-08. L-16 gộp vào PR-B2.)*
 
 ---
 
@@ -514,7 +525,9 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | `damage_cases` 🆕 | `id`, `contract_id` FK, `staff_id` FK, `description` NVARCHAR(1000), `cost` DECIMAL(12,2) ≥ 0, `created_at` | PR-O8 | UC-24 |
 | `payment_transactions` | `payment_type` thêm `DAMAGE_FEE`; `payment_method` thêm `DEPOSIT_OFFSET`; + cột lưu **số tháng gia hạn** (vd `months` INT NULL) | PR-O9, PR-M8, PR-R2 | UC-24, UC-29, UC-21 |
 | `users` | Seed thêm 1 tài khoản `system` (role `ADMIN`, `DISABLED` để không đăng nhập được) cho log của job | PR-A8 | UC-31 |
-| Comment trạng thái | `reservations`: thêm `TERMINATION_PENDING`, dùng `EXPIRED`; `storage_units`: bỏ `RESERVED` | L-12, PR-B7, PR-M9 | ai sửa SQL trước |
+| `handover_records` | + `is_prohibited_goods_committed` BIT NOT NULL DEFAULT 0 | PR-C7 | UC-18 |
+| Comment trạng thái | `reservations`: thêm `TERMINATION_PENDING`, `REFUNDED` (code #57 đang dùng), dùng `EXPIRED`; `storage_units`: bỏ `RESERVED` | L-12, PR-B7, PR-M9 | ai sửa SQL trước |
+| ~~`staff_tasks`~~ | ✅ Đã đổi tên thành `facility_tasks`, thêm loại `REFUND` / `MAINTENANCE`, cột `evidence_image_url` (#55). Các chỗ khác trong tài liệu nhắc "bảng task" đều là `facility_tasks`. | PR-O12 | đã xong |
 
 ---
 
@@ -535,5 +548,23 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 409 | `TASK_TOO_FAR` | Nhận task có hạn quá 3 ngày | PR-C6 |
 | 409 | `CONTRACT_NOT_RENEWABLE` | Gia hạn hợp đồng sai trạng thái | PR-R1 |
 | 409 | `SLOT_IN_USE` | Thao tác ô kho làm âm số suất | PR-M10 |
+| 409 | `NO_SHOW_NOT_ALLOWED_YET` | Chưa đủ 2 lần liên hệ cách 24h / chưa qua 48h | PR-X3 |
+| 400 | `REFUND_EVIDENCE_REQUIRED` | Hoàn tất hoàn tiền thiếu mã FT / xác nhận ký nhận | PR-O15 |
 | 409 | `CUSTOMER_HAS_ACTIVE_RENTAL` | Khoá / vô hiệu khách đang thuê | PR-A5 |
 | 409 | `TASK_*`, `PIN_TAKEN`, `RFID_TAKEN`, `CHECKLIST_INCOMPLETE`… | Đã có trong `StaffTaskException` (UC-17/18) | BR-64 → 74 |
+
+---
+
+## 7. Lịch sử thay đổi theo góp ý
+
+### 17/10/2026 — Góp ý thành viên ("Góp ý Business rule")
+| # | Góp ý | Kết quả | Rule |
+|---|---|---|---|
+| 1 | Trả kho sớm: thu hồi ưu đãi + phí phá hợp đồng thay vì giữ toàn bộ tiền thuê | ✅ Nhận, bổ sung công thức cụ thể | D-10, PR-O2 |
+| 2 | Ân hạn: miễn phí 24h, ngày 2–5 tính phí trừ vào cọc | ✅ Nhận; mức phí = tiền thuê theo ngày (giá / 30) | D-11, PR-O1, PR-O14 |
+| 3 | Tách giờ quầy 21:00 và giờ ra vào kho 24/7 | ✅ Nhận (chỉ làm rõ tài liệu) | PR-92 |
+| 4 | Bắt buộc bằng chứng khi FM hoàn tiền | ✅ Nhận có điều chỉnh: bắt buộc **mã FT** (chuyển khoản) / **ký nhận** (tiền mặt); ảnh không bắt buộc vì chưa có chức năng upload | PR-O15 |
+| 5 | Checklist mục 6: cam kết hàng cấm | ✅ Nhận; thêm cột `handover_records.is_prohibited_goods_committed` | PR-C7, PR-O6 |
+| 6 | No-Show: ≥ 2 lần liên hệ cách 24h, sau 48h mới được bấm | ✅ Nhận; đếm theo log `[CONTACT]` | D-07, PR-X3 |
+
+Đồng thời cập nhật tài liệu theo code mới trên `main`: `facility_tasks` + task `REFUND` do FM xử lý (#55, #57), báo cáo liên hệ No-Show (#52), trạng thái đơn `REFUNDED`.

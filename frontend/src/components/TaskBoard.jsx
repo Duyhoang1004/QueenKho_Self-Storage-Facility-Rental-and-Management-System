@@ -8,9 +8,10 @@ import { getStaffTasks } from '../services/staffTaskService'
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
 const TYPE_META = {
-  CHECK_IN:  { label: 'Check-in',  icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT: { label: 'Check-out', icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
-  REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  CHECK_IN:    { label: 'Check-in',    icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  REFUND:      { label: 'Hoàn tiền',   icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
 }
 
 const STATUS_META = {
@@ -198,6 +199,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
             <option value="CHECK_IN">Check-in</option>
             <option value="CHECK_OUT">Check-out</option>
             <option value="REFUND">Hoàn tiền / Cọc</option>
+            <option value="MAINTENANCE">Bảo trì kho</option>
           </select>
           {currentStaffId && (
             <label

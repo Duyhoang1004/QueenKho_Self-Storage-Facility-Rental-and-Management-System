@@ -165,14 +165,16 @@ public class ContractService {
                 throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + prevCheckoutDate + ").");
             }
         } else if ("ACTIVE".equals(contract.getStatus())) {
-            // HĐ đang ACTIVE: Không được hẹn ngày trả kho vượt quá ngày kết thúc HĐ
-            if (contract.getEndDate() != null && checkoutDate.isAfter(contract.getEndDate())) {
-                throw new IllegalArgumentException("Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (" + contract.getEndDate() + "). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.");
+            // PR-O1: Cho phép hẹn từ ngày mai đến end_date + 5 ngày (ân hạn chuyển đồ, phí tính theo PR-O14)
+            LocalDate maxAllowedDate = contract.getEndDate() != null ? contract.getEndDate().plusDays(5) : today.plusDays(30);
+            if (checkoutDate.isAfter(maxAllowedDate)) {
+                throw new IllegalArgumentException("Ngày hẹn trả kho không được vượt quá 5 ngày ân hạn sau khi hết hạn hợp đồng (" + maxAllowedDate + ").");
             }
         } else if ("OVERDUE".equals(contract.getStatus())) {
-            // HĐ đang OVERDUE: Đã quá hạn nên chỉ được hẹn trả kho ngay trong ngày hôm nay
-            if (checkoutDate.isAfter(today)) {
-                throw new IllegalArgumentException("Hợp đồng đã quá hạn, quý khách chỉ có thể hẹn trả kho trong ngày hôm nay (" + today + ").");
+            // PR-O1: HĐ đang OVERDUE được hẹn trả kho trong 3 ngày tới
+            LocalDate maxOverdueDate = today.plusDays(3);
+            if (checkoutDate.isAfter(maxOverdueDate)) {
+                throw new IllegalArgumentException("Hợp đồng đã quá hạn chỉ có thể hẹn trả kho trong tối đa 3 ngày tới (đến ngày " + maxOverdueDate + ").");
             }
         }
 
@@ -191,12 +193,14 @@ public class ContractService {
         } catch (Exception ignored) {
         }
 
-        // Build notes
+        // Build notes (PR-O3: Chuyển khoản hoặc Tiền mặt tại quầy)
         StringBuilder noteBuilder = new StringBuilder();
         noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(checkoutDate);
         if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
             noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber())
                     .append(" (").append(request.getBankName()).append(" - ").append(request.getBankAccountName()).append(")");
+        } else {
+            noteBuilder.append(" | Hoàn tiền: Nhận tiền mặt trực tiếp tại quầy");
         }
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
             noteBuilder.append(" | Ghi chú: ").append(request.getNotes());

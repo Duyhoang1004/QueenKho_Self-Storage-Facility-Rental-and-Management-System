@@ -76,4 +76,14 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     int completeCheckIn(@Param("taskId") Integer taskId,
                         @Param("staffId") Integer staffId,
                         @Param("now") LocalDateTime now);
+
+    // UC-23: đóng task check-out — 1 câu UPDATE có điều kiện (giống completeCheckIn).
+    // Chỉ ăn dòng khi task còn IN_PROGRESS, đúng người nhận, chưa quá hạn
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now " +
+            "WHERE t.id = :taskId AND t.taskType = 'CHECK_OUT' AND t.status = 'IN_PROGRESS' " +
+            "AND t.staff.id = :staffId AND t.dueAt > :now")
+    int completeCheckOut(@Param("taskId") Integer taskId,
+                         @Param("staffId") Integer staffId,
+                         @Param("now") LocalDateTime now);
 }

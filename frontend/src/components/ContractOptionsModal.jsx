@@ -21,15 +21,33 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const [renewLoading, setRenewLoading] = useState(false)
   const [renewError, setRenewError] = useState('')
 
-  // Tab 2 state: Trả kho
+  // Tab 2 state: Trả kho (PR-O1, PR-O2, PR-O3, PR-O14)
   const [checkoutDate, setCheckoutDate] = useState('')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
+  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
+  const [bankName, setBankName] = useState('')
+  const [bankAccountNumber, setBankAccountNumber] = useState('')
+  const [bankAccountName, setBankAccountName] = useState('')
 
   const isTerminationPending = contract?.status === 'TERMINATION_PENDING'
   const today = new Date().toISOString().split('T')[0]
   const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
   const prevScheduledDate = contract?.scheduledCheckoutDate || contract?.endDate
+
+  const addDays = (dateStr, days) => {
+    if (!dateStr) return undefined
+    const d = new Date(dateStr)
+    d.setDate(d.getDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+
+  // PR-O1: HĐ ACTIVE cho phép hẹn đến end_date + 5 ngày; HĐ OVERDUE hẹn trong 3 ngày tới
+  const maxCheckoutDate = isOverdue
+    ? addDays(today, 3)
+    : isTerminationPending
+    ? (prevScheduledDate || addDays(contract?.endDate, 5))
+    : addDays(contract?.endDate, 5)
 
   useEffect(() => {
     if (contract) {
@@ -103,7 +121,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
-  // UC-22: Xử lý Hẹn ngày trả kho & dời ngày sớm hơn
+  // UC-22: Xử lý Hẹn ngày trả kho & dời ngày sớm hơn (PR-O1, PR-O2, PR-O3, PR-O14)
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault()
     if (!checkoutDate) {
@@ -116,13 +134,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
-    if (isOverdue && checkoutDate > today) {
-      setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong ngày hôm nay.`)
+    if (isOverdue && maxCheckoutDate && checkoutDate > maxCheckoutDate) {
+      setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong tối đa 3 ngày tới (đến ngày ${formatDate(maxCheckoutDate)}).`)
       return
     }
 
-    if (!isTerminationPending && contract.endDate && checkoutDate > contract.endDate) {
-      setCheckoutError(`Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (${formatDate(contract.endDate)}). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.`)
+    if (!isTerminationPending && maxCheckoutDate && checkoutDate > maxCheckoutDate) {
+      setCheckoutError(`Ngày hẹn trả kho không được vượt quá 5 ngày ân hạn sau khi hết hạn hợp đồng (${formatDate(maxCheckoutDate)}).`)
       return
     }
 
@@ -131,12 +149,22 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
+    if (refundMethod === 'BANK_TRANSFER' && (!bankName.trim() || !bankAccountNumber.trim() || !bankAccountName.trim())) {
+      setCheckoutError('Vui lòng nhập đầy đủ thông tin ngân hàng để nhận hoàn tiền cọc.')
+      return
+    }
+
     setCheckoutLoading(true)
     setCheckoutError('')
     try {
       const res = await requestCheckout(contract.contractId, {
         checkoutDate,
-        notes: `Hẹn trả kho ngày ${checkoutDate}`,
+        bankName: refundMethod === 'BANK_TRANSFER' ? bankName.trim() : null,
+        bankAccountNumber: refundMethod === 'BANK_TRANSFER' ? bankAccountNumber.trim() : null,
+        bankAccountName: refundMethod === 'BANK_TRANSFER' ? bankAccountName.trim() : null,
+        notes: refundMethod === 'CASH'
+          ? 'Khách hàng chọn nhận tiền mặt trực tiếp tại quầy'
+          : `Hoàn tiền chuyển khoản qua ${bankName.trim()} - STK: ${bankAccountNumber.trim()} (${bankAccountName.trim()})`,
       })
       const successMsg = res.message || (isTerminationPending
         ? `Đã dời ngày trả kho cho hợp đồng ${contract.contractCode} sang ngày ${formatDate(checkoutDate)}.`
@@ -148,6 +176,53 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       setCheckoutError(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi gửi yêu cầu trả kho.')
     } finally {
       setCheckoutLoading(false)
+    }
+  }
+
+  // Bảng tính dự kiến trả sớm (PR-O2) và phí ân hạn (PR-O14)
+  const isEarlyCheckout = checkoutDate && contract?.endDate && checkoutDate < contract.endDate
+  const isGraceOrOverdue = checkoutDate && contract?.endDate && checkoutDate > contract.endDate
+
+  let earlyRefundCalc = null
+  if (isEarlyCheckout) {
+    const sDate = new Date(contract.startDate || today)
+    const cDate = new Date(checkoutDate)
+    let months = (cDate.getFullYear() - sDate.getFullYear()) * 12 + (cDate.getMonth() - sDate.getMonth())
+    if (cDate.getDate() > sDate.getDate()) {
+      months += 1
+    }
+    const usedMonths = Math.max(1, months)
+    const cycleMonths = contract.billingCycleMonths || 1
+    let discountRate = 0
+    if (cycleMonths >= 12) discountRate = 0.15
+    else if (cycleMonths >= 6) discountRate = 0.10
+    else if (cycleMonths >= 3) discountRate = 0.05
+
+    const rentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate))
+    const breakFee = basePrice
+    const usedCost = basePrice * usedMonths
+    const earlyRentRefund = Math.max(0, rentPaid - usedCost - breakFee)
+
+    earlyRefundCalc = {
+      usedMonths,
+      cycleMonths,
+      rentPaid,
+      breakFee,
+      earlyRentRefund,
+    }
+  }
+
+  let graceCalc = null
+  if (isGraceOrOverdue) {
+    const eDate = new Date(contract.endDate)
+    const cDate = new Date(checkoutDate)
+    const diffDays = Math.ceil(Math.abs(cDate - eDate) / (1000 * 60 * 60 * 24))
+    if (diffDays === 1) {
+      graceCalc = { days: diffDays, fee: 0, isFree: true }
+    } else if (diffDays >= 2 && diffDays <= 5) {
+      graceCalc = { days: diffDays, fee: Math.round((basePrice / 30) * (diffDays - 1)), isFree: false }
+    } else {
+      graceCalc = { days: diffDays, fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10), isOverdue: true }
     }
   }
 
@@ -363,7 +438,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             {/* Date Selection Section */}
             <label className="text-xs sm:text-sm text-slate-800 font-semibold mb-2 block" htmlFor="checkoutDateInput">
               {isOverdue
-                ? 'Hợp đồng đã quá hạn - Chọn ngày trả kho:'
+                ? 'Hợp đồng đã quá hạn - Chọn ngày trả kho (trong 3 ngày tới):'
                 : isTerminationPending
                 ? 'Chọn ngày dời trả kho sớm hơn:'
                 : 'Chọn ngày dọn đồ & trả kho:'}
@@ -376,7 +451,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   type="date"
                   value={checkoutDate}
                   min={today}
-                  max={isOverdue ? today : (isTerminationPending ? prevScheduledDate : contract?.endDate || undefined)}
+                  max={maxCheckoutDate}
                   onChange={(e) => setCheckoutDate(e.target.value)}
                   className="bg-transparent border-0 p-0 text-slate-800 font-semibold text-sm focus:outline-none w-full cursor-pointer"
                   required
@@ -384,12 +459,17 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
               {isOverdue && (
                 <span className="text-[11px] text-red-700 bg-red-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Chỉ trong ngày (Quá hạn)
+                  Quá hạn (≤ 3 ngày)
                 </span>
               )}
-              {!isOverdue && isTerminationPending && prevScheduledDate && checkoutDate === prevScheduledDate && (
-                <span className="text-[11px] text-amber-700 bg-amber-100 font-medium px-2 py-0.5 rounded shrink-0">
-                  Ngày hẹn trước đó
+              {!isOverdue && isGraceOrOverdue && (
+                <span className="text-[11px] text-amber-700 bg-amber-100 font-semibold px-2 py-0.5 rounded shrink-0">
+                  Ân hạn 5 ngày
+                </span>
+              )}
+              {!isOverdue && isEarlyCheckout && (
+                <span className="text-[11px] text-emerald-700 bg-emerald-100 font-semibold px-2 py-0.5 rounded shrink-0">
+                  Trả sớm (PR-O2)
                 </span>
               )}
               {!isOverdue && !isTerminationPending && isMatchedExpiry && (
@@ -399,40 +479,135 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               )}
             </div>
 
-            {/* Warning Box */}
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-4 flex items-start gap-3">
-              <span className="material-symbols-outlined text-red-600 text-[22px] shrink-0 mt-0.5">
-                {isOverdue ? 'error' : 'warning'}
-              </span>
-              <div className="flex flex-col">
-                {isOverdue ? (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">
-                      Hợp đồng đã quá hạn trả kho
-                    </span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Hợp đồng đã hết hạn vào ngày <strong className="text-red-700">{formatDate(contract.endDate)}</strong> ({contract.overdueDays || 1} ngày trễ).
-                      Phí phạt trễ hạn là <strong className="text-red-700">{formatVND(contract.lateFeeAmount || 50000)}</strong> (50.000đ/ngày) và sẽ được khấu trừ trực tiếp vào tiền cọc (<strong className="font-semibold text-red-700">{depositAmount}</strong>) khi nhân viên nghiệm thu khoang. Tiền cọc ước tính còn lại: <strong className="text-emerald-700 font-bold">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</strong>.
-                    </p>
-                  </>
-                ) : isTerminationPending ? (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">
-                      Có thể dời ngày trả kho sớm hơn
-                    </span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Hệ thống không cho phép dời ngày qua sau ngày trả kho đã thực hiện trước đó ({formatDate(prevScheduledDate)}). Quý khách vui lòng chọn ngày sớm hơn hoặc bằng ngày đã hẹn và dọn sạch tài sản trước thời gian này để được hoàn 100% tiền cọc (<strong className="font-semibold text-red-700">{depositAmount}</strong>).
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xs sm:text-sm text-red-700 font-bold mb-0.5">Quy định bàn giao & Hoàn cọc</span>
-                    <p className="text-xs sm:text-sm text-red-900 leading-relaxed">
-                      Lưu ý: Ngày hẹn trả kho không được vượt quá ngày hết hạn hợp đồng (<strong className="text-red-700">{formatDate(contract.endDate)}</strong>). Quý khách vui lòng dọn sạch tài sản trước ngày hẹn. Tiền cọc giữ chỗ (<strong className="font-semibold text-red-700">{depositAmount}</strong>) sẽ được hoàn trả 100% vào tài khoản sau khi nhân viên nghiệm thu khoang trống.
-                    </p>
-                  </>
-                )}
+            {/* Bảng tính dự kiến trả sớm (PR-O2) */}
+            {isEarlyCheckout && earlyRefundCalc && (
+              <div className="bg-[#EAFBE0] border border-[#D0F8AB] rounded-xl p-3.5 my-3 flex flex-col gap-1.5 text-xs">
+                <div className="flex items-center gap-1.5 font-bold text-[#2B5300]">
+                  <span className="material-symbols-outlined text-[#58A700] text-[20px]">savings</span>
+                  <span className="text-sm font-black text-[#58A700]">Chính sách hoàn tiền thuê trả sớm (PR-O2)</span>
+                </div>
+                <p className="text-[#2B5300]/90 leading-relaxed text-[11px]">
+                  Hợp đồng gói {earlyRefundCalc.cycleMonths} tháng (đã đóng: {formatVND(earlyRefundCalc.rentPaid)}). Quý khách đã sử dụng {earlyRefundCalc.usedMonths} tháng (làm tròn lên).
+                </p>
+                <div className="bg-white/80 p-2.5 rounded-lg border border-[#D0F8AB] flex flex-col gap-1 text-[11px] font-semibold text-[#4B4B4B]">
+                  <div className="flex justify-between">
+                    <span>Tiền thuê thực tế ({earlyRefundCalc.usedMonths} tháng × {formatVND(basePrice)}):</span>
+                    <span className="font-bold text-red-600">- {formatVND(earlyRefundCalc.usedMonths * basePrice)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Phí phá vỡ hợp đồng sớm (1 tháng giá gốc):</span>
+                    <span className="font-bold text-red-600">- {formatVND(earlyRefundCalc.breakFee)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-[#D0F8AB] pt-1 text-xs">
+                    <span className="font-black text-[#2B5300]">Tiền thuê dự kiến hoàn lại:</span>
+                    <span className="font-black text-sm text-[#58A700]">+{formatVND(earlyRefundCalc.earlyRentRefund)}</span>
+                  </div>
+                </div>
+                <span className="text-[10px] text-[#2B5300]/80">
+                  * Tiền cọc giữ chỗ ({depositAmount}) sẽ được hoàn trả riêng sau khi nhân viên nghiệm thu khoang trống.
+                </span>
               </div>
+            )}
+
+            {/* Thông tin ân hạn dọn đồ (PR-O14) */}
+            {isGraceOrOverdue && graceCalc && (
+              <div className={`p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1 ${graceCalc.isFree ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className="material-symbols-outlined text-[20px]">{graceCalc.isFree ? 'info' : 'warning'}</span>
+                  <span className="font-black text-sm">
+                    {graceCalc.isFree ? 'Ân hạn dọn đồ miễn phí (PR-O14)' : 'Phí ân hạn dọn đồ (PR-O14)'}
+                  </span>
+                </div>
+                <p className="leading-relaxed text-[11px]">
+                  {graceCalc.isFree
+                    ? 'Ngày đầu tiên sau khi kết thúc hợp đồng được miễn phí hoàn toàn để quý khách thuận tiện chuyển đồ.'
+                    : `Ngày thứ ${graceCalc.days} sau hạn HĐ: Tính tiền thuê theo ngày (${formatVND(Math.round(basePrice / 30))}/ngày). Phí ân hạn dự kiến: ${formatVND(graceCalc.fee)} (sẽ được khấu trừ trực tiếp vào tiền cọc khi nghiệm thu).`}
+                </p>
+              </div>
+            )}
+
+            {/* Hợp đồng quá hạn */}
+            {isOverdue && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3.5 my-3 flex items-start gap-2.5 text-xs text-red-900">
+                <span className="material-symbols-outlined text-red-600 text-[20px] shrink-0 mt-0.5">error</span>
+                <div>
+                  <span className="font-bold text-red-700 block mb-0.5">Hợp đồng đã quá hạn trả kho</span>
+                  <p className="leading-relaxed text-[11px]">
+                    Hạn HĐ kết thúc ngày {formatDate(contract.endDate)}. Phí phạt trễ hạn được tính tối đa 50% tiền cọc ({depositAmount}) theo PR-Q3 và khấu trừ khi nghiệm thu.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Chọn phương thức nhận tiền hoàn (PR-O3, L-18) */}
+            <div className="flex flex-col gap-2 my-2 pt-2 border-t border-slate-100">
+              <label className="text-xs font-bold text-slate-700">Phương thức nhận lại tiền cọc / tiền hoàn:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRefundMethod('BANK_TRANSFER')}
+                  className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    refundMethod === 'BANK_TRANSFER' ? 'border-primary bg-primary/10 text-primary' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">account_balance</span>
+                  Chuyển khoản ngân hàng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefundMethod('CASH')}
+                  className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    refundMethod === 'CASH' ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">payments</span>
+                  Tiền mặt tại quầy
+                </button>
+              </div>
+
+              {refundMethod === 'BANK_TRANSFER' ? (
+                <div className="flex flex-col gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Tên ngân hàng thụ hưởng *:</label>
+                    <input
+                      type="text"
+                      placeholder="VD: Vietcombank, Techcombank, MB Bank..."
+                      value={bankName}
+                      onChange={e => setBankName(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">Số tài khoản *:</label>
+                      <input
+                        type="text"
+                        placeholder="Số tài khoản..."
+                        value={bankAccountNumber}
+                        onChange={e => setBankAccountNumber(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">Tên chủ tài khoản *:</label>
+                      <input
+                        type="text"
+                        placeholder="NGUYEN VAN A"
+                        value={bankAccountName}
+                        onChange={e => setBankAccountName(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-xs text-slate-800 focus:outline-primary uppercase"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-900 leading-relaxed">
+                  Quý khách sẽ ký nhận tiền mặt trực tiếp từ Quản lý cơ sở sau khi nhân viên hoàn tất biên bản nghiệm thu trả kho tại quầy.
+                </div>
+              )}
             </div>
 
             {/* Action Buttons Row */}

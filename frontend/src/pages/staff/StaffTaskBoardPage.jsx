@@ -33,9 +33,11 @@ export default function StaffTaskBoardPage() {
       });
   };
 
-  // UC-18: mọi thẻ có "Xem chi tiết"; task check-in mình đang giữ thì nút chính là "Lập biên bản"
+  // UC-18 & UC-23: mọi thẻ có "Xem chi tiết"; task check-in / check-out mình đang giữ thì nút chính là "Lập biên bản" / "Nghiệm thu trả kho"
   const renderActions = task => {
-    const canHandover = task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS' && task.staffId === user.userId;
+    const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT')
+      && task.status === 'IN_PROGRESS'
+      && task.staffId === user.userId;
     return (
       <div className="flex flex-wrap items-center gap-2">
         {task.taskType === 'CHECK_IN' && ['OVERDUE', 'IN_PROGRESS', 'OPEN'].includes(task.status) && (
@@ -51,8 +53,10 @@ export default function StaffTaskBoardPage() {
         )}
         {canHandover ? (
           <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-            Lập biên bản
+            <span className="material-symbols-outlined text-[18px]">
+              {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
+            </span>
+            {task.taskType === 'CHECK_OUT' ? 'Nghiệm thu trả kho' : 'Lập biên bản'}
           </Link>
         ) : (
           <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5 flex items-center">

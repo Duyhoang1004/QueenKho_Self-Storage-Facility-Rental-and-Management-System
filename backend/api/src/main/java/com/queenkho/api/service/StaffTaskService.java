@@ -690,6 +690,59 @@ public class StaffTaskService {
             if (refundAmount == null) {
                 refundAmount = deposit;
             }
+
+            // Bóc tách phí hư hại & phí trễ từ note để ghi nhận giao dịch khấu trừ cọc (PR-O9 & PR-Q4)
+            BigDecimal damageFee = BigDecimal.ZERO;
+            BigDecimal lateFee = BigDecimal.ZERO;
+            if (task.getNote() != null) {
+                java.util.regex.Matcher mDmg = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
+                if (mDmg.find()) {
+                    try {
+                        damageFee = new BigDecimal(mDmg.group(1).replace(",", "").replace(".", ""));
+                    } catch (Exception ignored) {}
+                }
+                java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(task.getNote());
+                if (mLate.find()) {
+                    try {
+                        lateFee = new BigDecimal(mLate.group(1).replace(",", "").replace(".", ""));
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // Ghi nhận khấu trừ phí hư hại vào cọc (PR-O9: DAMAGE_FEE, DEPOSIT_OFFSET)
+            if (damageFee.compareTo(BigDecimal.ZERO) > 0) {
+                String dmgTxnCode = "DMG-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
+                try {
+                    jdbcTemplate.update(
+                            "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
+                                    "VALUES (?, ?, ?, ?, ?, 'DAMAGE_FEE', 'DEPOSIT_OFFSET', 'SUCCESS', ?)",
+                            dmgTxnCode,
+                            contract.getCustomer().getId(),
+                            contract.getId(),
+                            contract.getReservation() != null ? contract.getReservation().getId() : null,
+                            damageFee,
+                            now
+                    );
+                } catch (Exception ignored) {}
+            }
+
+            // Ghi nhận khấu trừ phí trễ vào cọc (PR-Q4: LATE_FEE, DEPOSIT_OFFSET)
+            if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
+                String lateTxnCode = "LF-" + contract.getContractCode() + "-" + ((System.currentTimeMillis() + 1) % 100000);
+                try {
+                    jdbcTemplate.update(
+                            "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
+                                    "VALUES (?, ?, ?, ?, ?, 'LATE_FEE', 'DEPOSIT_OFFSET', 'SUCCESS', ?)",
+                            lateTxnCode,
+                            contract.getCustomer().getId(),
+                            contract.getId(),
+                            contract.getReservation() != null ? contract.getReservation().getId() : null,
+                            lateFee,
+                            now
+                    );
+                } catch (Exception ignored) {}
+            }
+
             String txnCode = "REF-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
             try {
                 jdbcTemplate.update(
@@ -799,20 +852,63 @@ public class StaffTaskService {
         BigDecimal heldDeposit = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal damageFee = (request != null && request.getDamageFee() != null && request.getDamageFee().compareTo(BigDecimal.ZERO) > 0)
                 ? request.getDamageFee() : BigDecimal.ZERO;
-        BigDecimal netRefund = heldDeposit.subtract(damageFee);
+
+        // Tính phí trễ hạn nếu trả kho sau ngày kết thúc hợp đồng (PR-O11 & PR-Q3)
+        LocalDate today = now.toLocalDate();
+        long overdueDays = 0;
+        if (contract.getEndDate() != null && today.isAfter(contract.getEndDate())) {
+            overdueDays = java.time.temporal.ChronoUnit.DAYS.between(contract.getEndDate(), today);
+        }
+        BigDecimal lateFeeAmount = BigDecimal.ZERO;
+        if (overdueDays > 0) {
+            BigDecimal lateFeePerDay = BigDecimal.valueOf(50000);
+            try {
+                Integer polFee = jdbcTemplate.queryForObject(
+                        "SELECT late_fee_per_day FROM rental_policy WHERE facility_id = ?",
+                        Integer.class,
+                        contract.getStorageUnit().getFacility().getId());
+                if (polFee != null && polFee > 0) {
+                    lateFeePerDay = BigDecimal.valueOf(polFee);
+                }
+            } catch (Exception ignored) {}
+            lateFeeAmount = lateFeePerDay.multiply(BigDecimal.valueOf(overdueDays));
+            // Trần phí trễ tối đa 50% tiền cọc theo PR-Q3
+            BigDecimal maxLateFee = heldDeposit.multiply(new BigDecimal("0.5"));
+            if (lateFeeAmount.compareTo(maxLateFee) > 0) {
+                lateFeeAmount = maxLateFee;
+            }
+        }
+
+        // PR-O11: Thực hoàn = Cọc đang giữ - Phí sự cố - Phí trễ, >= 0
+        BigDecimal netRefund = heldDeposit.subtract(damageFee).subtract(lateFeeAmount);
         if (netRefund.compareTo(BigDecimal.ZERO) < 0) {
             netRefund = BigDecimal.ZERO;
         }
 
-        // Tự động sinh task REFUND cho Quản lý cơ sở xử lý (Hạn 24h)
+        // Tự động sinh task REFUND cho Quản lý cơ sở xử lý (Hạn 24h không tính CN - PR-93)
         StaffTask refundTask = new StaffTask();
         refundTask.setFacilityId(contract.getStorageUnit().getFacility().getId());
         refundTask.setContract(contract);
         refundTask.setTaskType("REFUND");
         refundTask.setStatus("OPEN");
         refundTask.setDueAt(ReservationService.calculateRefundDeadline(now));
-        String refundNote = (task.getNote() != null ? task.getNote() : "") + 
-                String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ = THỰC HOÀN %,.0f₫", heldDeposit, damageFee, netRefund);
+
+        String refundBreakdown;
+        if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0 && damageFee.compareTo(BigDecimal.ZERO) > 0) {
+            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ - Phí trễ %,.0f₫ (%d ngày) = THỰC HOÀN %,.0f₫",
+                    heldDeposit, damageFee, lateFeeAmount, overdueDays, netRefund);
+        } else if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
+            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí trễ %,.0f₫ (%d ngày) = THỰC HOÀN %,.0f₫",
+                    heldDeposit, lateFeeAmount, overdueDays, netRefund);
+        } else if (damageFee.compareTo(BigDecimal.ZERO) > 0) {
+            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ = THỰC HOÀN %,.0f₫",
+                    heldDeposit, damageFee, netRefund);
+        } else {
+            refundBreakdown = String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ = THỰC HOÀN %,.0f₫",
+                    heldDeposit, netRefund);
+        }
+
+        String refundNote = (task.getNote() != null ? task.getNote() : "") + refundBreakdown;
         refundTask.setNote(refundNote);
         staffTaskRepository.save(refundTask);
 

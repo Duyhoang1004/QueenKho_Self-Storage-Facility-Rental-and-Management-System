@@ -474,22 +474,35 @@ export default function StaffTaskDetailPage() {
                           - {parsedRefund.penaltyAmount}
                         </span>
                       </div>
-                    ) : parsedRefund?.isDamagePenalty ? (
-                      <div className="flex justify-between items-center py-0.5">
-                        <span className="font-bold text-[#718096] flex items-center gap-1">
-                          Khấu trừ hư hại khoang:
-                        </span>
-                        <span className="font-black text-[#E53E3E]">
-                          - {parsedRefund.penaltyAmount}
-                        </span>
-                      </div>
                     ) : (
-                      <div className="flex justify-between items-center py-0.5">
-                        <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
-                        <span className="font-black text-[#2F855A]">
-                          {parsedRefund?.policyApplied || (parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ hẹn > 24h (Hoàn 100%)')}
-                        </span>
-                      </div>
+                      <>
+                        {parsedRefund?.penaltyAmountNum > 0 && (
+                          <div className="flex justify-between items-center py-0.5">
+                            <span className="font-bold text-[#718096]">Khấu trừ hư hại khoang:</span>
+                            <span className="font-black text-[#E53E3E]">
+                              - {parsedRefund.penaltyAmount}
+                            </span>
+                          </div>
+                        )}
+                        {parsedRefund?.lateFeeNum > 0 && (
+                          <div className="flex justify-between items-center py-0.5">
+                            <span className="font-bold text-[#718096]">
+                              Khấu trừ phí trễ hạn {parsedRefund.overdueDays ? `(${parsedRefund.overdueDays} ngày):` : ':'}
+                            </span>
+                            <span className="font-black text-[#E53E3E]">
+                              - {parsedRefund.lateFee}
+                            </span>
+                          </div>
+                        )}
+                        {!parsedRefund?.penaltyAmountNum && !parsedRefund?.lateFeeNum && (
+                          <div className="flex justify-between items-center py-0.5">
+                            <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
+                            <span className="font-black text-[#2F855A]">
+                              {parsedRefund?.policyApplied || (parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ hẹn > 24h (Hoàn 100%)')}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <div className="pt-2 mt-1 border-t-2 border-dashed border-[#CBD5E0] flex justify-between items-baseline">

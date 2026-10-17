@@ -209,15 +209,17 @@ export default function CustomerContractPage() {
       : (contract.depositHeldAmount || contract.basePriceMonthly || 0)
   );
   const damageFee = Number(contract.damageFee || 0);
+  const lateFee = Number(contract.lateFeeAmount || 0);
+  const actualLateFee = lateFee > 0 ? lateFee : 0;
   const refundedDeposit = Number(
     contract.refundAmount != null && Number(contract.refundAmount) > 0
       ? contract.refundAmount
-      : (damageFee > 0 ? Math.max(0, depositAmount - damageFee) : depositAmount)
+      : ((damageFee > 0 || actualLateFee > 0) ? Math.max(0, depositAmount - damageFee - actualLateFee) : depositAmount)
   );
   const actualDamageFee = damageFee > 0
     ? damageFee
-    : (depositAmount > refundedDeposit ? depositAmount - refundedDeposit : 0);
-  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0);
+    : (depositAmount > (refundedDeposit + actualLateFee) ? depositAmount - refundedDeposit - actualLateFee : 0);
+  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0 || actualLateFee > 0);
 
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
   const monthlyRent = Number(
@@ -268,9 +270,17 @@ export default function CustomerContractPage() {
               <strong className="text-[#A560E8] font-black">
                 {formatVND(refundedDeposit)}
               </strong>{" "}
-              {actualDamageFee > 0 ? (
+              {(actualDamageFee > 0 || actualLateFee > 0) ? (
                 <span>
-                  (sau khi đã khấu trừ <strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại khoang)
+                  (sau khi đã khấu trừ{" "}
+                  {actualDamageFee > 0 && (
+                    <span><strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại khoang</span>
+                  )}
+                  {actualDamageFee > 0 && actualLateFee > 0 && " và "}
+                  {actualLateFee > 0 && (
+                    <span><strong className="text-[#D97706]">{formatVND(actualLateFee)}</strong> phí phạt trễ hạn</span>
+                  )}
+                  )
                 </span>
               ) : null}{" "}
               đã được quản lý cơ sở chuyển hoàn vào tài khoản ngân hàng của bạn.
@@ -390,7 +400,7 @@ export default function CustomerContractPage() {
                 </span>
 
                 {/* 1. Tiền cọc */}
-                {actualDamageFee > 0 ? (
+                {(actualDamageFee > 0 || actualLateFee > 0) ? (
                   <>
                     <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
                       <div className="flex flex-col">
@@ -407,24 +417,48 @@ export default function CustomerContractPage() {
                     </div>
 
                     {/* Khấu trừ phí hư hại */}
-                    <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-red-50/60 -mx-4 px-4 py-2 rounded-lg">
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-[#FF4B4B]">
-                            Khấu trừ phí hư hại / phát sinh
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FFDFDF] text-[#FF4B4B] border border-[#FF4B4B]/30">
-                            Biên bản nghiệm thu
+                    {actualDamageFee > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-red-50/60 -mx-4 px-4 py-2 rounded-lg">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#FF4B4B]">
+                              Khấu trừ phí hư hại / phát sinh
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FFDFDF] text-[#FF4B4B] border border-[#FF4B4B]/30">
+                              Biên bản nghiệm thu
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-[#FF4B4B]/80">
+                            Khấu trừ trực tiếp vào tiền cọc khi trả kho
                           </span>
                         </div>
-                        <span className="text-[10px] font-bold text-[#FF4B4B]/80">
-                          Khấu trừ trực tiếp vào tiền cọc khi trả kho
+                        <span className="text-sm font-black text-[#FF4B4B]">
+                          -{formatVND(actualDamageFee)}
                         </span>
                       </div>
-                      <span className="text-sm font-black text-[#FF4B4B]">
-                        -{formatVND(actualDamageFee)}
-                      </span>
-                    </div>
+                    )}
+
+                    {/* Khấu trừ phí phạt trễ hạn */}
+                    {actualLateFee > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-amber-50/60 -mx-4 px-4 py-2 rounded-lg">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-[#D97706]">
+                              Khấu trừ phí phạt trễ hạn {contract.overdueDays ? `(${contract.overdueDays} ngày)` : ""}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF3C7] text-[#D97706] border border-[#F59E0B]/30">
+                              Quá hạn
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-[#D97706]/80">
+                            Khấu trừ trực tiếp vào tiền cọc khi trả kho trễ
+                          </span>
+                        </div>
+                        <span className="text-sm font-black text-[#D97706]">
+                          -{formatVND(actualLateFee)}
+                        </span>
+                      </div>
+                    )}
 
                     {/* Tiền cọc thực nhận hoàn */}
                     <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">

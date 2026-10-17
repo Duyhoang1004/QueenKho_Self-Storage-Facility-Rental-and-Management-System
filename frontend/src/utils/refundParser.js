@@ -79,15 +79,38 @@ export function parseRefundNote(note) {
       res.penaltyAmount = !isNaN(numDam) ? `${numDam.toLocaleString('vi-VN')} ₫` : `${mDamage[1].trim()} ₫`;
     }
 
-    if (res.penaltyAmountNum > 0) {
-      res.isDamagePenalty = true;
+    const mLate = note.match(/Phí trễ\s*([0-9.,]+)\s*[₫đVND]*(?:\s*\(([0-9]+)\s*ngày\))?/i);
+    if (mLate) {
+      const rawLate = mLate[1].replace(/,/g, '').replace(/\./g, '');
+      const numLate = Number(rawLate);
+      res.lateFeeNum = !isNaN(numLate) ? numLate : 0;
+      res.lateFee = !isNaN(numLate) ? `${numLate.toLocaleString('vi-VN')} ₫` : `${mLate[1].trim()} ₫`;
+      if (mLate[2]) {
+        res.overdueDays = Number(mLate[2]);
+      }
+    }
+
+    if (res.penaltyAmountNum > 0 || res.lateFeeNum > 0) {
+      res.isDamagePenalty = res.penaltyAmountNum > 0;
+      res.isLatePenalty = res.lateFeeNum > 0;
       res.isFull100 = false;
-      res.policyBadge = 'Khấu trừ phí hư hại';
-      res.policyApplied = 'Khấu trừ theo biên bản nghiệm thu trả kho';
-      res.penaltyNote = `Khấu trừ phí hư hại khoang: ${res.penaltyAmount}`;
-      res.footerNote = '* Đã khấu trừ chi phí sửa chữa / vệ sinh hư hại theo biên bản nghiệm thu của nhân viên.';
+      if (res.penaltyAmountNum > 0 && res.lateFeeNum > 0) {
+        res.policyBadge = 'Khấu trừ hư hại & phí trễ';
+        res.policyApplied = 'Khấu trừ chi phí hư hại và phí phạt trễ hạn khi trả kho';
+        res.footerNote = '* Đã khấu trừ chi phí sửa chữa / vệ sinh và phí phạt trễ hạn theo biên bản nghiệm thu.';
+      } else if (res.lateFeeNum > 0) {
+        res.policyBadge = 'Khấu trừ phí trễ hạn';
+        res.policyApplied = 'Khấu trừ phí phạt trễ hạn trả kho';
+        res.footerNote = '* Đã khấu trừ chi phí phạt quá hạn hợp đồng khi trả kho theo quy định.';
+      } else {
+        res.policyBadge = 'Khấu trừ phí hư hại';
+        res.policyApplied = 'Khấu trừ theo biên bản nghiệm thu trả kho';
+        res.penaltyNote = `Khấu trừ phí hư hại khoang: ${res.penaltyAmount}`;
+        res.footerNote = '* Đã khấu trừ chi phí sửa chữa / vệ sinh hư hại theo biên bản nghiệm thu của nhân viên.';
+      }
     } else {
       res.isDamagePenalty = false;
+      res.isLatePenalty = false;
       res.isFull100 = true;
       res.policyBadge = 'Hoàn 100% cọc giữ chỗ';
       res.policyApplied = 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)';
@@ -122,13 +145,13 @@ export function parseRefundNote(note) {
     }
   }
 
-  // Nếu có cả tiền hoàn và tiền phạt mà chưa có tổng ban đầu -> Tính tổng ban đầu
-  if (!res.originalTotalNum && res.refundAmountNum > 0 && res.penaltyAmountNum > 0) {
-    res.originalTotalNum = res.refundAmountNum + res.penaltyAmountNum;
+  // Nếu có cả tiền hoàn và các khoản khấu trừ mà chưa có tổng ban đầu -> Tính tổng ban đầu
+  if (!res.originalTotalNum && res.refundAmountNum > 0 && (res.penaltyAmountNum > 0 || res.lateFeeNum > 0)) {
+    res.originalTotalNum = res.refundAmountNum + (res.penaltyAmountNum || 0) + (res.lateFeeNum || 0);
     res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
   }
   // Nếu hoàn 100% mà chưa có originalTotal -> gán bằng refundAmount
-  if (!res.originalTotalNum && res.refundAmountNum > 0 && !res.penaltyAmountNum) {
+  if (!res.originalTotalNum && res.refundAmountNum > 0 && !res.penaltyAmountNum && !res.lateFeeNum) {
     res.originalTotalNum = res.refundAmountNum;
     res.originalTotal = res.refundAmount;
   }

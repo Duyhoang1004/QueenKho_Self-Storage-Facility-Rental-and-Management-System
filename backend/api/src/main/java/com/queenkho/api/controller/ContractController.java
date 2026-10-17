@@ -82,6 +82,10 @@ public class ContractController {
             overdueDays = java.time.temporal.ChronoUnit.DAYS.between(rc.getEndDate(), today);
         }
         BigDecimal lateFeeAmount = lateFeePerDay.multiply(BigDecimal.valueOf(overdueDays));
+        BigDecimal maxLateFee = deposit.multiply(new BigDecimal("0.5"));
+        if (lateFeeAmount.compareTo(maxLateFee) > 0) {
+            lateFeeAmount = maxLateFee;
+        }
         BigDecimal estimatedDepositRefund = deposit.subtract(lateFeeAmount);
         if (estimatedDepositRefund.compareTo(BigDecimal.ZERO) < 0) {
             estimatedDepositRefund = BigDecimal.ZERO;
@@ -116,18 +120,26 @@ public class ContractController {
                     String val = m.group(1).replace(",", "").replace(".", "");
                     damageFee = new BigDecimal(val);
                 }
+                java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
+                if (mLate.find()) {
+                    String val = mLate.group(1).replace(",", "").replace(".", "");
+                    lateFeeAmount = new BigDecimal(val);
+                }
             }
         } catch (Exception ignored) {
         }
 
         if (damageFee.compareTo(BigDecimal.ZERO) == 0 && originalDeposit != null && refundAmount != null
                 && refundAmount.compareTo(BigDecimal.ZERO) > 0 && originalDeposit.compareTo(refundAmount) > 0) {
-            damageFee = originalDeposit.subtract(refundAmount);
+            damageFee = originalDeposit.subtract(refundAmount).subtract(lateFeeAmount);
+            if (damageFee.compareTo(BigDecimal.ZERO) < 0) {
+                damageFee = BigDecimal.ZERO;
+            }
         }
 
         if ("TERMINATED".equals(rc.getStatus()) && (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) == 0)) {
             if (originalDeposit != null) {
-                refundAmount = originalDeposit.subtract(damageFee);
+                refundAmount = originalDeposit.subtract(damageFee).subtract(lateFeeAmount);
                 if (refundAmount.compareTo(BigDecimal.ZERO) < 0) {
                     refundAmount = BigDecimal.ZERO;
                 }

@@ -198,8 +198,14 @@ public class ContractService {
             noteBuilder.append(" | Khách: ").append(contract.getCustomer().getFullName())
                     .append(" (SĐT: ").append(contract.getCustomer().getPhone() != null ? contract.getCustomer().getPhone() : "").append(")");
         }
-        if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
-            noteBuilder.append(" | Ngân hàng: ").append(request.getBankName().trim())
+        boolean isCash = request != null && ("CASH".equalsIgnoreCase(request.getRefundMethod())
+                || (request.getBankName() == null || request.getBankName().isBlank()));
+
+        if (isCash) {
+            noteBuilder.append(" | [HOÀN CỌC TIỀN MẶT] Khách nhận tiền mặt trực tiếp tại quầy cơ sở");
+        } else {
+            noteBuilder.append(" | [HOÀN CỌC CK]")
+                    .append(" | Ngân hàng: ").append(request.getBankName().trim())
                     .append(" | STK: ").append(request.getBankAccountNumber() != null ? request.getBankAccountNumber().trim() : "")
                     .append(" | Chủ TK: ").append(request.getBankAccountName() != null ? request.getBankAccountName().trim().toUpperCase() : "");
         }

@@ -743,16 +743,22 @@ public class StaffTaskService {
                 } catch (Exception ignored) {}
             }
 
+            boolean isCash = task.getNote() != null && (
+                    task.getNote().contains("HOÀN CỌC TIỀN MẶT") || 
+                    task.getNote().toLowerCase().contains("tiền mặt"));
+            String refundMethod = isCash ? "CASH" : "BANK_TRANSFER";
+
             String txnCode = "REF-" + contract.getContractCode() + "-" + (System.currentTimeMillis() % 100000);
             try {
                 jdbcTemplate.update(
                         "INSERT INTO payment_transactions (transaction_code, user_id, contract_id, reservation_id, amount, payment_type, payment_method, status, paid_at) " +
-                                "VALUES (?, ?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'SUCCESS', ?)",
+                                "VALUES (?, ?, ?, ?, ?, 'REFUND', ?, 'SUCCESS', ?)",
                         txnCode,
                         contract.getCustomer().getId(),
                         contract.getId(),
                         contract.getReservation() != null ? contract.getReservation().getId() : null,
                         refundAmount,
+                        refundMethod,
                         now
                 );
             } catch (Exception ignored) {}

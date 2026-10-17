@@ -25,6 +25,9 @@ public class ContractController {
     @Autowired
     private com.queenkho.api.service.ContractService contractService;
 
+    @Autowired
+    private com.queenkho.api.service.StaffTaskService staffTaskService;
+
     private CustomerContractResponse toDto(RentalContract rc) {
         var su = rc.getStorageUnit();
         var ut = su.getUnitType();
@@ -40,8 +43,16 @@ public class ContractController {
         } catch (Exception ignored) {
         }
 
-        // Tiền thuê thực tế = Tổng đã đóng - Tiền cọc đang giữ
-        BigDecimal deposit = rc.getDepositHeldAmount() != null ? rc.getDepositHeldAmount() : BigDecimal.ZERO;
+        BigDecimal originalDeposit = (rc.getReservation() != null && rc.getReservation().getDepositAmount() != null)
+                ? rc.getReservation().getDepositAmount()
+                : (rc.getDepositHeldAmount() != null && rc.getDepositHeldAmount().compareTo(BigDecimal.ZERO) > 0
+                        ? rc.getDepositHeldAmount()
+                        : ut.getBasePriceMonthly());
+
+        // Tiền thuê thực tế = Tổng đã đóng - Tiền cọc gốc
+        BigDecimal deposit = (rc.getDepositHeldAmount() != null && rc.getDepositHeldAmount().compareTo(BigDecimal.ZERO) > 0)
+                ? rc.getDepositHeldAmount()
+                : (originalDeposit != null ? originalDeposit : BigDecimal.ZERO);
         BigDecimal rentPaid = totalPaid.compareTo(deposit) >= 0 ? totalPaid.subtract(deposit) : BigDecimal.ZERO;
 
         // Ngày hẹn trả kho nếu hợp đồng đang TERMINATION_PENDING
@@ -91,62 +102,49 @@ public class ContractController {
             estimatedDepositRefund = BigDecimal.ZERO;
         }
 
-        // Tính tổng tiền hoàn cọc thực tế (nếu hợp đồng đã kết thúc hoặc có giao dịch REFUND)
+        // Tính tổng tiền hoàn thực tế (từ giao dịch REFUND hoặc task REFUND của hợp đồng)
         BigDecimal refundAmount = BigDecimal.ZERO;
         try {
             refundAmount = jdbcTemplate.queryForObject(
                     "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
-                            "WHERE (contract_id = ? OR reservation_id = ?) AND status = 'SUCCESS' AND payment_type = 'REFUND'",
+                            "WHERE (contract_id = ? OR reservation_id = ?) AND status IN ('SUCCESS', 'PENDING') AND payment_type = 'REFUND'",
                     BigDecimal.class,
                     rc.getId(), rc.getReservation().getId());
         } catch (Exception ignored) {
         }
 
-        BigDecimal originalDeposit = (rc.getReservation() != null && rc.getReservation().getDepositAmount() != null)
-                ? rc.getReservation().getDepositAmount()
-                : (rc.getDepositHeldAmount() != null && rc.getDepositHeldAmount().compareTo(BigDecimal.ZERO) > 0
-                        ? rc.getDepositHeldAmount()
-                        : ut.getBasePriceMonthly());
-
         BigDecimal damageFee = BigDecimal.ZERO;
         try {
-            String refundNote = jdbcTemplate.queryForObject(
-                    "SELECT TOP 1 note FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' ORDER BY id DESC",
-                    String.class,
+            damageFee = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(estimated_cost), 0) FROM damage_cases WHERE contract_id = ?",
+                    BigDecimal.class,
                     rc.getId());
-            if (refundNote != null) {
-                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
-                if (m.find()) {
-                    String val = m.group(1).replace(",", "").replace(".", "");
-                    damageFee = new BigDecimal(val);
-                }
-                java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
-                if (mLate.find()) {
-                    String val = mLate.group(1).replace(",", "").replace(".", "");
-                    lateFeeAmount = new BigDecimal(val);
-                }
-            }
         } catch (Exception ignored) {
         }
-
-        if (damageFee.compareTo(BigDecimal.ZERO) == 0 && originalDeposit != null && refundAmount != null
-                && refundAmount.compareTo(BigDecimal.ZERO) > 0 && originalDeposit.compareTo(refundAmount) > 0) {
-            damageFee = originalDeposit.subtract(refundAmount).subtract(lateFeeAmount);
-            if (damageFee.compareTo(BigDecimal.ZERO) < 0) {
-                damageFee = BigDecimal.ZERO;
-            }
-        }
-
-        if ("TERMINATED".equals(rc.getStatus()) && (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) == 0)) {
-            if (originalDeposit != null) {
-                refundAmount = originalDeposit.subtract(damageFee).subtract(lateFeeAmount);
-                if (refundAmount.compareTo(BigDecimal.ZERO) < 0) {
-                    refundAmount = BigDecimal.ZERO;
+        if (damageFee == null || damageFee.compareTo(BigDecimal.ZERO) == 0) {
+            try {
+                String refundNote = jdbcTemplate.queryForObject(
+                        "SELECT TOP 1 note FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' ORDER BY id DESC",
+                        String.class,
+                        rc.getId());
+                if (refundNote != null) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i|Sự cố:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
+                    if (m.find()) {
+                        String val = m.group(1).replace(",", "").replace(".", "");
+                        damageFee = new BigDecimal(val);
+                    }
+                    java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?|Phí trễ hạn:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
+                    if (mLate.find()) {
+                        String val = mLate.group(1).replace(",", "").replace(".", "");
+                        lateFeeAmount = new BigDecimal(val);
+                    }
                 }
+            } catch (Exception ignored) {
             }
         }
 
         boolean isInspectionCompleted = false;
+        LocalDate inspectionDate = today;
         try {
             Integer refundCount = jdbcTemplate.queryForObject(
                     "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' AND status != 'CANCELLED'",
@@ -156,8 +154,30 @@ public class ContractController {
                     Integer.class, rc.getId());
             isInspectionCompleted = (refundCount != null && refundCount > 0)
                     || (handoverCount != null && handoverCount > 0);
+
+            var completedTs = jdbcTemplate.queryForObject(
+                    "SELECT TOP 1 completed_at FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND completed_at IS NOT NULL ORDER BY id DESC",
+                    java.sql.Timestamp.class, rc.getId());
+            if (completedTs != null) {
+                inspectionDate = completedTs.toLocalDateTime().toLocalDate();
+            }
         } catch (Exception ignored) {
         }
+
+        // Tính quyết toán hoàn tiền đầy đủ theo Business Rules (gồm cả hoàn tiền thuê trả sớm PR-O2)
+        var calc = staffTaskService.calculateCheckoutRefund(rc, inspectionDate, damageFee);
+        BigDecimal depositRefund = calc.getDepositRefund();
+        BigDecimal earlyRentRefund = calc.getEarlyRentRefund();
+        Integer usedMonths = calc.getUsedMonths();
+        BigDecimal breakFee = calc.getBreakFee();
+
+        if (isInspectionCompleted || "TERMINATED".equalsIgnoreCase(rc.getStatus())) {
+            if (calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
+                refundAmount = calc.getTotalRefundAmount();
+            }
+        }
+
+        int effectiveCycleMonths = calc.getCycleMonths();
 
         return new CustomerContractResponse(
                 rc.getId(),
@@ -174,8 +194,8 @@ public class ContractController {
                 rc.getStatus(),
                 rc.getStartDate(),
                 rc.getEndDate(),
-                rc.getBillingCycleMonths(),
-                rc.getDepositHeldAmount(),
+                effectiveCycleMonths,
+                deposit,
                 rc.getReservation().getReservationCode(),
                 rc.getAccessPinCode(),
                 rc.getRfidCardCode(),
@@ -190,7 +210,11 @@ public class ContractController {
                 originalDeposit,
                 refundAmount,
                 damageFee,
-                isInspectionCompleted);
+                isInspectionCompleted,
+                depositRefund,
+                earlyRentRefund,
+                usedMonths,
+                breakFee);
     }
 
     // GET /api/v1/contracts?managerId=3

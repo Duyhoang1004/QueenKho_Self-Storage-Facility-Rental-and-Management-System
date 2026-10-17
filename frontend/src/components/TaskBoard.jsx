@@ -9,9 +9,10 @@ import { parseRefundNote } from '../utils/refundParser'
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
 const TYPE_META = {
-  CHECK_IN:  { label: 'Check-in',  icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT: { label: 'Check-out', icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
-  REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#F3E8FF] text-[#A560E8] border-[#CE82FF]' },
+  CHECK_IN:    { label: 'Check-in',    icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  REFUND:      { label: 'Hoàn tiền',   icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
 }
 
 const STATUS_META = {
@@ -236,18 +237,17 @@ export default function TaskBoard({
               className="duo-input w-full pl-11 text-xs"
             />
           </div>
-          {!isRefundMode && (
-            <select
-              value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value)}
-              className="duo-input text-xs md:w-48 cursor-pointer"
-            >
-              <option value="ALL">Tất cả loại việc</option>
-              <option value="CHECK_IN">Check-in</option>
-              <option value="CHECK_OUT">Check-out</option>
-              <option value="REFUND">Hoàn tiền / Cọc</option>
-            </select>
-          )}
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value)}
+            className="duo-input text-xs md:w-48 cursor-pointer"
+          >
+            <option value="ALL">Tất cả loại việc</option>
+            <option value="CHECK_IN">Check-in</option>
+            <option value="CHECK_OUT">Check-out</option>
+            <option value="REFUND">Hoàn tiền / Cọc</option>
+            <option value="MAINTENANCE">Bảo trì kho</option>
+          </select>
           {currentStaffId && (
             <label
               className={`px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer select-none ${
@@ -355,18 +355,23 @@ export default function TaskBoard({
                   <div className="flex items-center justify-between rounded-xl bg-[#FAF5FF] border border-[#E9D8FD] px-3.5 py-2 text-xs">
                     <span className="font-bold text-[#805AD5] flex items-center gap-1">
                       <span className="material-symbols-outlined text-[16px]">payments</span>
-                      Số tiền hoàn:
+                      Tổng tiền hoàn:
                     </span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <span className="font-mono font-black text-sm text-[#805AD5]">
                         {parsed.refundAmount}
                       </span>
+                      {parsed.earlyRentRefundNum > 0 && (
+                        <span className="px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[10px] font-black border border-[#86EFAC]">
+                          Cọc + Trả sớm ({parsed.earlyRentRefund})
+                        </span>
+                      )}
                       {parsed.isPenalty50 && (
                         <span className="px-2 py-0.5 rounded-md bg-[#FED7D7] text-[#C53030] text-[10px] font-black border border-[#FEB2B2]">
                           Trừ 50% cọc
                         </span>
                       )}
-                      {parsed.isFull100 && (
+                      {parsed.isFull100 && !parsed.earlyRentRefundNum && (
                         <span className="px-2 py-0.5 rounded-md bg-[#C6F6D5] text-[#22543D] text-[10px] font-black border border-[#9AE6B4]">
                           Hoàn 100%
                         </span>

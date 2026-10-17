@@ -37,20 +37,19 @@ export async function checkInStaffTask(taskId, staffId, payload) {
   return res.data
 }
 
+// UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có) → trả chi tiết task đã COMPLETED
+export async function checkOutStaffTask(taskId, staffId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })
+  return res.data
+}
+
 // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
 export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)
   return res.data
 }
 
-// UC-23, UC-24: Staff nghiệm thu trả kho (check-out)
-export async function checkOutStaffTask(taskId, staffId, payload) {
-  const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })
-  return res.data
-}
-
-// UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
-// Hỗ trợ cả 2 signature: (taskId, userId, payloadObj) và (taskId, managerId, noteString)
+// UC-25: Quản lý cơ sở hoàn tất hoàn trả tiền (REFUND) - PR-O15 & L-24
 export async function completeRefundTask(taskId, userId, payload) {
   const body = typeof payload === 'string' ? { note: payload } : (payload || {})
   const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, {

@@ -58,6 +58,7 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     // UC-18: chi tiết 1 task (trang /staff/tasks/:id) — fetch sẵn hợp đồng, khách, ô, cơ sở, người nhận
     @Query("SELECT t FROM StaffTask t " +
             "LEFT JOIN FETCH t.contract c " +
+            "LEFT JOIN FETCH c.reservation " +
             "LEFT JOIN FETCH c.customer " +
             "LEFT JOIN FETCH c.storageUnit su " +
             "LEFT JOIN FETCH su.unitType " +
@@ -76,4 +77,14 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     int completeCheckIn(@Param("taskId") Integer taskId,
                         @Param("staffId") Integer staffId,
                         @Param("now") LocalDateTime now);
+
+    // UC-23: đóng task check-out — 1 câu UPDATE có điều kiện (giống completeCheckIn).
+    // Chỉ ăn dòng khi task còn IN_PROGRESS, đúng người nhận, chưa quá hạn
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now " +
+            "WHERE t.id = :taskId AND t.taskType = 'CHECK_OUT' AND t.status = 'IN_PROGRESS' " +
+            "AND t.staff.id = :staffId AND t.dueAt > :now")
+    int completeCheckOut(@Param("taskId") Integer taskId,
+                         @Param("staffId") Integer staffId,
+                         @Param("now") LocalDateTime now);
 }

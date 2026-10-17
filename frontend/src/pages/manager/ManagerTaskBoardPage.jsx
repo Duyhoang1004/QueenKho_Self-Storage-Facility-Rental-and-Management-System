@@ -16,9 +16,14 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   // State gỡ nhân viên
   const [confirmTask, setConfirmTask] = useState(null)
   
-  // State duyệt hoàn tiền cọc
+  // State duyệt hoàn tiền cọc (PR-O12, PR-O15)
   const [refundTask, setRefundTask] = useState(null)
+  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
+  const [bankTransactionCode, setBankTransactionCode] = useState('')
+  const [evidenceImageUrl, setEvidenceImageUrl] = useState('')
+  const [cashReceiptConfirmed, setCashReceiptConfirmed] = useState(false)
   const [refundNote, setRefundNote] = useState('')
+  const [refundError, setRefundError] = useState(null)
 
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -38,35 +43,103 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       })
   }
 
+  const openRefundModal = (task) => {
+    setRefundTask(task)
+    const isCash = (task.note || '').toLowerCase().includes('tiền mặt')
+    setRefundMethod(isCash ? 'CASH' : 'BANK_TRANSFER')
+    setBankTransactionCode('')
+    setEvidenceImageUrl('')
+    setCashReceiptConfirmed(false)
+    setRefundNote('')
+    setRefundError(null)
+  }
+
+  const handleCompleteRefund = () => {
+    // PR-O15: Bắt buộc bằng chứng trước khi hoàn tất
+    if (refundMethod === 'BANK_TRANSFER' && !bankTransactionCode.trim()) {
+      setRefundError('Bắt buộc nhập mã giao dịch ngân hàng (mã FT) khi chuyển khoản hoàn tiền.')
+      return
+    }
+    if (refundMethod === 'CASH' && !cashReceiptConfirmed) {
+      setRefundError('Bắt buộc xác nhận khách hàng đã ký nhận tiền mặt tại quầy.')
+      return
+    }
+
+    setSubmitting(true)
+    setRefundError(null)
+
+    const payload = {
+      paymentMethod: refundMethod,
+      bankTransactionCode: bankTransactionCode.trim(),
+      evidenceImageUrl: evidenceImageUrl.trim(),
+      cashReceiptConfirmed,
+      note: refundNote.trim()
+    }
+
+    completeRefundTask(refundTask.id, user.userId, payload)
+      .then(task => setToast({ type: 'success', message: `Đã hoàn tất thanh toán hoàn tiền cho task #${task.id} thành công!` }))
+      .catch(err => {
+        const msg = err.response?.data?.message || 'Không thể cập nhật trạng thái hoàn tiền, vui lòng thử lại.'
+        setRefundError(msg)
+        setToast({ type: 'error', message: msg })
+      })
+      .finally(() => {
+        setSubmitting(false)
+        setRefundTask(null)
+        setReloadKey(k => k + 1)
+      })
+  }
+
   const isRefundMode = initialTypeFilter === 'REFUND'
 
   const renderActions = task => {
-    const detailUrl = (isRefundMode || task.taskType === 'REFUND')
-      ? `/manager/refunds/${task.id}`
-      : `/manager/tasks/${task.id}`
+    const detailUrl = task.taskType === 'REFUND' ? `/manager/refunds/${task.id}` : `/manager/tasks/${task.id}`
 
-    if (task.taskType === 'REFUND' && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
+    // Task REFUND: Manager xem chi tiết hoặc xác nhận đã thực hiện chuyển khoản / hoàn tiền cọc
+    if (task.taskType === 'REFUND') {
+      if (['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)) {
+        return (
+          <div className="flex items-center gap-2">
+            <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+              <span className="material-symbols-outlined text-[18px]">visibility</span>
+              Xem chi tiết
+            </Link>
+            <button
+              onClick={() => openRefundModal(task)}
+              className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">payments</span>
+              Xác nhận đã hoàn tiền
+            </button>
+          </div>
+        )
+      }
       return (
-        <Link to={detailUrl} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
-          <span className="material-symbols-outlined text-[18px]">payments</span>
-          Xử lý hoàn tiền
+        <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">visibility</span>
+          Xem chi tiết
         </Link>
       )
     }
+
     if (task.status === 'IN_PROGRESS') {
       return (
         <div className="flex items-center gap-2">
           <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
             <span className="material-symbols-outlined text-[18px]">visibility</span>
-            Chi tiết
+            Xem chi tiết
           </Link>
-          <button onClick={() => setConfirmTask(task)} className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer">
+          <button
+            onClick={() => setConfirmTask(task)}
+            className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer"
+          >
             <span className="material-symbols-outlined text-[18px]">person_remove</span>
             Gỡ người nhận
           </button>
         </div>
       )
     }
+
     return (
       <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
         <span className="material-symbols-outlined text-[18px]">visibility</span>
@@ -158,7 +231,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         onCancel={() => setConfirmTask(null)}
       />
 
-      {/* Modal xác nhận hoàn tiền cọc */}
+      {/* Modal xác nhận hoàn tiền (PR-O12, PR-O15) */}
       {refundTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="duo-card max-w-lg w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
@@ -167,23 +240,114 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                 <span className="material-symbols-outlined text-[24px]">payments</span>
               </div>
               <div>
-                <h3 className="text-lg font-black text-[#4B4B4B]">Xác nhận hoàn tất hoàn cọc</h3>
-                <p className="text-xs font-bold text-[#AFAFAF]">Task #{refundTask.id} · Phụ trách: {user.fullName || 'Quản lý'}</p>
+                <h3 className="text-lg font-black text-[#4B4B4B]">Xác nhận hoàn tất hoàn tiền</h3>
+                <p className="text-xs font-bold text-[#AFAFAF]">Task #{refundTask.id} · Phụ trách: {user.fullName || 'Quản lý cơ sở'}</p>
               </div>
             </div>
 
+            {refundError && (
+              <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{refundError}</span>
+              </div>
+            )}
+
             <div className="bg-[#F7F7F7] p-3 rounded-xl border border-[#E5E5E5] text-xs font-bold text-[#4B4B4B] leading-relaxed">
-              <span className="text-[10px] font-black uppercase text-[#AFAFAF] block mb-1">Thông tin chi tiết:</span>
+              <span className="text-[10px] font-black uppercase text-[#AFAFAF] block mb-1">Chi tiết số tiền & phương thức hoàn:</span>
               {refundTask.note || 'Không có ghi chú chi tiết'}
             </div>
 
+            {/* Chọn hình thức hoàn tiền (PR-O15) */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-black uppercase text-[#777777]">
+                Hình thức thực hiện hoàn tiền:
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setRefundMethod('BANK_TRANSFER'); setRefundError(null); }}
+                  className={`py-2 px-3 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    refundMethod === 'BANK_TRANSFER'
+                      ? 'border-[#1CB0F6] bg-[#DDF4FF] text-[#1CB0F6]'
+                      : 'border-[#E5E5E5] bg-white text-[#777777] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">account_balance</span>
+                  Chuyển khoản (Bank)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setRefundMethod('CASH'); setRefundError(null); }}
+                  className={`py-2 px-3 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    refundMethod === 'CASH'
+                      ? 'border-[#58CC02] bg-[#D7FFB8] text-[#58CC02]'
+                      : 'border-[#E5E5E5] bg-white text-[#777777] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">payments</span>
+                  Tiền mặt tại quầy
+                </button>
+              </div>
+            </div>
+
+            {/* Form bằng chứng theo hình thức */}
+            {refundMethod === 'BANK_TRANSFER' ? (
+              <div className="flex flex-col gap-3 bg-[#F0F9FF] p-3 rounded-xl border border-[#B9E6FE]">
+                <div>
+                  <label className="text-[11px] font-black uppercase text-[#026AA2] block mb-1">
+                    Mã giao dịch ngân hàng (Mã FT) <span className="text-[#FF4B4B]">*</span>:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="VD: FT261017009412 (Bắt buộc theo PR-O15)"
+                    value={bankTransactionCode}
+                    onChange={e => setBankTransactionCode(e.target.value)}
+                    className="duo-input w-full text-xs bg-white"
+                    required
+                  />
+                  <span className="text-[10px] font-bold text-[#026AA2]/80 mt-1 block">
+                    BOM / Kế toán sẽ đối soát tiền hoàn thông qua mã FT này.
+                  </span>
+                </div>
+                <div>
+                  <label className="text-[11px] font-black uppercase text-[#026AA2] block mb-1">
+                    Link ảnh ủy nhiệm chi / Biên lai (Tùy chọn):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Dán link ảnh screenshot giao dịch (nếu có)..."
+                    value={evidenceImageUrl}
+                    onChange={e => setEvidenceImageUrl(e.target.value)}
+                    className="duo-input w-full text-xs bg-white"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 bg-[#F3FEE7] p-3 rounded-xl border border-[#D0F8AB]">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={cashReceiptConfirmed}
+                    onChange={e => setCashReceiptConfirmed(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded text-[#58CC02] focus:ring-[#58CC02] cursor-pointer"
+                  />
+                  <span className="text-xs font-black text-[#2B5300] leading-snug">
+                    Xác nhận khách hàng đã nhận đủ tiền mặt và ký phiếu biên nhận tại quầy cơ sở <span className="text-[#FF4B4B]">*</span>
+                  </span>
+                </label>
+                <span className="text-[10px] font-bold text-[#2B5300]/80 block">
+                  Bắt buộc theo PR-O15 để hoàn tất task hoàn tiền mặt.
+                </span>
+              </div>
+            )}
+
             <div>
               <label className="text-[11px] font-black uppercase text-[#777777] block mb-1">
-                Ghi chú / Mã giao dịch ngân hàng (Tùy chọn):
+                Ghi chú đối soát thêm (Tùy chọn):
               </label>
               <input
                 type="text"
-                placeholder="VD: Đã chuyển khoản qua VCB lúc 14:30, mã GD FT24..."
+                placeholder="VD: Đã tất toán đủ cho khách lúc 15:45..."
                 value={refundNote}
                 onChange={e => setRefundNote(e.target.value)}
                 className="duo-input w-full text-xs"
@@ -192,7 +356,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
 
             <div className="flex justify-end gap-2 pt-2 border-t border-[#E5E5E5]">
               <button
-                onClick={() => { setRefundTask(null); setRefundNote('') }}
+                onClick={() => { setRefundTask(null); setRefundError(null); }}
                 disabled={submitting}
                 className="px-4 py-2.5 rounded-xl border-2 border-b-4 border-[#E5E5E5] text-[#777777] text-xs font-black uppercase hover:bg-[#F7F7F7] cursor-pointer"
               >
@@ -204,7 +368,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                 className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                {submitting ? 'Đang lưu...' : 'Xác nhận đã chuyển tiền'}
+                {submitting ? 'Đang lưu...' : 'Xác nhận đã hoàn tiền'}
               </button>
             </div>
           </div>

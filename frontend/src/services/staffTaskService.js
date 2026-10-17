@@ -50,8 +50,12 @@ export async function checkOutStaffTask(taskId, staffId, payload) {
 }
 
 // UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
+// Hỗ trợ cả 2 signature: (taskId, userId, payloadObj) và (taskId, managerId, noteString)
 export async function completeRefundTask(taskId, userId, payload) {
-  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, payload, { params: { userId } })
+  const body = typeof payload === 'string' ? { note: payload } : (payload || {})
+  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, {
+    params: { userId, managerId: userId }
+  })
   return res.data
 }
 
@@ -66,3 +70,4 @@ export async function uploadImageFile(file) {
   })
   return res.data // { url: '...', fileName: '...' }
 }
+

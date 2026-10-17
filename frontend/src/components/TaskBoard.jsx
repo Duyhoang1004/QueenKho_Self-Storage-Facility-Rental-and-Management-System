@@ -9,8 +9,8 @@ import { parseRefundNote } from '../utils/refundParser'
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
 const TYPE_META = {
-  CHECK_IN:  { label: 'Check-in',  icon: 'login',  cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT: { label: 'Check-out', icon: 'logout', cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  CHECK_IN:  { label: 'Check-in',  icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT: { label: 'Check-out', icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
   REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#F3E8FF] text-[#A560E8] border-[#CE82FF]' },
 }
 
@@ -71,10 +71,16 @@ function dueHint(task) {
   return { text: `Còn ${Math.floor(hours / 24)} ngày`, urgent: false }
 }
 
-export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, currentStaffId, initialTypeFilter = 'ALL' }) {
+export default function TaskBoard({
+  facilityId,
+  renderActions,
+  reloadKey = 0,
+  currentStaffId,
+  forceStaffId,
+  initialTypeFilter = 'ALL'
+}) {
   const isRefundMode = initialTypeFilter === 'REFUND'
   const activeTabs = isRefundMode ? REFUND_TABS : TABS
-
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -123,6 +129,10 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
     fetchTasks()
   }
 
+  const scopedTasks = useMemo(() => {
+    return forceStaffId ? tasks.filter(t => t.staffId === forceStaffId) : tasks
+  }, [tasks, forceStaffId])
+
   const stats = useMemo(() => {
     const pool = isRefundMode
       ? tasks.filter(t => t.taskType === 'REFUND')
@@ -138,23 +148,23 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
       doneToday: pool.filter(t => t.status === 'COMPLETED' && t.completedAt
         && new Date(t.completedAt).toDateString() === today).length,
     }
-  }, [tasks, isRefundMode])
+  }, [scopedTasks, isRefundMode])
 
   const tabCounts = useMemo(() => {
     const counts = {}
     const baseTasks = isRefundMode
-      ? tasks.filter(task => task.taskType === 'REFUND')
-      : tasks.filter(task => task.taskType !== 'REFUND')
+      ? scopedTasks.filter(task => task.taskType === 'REFUND')
+      : scopedTasks.filter(task => task.taskType !== 'REFUND')
     activeTabs.forEach(t => {
       counts[t.key] = baseTasks.filter(task => t.statuses?.includes(task.status)).length
     })
     return counts
-  }, [tasks, activeTabs, isRefundMode])
+  }, [scopedTasks, activeTabs, isRefundMode])
 
   const visibleTasks = useMemo(() => {
     const currentTab = activeTabs.find(t => t.key === tab) || activeTabs[0]
     const keyword = search.trim().toLowerCase()
-    return tasks
+    return scopedTasks
       .filter(t => isRefundMode ? t.taskType === 'REFUND' : t.taskType !== 'REFUND')
       .filter(t => currentTab.statuses?.includes(t.status))
       .filter(t => {
@@ -168,7 +178,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
         || t.customerPhone?.includes(keyword)
         || t.storageUnitId?.toLowerCase().includes(keyword)
         || t.note?.toLowerCase().includes(keyword))
-  }, [tasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId])
+  }, [scopedTasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId])
 
   return (
     <div className="flex flex-col gap-6">
@@ -235,6 +245,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
               <option value="ALL">Tất cả loại việc</option>
               <option value="CHECK_IN">Check-in</option>
               <option value="CHECK_OUT">Check-out</option>
+              <option value="REFUND">Hoàn tiền / Cọc</option>
             </select>
           )}
           {currentStaffId && (

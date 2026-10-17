@@ -539,11 +539,24 @@ public class ReservationService {
                 refundTaskNote = refundTaskNote.substring(0, 997) + "...";
             }
 
-            // 4.4. ĐẨY DATA VÀO BẢNG facility_tasks
+            // 4.4. Tìm ID của Facility Manager phụ trách cơ sở này
+            Integer managerId = null;
+            try {
+                managerId = jdbcTemplate.queryForObject(
+                        "SELECT TOP 1 u.id FROM users u " +
+                                "JOIN roles r ON u.role_id = r.id " +
+                                "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE'",
+                        Integer.class,
+                        reservation.getFacility().getId());
+            } catch (Exception ignored) {
+            }
+
+            // 4.5. ĐẨY DATA VÀO BẢNG facility_tasks (Gán trực tiếp cho Manager của cơ sở)
             jdbcTemplate.update(
-                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, status, due_at, note, created_at) " +
-                            "VALUES (?, 'REFUND', NULL, 'OPEN', ?, ?, SYSDATETIME())",
+                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
+                            "VALUES (?, 'REFUND', NULL, ?, 'OPEN', ?, ?, SYSDATETIME())",
                     reservation.getFacility().getId(),
+                    managerId,
                     deadline,
                     refundTaskNote);
         }

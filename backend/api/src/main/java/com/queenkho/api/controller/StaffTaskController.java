@@ -115,15 +115,19 @@ public class StaffTaskController {
     }
 
     // UC-25: Quản lý / Staff hoàn tất hoàn tiền cọc
-    // POST /api/v1/staff-tasks/12/complete-refund?userId=3   body: CompleteRefundRequest
+    // POST /api/v1/staff-tasks/12/complete-refund?userId=3 (hoặc ?managerId=3)
     @PostMapping("/{id}/complete-refund")
     public ResponseEntity<?> completeRefund(@PathVariable Integer id,
                                             @RequestParam(required = false) Integer userId,
+                                            @RequestParam(required = false) Integer managerId,
                                             @RequestBody(required = false) com.queenkho.api.dto.CompleteRefundRequest request) {
         try {
-            return ResponseEntity.ok(staffTaskService.completeRefund(id, userId, request));
+            Integer finalId = managerId != null ? managerId : userId;
+            return ResponseEntity.ok(staffTaskService.completeRefund(id, finalId, request));
         } catch (StaffTaskException e) {
             return toError(e);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_REQUEST", "message", e.getMessage()));
         }
     }
 

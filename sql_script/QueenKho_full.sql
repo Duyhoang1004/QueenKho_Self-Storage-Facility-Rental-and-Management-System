@@ -233,12 +233,13 @@ GO
 CREATE INDEX IX_support_customer ON support_requests(customer_id);
 GO
 
-/* ---------- 12. facility_tasks (UC-16, UC-17, UC-18, UC-25) ----------
+/* ---------- 12. facility_tasks (UC-16, UC-17, UC-18, REFUND) ----------
    Bảng công việc tại cơ sở, sinh tự động:
    - CHECK_IN : khi Manager gán ô (UC-14)
    - CHECK_OUT: khi khách yêu cầu trả kho (UC-22)
-   - REFUND   : hoàn trả tiền cọc (UC-15, UC-25)
-   - SUPPORT  : khi khách gửi yêu cầu hỗ trợ (làm sau) */
+   - REFUND   : khi khách hủy đơn cọc (UC-15) - Manager thực hiện hoàn cọc
+   - SUPPORT  : khi khách gửi yêu cầu hỗ trợ (làm sau)
+   - MAINTENANCE: bảo trì ô kho */
 CREATE TABLE facility_tasks (
     id                  INT IDENTITY(1,1) PRIMARY KEY,
     facility_id         INT NOT NULL,
@@ -246,8 +247,8 @@ CREATE TABLE facility_tasks (
     contract_id         INT NULL,                             -- bắt buộc với CHECK_IN / CHECK_OUT
     support_request_id  INT NULL,                             -- bắt buộc với SUPPORT
     status              NVARCHAR(30) NOT NULL DEFAULT 'OPEN', -- OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
-    staff_id            INT NULL,                             -- nhân viên / manager phụ trách
-    due_at              DATETIME2 NOT NULL,                   -- deadline
+    staff_id            INT NULL,                             -- ID người phụ trách (Staff hoặc Facility Manager)
+    due_at              DATETIME2 NOT NULL,                   -- deadline hoàn thành
     evidence_image_url  NVARCHAR(1000) NULL,                  -- ảnh bằng chứng chuyển khoản / nghiệm thu
     note                NVARCHAR(1000) NULL,                  -- chi tiết STK, thông tin hoàn cọc
     created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
@@ -268,6 +269,7 @@ CREATE TABLE facility_tasks (
 GO
 CREATE INDEX IX_facilitytasks_facility_status ON facility_tasks(facility_id, status);
 CREATE INDEX IX_facilitytasks_contract        ON facility_tasks(contract_id);
+CREATE INDEX IX_facilitytasks_staff           ON facility_tasks(staff_id);
 GO
 
 /* ---------- 13. activity_logs ---------- */
@@ -410,8 +412,6 @@ UNION ALL SELECT 'rental_policy', COUNT(*) FROM rental_policy
 UNION ALL SELECT 'storage_units', COUNT(*) FROM storage_units
 UNION ALL SELECT 'users',         COUNT(*) FROM users;
 GO
-
-
 /* ---------- 14. Đồng bộ bảng và Trigger Hoàn Cọc (UC-15, UC-22, UC-25) ---------- */
 -- Đảm bảo tương thích nếu database cũ dùng tên 'staff_tasks'
 IF EXISTS (SELECT * FROM sys.tables WHERE name = 'staff_tasks') 
@@ -487,3 +487,4 @@ BEGIN
       AND p.status <> 'SUCCESS';
 END;
 GO
+

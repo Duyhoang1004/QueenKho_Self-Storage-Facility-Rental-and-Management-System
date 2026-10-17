@@ -157,3 +157,12 @@ BEGIN
       AND p.status <> 'SUCCESS';
 END;
 GO
+
+-- ========================================================
+-- 5. KIỂM TRA LẠI CÁC CỘT
+-- ========================================================
+SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE 
+FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'facility_tasks';
+GO
+

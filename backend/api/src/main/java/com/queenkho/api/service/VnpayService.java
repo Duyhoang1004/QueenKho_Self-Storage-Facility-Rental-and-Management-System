@@ -36,7 +36,6 @@ public class VnpayService {
     private final RentalContractRepository contracts; 
     private final ReservationRepository reservations;
     private final StaffTaskService staffTasks;
-    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public Map<String, Object> createReservation(Integer id, String ip) {
         var r = payments.findReservation(id);
@@ -44,9 +43,6 @@ public class VnpayService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn đặt chỗ không hợp lệ");
         }
         
-        // PR-B8: Huỷ các giao dịch thanh toán PENDING cũ của đơn này trước khi tạo link mới
-        jdbcTemplate.update("UPDATE payment_transactions SET status = 'FAILED' WHERE reservation_id = ? AND status = 'PENDING'", id);
-
         BigDecimal price = (BigDecimal) r.get("base_price_monthly");
         int m = ((Number) r.get("duration_months")).intValue();
         int discountPercent = (m == 3) ? 5 : (m == 6) ? 10 : (m == 12) ? 15 : 0;
@@ -54,30 +50,15 @@ public class VnpayService {
         BigDecimal rent = price.multiply(BigDecimal.valueOf(m));
         BigDecimal discountAmount = rent.multiply(BigDecimal.valueOf(discountPercent))
                                         .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-        BigDecimal deposit = r.get("deposit_amount") != null ? (BigDecimal) r.get("deposit_amount") : price;
-        // PR-B9: Gỡ voucher, tổng trả = giá * số tháng * (1 - ưu đãi gói) + cọc
-        BigDecimal netAmount = rent.subtract(discountAmount).add(deposit);
+        BigDecimal netAmount = rent.subtract(discountAmount).add(price).subtract(BigDecimal.valueOf(100000));
         
-        return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, deposit, ip);
+        return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, price, ip);
     }
     
     public Map<String, Object> createRenewal(Integer id, Integer m, String ip) {
         var c = contracts.findDetailById(id)
                          .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
                          
-        // PR-R1: Chỉ gia hạn khi ACTIVE / TERMINATION_PENDING / OVERDUE
-        if (!c.getStatus().matches("(?i)ACTIVE|TERMINATION_PENDING|OVERDUE")) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Hợp đồng không thể gia hạn (chỉ áp dụng cho HĐ Đang hiệu lực, Chờ trả kho hoặc Quá hạn)");
-        }
-
-        // PR-R2: BE chỉ nhận gói 1 / 3 / 6 / 12 tháng
-        if (m == null || (m != 1 && m != 3 && m != 6 && m != 12)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Gói gia hạn chỉ chấp nhận 1, 3, 6 hoặc 12 tháng");
-        }
-
-        // PR-R5: Huỷ các giao dịch gia hạn PENDING cũ của hợp đồng này trước khi tạo link mới
-        jdbcTemplate.update("UPDATE payment_transactions SET status = 'FAILED' WHERE contract_id = ? AND status = 'PENDING'", id);
-
         BigDecimal subtotal = c.getStorageUnit().getUnitType().getBasePriceMonthly().multiply(BigDecimal.valueOf(m));
         BigDecimal discount = m >= 12 ? new BigDecimal("0.10") : m >= 6 ? new BigDecimal("0.05") : BigDecimal.ZERO;
         BigDecimal finalAmount = subtotal.subtract(subtotal.multiply(discount)).setScale(0, RoundingMode.HALF_UP);
@@ -160,7 +141,9 @@ public class VnpayService {
         
         if (!"00".equals(p.get("vnp_ResponseCode")) || !"00".equals(p.get("vnp_TransactionStatus"))) { 
             payments.updatePayment(ref, "FAILED"); 
-            // PR-B8: VNPAY lỗi / khách huỷ trên VNPAY → đơn vẫn giữ PENDING, cho phép khách bấm "Thanh toán lại" đến hết 15 phút.
+            if ("DEPOSIT".equals(db.get("payment_type")) && db.get("reservation_id") != null) {
+                payments.updateReservationToCancelled(((Number) db.get("reservation_id")).intValue());
+            }
             return Map.of("RspCode", "00", "Message", "Success"); 
         }
         
@@ -177,17 +160,9 @@ public class VnpayService {
         var r = payments.findReservation(id);
         
         if (r != null && "PENDING".equals(r.get("status"))) { 
-            BigDecimal deposit = r.get("deposit_amount") != null ? (BigDecimal) r.get("deposit_amount") : (BigDecimal) r.get("base_price_monthly");
-            payments.updateReservationToDepositPaid(id, deposit); 
+            payments.updateReservationToDepositPaid(id, (BigDecimal) r.get("base_price_monthly")); 
             return null; 
         }
-
-        // PR-B6: IPN thành công về cho đơn đã hết hạn / huỷ -> giao dịch vẫn SUCCESS + tự tạo yêu cầu hoàn tiền (PR-O12)
-        if (r != null && ("EXPIRED".equals(r.get("status")) || "CANCELLED".equals(r.get("status")))) {
-            createLateRefundForReservation(r, (BigDecimal) p.get("amount"));
-            return null;
-        }
-
         return "Invalid status";
     }
     
@@ -195,19 +170,13 @@ public class VnpayService {
         var c = contracts.findDetailById(((Number) p.get("contract_id")).intValue()).orElse(null);
         if (c == null) return "Không tìm thấy hợp đồng";
         
-        // PR-R1 & PR-R5: Nếu HĐ không còn ở trạng thái có thể gia hạn, tạo yêu cầu hoàn tiền
-        if (!c.getStatus().matches("(?i)ACTIVE|TERMINATION_PENDING|OVERDUE")) {
-            createLateRefundForContract(c, (BigDecimal) p.get("amount"));
-            return null;
-        }
-
         LocalDate currentEnd = c.getEndDate() == null || c.getEndDate().isBefore(LocalDate.now()) ? LocalDate.now() : c.getEndDate();
         int monthsToRenew = Integer.parseInt(ref.substring(3, 5));
         c.setEndDate(currentEnd.plusMonths(monthsToRenew));
         
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
             c.setStatus("ACTIVE");
-            // PR-R7: khách gia hạn → huỷ task check-out đang mở, chuyển đơn về UNIT_ASSIGNED
+            // UC-16: khách gia hạn → huỷ task check-out đang mở
             staffTasks.cancelOpenTasks(c.getId(), "CHECK_OUT");
             c.getReservation().setStatus("UNIT_ASSIGNED");
             reservations.save(c.getReservation()); 
@@ -215,87 +184,6 @@ public class VnpayService {
         
         contracts.save(c); 
         return null;
-    }
-
-    private void createLateRefundForReservation(Map<String, Object> r, BigDecimal amount) {
-        Integer resId = ((Number) r.get("id")).intValue();
-        String resCode = (String) r.get("reservation_code");
-        Object customerId = r.get("customer_id");
-
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime deadline = ReservationService.calculateRefundDeadline(now);
-
-        Integer facilityId = null;
-        try {
-            facilityId = jdbcTemplate.queryForObject("SELECT facility_id FROM reservations WHERE id = ?", Integer.class, resId);
-        } catch (Exception ignored) {}
-
-        Integer managerId = null;
-        if (facilityId != null) {
-            try {
-                managerId = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 u.id FROM users u JOIN roles r ON u.role_id = r.id " +
-                        "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE'",
-                        Integer.class, facilityId);
-            } catch (Exception ignored) {}
-        }
-
-        String txnCode = "REF-" + resCode + "-LATE-" + (System.currentTimeMillis() % 10000);
-        try {
-            jdbcTemplate.update(
-                    "INSERT INTO payment_transactions (transaction_code, reservation_id, user_id, amount, payment_type, payment_method, status, paid_at) " +
-                    "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'PENDING', SYSDATETIME())",
-                    txnCode, resId, customerId, amount);
-        } catch (Exception ignored) {}
-
-        String note = String.format(
-                "[HOÀN TIỀN IPN MUỘN] Đơn %s thanh toán thành công sau khi đơn đã hết hạn/hủy. Số tiền cần hoàn: %s đ. Khách hàng ID: %s. Quản lý vui lòng liên hệ khách để thực hiện hoàn tiền.",
-                resCode, amount != null ? amount.toPlainString() : "0", customerId);
-
-        try {
-            jdbcTemplate.update(
-                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
-                    "VALUES (?, 'REFUND', NULL, ?, 'OPEN', ?, ?, SYSDATETIME())",
-                    facilityId, managerId, deadline, note);
-        } catch (Exception ignored) {}
-    }
-
-    private void createLateRefundForContract(com.queenkho.api.entity.RentalContract c, BigDecimal amount) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime deadline = ReservationService.calculateRefundDeadline(now);
-        Integer facilityId = c.getStorageUnit() != null && c.getStorageUnit().getFacility() != null
-                ? c.getStorageUnit().getFacility().getId() : null;
-
-        Integer managerId = null;
-        if (facilityId != null) {
-            try {
-                managerId = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 u.id FROM users u JOIN roles r ON u.role_id = r.id " +
-                        "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE'",
-                        Integer.class, facilityId);
-            } catch (Exception ignored) {}
-        }
-
-        String txnCode = "REF-" + c.getContractCode() + "-LATE-" + (System.currentTimeMillis() % 10000);
-        try {
-            jdbcTemplate.update(
-                    "INSERT INTO payment_transactions (transaction_code, contract_id, reservation_id, user_id, amount, payment_type, payment_method, status, paid_at) " +
-                    "VALUES (?, ?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'PENDING', SYSDATETIME())",
-                    txnCode, c.getId(), c.getReservation() != null ? c.getReservation().getId() : null,
-                    c.getCustomer().getId(), amount);
-        } catch (Exception ignored) {}
-
-        String note = String.format(
-                "[HOÀN TIỀN IPN MUỘN] Gia hạn hợp đồng %s nhận tiền sau khi hợp đồng đã đóng. Số tiền cần hoàn: %s đ. Khách hàng: %s (SĐT: %s).",
-                c.getContractCode(), amount != null ? amount.toPlainString() : "0",
-                c.getCustomer().getFullName(), c.getCustomer().getPhone());
-
-        try {
-            jdbcTemplate.update(
-                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
-                    "VALUES (?, 'REFUND', ?, ?, 'OPEN', ?, ?, SYSDATETIME())",
-                    facilityId, c.getId(), managerId, deadline, note);
-        } catch (Exception ignored) {}
     }
     
     private void verify(Map<String, String> p) {

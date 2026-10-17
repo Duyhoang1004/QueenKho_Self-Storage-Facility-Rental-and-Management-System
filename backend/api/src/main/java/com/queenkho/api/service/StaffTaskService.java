@@ -810,7 +810,7 @@ public class StaffTaskService {
         refundTask.setContract(contract);
         refundTask.setTaskType("REFUND");
         refundTask.setStatus("OPEN");
-        refundTask.setDueAt(now.plusHours(24));
+        refundTask.setDueAt(ReservationService.calculateRefundDeadline(now));
         String refundNote = (task.getNote() != null ? task.getNote() : "") + 
                 String.format(" | ĐÃ NGHIỆM THU: Cọc gốc %,.0f₫ - Phí hư hại %,.0f₫ = THỰC HOÀN %,.0f₫", heldDeposit, damageFee, netRefund);
         refundTask.setNote(refundNote);

@@ -136,28 +136,19 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
-    if (isOverdue) {
-      // PR-O1: HĐ OVERDUE hẹn trong vòng 3 ngày tới
-      const maxOverdueDate = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0]
-      if (checkoutDate > maxOverdueDate) {
-        setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong vòng 3 ngày tới (trước ${formatDate(maxOverdueDate)}).`)
-        return
-      }
-    } else {
-      // PR-O1: HĐ ACTIVE hẹn từ ngày mai đến end_date + 5 ngày (5 ngày ân hạn chuyển đồ)
-      const tomorrowDate = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-      if (checkoutDate < tomorrowDate) {
-        setCheckoutError('Ngày hẹn trả kho phải từ ngày mai trở đi.')
-        return
-      }
-      if (contract.endDate) {
-        const [y, m, d] = contract.endDate.split('-').map(Number)
-        const maxGraceDate = new Date(y, m - 1, d + 5).toISOString().split('T')[0]
-        if (checkoutDate > maxGraceDate) {
-          setCheckoutError(`Không thể hẹn ngày trả kho quá 5 ngày ân hạn sau khi kết thúc hợp đồng (${formatDate(maxGraceDate)}).`)
-          return
-        }
-      }
+    if (isOverdue && checkoutDate > today) {
+      setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong ngày hôm nay.`)
+      return
+    }
+
+    if (!isTerminationPending && contract.endDate && checkoutDate > contract.endDate) {
+      setCheckoutError(`Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (${formatDate(contract.endDate)}). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.`)
+      return
+    }
+
+    if (isTerminationPending && prevScheduledDate && checkoutDate > prevScheduledDate) {
+      setCheckoutError(`Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (${formatDate(prevScheduledDate)}).`)
+      return
     }
 
     const depositVal = Number(contract.depositHeldAmount || 0)
@@ -415,27 +406,26 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   id="checkoutDateInput"
                   type="date"
                   value={checkoutDate}
-                  min={isOverdue ? today : new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                  max={isOverdue 
-                    ? new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0] 
-                    : (contract?.endDate 
-                        ? (() => {
-                            const [y, m, d] = contract.endDate.split('-').map(Number)
-                            return new Date(y, m - 1, d + 5).toISOString().split('T')[0]
-                          })()
-                        : undefined)}
+                  min={today}
+                  max={isOverdue ? today : (isTerminationPending ? prevScheduledDate : contract?.endDate || undefined)}
                   onChange={(e) => setCheckoutDate(e.target.value)}
                   className="bg-transparent border-0 p-0 text-slate-800 font-semibold text-sm focus:outline-none w-full cursor-pointer"
                   required
                 />
               </div>
-              {isOverdue ? (
+              {isOverdue && (
                 <span className="text-[11px] text-red-700 bg-red-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Trong 3 ngày tới
+                  Chỉ trong ngày (Quá hạn)
                 </span>
-              ) : (
-                <span className="text-[11px] text-emerald-700 bg-emerald-100 font-medium px-2 py-0.5 rounded shrink-0">
-                  Ân hạn +5 ngày
+              )}
+              {!isOverdue && isTerminationPending && prevScheduledDate && checkoutDate === prevScheduledDate && (
+                <span className="text-[11px] text-amber-700 bg-amber-100 font-medium px-2 py-0.5 rounded shrink-0">
+                  Ngày hẹn trước đó
+                </span>
+              )}
+              {!isOverdue && !isTerminationPending && isMatchedExpiry && (
+                <span className="text-[11px] text-slate-600 font-medium uppercase px-2 py-0.5 rounded bg-slate-200 shrink-0">
+                  Khớp hạn HĐ
                 </span>
               )}
             </div>

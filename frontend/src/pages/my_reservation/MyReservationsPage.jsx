@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
-import { createVnpayPayment } from "../../services/vnpayService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
 
@@ -177,15 +176,6 @@ export default function MyReservationsPage() {
     setSelectedResToCancel(null);
     setReloadKey((k) => k + 1);
     alert("Đã hủy đơn đặt chỗ thành công.");
-  };
-
-  const handlePayNow = async (resId) => {
-    try {
-      const paymentData = await createVnpayPayment(resId);
-      window.location.assign(paymentData.payUrl);
-    } catch (err) {
-      alert(err.response?.data?.message || "Không thể tạo lại liên kết thanh toán. Đơn có thể đã hết hạn.");
-    }
   };
 
   const countBy = (statuses) =>
@@ -558,17 +548,6 @@ export default function MyReservationsPage() {
                                 description
                               </span>
                               XEM HĐ
-                            </button>
-                          )}
-                          {r.status === "PENDING" && (
-                            <button
-                              onClick={() => handlePayNow(r.id)}
-                              className="duo-btn-green px-2.5 py-1 text-[10px] gap-1 shadow-sm"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                payments
-                              </span>
-                              THANH TOÁN LẠI
                             </button>
                           )}
                           {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (

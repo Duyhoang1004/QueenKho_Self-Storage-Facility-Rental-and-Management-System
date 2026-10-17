@@ -29,8 +29,17 @@ const DURATION_OPTIONS = [
   { months: 12, label: '12 Tháng', sub: 'Dài hạn', note: 'Tiết kiệm 15%', discount: 15 },
 ]
 
+const VOUCHER_DISCOUNT = 100000
+
 function formatVND(amount) {
   return amount.toLocaleString('vi-VN') + 'đ'
+}
+
+// Map mã voucher → giá trị giảm
+const VOUCHER_MAP = {
+  NEWKHO: 100000,
+  WELCOME50: 50000,
+  SAVE200: 200000,
 }
 
 export default function CreateReservationPage() {
@@ -48,7 +57,22 @@ export default function CreateReservationPage() {
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [voucherCode, setVoucherCode] = useState('')
+  const [voucherApplied, setVoucherApplied] = useState({ code: 'NEWKHO', discount: VOUCHER_DISCOUNT })
+  const [voucherError, setVoucherError] = useState('')
 
+  const handleApplyVoucher = () => {
+    const code = voucherCode.trim().toUpperCase()
+    if (!code) return
+    const discount = VOUCHER_MAP[code]
+    if (discount) {
+      setVoucherApplied({ code, discount })
+      setVoucherError('')
+      setVoucherCode('')
+    } else {
+      setVoucherError('Mã voucher không hợp lệ hoặc đã hết hạn.')
+    }
+  }
 
   const sessionUser = JSON.parse(sessionStorage.getItem('user') || '{}')
   const [customerInfo, setCustomerInfo] = useState({
@@ -119,8 +143,7 @@ export default function CreateReservationPage() {
   const discountAmount = Math.round(baseTotal * (selectedOption.discount / 100))
   const netRent = baseTotal - discountAmount
   const deposit = unit.pricePerMonth
-  // PR-B9: Gỡ voucher, tổng trả = giá * số tháng * (1 - ưu đãi gói) + cọc
-  const totalPayment = netRent + deposit
+  const totalPayment = netRent + deposit - voucherApplied.discount
 
   const handleSubmit = async () => {
     if (!agreed) {
@@ -129,10 +152,6 @@ export default function CreateReservationPage() {
     }
     if (!startDate) {
       setError('Vui lòng chọn ngày bắt đầu nhận kho.')
-      return
-    }
-    if (!sessionUser.userId) {
-      setError('Vui lòng đăng nhập tài khoản trước khi thực hiện đặt chỗ.')
       return
     }
     if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email || !customerInfo.address) {
@@ -144,7 +163,7 @@ export default function CreateReservationPage() {
       setLoading(true)
       setError('')
       const response = await createReservation({
-        customerId: sessionUser.userId,
+        customerId: sessionUser.userId ?? 1,
         facilityId: unit.facilityId,
         unitTypeId: unit.unitTypeId,
         startDate,
@@ -170,9 +189,7 @@ export default function CreateReservationPage() {
     }
   }
 
-  // PR-B4: Ngày bắt đầu từ ngày mai đến tối đa 30 ngày tới
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-  const maxDateStr = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8 select-none">
@@ -301,7 +318,6 @@ export default function CreateReservationPage() {
                   type="date"
                   value={startDate}
                   min={tomorrowStr}
-                  max={maxDateStr}
                   onChange={(e) => setStartDate(e.target.value)}
                   className="duo-input w-full pl-11"
                 />
@@ -459,6 +475,36 @@ export default function CreateReservationPage() {
                 <span className="font-black text-[#4B4B4B]">{formatVND(deposit)}</span>
               </div>
 
+              {/* Voucher input */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Nhập mã voucher..."
+                    value={voucherCode}
+                    onChange={(e) => { setVoucherCode(e.target.value); setVoucherError('') }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleApplyVoucher()}
+                    className="duo-input flex-1 text-xs py-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyVoucher}
+                    className="duo-btn-white px-3 py-2 text-xs tracking-wider shrink-0"
+                  >
+                    ÁP DỤNG
+                  </button>
+                </div>
+                {voucherError && (
+                  <p className="text-[11px] font-bold text-[#FF4B4B]">⚠️ {voucherError}</p>
+                )}
+              </div>
+
+              {/* Dòng voucher đang áp dụng */}
+              <div className="flex justify-between items-center text-xs font-bold text-[#58A700] bg-[#D7FFB8] px-3 py-1.5 rounded-xl border border-[#58CC02]">
+                <span>🎫 Voucher <span className="font-black">{voucherApplied.code}</span></span>
+                <span className="font-black">-{formatVND(voucherApplied.discount)}</span>
+              </div>
+
               {/* Tổng tiền */}
               <div className="border-t-2 border-[#E5E5E5] pt-4 mt-1">
                 <p className="text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
@@ -470,7 +516,7 @@ export default function CreateReservationPage() {
                   </span>
                   {selectedOption.discount > 0 && (
                     <span className="text-[11px] font-black uppercase bg-[#D7FFB8] text-[#58A700] px-2.5 py-0.5 rounded-full border border-[#58CC02]">
-                      Tiết kiệm {formatVND(discountAmount)}
+                      Tiết kiệm {formatVND(discountAmount + voucherApplied.discount)}
                     </span>
                   )}
                 </div>

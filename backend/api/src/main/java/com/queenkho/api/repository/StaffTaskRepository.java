@@ -58,6 +58,7 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     // UC-18: chi tiết 1 task (trang /staff/tasks/:id) — fetch sẵn hợp đồng, khách, ô, cơ sở, người nhận
     @Query("SELECT t FROM StaffTask t " +
             "LEFT JOIN FETCH t.contract c " +
+            "LEFT JOIN FETCH c.reservation " +
             "LEFT JOIN FETCH c.customer " +
             "LEFT JOIN FETCH c.storageUnit su " +
             "LEFT JOIN FETCH su.unitType " +

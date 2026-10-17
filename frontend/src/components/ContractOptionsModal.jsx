@@ -208,18 +208,31 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   if (isEarlyCheckout) {
     const sDate = new Date(contract.startDate || today)
     const cDate = new Date(checkoutDate)
-    let months = (cDate.getFullYear() - sDate.getFullYear()) * 12 + (cDate.getMonth() - sDate.getMonth())
-    if (cDate.getDate() > sDate.getDate()) {
-      months += 1
+    let usedMonths = 1
+    if (cDate > sDate) {
+      let months = (cDate.getFullYear() - sDate.getFullYear()) * 12 + (cDate.getMonth() - sDate.getMonth())
+      if (cDate.getDate() > sDate.getDate()) {
+        months += 1
+      }
+      usedMonths = Math.max(1, months)
     }
-    const usedMonths = Math.max(1, months)
-    const cycleMonths = contract.billingCycleMonths || 1
+
+    let monthsFromDates = 1
+    if (contract.startDate && contract.endDate) {
+      const [y1, m1] = String(contract.startDate).split('-').map(Number)
+      const [y2, m2] = String(contract.endDate).split('-').map(Number)
+      const diff = (y2 - y1) * 12 + (m2 - m1)
+      if (diff > 0) monthsFromDates = diff
+    }
+    const cycleMonths = Math.max(Number(contract.billingCycleMonths) || 1, monthsFromDates)
+
     let discountRate = 0
     if (cycleMonths >= 12) discountRate = 0.15
     else if (cycleMonths >= 6) discountRate = 0.10
     else if (cycleMonths >= 3) discountRate = 0.05
 
-    const rentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate))
+    const formulaRentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate))
+    const rentPaid = Number(contract.rentPaid) > 0 ? Number(contract.rentPaid) : formulaRentPaid
     const breakFee = basePrice
     const usedCost = basePrice * usedMonths
     const earlyRentRefund = Math.max(0, rentPaid - usedCost - breakFee)

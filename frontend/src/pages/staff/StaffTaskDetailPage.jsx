@@ -413,22 +413,32 @@ export default function StaffTaskDetailPage() {
   const totalDamageCost = damageCases.reduce((sum, item) => sum + (Number(item.estimatedCost) || 0), 0);
   const depositHeld = Number(task?.depositHeldAmount || 0);
   const basePrice = Number(task?.baseMonthlyPrice) || depositHeld;
-  const cycleMonths = Number(task?.cycleMonths) || 1;
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const endDateStr = task?.contractEndDate || todayStr;
   const startDateStr = task?.contractStartDate || todayStr;
 
+  // Tính số tháng của gói hợp đồng từ startDate -> endDate để luôn chính xác kể cả khi billing_cycle_months = 1
+  const calcMonthsBetween = (s, e) => {
+    if (!s || !e) return 1;
+    const [y1, m1] = String(s).split('-').map(Number);
+    const [y2, m2] = String(e).split('-').map(Number);
+    const diff = (y2 - y1) * 12 + (m2 - m1);
+    return diff > 0 ? diff : 1;
+  };
+  const cycleMonths = Math.max(Number(task?.cycleMonths) || 1, calcMonthsBetween(startDateStr, endDateStr));
+
   const isEarlyCheckout = endDateStr > todayStr;
   const isOverdueOrGrace = todayStr > endDateStr;
 
-  // Tính tiền thuê kỳ hiện tại đã trả
+  // Tính tiền thuê kỳ hiện tại đã trả (ưu tiên số thực đóng từ Backend payment_transactions)
   let discountRate = 0;
   if (cycleMonths >= 12) discountRate = 0.15;
   else if (cycleMonths >= 6) discountRate = 0.10;
   else if (cycleMonths >= 3) discountRate = 0.05;
 
-  const rentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate));
+  const formulaRentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate));
+  const rentPaid = Number(task?.rentPaid) > 0 ? Number(task.rentPaid) : formulaRentPaid;
 
   // PR-O2: Số tháng đã dùng làm tròn lên
   let usedMonths = 0;
@@ -438,14 +448,20 @@ export default function StaffTaskDetailPage() {
   if (isEarlyCheckout) {
     const sDate = new Date(startDateStr);
     const nDate = new Date(todayStr);
-    let months = (nDate.getFullYear() - sDate.getFullYear()) * 12 + (nDate.getMonth() - sDate.getMonth());
-    if (nDate.getDate() > sDate.getDate()) {
-      months += 1;
+    if (nDate > sDate) {
+      let months = (nDate.getFullYear() - sDate.getFullYear()) * 12 + (nDate.getMonth() - sDate.getMonth());
+      if (nDate.getDate() > sDate.getDate()) {
+        months += 1;
+      }
+      usedMonths = Math.max(1, months);
+    } else {
+      usedMonths = 1;
     }
-    usedMonths = Math.max(1, months);
-    breakFee = basePrice;
+    breakFee = Number(task?.breakFee) > 0 ? Number(task.breakFee) : basePrice;
     const usedCost = basePrice * usedMonths;
-    estimatedEarlyRentRefund = Math.max(0, rentPaid - usedCost - breakFee);
+    estimatedEarlyRentRefund = Number(task?.earlyRentRefund) > 0
+      ? Number(task.earlyRentRefund)
+      : Math.max(0, rentPaid - usedCost - breakFee);
   }
 
   // PR-O14 & PR-Q3: Phí ân hạn & trễ hạn
@@ -1371,15 +1387,24 @@ export default function StaffTaskDetailPage() {
                   <span>Tiền cọc hoàn lại:</span>
                   <span className="font-black text-[#026AA2]">{formatCurrency(estimatedDepositRefund)}</span>
                 </div>
-                {isEarlyCheckout && estimatedEarlyRentRefund > 0 && (
-                  <div className="flex flex-col gap-1 bg-[#EAFBE0] p-2.5 rounded-xl border border-[#D0F8AB] text-xs font-bold text-[#2B5300]">
-                    <div className="flex justify-between items-center">
-                      <span className="font-black text-[#58A700]">Hoàn tiền thuê trả sớm (PR-O2):</span>
+                {isEarlyCheckout && (
+                  <div className="flex flex-col gap-1.5 bg-[#EAFBE0] p-3 rounded-xl border border-[#D0F8AB] text-xs font-bold text-[#2B5300]">
+                    <div className="flex justify-between items-center border-b border-[#D0F8AB] pb-1">
+                      <span className="font-black text-[#58A700]">Hoàn tiền thuê các tháng còn lại (PR-O2 - Gói {cycleMonths} tháng):</span>
                       <span className="font-black text-sm text-[#58A700]">+ {formatCurrency(estimatedEarlyRentRefund)}</span>
                     </div>
-                    <span className="text-[10px] text-[#2B5300]/80">
-                      Gói {cycleMonths}T (đã đóng {formatCurrency(rentPaid)}). Đã dùng {usedMonths} tháng (làm tròn lên), trừ phí phá HĐ 1 tháng ({formatCurrency(breakFee)}).
-                    </span>
+                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                      <span>• Tiền thuê khách đã đóng ({cycleMonths} tháng):</span>
+                      <span className="font-black">{formatCurrency(rentPaid)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                      <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
+                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                      <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
+                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
+                    </div>
                   </div>
                 )}
                 <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">

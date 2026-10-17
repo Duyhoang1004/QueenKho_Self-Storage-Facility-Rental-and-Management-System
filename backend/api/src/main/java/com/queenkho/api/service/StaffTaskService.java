@@ -1015,6 +1015,8 @@ public class StaffTaskService {
         BigDecimal excessDebtAmount = totalDamageCost.subtract(depositHeld).max(BigDecimal.ZERO);
         BigDecimal depositRefund = refundAmount;
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
+        BigDecimal rentPaid = BigDecimal.ZERO;
+        BigDecimal breakFee = BigDecimal.ZERO;
         BigDecimal graceFee = BigDecimal.ZERO;
         BigDecimal lateFee = BigDecimal.ZERO;
         Integer usedMonths = null;
@@ -1029,6 +1031,8 @@ public class StaffTaskService {
             excessDebtAmount = calc.getExcessDebtAmount();
             depositRefund = calc.getDepositRefund();
             earlyRentRefund = calc.getEarlyRentRefund();
+            rentPaid = calc.getRentPaid();
+            breakFee = calc.getBreakFee();
             graceFee = calc.getGraceFee();
             lateFee = calc.getLateFee();
             usedMonths = calc.getUsedMonths();
@@ -1074,6 +1078,8 @@ public class StaffTaskService {
                 .excessDebtAmount(excessDebtAmount)
                 .depositRefund(depositRefund)
                 .earlyRentRefund(earlyRentRefund)
+                .rentPaid(rentPaid)
+                .breakFee(breakFee)
                 .graceFee(graceFee)
                 .lateFee(lateFee)
                 .usedMonths(usedMonths)
@@ -1570,14 +1576,23 @@ public class StaffTaskService {
             baseMonthlyPrice = depositHeld;
         }
 
-        // Số tháng của kỳ thuê (1, 3, 6, 12)
-        int cycleMonths = contract.getBillingCycleMonths() != null && contract.getBillingCycleMonths() > 0
-                ? contract.getBillingCycleMonths()
-                : (contract.getReservation() != null && contract.getReservation().getDurationMonths() != null
-                        ? contract.getReservation().getDurationMonths()
-                        : 1);
+        LocalDate startDate = contract.getStartDate() != null ? contract.getStartDate() : LocalDate.now();
+        LocalDate endDate = contract.getEndDate() != null ? contract.getEndDate() : startDate.plusMonths(1);
+        LocalDate actualDate = actualCheckoutDate != null ? actualCheckoutDate : LocalDate.now();
 
-        // Tính tiền thuê kỳ hiện tại đã trả theo D-08 (hoặc từ payment_transactions nếu có)
+        // Số tháng của kỳ thuê (1, 3, 6, 12): lấy max giữa chênh lệch startDate->endDate, duration_months của reservation và billing_cycle_months
+        int monthsFromDates = 1;
+        if (endDate.isAfter(startDate)) {
+            Period totalP = Period.between(startDate, endDate);
+            monthsFromDates = totalP.getYears() * 12 + totalP.getMonths() + (totalP.getDays() >= 15 ? 1 : 0);
+        }
+        int resMonths = (contract.getReservation() != null && contract.getReservation().getDurationMonths() != null)
+                ? contract.getReservation().getDurationMonths() : 1;
+        int billMonths = (contract.getBillingCycleMonths() != null && contract.getBillingCycleMonths() > 0)
+                ? contract.getBillingCycleMonths() : 1;
+        int cycleMonths = Math.max(monthsFromDates, Math.max(resMonths, billMonths));
+
+        // Tính tiền thuê kỳ hiện tại theo bảng giá D-08 (dùng làm fallback nếu chưa có giao dịch)
         BigDecimal discountRate = BigDecimal.ZERO;
         if (cycleMonths >= 12) discountRate = new BigDecimal("0.15");
         else if (cycleMonths >= 6) discountRate = new BigDecimal("0.10");
@@ -1586,26 +1601,25 @@ public class StaffTaskService {
         BigDecimal nominalRent = baseMonthlyPrice.multiply(BigDecimal.valueOf(cycleMonths));
         BigDecimal rentPaid = nominalRent.subtract(nominalRent.multiply(discountRate)).setScale(0, RoundingMode.HALF_UP);
 
+        // Ưu tiên lấy đúng số tiền thuê thực tế khách đã thanh toán từ payment_transactions (đã trừ chiết khấu / voucher)
         try {
-            BigDecimal renewTxn = jdbcTemplate.queryForObject(
-                    "SELECT TOP 1 amount FROM payment_transactions WHERE contract_id = ? AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC",
+            BigDecimal latestMonthlyRent = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE((SELECT TOP 1 amount FROM payment_transactions WHERE contract_id = ? AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC), 0)",
                     BigDecimal.class, contract.getId());
-            if (renewTxn != null && renewTxn.compareTo(BigDecimal.ZERO) > 0) {
-                rentPaid = renewTxn;
-            } else if (contract.getReservation() != null) {
-                BigDecimal depTxn = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 amount FROM payment_transactions WHERE reservation_id = ? AND payment_type = 'DEPOSIT' AND status = 'SUCCESS' ORDER BY id DESC",
-                        BigDecimal.class, contract.getReservation().getId());
-                if (depTxn != null && depTxn.compareTo(depositHeld) > 0) {
-                    rentPaid = depTxn.subtract(depositHeld);
+            if (latestMonthlyRent != null && latestMonthlyRent.compareTo(BigDecimal.ZERO) > 0) {
+                rentPaid = latestMonthlyRent;
+            } else {
+                Integer resId = contract.getReservation() != null ? contract.getReservation().getId() : -1;
+                BigDecimal totalPaid = jdbcTemplate.queryForObject(
+                        "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                                "WHERE (contract_id = ? OR reservation_id = ?) AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                        BigDecimal.class, contract.getId(), resId);
+                if (totalPaid != null && totalPaid.compareTo(depositHeld) > 0) {
+                    rentPaid = totalPaid.subtract(depositHeld);
                 }
             }
         } catch (Exception ignored) {
         }
-
-        LocalDate startDate = contract.getStartDate() != null ? contract.getStartDate() : LocalDate.now();
-        LocalDate endDate = contract.getEndDate() != null ? contract.getEndDate() : startDate.plusMonths(cycleMonths);
-        LocalDate actualDate = actualCheckoutDate != null ? actualCheckoutDate : LocalDate.now();
 
         // 1. Kiểm tra Trả sớm (PR-O2, D-10): ngày nghiệm thu < endDate
         boolean isEarlyCheckout = actualDate.isBefore(endDate);
@@ -1614,12 +1628,16 @@ public class StaffTaskService {
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
 
         if (isEarlyCheckout) {
-            Period period = Period.between(startDate, actualDate);
-            int m = period.getYears() * 12 + period.getMonths();
-            if (period.getDays() > 0) {
-                m += 1;
+            if (actualDate.isAfter(startDate)) {
+                Period period = Period.between(startDate, actualDate);
+                int m = period.getYears() * 12 + period.getMonths();
+                if (period.getDays() > 0) {
+                    m += 1;
+                }
+                usedMonths = Math.max(1, m);
+            } else {
+                usedMonths = 1; // Tối thiểu tính 1 tháng sử dụng khi đã nhận bàn giao kho
             }
-            usedMonths = Math.max(1, m);
             breakFee = baseMonthlyPrice; // Phí phá vỡ hợp đồng = 1 tháng giá niêm yết lúc ký
 
             // Công thức PR-O2: Hoàn tiền thuê = tiền thuê đã trả - (số tháng đã dùng * đơn giá gốc không ưu đãi) - phí phá HĐ

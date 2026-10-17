@@ -62,6 +62,8 @@ public class StaffTaskDetailResponse {
     // Chi tiết quyết toán hoàn tiền (PR-O2, PR-O11, PR-O14, PR-Q3)
     private BigDecimal depositRefund;
     private BigDecimal earlyRentRefund;
+    private BigDecimal rentPaid;
+    private BigDecimal breakFee;
     private BigDecimal graceFee;
     private BigDecimal lateFee;
     private Integer usedMonths;

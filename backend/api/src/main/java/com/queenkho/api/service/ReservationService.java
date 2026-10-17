@@ -379,10 +379,12 @@ public class ReservationService {
 
         contract.setRentalPolicyId(activePolicyId);
         contract.setStartDate(reservation.getStartDate());
-        if (reservation.getDurationMonths() != null) {
+        if (reservation.getDurationMonths() != null && reservation.getDurationMonths() > 0) {
             contract.setEndDate(reservation.getStartDate().plusMonths(reservation.getDurationMonths()));
+            contract.setBillingCycleMonths(reservation.getDurationMonths());
+        } else {
+            contract.setBillingCycleMonths(1);
         }
-        contract.setBillingCycleMonths(1);
         if (reservation.getDepositAmount() != null) {
             contract.setDepositHeldAmount(reservation.getDepositAmount());
         } else {

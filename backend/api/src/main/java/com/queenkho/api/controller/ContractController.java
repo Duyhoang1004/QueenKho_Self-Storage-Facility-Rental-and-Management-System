@@ -49,7 +49,7 @@ public class ContractController {
         if ("TERMINATION_PENDING".equalsIgnoreCase(rc.getStatus())) {
             try {
                 var dueAtTimestamp = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 due_at FROM staff_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
+                        "SELECT TOP 1 due_at FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
                         java.sql.Timestamp.class,
                         rc.getId());
                 if (dueAtTimestamp != null) {

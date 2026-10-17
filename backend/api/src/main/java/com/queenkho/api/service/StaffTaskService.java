@@ -560,9 +560,56 @@ public class StaffTaskService {
 
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
-                        "VALUES (?, ?, 'staff_tasks', ?, SYSDATETIME())",
+                        "VALUES (?, ?, 'facility_tasks', ?, SYSDATETIME())",
                 staff.getId(),
                 logAction,
+                task.getId());
+
+        return toResponse(task);
+    }
+
+    // Manager hoàn tất task hoàn cọc (REFUND)
+    @Transactional
+    public StaffTaskResponse completeRefundTask(Integer taskId, Integer managerId, String note) {
+        User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được xác nhận hoàn tiền cọc");
+        StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
+
+        if (!"REFUND".equalsIgnoreCase(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_TASK_TYPE", "Task không thuộc loại hoàn tiền (REFUND)");
+        }
+        if ("COMPLETED".equalsIgnoreCase(task.getStatus()) || "CANCELLED".equalsIgnoreCase(task.getStatus())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "TASK_ALREADY_CLOSED", "Task đã đóng trước đó");
+        }
+
+        task.setStatus("COMPLETED");
+        task.setCompletedAt(LocalDateTime.now());
+        if (task.getStaff() == null) {
+            task.setStaff(manager);
+            task.setClaimedAt(LocalDateTime.now());
+        }
+        if (note != null && !note.isBlank()) {
+            String currentNote = task.getNote() != null ? task.getNote() : "";
+            task.setNote(currentNote + " | Đã hoàn cọc: " + note.trim());
+        }
+        staffTaskRepository.save(task);
+
+        // Cập nhật trạng thái payment_transactions sang SUCCESS nếu có giao dịch REFUND đang chờ
+        try {
+            jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', paid_at = SYSDATETIME() " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND reservation_id IN (" +
+                            "  SELECT id FROM reservations WHERE facility_id = ?" +
+                            ")",
+                    manager.getFacilityId());
+        } catch (Exception ignored) {
+        }
+
+        // Ghi activity log
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'facility_tasks', ?, SYSDATETIME())",
+                manager.getId(),
+                "Quản lý " + manager.getFullName() + " xác nhận hoàn tất chuyển khoản hoàn cọc cho task #" + task.getId(),
                 task.getId());
 
         return toResponse(task);

@@ -101,6 +101,22 @@ public class StaffTaskController {
         }
     }
 
+    // Manager hoàn thành task hoàn tiền (REFUND)
+    // POST /api/v1/staff-tasks/{id}/complete-refund?managerId=3
+    @PostMapping("/{id}/complete-refund")
+    public ResponseEntity<?> completeRefund(@PathVariable Integer id,
+                                           @RequestParam(required = false) Integer managerId,
+                                           @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String note = body != null ? body.get("note") : null;
+            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, managerId, note));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "BAD_REQUEST", "message", e.getMessage()));
+        }
+    }
+
     private ResponseEntity<?> toError(StaffTaskException e) {
         return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
     }

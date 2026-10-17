@@ -8,8 +8,9 @@ import { getStaffTasks } from '../services/staffTaskService'
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
 const TYPE_META = {
-  CHECK_IN:  { label: 'Check-in',  icon: 'login',  cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT: { label: 'Check-out', icon: 'logout', cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  CHECK_IN:  { label: 'Check-in',  icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT: { label: 'Check-out', icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
 }
 
 const STATUS_META = {
@@ -62,7 +63,7 @@ function dueHint(task) {
   return { text: `Còn ${Math.floor(hours / 24)} ngày`, urgent: false }
 }
 
-export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, currentStaffId }) {
+export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, currentStaffId, forceStaffId }) {
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -100,27 +101,31 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
     fetchTasks()
   }
 
+  const scopedTasks = useMemo(() => {
+    return forceStaffId ? tasks.filter(t => t.staffId === forceStaffId) : tasks
+  }, [tasks, forceStaffId])
+
   const stats = useMemo(() => {
     const today = new Date().toDateString()
     return {
-      open: tasks.filter(t => t.status === 'OPEN').length,
-      inProgress: tasks.filter(t => t.status === 'IN_PROGRESS').length,
-      overdue: tasks.filter(t => t.status === 'OVERDUE').length,
-      doneToday: tasks.filter(t => t.status === 'COMPLETED' && t.completedAt
+      open: scopedTasks.filter(t => t.status === 'OPEN').length,
+      inProgress: scopedTasks.filter(t => t.status === 'IN_PROGRESS').length,
+      overdue: scopedTasks.filter(t => t.status === 'OVERDUE').length,
+      doneToday: scopedTasks.filter(t => t.status === 'COMPLETED' && t.completedAt
         && new Date(t.completedAt).toDateString() === today).length,
     }
-  }, [tasks])
+  }, [scopedTasks])
 
   const tabCounts = useMemo(() => {
     const counts = {}
-    TABS.forEach(t => { counts[t.key] = tasks.filter(task => t.statuses.includes(task.status)).length })
+    TABS.forEach(t => { counts[t.key] = scopedTasks.filter(task => t.statuses.includes(task.status)).length })
     return counts
-  }, [tasks])
+  }, [scopedTasks])
 
   const visibleTasks = useMemo(() => {
     const statuses = TABS.find(t => t.key === tab).statuses
     const keyword = search.trim().toLowerCase()
-    return tasks
+    return scopedTasks
       .filter(t => statuses.includes(t.status))
       .filter(t => typeFilter === 'ALL' || t.taskType === typeFilter)
       .filter(t => !mineOnly || t.staffId === currentStaffId)
@@ -128,8 +133,9 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
         || t.contractCode?.toLowerCase().includes(keyword)
         || t.customerName?.toLowerCase().includes(keyword)
         || t.customerPhone?.includes(keyword)
-        || t.storageUnitId?.toLowerCase().includes(keyword))
-  }, [tasks, tab, typeFilter, search, mineOnly, currentStaffId])
+        || t.storageUnitId?.toLowerCase().includes(keyword)
+        || t.note?.toLowerCase().includes(keyword))
+  }, [scopedTasks, tab, typeFilter, search, mineOnly, currentStaffId])
 
   return (
     <div className="flex flex-col gap-6">
@@ -191,6 +197,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
             <option value="ALL">Tất cả loại việc</option>
             <option value="CHECK_IN">Check-in</option>
             <option value="CHECK_OUT">Check-out</option>
+            <option value="REFUND">Hoàn tiền / Cọc</option>
           </select>
           {currentStaffId && (
             <label
@@ -253,7 +260,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
                     <div>
                       <p className="text-sm font-black text-[#4B4B4B] uppercase tracking-wide">{type.label}</p>
                       <p className="text-[11px] font-bold text-[#AFAFAF]">
-                        Task #{task.id} · HĐ <span className="font-mono text-[#1CB0F6]">{task.contractCode || '—'}</span>
+                        Task #{task.id} {task.contractCode ? <>· HĐ <span className="font-mono text-[#1CB0F6]">{task.contractCode}</span></> : <>· Cơ sở quản lý</>}
                       </p>
                     </div>
                   </div>

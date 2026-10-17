@@ -42,3 +42,10 @@ export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)
   return res.data
 }
+
+// Manager hoàn thành task hoàn tiền (REFUND)
+export async function completeRefundTask(taskId, managerId, note) {
+  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, { note }, { params: { managerId } })
+  return res.data
+}
+

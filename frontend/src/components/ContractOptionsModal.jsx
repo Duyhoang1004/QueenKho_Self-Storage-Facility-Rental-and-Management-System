@@ -21,8 +21,12 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const [renewLoading, setRenewLoading] = useState(false)
   const [renewError, setRenewError] = useState('')
 
-  // Tab 2 state: Trả kho
+  // Tab 2 state: Trả kho & Hoàn cọc
   const [checkoutDate, setCheckoutDate] = useState('')
+  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER') // 'BANK_TRANSFER' | 'CASH'
+  const [bankName, setBankName] = useState('')
+  const [bankAccountNumber, setBankAccountNumber] = useState('')
+  const [bankAccountName, setBankAccountName] = useState('')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
 
@@ -41,6 +45,23 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
         setCheckoutDate(initialDate)
       } else {
         setCheckoutDate(today)
+      }
+
+      // Tự động gợi ý tên chủ tài khoản từ thông tin khách hàng nếu chưa điền
+      if (!bankAccountName) {
+        let fallbackName = contract.customerFullName || ''
+        if (!fallbackName) {
+          try {
+            const userStr = localStorage.getItem('user')
+            if (userStr) {
+              const u = JSON.parse(userStr)
+              fallbackName = u.fullName || u.name || ''
+            }
+          } catch (e) {}
+        }
+        if (fallbackName) {
+          setBankAccountName(fallbackName.toUpperCase())
+        }
       }
     }
   }, [contract, isOverdue, today])
@@ -103,7 +124,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
-  // UC-22: Xử lý Hẹn ngày trả kho & dời ngày sớm hơn
+  // UC-22: Xử lý Hẹn ngày trả kho, dời ngày sớm hơn & thông tin hoàn cọc
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault()
     if (!checkoutDate) {
@@ -131,12 +152,24 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
+    const depositVal = Number(contract.depositHeldAmount || 0)
+    if (depositVal > 0 && refundMethod === 'BANK_TRANSFER') {
+      if (!bankName.trim() || !bankAccountNumber.trim() || !bankAccountName.trim()) {
+        setCheckoutError('Vui lòng nhập đầy đủ thông tin tài khoản ngân hàng để nhận hoàn tiền cọc.')
+        return
+      }
+    }
+
     setCheckoutLoading(true)
     setCheckoutError('')
     try {
       const res = await requestCheckout(contract.contractId, {
         checkoutDate,
-        notes: `Hẹn trả kho ngày ${checkoutDate}`,
+        refundMethod,
+        bankName: refundMethod === 'BANK_TRANSFER' ? bankName.trim() : '',
+        bankAccountNumber: refundMethod === 'BANK_TRANSFER' ? bankAccountNumber.trim() : '',
+        bankAccountName: refundMethod === 'BANK_TRANSFER' ? bankAccountName.trim().toUpperCase() : '',
+        notes: `Hẹn trả kho ngày ${checkoutDate}${refundMethod === 'CASH' ? ' - Nhận cọc tiền mặt tại quầy' : ''}`,
       })
       const successMsg = res.message || (isTerminationPending
         ? `Đã dời ngày trả kho cho hợp đồng ${contract.contractCode} sang ngày ${formatDate(checkoutDate)}.`
@@ -157,7 +190,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="w-[580px] max-w-xl bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col relative transition-all animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-[580px] max-w-xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-y-auto flex flex-col relative transition-all animate-in fade-in zoom-in-95 duration-200 custom-scrollbar">
         
         {/* Modal Header */}
         <div className="px-6 pt-5 pb-4 bg-white flex items-start justify-between border-b border-slate-100">
@@ -400,7 +433,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             </div>
 
             {/* Warning Box */}
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-4 flex items-start gap-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 my-3 flex items-start gap-3">
               <span className="material-symbols-outlined text-red-600 text-[22px] shrink-0 mt-0.5">
                 {isOverdue ? 'error' : 'warning'}
               </span>
@@ -435,6 +468,143 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             </div>
 
+            {/* Form thông tin ngân hàng nhận hoàn tiền */}
+            {/* Phương thức nhận tiền hoàn cọc (PR-O3: Chuyển khoản hoặc Tiền mặt tại quầy) */}
+            {Number(contract.depositHeldAmount || 0) > 0 && (
+              <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] rounded-xl p-4 mb-3 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-[#1899D6]">
+                  <span className="material-symbols-outlined text-[20px]">
+                    payments
+                  </span>
+                  <span className="text-xs font-black uppercase tracking-wider">
+                    Hình thức nhận lại tiền cọc ({depositAmount}) *
+                  </span>
+                </div>
+
+                {/* Radio selection */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <label className={`flex items-start gap-2.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    refundMethod === 'BANK_TRANSFER' 
+                      ? 'bg-white border-[#1CB0F6] shadow-xs' 
+                      : 'bg-white/60 border-slate-200 hover:bg-white'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="refundMethod"
+                      value="BANK_TRANSFER"
+                      checked={refundMethod === 'BANK_TRANSFER'}
+                      onChange={() => setRefundMethod('BANK_TRANSFER')}
+                      className="accent-[#1CB0F6] w-4 h-4 mt-0.5 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-[#4B4B4B] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">account_balance</span>
+                        Chuyển khoản ngân hàng
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        Quản lý chuyển hoàn vào STK sau khi nghiệm thu
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-start gap-2.5 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                    refundMethod === 'CASH' 
+                      ? 'bg-white border-[#1CB0F6] shadow-xs' 
+                      : 'bg-white/60 border-slate-200 hover:bg-white'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="refundMethod"
+                      value="CASH"
+                      checked={refundMethod === 'CASH'}
+                      onChange={() => setRefundMethod('CASH')}
+                      className="accent-[#1CB0F6] w-4 h-4 mt-0.5 cursor-pointer"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-[#4B4B4B] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px] text-[#58CC02]">payments</span>
+                        Tiền mặt tại quầy
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        Nhận tiền mặt trực tiếp tại quầy lễ tân cơ sở
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {refundMethod === 'BANK_TRANSFER' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-[#84D8FF]/40 mt-1">
+                    <div className="flex flex-col gap-1 sm:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-[#1899D6]" htmlFor="checkoutBankName">
+                        Tên Ngân hàng *
+                      </label>
+                      <input
+                        id="checkoutBankName"
+                        list="checkout-bank-options"
+                        type="text"
+                        placeholder="VD: Vietcombank, MB Bank, Techcombank..."
+                        value={bankName}
+                        onChange={(e) => setBankName(e.target.value)}
+                        required={refundMethod === 'BANK_TRANSFER'}
+                        className="bg-white border-2 border-[#84D8FF] rounded-xl px-3 py-2 text-xs font-bold text-[#4B4B4B] outline-none focus:border-[#1CB0F6]"
+                      />
+                      <datalist id="checkout-bank-options">
+                        <option value="Vietcombank (VCB)" />
+                        <option value="MB Bank (MB)" />
+                        <option value="Techcombank (TCB)" />
+                        <option value="VietinBank (CTG)" />
+                        <option value="BIDV" />
+                        <option value="VPBank" />
+                        <option value="ACB" />
+                        <option value="TPBank" />
+                        <option value="Agribank" />
+                        <option value="Sacombank" />
+                        <option value="HDBank" />
+                        <option value="VIB" />
+                        <option value="OCB" />
+                        <option value="MoMo" />
+                        <option value="ZaloPay" />
+                      </datalist>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black uppercase text-[#1899D6]" htmlFor="checkoutBankAccountNumber">
+                        Số tài khoản (STK) *
+                      </label>
+                      <input
+                        id="checkoutBankAccountNumber"
+                        type="text"
+                        placeholder="VD: 0367069283"
+                        value={bankAccountNumber}
+                        onChange={(e) => setBankAccountNumber(e.target.value)}
+                        required={refundMethod === 'BANK_TRANSFER'}
+                        className="bg-white border-2 border-[#84D8FF] rounded-xl px-3 py-2 text-xs font-bold font-mono text-[#4B4B4B] outline-none focus:border-[#1CB0F6]"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black uppercase text-[#1899D6]" htmlFor="checkoutBankAccountName">
+                        Tên chủ tài khoản *
+                      </label>
+                      <input
+                        id="checkoutBankAccountName"
+                        type="text"
+                        placeholder="VD: NGUYEN VAN A"
+                        value={bankAccountName}
+                        onChange={(e) => setBankAccountName(e.target.value.toUpperCase())}
+                        required={refundMethod === 'BANK_TRANSFER'}
+                        className="bg-white border-2 border-[#84D8FF] rounded-xl px-3 py-2 text-xs font-bold uppercase text-[#4B4B4B] outline-none focus:border-[#1CB0F6]"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-white/80 rounded-xl border border-[#84D8FF] flex items-center gap-2.5 text-xs text-[#2D3748]">
+                    <span className="material-symbols-outlined text-[#58CC02] text-[20px]">check_circle</span>
+                    <span className="font-semibold">
+                      Quý khách sẽ nhận hoàn tiền cọc trực tiếp bằng tiền mặt từ Quản lý cơ sở tại quầy lễ tân sau khi hoàn tất nghiệm thu trả kho.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Action Buttons Row */}
             <div className="flex items-center justify-end gap-3 pt-2">
               <button

@@ -26,8 +26,12 @@ const STATUS_META = {
     className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]",
   },
   REFUND_PENDING: {
-    label: "Hủy - Chờ hoàn tiền",
+    label: "Chờ hoàn tiền",
     className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
+  },
+  REFUNDED: {
+    label: "Đã hoàn tiền",
+    className: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
   },
   EXPIRED: {
     label: "Hết hạn",
@@ -51,7 +55,7 @@ const FILTERS = [
   {
     key: "CLOSED",
     label: "Đã đóng",
-    statuses: ["CANCELLED", "REFUND_PENDING", "EXPIRED", "COMPLETED"],
+    statuses: ["CANCELLED", "REFUND_PENDING", "REFUNDED", "EXPIRED", "COMPLETED"],
   },
 ];
 
@@ -533,9 +537,7 @@ export default function MyReservationsPage() {
                       {/* Cột 10: Thao tác (Đứng đúng cột Thao tác ngoài cùng bên phải) */}
                       <td className="px-3 py-3 whitespace-nowrap text-center">
                         <div className="flex items-center justify-center gap-2">
-                          {["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(
-                            r.status,
-                          ) && (
+                          {(Boolean(r.contractId) || Boolean(r.storageUnitId) || ["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status)) && (
                             <button
                               onClick={() =>
                                 navigate(`/kho-cua-toi/hop-dong/${r.id}`)

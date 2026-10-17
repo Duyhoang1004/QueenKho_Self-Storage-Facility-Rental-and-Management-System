@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getStaffTasks } from '../services/staffTaskService'
+import { parseRefundNote } from '../utils/refundParser'
 
 // UC-16: Bảng công việc tại cơ sở — dùng chung cho trang Staff và trang Manager.
 // renderActions(task) (tuỳ chọn): trang cha truyền vào để gắn nút thao tác cho từng thẻ (UC-17, UC-18...)
@@ -10,7 +11,7 @@ const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở b
 const TYPE_META = {
   CHECK_IN:  { label: 'Check-in',  icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
   CHECK_OUT: { label: 'Check-out', icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
-  REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  REFUND:    { label: 'Hoàn tiền', icon: 'payments', cls: 'bg-[#F3E8FF] text-[#A560E8] border-[#CE82FF]' },
 }
 
 const STATUS_META = {
@@ -22,11 +23,18 @@ const STATUS_META = {
 }
 
 const TABS = [
-  { key: 'ACTIVE',      label: 'Cần xử lý',  statuses: ['OPEN', 'IN_PROGRESS', 'OVERDUE'] },
-  { key: 'OPEN',        label: 'Chờ nhận',   statuses: ['OPEN'] },
-  { key: 'IN_PROGRESS', label: 'Đang xử lý', statuses: ['IN_PROGRESS'] },
-  { key: 'OVERDUE',     label: 'Quá hạn',    statuses: ['OVERDUE'] },
-  { key: 'DONE',        label: 'Đã đóng',    statuses: ['COMPLETED', 'CANCELLED'] },
+  { key: 'ACTIVE',      label: 'Cần xử lý',      statuses: ['OPEN', 'IN_PROGRESS', 'OVERDUE'] },
+  { key: 'OPEN',        label: 'Chờ nhận',       statuses: ['OPEN'] },
+  { key: 'IN_PROGRESS', label: 'Đang xử lý',     statuses: ['IN_PROGRESS'] },
+  { key: 'OVERDUE',     label: 'Quá hạn',        statuses: ['OVERDUE'] },
+  { key: 'DONE',        label: 'Đã đóng',        statuses: ['COMPLETED', 'CANCELLED'] },
+]
+
+// Bộ tab riêng cho trang Quản lý hoàn tiền
+const REFUND_TABS = [
+  { key: 'REFUND_OPEN',        label: 'Chờ xử lý',      statuses: ['OPEN', 'IN_PROGRESS'], isRefundOnly: true },
+  { key: 'REFUND_OVERDUE',     label: 'Quá hạn',        statuses: ['OVERDUE'], isRefundOnly: true },
+  { key: 'REFUND_COMPLETED',   label: 'Đã hoàn thành',  statuses: ['COMPLETED'], isRefundOnly: true },
 ]
 
 function pad(n) {
@@ -63,15 +71,35 @@ function dueHint(task) {
   return { text: `Còn ${Math.floor(hours / 24)} ngày`, urgent: false }
 }
 
-export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, currentStaffId, forceStaffId }) {
+export default function TaskBoard({
+  facilityId,
+  renderActions,
+  reloadKey = 0,
+  currentStaffId,
+  forceStaffId,
+  initialTypeFilter = 'ALL'
+}) {
+  const isRefundMode = initialTypeFilter === 'REFUND'
+  const activeTabs = isRefundMode ? REFUND_TABS : TABS
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('ACTIVE')
-  const [typeFilter, setTypeFilter] = useState('ALL')
+  const [tab, setTab] = useState(isRefundMode ? 'REFUND_OPEN' : 'ACTIVE')
+  const [typeFilter, setTypeFilter] = useState(initialTypeFilter)
   const [search, setSearch] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
+
+  // Cập nhật khi initialTypeFilter thay đổi
+  useEffect(() => {
+    if (initialTypeFilter === 'REFUND') {
+      setTab('REFUND_OPEN')
+      setTypeFilter('REFUND')
+    } else {
+      setTab('ACTIVE')
+      setTypeFilter(initialTypeFilter || 'ALL')
+    }
+  }, [initialTypeFilter])
 
   // Chỉ setState trong callback của promise (không set đồng bộ trong effect)
   const fetchTasks = useCallback(() => {
@@ -106,28 +134,43 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
   }, [tasks, forceStaffId])
 
   const stats = useMemo(() => {
+    const pool = isRefundMode
+      ? tasks.filter(t => t.taskType === 'REFUND')
+      : tasks.filter(t => t.taskType !== 'REFUND')
     const today = new Date().toDateString()
     return {
-      open: scopedTasks.filter(t => t.status === 'OPEN').length,
-      inProgress: scopedTasks.filter(t => t.status === 'IN_PROGRESS').length,
-      overdue: scopedTasks.filter(t => t.status === 'OVERDUE').length,
-      doneToday: scopedTasks.filter(t => t.status === 'COMPLETED' && t.completedAt
+      open: isRefundMode
+        ? pool.filter(t => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length
+        : pool.filter(t => t.status === 'OPEN').length,
+      inProgress: pool.filter(t => t.status === 'IN_PROGRESS').length,
+      overdue: pool.filter(t => t.status === 'OVERDUE').length,
+      completed: pool.filter(t => t.status === 'COMPLETED').length,
+      doneToday: pool.filter(t => t.status === 'COMPLETED' && t.completedAt
         && new Date(t.completedAt).toDateString() === today).length,
     }
-  }, [scopedTasks])
+  }, [scopedTasks, isRefundMode])
 
   const tabCounts = useMemo(() => {
     const counts = {}
-    TABS.forEach(t => { counts[t.key] = scopedTasks.filter(task => t.statuses.includes(task.status)).length })
+    const baseTasks = isRefundMode
+      ? scopedTasks.filter(task => task.taskType === 'REFUND')
+      : scopedTasks.filter(task => task.taskType !== 'REFUND')
+    activeTabs.forEach(t => {
+      counts[t.key] = baseTasks.filter(task => t.statuses?.includes(task.status)).length
+    })
     return counts
-  }, [scopedTasks])
+  }, [scopedTasks, activeTabs, isRefundMode])
 
   const visibleTasks = useMemo(() => {
-    const statuses = TABS.find(t => t.key === tab).statuses
+    const currentTab = activeTabs.find(t => t.key === tab) || activeTabs[0]
     const keyword = search.trim().toLowerCase()
     return scopedTasks
-      .filter(t => statuses.includes(t.status))
-      .filter(t => typeFilter === 'ALL' || t.taskType === typeFilter)
+      .filter(t => isRefundMode ? t.taskType === 'REFUND' : t.taskType !== 'REFUND')
+      .filter(t => currentTab.statuses?.includes(t.status))
+      .filter(t => {
+        if (isRefundMode) return true
+        return typeFilter === 'ALL' || t.taskType === typeFilter
+      })
       .filter(t => !mineOnly || t.staffId === currentStaffId)
       .filter(t => !keyword
         || t.contractCode?.toLowerCase().includes(keyword)
@@ -135,18 +178,22 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
         || t.customerPhone?.includes(keyword)
         || t.storageUnitId?.toLowerCase().includes(keyword)
         || t.note?.toLowerCase().includes(keyword))
-  }, [scopedTasks, tab, typeFilter, search, mineOnly, currentStaffId])
+  }, [scopedTasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId])
 
   return (
     <div className="flex flex-col gap-6">
       {/* Thống kê nhanh */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
+      <div className={`grid gap-4 ${isRefundMode ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2 lg:grid-cols-4'}`}>
+        {(isRefundMode ? [
+          { label: 'Chờ xử lý', value: stats.open, icon: 'assignment_late', color: 'text-[#1CB0F6]', bg: 'bg-[#DDF4FF]', border: 'border-[#1CB0F6]' },
+          { label: 'Quá hạn', value: stats.overdue, icon: 'alarm', color: 'text-[#FF4B4B]', bg: 'bg-[#FFDFDF]', border: 'border-[#FF4B4B]' },
+          { label: 'Đã hoàn thành', value: stats.completed, icon: 'task_alt', color: 'text-[#58CC02]', bg: 'bg-[#D7FFB8]', border: 'border-[#58CC02]' },
+        ] : [
           { label: 'Chờ nhận', value: stats.open, icon: 'assignment', color: 'text-[#1CB0F6]', bg: 'bg-[#DDF4FF]', border: 'border-[#1CB0F6]' },
           { label: 'Đang xử lý', value: stats.inProgress, icon: 'pending', color: 'text-[#A560E8]', bg: 'bg-[#F3E8FF]', border: 'border-[#CE82FF]' },
           { label: 'Quá hạn', value: stats.overdue, icon: 'alarm', color: 'text-[#FF4B4B]', bg: 'bg-[#FFDFDF]', border: 'border-[#FF4B4B]' },
           { label: 'Xong hôm nay', value: stats.doneToday, icon: 'task_alt', color: 'text-[#58CC02]', bg: 'bg-[#D7FFB8]', border: 'border-[#58CC02]' },
-        ].map(s => (
+        ]).map(s => (
           <div key={s.label} className="duo-card p-4 flex items-center gap-3.5">
             <div className={`w-12 h-12 rounded-2xl ${s.bg} border-2 border-b-4 ${s.border} flex items-center justify-center shrink-0`}>
               <span className={`material-symbols-outlined text-[24px] ${s.color}`}>{s.icon}</span>
@@ -162,7 +209,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
       {/* Tabs + bộ lọc */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap gap-2">
-          {TABS.map(t => (
+          {activeTabs.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
@@ -183,22 +230,24 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">search</span>
             <input
               type="text"
-              placeholder="Tìm theo mã hợp đồng, tên / SĐT khách, mã ô kho..."
+              placeholder={isRefundMode ? "Tìm theo mã đơn, tên / SĐT khách, số tiền..." : "Tìm theo mã hợp đồng, tên / SĐT khách, mã ô kho..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="duo-input w-full pl-11 text-xs"
             />
           </div>
-          <select
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value)}
-            className="duo-input text-xs md:w-48 cursor-pointer"
-          >
-            <option value="ALL">Tất cả loại việc</option>
-            <option value="CHECK_IN">Check-in</option>
-            <option value="CHECK_OUT">Check-out</option>
-            <option value="REFUND">Hoàn tiền / Cọc</option>
-          </select>
+          {!isRefundMode && (
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              className="duo-input text-xs md:w-48 cursor-pointer"
+            >
+              <option value="ALL">Tất cả loại việc</option>
+              <option value="CHECK_IN">Check-in</option>
+              <option value="CHECK_OUT">Check-out</option>
+              <option value="REFUND">Hoàn tiền / Cọc</option>
+            </select>
+          )}
           {currentStaffId && (
             <label
               className={`px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer select-none ${
@@ -241,15 +290,24 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {visibleTasks.map(task => {
+            const isRefund = task.taskType === 'REFUND'
+            const parsed = isRefund ? parseRefundNote(task.note) : null
             const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
-            const status = STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' }
+            const status = isRefund && task.status === 'OPEN'
+              ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
+              : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' })
             const hint = dueHint(task)
             const actions = renderActions ? renderActions(task) : null
             const isMine = Boolean(currentStaffId) && task.staffId === currentStaffId
+
+            const customerName = task.customerName || parsed?.customerName || '—'
+            const customerPhone = task.customerPhone || parsed?.customerPhone || ''
+            const codeLabel = task.contractCode ? `HĐ ${task.contractCode}` : (parsed?.orderCode ? `Đơn ${parsed.orderCode}` : 'Hủy đơn')
+
             return (
               <div
                 key={task.id}
-                className={`duo-card p-5 flex flex-col gap-4 ${task.status === 'OVERDUE' ? 'border-[#FF4B4B]' : isMine ? 'border-[#CE82FF]' : ''}`}
+                className={`duo-card p-5 flex flex-col gap-3.5 ${task.status === 'OVERDUE' ? 'border-[#FF4B4B]' : isMine ? 'border-[#CE82FF]' : ''}`}
               >
                 {/* Dòng đầu: loại việc + trạng thái */}
                 <div className="flex items-start justify-between gap-3">
@@ -260,7 +318,7 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
                     <div>
                       <p className="text-sm font-black text-[#4B4B4B] uppercase tracking-wide">{type.label}</p>
                       <p className="text-[11px] font-bold text-[#AFAFAF]">
-                        Task #{task.id} {task.contractCode ? <>· HĐ <span className="font-mono text-[#1CB0F6]">{task.contractCode}</span></> : <>· Cơ sở quản lý</>}
+                        Task #{task.id} · <span className="font-mono text-[#1CB0F6]">{codeLabel}</span>
                       </p>
                     </div>
                   </div>
@@ -278,18 +336,47 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Khách hàng</span>
-                    <span className="font-black text-[#4B4B4B]">{task.customerName || '—'}</span>
-                    <span className="font-bold text-[#777777]">{task.customerPhone || ''}</span>
+                    <span className="font-black text-[#4B4B4B]">{customerName}</span>
+                    {customerPhone && <span className="font-bold text-[#777777]">{customerPhone}</span>}
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Ô kho</span>
-                    <span className="font-black text-[#4B4B4B] font-mono">{task.storageUnitId || '—'}</span>
+                    <span className="text-[10px] font-black uppercase text-[#AFAFAF]">
+                      {isRefund && !task.storageUnitId ? 'Đối tượng' : 'Ô kho'}
+                    </span>
+                    <span className="font-black text-[#4B4B4B] font-mono">
+                      {task.storageUnitId || (isRefund ? 'Đơn đặt chỗ hủy' : '—')}
+                    </span>
                     <span className="font-bold text-[#777777]">{task.unitTypeName || ''}</span>
                   </div>
                 </div>
 
+                {/* Nếu là REFUND: Thẻ số tiền hoàn + tag chính sách */}
+                {isRefund && parsed?.refundAmount && (
+                  <div className="flex items-center justify-between rounded-xl bg-[#FAF5FF] border border-[#E9D8FD] px-3.5 py-2 text-xs">
+                    <span className="font-bold text-[#805AD5] flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      Số tiền hoàn:
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-black text-sm text-[#805AD5]">
+                        {parsed.refundAmount}
+                      </span>
+                      {parsed.isPenalty50 && (
+                        <span className="px-2 py-0.5 rounded-md bg-[#FED7D7] text-[#C53030] text-[10px] font-black border border-[#FEB2B2]">
+                          Trừ 50% cọc
+                        </span>
+                      )}
+                      {parsed.isFull100 && (
+                        <span className="px-2 py-0.5 rounded-md bg-[#C6F6D5] text-[#22543D] text-[10px] font-black border border-[#9AE6B4]">
+                          Hoàn 100%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Hạn + người nhận */}
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#F7F7F7] px-4 py-3 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#F7F7F7] px-4 py-2.5 text-xs">
                   <div className="flex items-center gap-2">
                     <span className={`material-symbols-outlined text-[18px] ${task.status === 'OVERDUE' || hint?.urgent ? 'text-[#FF4B4B]' : 'text-[#AFAFAF]'}`}>schedule</span>
                     <span className="font-black text-[#4B4B4B]">Hạn: {formatDue(task.dueAt)}</span>
@@ -297,17 +384,26 @@ export default function TaskBoard({ facilityId, renderActions, reloadKey = 0, cu
                       <span className={`font-black ${hint.urgent ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>· {hint.text}</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 font-bold text-[#777777]">
-                    <span className="material-symbols-outlined text-[18px] text-[#AFAFAF]">person</span>
-                    {task.staffName ? <span className="font-black text-[#4B4B4B]">{task.staffName}</span> : <span>Chưa có người nhận</span>}
-                  </div>
+                  {(!isRefund || task.staffName) && (
+                    <div className="flex items-center gap-1.5 font-bold text-[#777777]">
+                      <span className="material-symbols-outlined text-[18px] text-[#AFAFAF]">person</span>
+                      {task.staffName ? <span className="font-black text-[#4B4B4B]">{task.staffName}</span> : <span>Chưa có người nhận</span>}
+                    </div>
+                  )}
                 </div>
 
-                {task.note && (
-                  <p className="text-[11px] font-bold text-[#777777] leading-relaxed">
-                    <span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span>{task.note}
+                {/* Ghi chú ngắn gọn */}
+                {isRefund ? (
+                  <p className="text-[11px] font-bold text-[#4B4B4B] leading-relaxed line-clamp-2">
+                    <span className="font-black text-[#AFAFAF] uppercase mr-1">Lý do:</span>
+                    {parsed?.reason || 'Khách yêu cầu hủy đơn / hoàn tiền'}
                   </p>
-                )}
+                ) : task.note ? (
+                  <p className="text-[11px] font-bold text-[#777777] leading-relaxed line-clamp-2">
+                    <span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span>
+                    {task.note}
+                  </p>
+                ) : null}
 
                 {actions && <div className="flex justify-end gap-2 pt-1">{actions}</div>}
               </div>

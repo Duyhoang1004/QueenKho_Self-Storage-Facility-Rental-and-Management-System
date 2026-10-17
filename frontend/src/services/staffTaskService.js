@@ -43,9 +43,31 @@ export async function submitContactReport(taskId, payload) {
   return res.data
 }
 
-// Manager hoàn thành task hoàn tiền (REFUND)
-export async function completeRefundTask(taskId, managerId, note) {
-  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, { note }, { params: { managerId } })
+// UC-23, UC-24: Staff nghiệm thu trả kho (check-out)
+export async function checkOutStaffTask(taskId, staffId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })
   return res.data
+}
+
+// UC-25: Quản lý / Staff hoàn tất hoàn trả tiền cọc (REFUND)
+// Hỗ trợ cả 2 signature: (taskId, userId, payloadObj) và (taskId, managerId, noteString)
+export async function completeRefundTask(taskId, userId, payload) {
+  const body = typeof payload === 'string' ? { note: payload } : (payload || {})
+  const res = await api.post(`/staff-tasks/${taskId}/complete-refund`, body, {
+    params: { userId, managerId: userId }
+  })
+  return res.data
+}
+
+// Upload file ảnh (biên lai hoàn cọc, nghiệm thu)
+export async function uploadImageFile(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await api.post('/uploads', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return res.data // { url: '...', fileName: '...' }
 }
 

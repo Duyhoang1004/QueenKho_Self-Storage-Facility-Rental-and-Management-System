@@ -101,15 +101,29 @@ public class StaffTaskController {
         }
     }
 
-    // Manager hoàn thành task hoàn tiền (REFUND)
-    // POST /api/v1/staff-tasks/{id}/complete-refund?managerId=3
+    // UC-23, UC-24: Staff nghiệm thu trả kho (check-out)
+    // POST /api/v1/staff-tasks/12/check-out?staffId=5   body: CheckOutRequest
+    @PostMapping("/{id}/check-out")
+    public ResponseEntity<?> checkOut(@PathVariable Integer id,
+                                      @RequestParam(required = false) Integer staffId,
+                                      @RequestBody(required = false) com.queenkho.api.dto.CheckOutRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.checkOut(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-25: Quản lý / Staff hoàn tất hoàn tiền cọc
+    // POST /api/v1/staff-tasks/12/complete-refund?userId=3 (hoặc ?managerId=3)
     @PostMapping("/{id}/complete-refund")
     public ResponseEntity<?> completeRefund(@PathVariable Integer id,
-                                           @RequestParam(required = false) Integer managerId,
-                                           @RequestBody(required = false) Map<String, String> body) {
+                                            @RequestParam(required = false) Integer userId,
+                                            @RequestParam(required = false) Integer managerId,
+                                            @RequestBody(required = false) com.queenkho.api.dto.CompleteRefundRequest request) {
         try {
-            String note = body != null ? body.get("note") : null;
-            return ResponseEntity.ok(staffTaskService.completeRefundTask(id, managerId, note));
+            Integer finalId = managerId != null ? managerId : userId;
+            return ResponseEntity.ok(staffTaskService.completeRefund(id, finalId, request));
         } catch (StaffTaskException e) {
             return toError(e);
         } catch (Exception e) {

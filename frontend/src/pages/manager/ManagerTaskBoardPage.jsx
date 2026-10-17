@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react'
+import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
 import { unassignStaffTask, completeRefundTask } from '../../services/staffTaskService'
 
 // UC-16: Manager theo dõi bảng công việc của cơ sở & quản lý task hoàn cọc trực tiếp
 // UC-17: Manager gỡ nhân viên khỏi task đang xử lý → task về "Chờ nhận" cho người khác nhận
-export default function ManagerTaskBoardPage() {
+// UC-25: Manager theo dõi và xử lý các task hoàn cọc (REFUND) của cơ sở mình
+export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
 
   // Phân chia góc nhìn: MINE (Nhiệm vụ của Manager) vs ALL (Toàn bộ việc cơ sở)
@@ -36,92 +38,102 @@ export default function ManagerTaskBoardPage() {
       })
   }
 
-  const handleCompleteRefund = () => {
-    setSubmitting(true)
-    completeRefundTask(refundTask.id, user.userId, refundNote)
-      .then(task => setToast({ type: 'success', message: `Đã xác nhận hoàn tiền cọc cho task #${task.id} thành công!` }))
-      .catch(err => setToast({ type: 'error', message: err.response?.data?.message || 'Không thể cập nhật trạng thái hoàn tiền, vui lòng thử lại.' }))
-      .finally(() => {
-        setSubmitting(false)
-        setRefundTask(null)
-        setRefundNote('')
-        setReloadKey(k => k + 1)
-      })
-  }
+  const isRefundMode = initialTypeFilter === 'REFUND'
 
   const renderActions = task => {
-    // Task REFUND: Manager xác nhận đã thực hiện chuyển khoản / hoàn tiền cọc
-    if (task.taskType === 'REFUND') {
-      if (['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)) {
-        return (
-          <button
-            onClick={() => setRefundTask(task)}
-            className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">payments</span>
-            Xác nhận đã hoàn tiền
-          </button>
-        )
-      }
-      return null
-    }
+    const detailUrl = (isRefundMode || task.taskType === 'REFUND')
+      ? `/manager/refunds/${task.id}`
+      : `/manager/tasks/${task.id}`
 
-    // Các task khác: Manager có thể gỡ người nhận nếu đang xử lý
-    if (task.status !== 'IN_PROGRESS') return null
+    if (task.taskType === 'REFUND' && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
+      return (
+        <Link to={detailUrl} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">payments</span>
+          Xử lý hoàn tiền
+        </Link>
+      )
+    }
+    if (task.status === 'IN_PROGRESS') {
+      return (
+        <div className="flex items-center gap-2">
+          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Chi tiết
+          </Link>
+          <button onClick={() => setConfirmTask(task)} className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer">
+            <span className="material-symbols-outlined text-[18px]">person_remove</span>
+            Gỡ người nhận
+          </button>
+        </div>
+      )
+    }
     return (
-      <button onClick={() => setConfirmTask(task)} className="duo-btn-red px-5 py-2.5 text-xs gap-1.5 cursor-pointer">
-        <span className="material-symbols-outlined text-[18px]">person_remove</span>
-        Gỡ người nhận
-      </button>
+      <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+        <span className="material-symbols-outlined text-[18px]">visibility</span>
+        Xem chi tiết
+      </Link>
     )
   }
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
-      <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5] flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Quản lý công việc cơ sở</h1>
+      {isRefundMode ? (
+        <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5]">
+          <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">
+            Quản lý hoàn tiền
+          </h1>
           <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
-            {viewScope === 'MINE'
-              ? `Các nhiệm vụ được phân công cho Quản lý (ID: ${user.userId}) tại ${user.facilityName || 'cơ sở của bạn'}.`
-              : `Theo dõi check-in / check-out / hoàn cọc tại ${user.facilityName || 'cơ sở của bạn'}.`}
+            Danh sách yêu cầu hoàn tiền (hủy đơn & trả kho) tại {user.facilityName || 'cơ sở của bạn'}.
           </p>
         </div>
+      ) : (
+        <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5] flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Quản lý công việc cơ sở</h1>
+            <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
+              {viewScope === 'MINE'
+                ? `Các nhiệm vụ được phân công cho Quản lý (ID: ${user.userId}) tại ${user.facilityName || 'cơ sở của bạn'}.`
+                : `Theo dõi check-in / check-out / hoàn cọc tại ${user.facilityName || 'cơ sở của bạn'}.`}
+            </p>
+          </div>
 
-        {/* Chuyển đổi giữa Nhiệm vụ của Manager vs Toàn bộ công việc cơ sở */}
-        <div className="flex gap-2 p-1.5 bg-[#F7F7F7] rounded-2xl border-2 border-[#E5E5E5]">
-          <button
-            onClick={() => setViewScope('MINE')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 cursor-pointer transition-all ${
-              viewScope === 'MINE'
-                ? 'bg-[#1CB0F6] text-white border-b-4 border-[#1899D6]'
-                : 'text-[#777777] hover:text-[#4B4B4B]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">account_circle</span>
-            Nhiệm vụ của tôi
-          </button>
-          <button
-            onClick={() => setViewScope('ALL')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 cursor-pointer transition-all ${
-              viewScope === 'ALL'
-                ? 'bg-[#1CB0F6] text-white border-b-4 border-[#1899D6]'
-                : 'text-[#777777] hover:text-[#4B4B4B]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">warehouse</span>
-            Tất cả việc cơ sở
-          </button>
+          {/* Chuyển đổi giữa Nhiệm vụ của Manager vs Toàn bộ công việc cơ sở */}
+          <div className="flex gap-2 p-1.5 bg-[#F7F7F7] rounded-2xl border-2 border-[#E5E5E5]">
+            <button
+              onClick={() => setViewScope('MINE')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 cursor-pointer transition-all ${
+                viewScope === 'MINE'
+                  ? 'bg-[#1CB0F6] text-white border-b-4 border-[#1899D6]'
+                  : 'text-[#777777] hover:text-[#4B4B4B]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">account_circle</span>
+              Nhiệm vụ của tôi
+            </button>
+            <button
+              onClick={() => setViewScope('ALL')}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase flex items-center gap-1.5 cursor-pointer transition-all ${
+                viewScope === 'ALL'
+                  ? 'bg-[#1CB0F6] text-white border-b-4 border-[#1899D6]'
+                  : 'text-[#777777] hover:text-[#4B4B4B]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">warehouse</span>
+              Tất cả việc cơ sở
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {user.facilityId ? (
         <TaskBoard
+          key={initialTypeFilter}
           facilityId={user.facilityId}
           renderActions={renderActions}
           reloadKey={reloadKey}
           currentStaffId={user.userId}
-          forceStaffId={viewScope === 'MINE' ? user.userId : null}
+          forceStaffId={!isRefundMode && viewScope === 'MINE' ? user.userId : null}
+          initialTypeFilter={initialTypeFilter}
         />
       ) : (
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">

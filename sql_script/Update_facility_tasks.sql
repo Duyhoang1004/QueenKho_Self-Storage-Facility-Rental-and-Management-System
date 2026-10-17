@@ -96,8 +96,73 @@ BEGIN
 END
 GO
 
--- Kiểm tra lại các cột
+-- ========================================================
+-- 4. TRIGGER TỰ ĐỘNG ĐỒNG BỘ TRẠNG THÁI HOÀN TIỀN
+-- ========================================================
+CREATE OR ALTER TRIGGER trg_payment_transactions_refund_sync
+ON payment_transactions
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    UPDATE r
+    SET r.status = 'REFUNDED'
+    FROM reservations r
+    INNER JOIN inserted i ON r.id = i.reservation_id
+    WHERE i.payment_type = 'REFUND' 
+      AND i.status = 'SUCCESS'
+      AND r.status <> 'REFUNDED';
+END;
+GO
+
+CREATE OR ALTER TRIGGER trg_facility_tasks_refund_sync
+ON facility_tasks
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    -- 1. Khi task REFUND chuyển sang COMPLETED gắn với hợp đồng: cập nhật contract = TERMINATED
+    UPDATE c
+    SET c.status = 'TERMINATED', c.deposit_held_amount = 0
+    FROM rental_contracts c
+    INNER JOIN inserted i ON c.id = i.contract_id
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND c.status <> 'TERMINATED';
+      
+    -- 2. Khi task REFUND chuyển sang COMPLETED (hủy đơn đặt chỗ): tìm reservation từ note và update REFUNDED
+    UPDATE r
+    SET r.status = 'REFUNDED'
+    FROM reservations r
+    INNER JOIN inserted i ON (
+        i.note LIKE '%' + r.reservation_code + '%'
+    )
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND r.status <> 'REFUNDED';
+      
+    -- 3. Cập nhật payment_transactions thành SUCCESS luôn nếu còn PENDING
+    UPDATE p
+    SET p.status = 'SUCCESS', p.paid_at = SYSDATETIME()
+    FROM payment_transactions p
+    INNER JOIN reservations r ON p.reservation_id = r.id
+    INNER JOIN inserted i ON (
+        i.note LIKE '%' + r.reservation_code + '%'
+    )
+    WHERE i.task_type = 'REFUND' 
+      AND i.status = 'COMPLETED'
+      AND p.payment_type = 'REFUND'
+      AND p.status <> 'SUCCESS';
+END;
+GO
+
+-- ========================================================
+-- 5. KIỂM TRA LẠI CÁC CỘT
+-- ========================================================
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE 
 FROM INFORMATION_SCHEMA.COLUMNS 
 WHERE TABLE_NAME = 'facility_tasks';
 GO
+

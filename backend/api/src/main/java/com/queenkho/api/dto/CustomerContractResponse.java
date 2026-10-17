@@ -2,10 +2,12 @@ package com.queenkho.api.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 public class CustomerContractResponse {
     private Integer contractId;
@@ -35,4 +37,8 @@ public class CustomerContractResponse {
     private Long overdueDays;                 // Số ngày trễ hạn
     private BigDecimal lateFeeAmount;         // Phí phạt trễ hạn tính theo chính sách
     private BigDecimal estimatedDepositRefund;// Tiền hoàn cọc ước tính sau khi trừ phạt
+    private BigDecimal originalDeposit;
+    private BigDecimal refundAmount;
+    private BigDecimal damageFee;
+    private Boolean isInspectionCompleted;    // 🌟 Đã hoàn tất biên bản nghiệm thu (CHECK_OUT)
 }

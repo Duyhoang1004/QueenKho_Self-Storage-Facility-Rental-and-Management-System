@@ -689,7 +689,7 @@ public class ReservationService {
     }
 
     // Hàm phụ trợ: Tính deadline 24h bỏ qua Chủ Nhật
-    private LocalDateTime calculateRefundDeadline(LocalDateTime requestTime) {
+    public static LocalDateTime calculateRefundDeadline(LocalDateTime requestTime) {
         LocalDateTime deadline = requestTime.plusHours(24);
 
         if (requestTime.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {

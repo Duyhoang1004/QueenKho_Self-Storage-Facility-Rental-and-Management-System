@@ -143,36 +143,26 @@ public class ContractService {
 
         boolean isAlreadyPending = "TERMINATION_PENDING".equals(contract.getStatus());
 
-        // Kiểm tra business rule:
+        // Kiểm tra business rule (PR-O1):
         if (isAlreadyPending) {
-            // Nếu đã ở trạng thái TERMINATION_PENDING, không được dời ngày muộn hơn ngày đã hẹn trước đó
-            LocalDate prevCheckoutDate = null;
-            try {
-                var dueAtTimestamp = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 due_at FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC",
-                        java.sql.Timestamp.class,
-                        contract.getId());
-                if (dueAtTimestamp != null) {
-                    prevCheckoutDate = dueAtTimestamp.toLocalDateTime().toLocalDate();
-                }
-            } catch (Exception ignored) {
-            }
-            if (prevCheckoutDate == null) {
-                prevCheckoutDate = contract.getEndDate();
-            }
-
-            if (prevCheckoutDate != null && checkoutDate.isAfter(prevCheckoutDate)) {
-                throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + prevCheckoutDate + ").");
+            LocalDate maxAllowed = contract.getEndDate() != null ? contract.getEndDate().plusDays(5) : today.plusDays(5);
+            if (checkoutDate.isAfter(maxAllowed)) {
+                throw new IllegalArgumentException("Ngày hẹn trả kho không thể muộn hơn 5 ngày sau ngày kết thúc hợp đồng (" + maxAllowed + ").");
             }
         } else if ("ACTIVE".equals(contract.getStatus())) {
-            // HĐ đang ACTIVE: Không được hẹn ngày trả kho vượt quá ngày kết thúc HĐ
-            if (contract.getEndDate() != null && checkoutDate.isAfter(contract.getEndDate())) {
-                throw new IllegalArgumentException("Không thể hẹn ngày trả kho sau ngày kết thúc hợp đồng (" + contract.getEndDate() + "). Vui lòng chọn ngày trước hạn hoặc thực hiện gia hạn hợp đồng.");
+            // PR-O1: HĐ đang ACTIVE: Hẹn từ ngày mai đến end_date + 5 ngày (5 ngày ân hạn chuyển đồ)
+            if (checkoutDate.isBefore(today.plusDays(1))) {
+                throw new IllegalArgumentException("Ngày hẹn trả kho phải từ ngày mai trở đi (" + today.plusDays(1) + ").");
+            }
+            LocalDate maxDate = contract.getEndDate() != null ? contract.getEndDate().plusDays(5) : today.plusDays(5);
+            if (checkoutDate.isAfter(maxDate)) {
+                throw new IllegalArgumentException("Không thể hẹn ngày trả kho quá 5 ngày ân hạn sau khi kết thúc hợp đồng (" + maxDate + ").");
             }
         } else if ("OVERDUE".equals(contract.getStatus())) {
-            // HĐ đang OVERDUE: Đã quá hạn nên chỉ được hẹn trả kho ngay trong ngày hôm nay
-            if (checkoutDate.isAfter(today)) {
-                throw new IllegalArgumentException("Hợp đồng đã quá hạn, quý khách chỉ có thể hẹn trả kho trong ngày hôm nay (" + today + ").");
+            // PR-O1: HĐ đang OVERDUE: Hẹn trong vòng 3 ngày tới
+            LocalDate maxOverdueDate = today.plusDays(3);
+            if (checkoutDate.isAfter(maxOverdueDate)) {
+                throw new IllegalArgumentException("Hợp đồng đã quá hạn, quý khách chỉ có thể hẹn trả kho trong vòng 3 ngày tới (" + maxOverdueDate + ").");
             }
         }
 

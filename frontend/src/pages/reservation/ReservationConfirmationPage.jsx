@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getVnpayStatus } from '../../services/vnpayService'
+import { getVnpayStatus, createVnpayPayment } from '../../services/vnpayService'
 import { useSearchParams } from 'react-router-dom'
 
 function formatVND(amount) {
@@ -40,6 +40,26 @@ export default function ReservationConfirmationPage() {
 
   const startDateObj = startDate ? new Date(startDate) : new Date()
   const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
+
+  const [retryLoading, setRetryLoading] = useState(false)
+  const [retryError, setRetryError] = useState('')
+
+  const handleRetryPayment = async () => {
+    const resId = reservation.id
+    if (!resId) {
+      navigate('/kho-cua-toi')
+      return
+    }
+    setRetryLoading(true)
+    setRetryError('')
+    try {
+      const paymentData = await createVnpayPayment(resId)
+      window.location.assign(paymentData.payUrl)
+    } catch (err) {
+      setRetryError(err.response?.data?.message || 'Không thể tạo lại liên kết thanh toán. Đơn có thể đã hết hạn.')
+      setRetryLoading(false)
+    }
+  }
 
   useEffect(() => {
     const orderId = searchParams.get('orderId')
@@ -119,14 +139,29 @@ export default function ReservationConfirmationPage() {
             <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] text-center">
               GIAO DỊCH CHƯA HOÀN TẤT
             </h1>
-            <p className="text-xs font-bold text-[#AFAFAF] mt-2 text-center">
-              Đơn đặt chỗ{' '}
-              <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
-              đã bị hủy. Vui lòng đặt lại hoặc liên hệ hỗ trợ.
+            <p className="text-xs font-bold text-[#AFAFAF] mt-2 text-center max-w-md">
+              Giao dịch thanh toán chưa thành công hoặc bạn đã hủy trên cổng VNPAY.
+              Đơn đặt chỗ <span className="font-black text-[#4B4B4B]">#{reservationCode}</span> vẫn được giữ chỗ trong vòng 15 phút.
             </p>
-            <button onClick={() => navigate('/tim-va-dat-kho')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
-              TÌM KHO MỚI
-            </button>
+            {retryError && (
+              <p className="text-xs font-bold text-[#FF4B4B] mt-2 text-center">{retryError}</p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+              <button
+                onClick={handleRetryPayment}
+                disabled={retryLoading}
+                className="duo-btn-green px-6 py-3 text-xs tracking-wider shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">replay</span>
+                <span>{retryLoading ? 'ĐANG TẠO LINK...' : 'THANH TOÁN LẠI'}</span>
+              </button>
+              <button
+                onClick={() => navigate('/kho-cua-toi')}
+                className="duo-btn-white px-6 py-3 text-xs tracking-wider shadow-sm cursor-pointer"
+              >
+                XEM ĐƠN CỦA TÔI
+              </button>
+            </div>
           </div>
         
         ) : (

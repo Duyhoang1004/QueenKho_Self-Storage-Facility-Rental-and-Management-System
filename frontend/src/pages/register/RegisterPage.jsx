@@ -100,7 +100,7 @@ export default function RegisterPage() {
         <div className="my-auto max-w-lg space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full bg-white/20 px-4 py-1.5 text-xs font-black uppercase tracking-wider backdrop-blur-xs">
             <span>🎁</span>
-            <span>Tặng ngay mã giảm 100.000₫ cho đơn đầu tiên</span>
+            <span>Ưu đãi gói thuê dài hạn lên đến 15%</span>
           </div>
 
           <h1 className="text-4xl font-black leading-tight tracking-tight xl:text-5xl">

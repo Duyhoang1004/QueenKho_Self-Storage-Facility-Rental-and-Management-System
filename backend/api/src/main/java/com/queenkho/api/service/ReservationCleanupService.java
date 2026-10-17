@@ -15,14 +15,21 @@ public class ReservationCleanupService {
 
     // Chạy mỗi phút 1 lần (60000ms)
     @Scheduled(fixedRate = 60000)
-    public void cancelExpiredReservations() {
-        // Hủy các đơn chưa thanh toán sau 10 phút, khớp thời hạn checkout VNPAY.
-        String sql = "UPDATE reservations SET status = 'CANCELLED' " +
-                     "WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -10, GETDATE())";
-        
-        int rowsUpdated = jdbcTemplate.update(sql);
-        if (rowsUpdated > 0) {
-            System.out.println("[QueenKho Cleanup] Da huy tu dong " + rowsUpdated + " don dat cho het han giu cho (qua 10 phut).");
+    public void expirePendingReservations() {
+        // PR-B6 & PR-B7: Đơn PENDING giữ suất 15 phút (link VNPAY 10 phút + 5 phút đệm).
+        // Hết hạn -> đơn chuyển sang 'EXPIRED', giao dịch PENDING chuyển sang 'FAILED'. (sửa L-08)
+        String findExpiredSql = "SELECT id FROM reservations WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -15, SYSDATETIME())";
+        try {
+            java.util.List<Integer> expiredIds = jdbcTemplate.queryForList(findExpiredSql, Integer.class);
+            if (!expiredIds.isEmpty()) {
+                for (Integer id : expiredIds) {
+                    jdbcTemplate.update("UPDATE reservations SET status = 'EXPIRED' WHERE id = ?", id);
+                    jdbcTemplate.update("UPDATE payment_transactions SET status = 'FAILED' WHERE reservation_id = ? AND status = 'PENDING'", id);
+                }
+                System.out.println("[QueenKho Cleanup] Da chuyen sang EXPIRED va huy giao dich PENDING cho " + expiredIds.size() + " don dat cho het han 15 phut.");
+            }
+        } catch (Exception e) {
+            System.err.println("[QueenKho Cleanup] Loi khi quet don het han: " + e.getMessage());
         }
     }
 }

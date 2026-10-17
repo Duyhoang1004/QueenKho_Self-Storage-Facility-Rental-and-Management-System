@@ -104,7 +104,7 @@ export default function CustomerContractPage() {
   // Xử lý callback sau khi khách thanh toán gia hạn từ VNPAY quay về
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const responseCode = params.get("vnp_ResponseCode");
+    const responseCode = params.get("vnp_ResponseCode") || params.get("vnpResponse");
     const txnRef = params.get("vnp_TxnRef") || params.get("orderId");
 
     if (responseCode === "00") {

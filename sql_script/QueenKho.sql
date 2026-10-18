@@ -24,6 +24,7 @@ GO
 /* ---------- 2. facilities ---------- */
 CREATE TABLE facilities (
     id              INT IDENTITY(1,1) PRIMARY KEY,
+    code            NVARCHAR(4)   NOT NULL UNIQUE,            -- Mã cơ sở (2-4 ký tự hoa, UC-04, PR-M1)
     name            NVARCHAR(150) NOT NULL,
     city            NVARCHAR(100) NOT NULL,
     district        NVARCHAR(100) NOT NULL,

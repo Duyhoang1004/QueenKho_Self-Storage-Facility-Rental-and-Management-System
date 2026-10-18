@@ -1,17 +1,27 @@
 package com.queenkho.api.controller;
 
+import com.queenkho.api.dto.BomFacilityResponse;
+import com.queenkho.api.dto.CreateFacilityRequest;
+import com.queenkho.api.dto.UpdateFacilityRequest;
+import com.queenkho.api.dto.UpdateFacilityStatusRequest;
 import com.queenkho.api.dto.FacilityAvailabilityResponse;
 import com.queenkho.api.dto.FacilitySearchResultItem;
 import com.queenkho.api.dto.FacilitySummaryResponse;
+import com.queenkho.api.exception.FacilityException;
 import com.queenkho.api.service.FacilityService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -64,7 +74,7 @@ public class FacilityController {
             FacilityAvailabilityResponse response = facilityService.getFacilityAvailability(id);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.status(404)
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", "FACILITY_NOT_FOUND", "message", e.getMessage()));
         }
     }
@@ -76,5 +86,90 @@ public class FacilityController {
     @GetMapping("/cities")
     public ResponseEntity<List<String>> getCities() {
         return ResponseEntity.ok(facilityService.getActiveCities());
+    }
+
+    // ──────────────────────────────────────────────────────
+    // UC-04 (BOM): Quản lý danh sách cơ sở kho bãi
+    // ──────────────────────────────────────────────────────
+
+    // 1. Danh sách cơ sở cho BOM (kèm thống kê ô kho & hợp đồng)
+    // GET /api/v1/facilities/bom?keyword=...&city=...&status=...
+    @GetMapping("/bom")
+    public ResponseEntity<List<BomFacilityResponse>> getAllFacilitiesForBom(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(facilityService.getAllFacilitiesForBom(keyword, city, status));
+    }
+
+    // 2. Chi tiết cơ sở cho BOM
+    // GET /api/v1/facilities/bom/{id}
+    @GetMapping("/bom/{id}")
+    public ResponseEntity<BomFacilityResponse> getFacilityDetailForBom(@PathVariable Integer id) {
+        return ResponseEntity.ok(facilityService.getFacilityDetailForBom(id));
+    }
+
+    // 3. Tạo cơ sở mới (PR-10, PR-M1)
+    // POST /api/v1/facilities/bom
+    @PostMapping("/bom")
+    public ResponseEntity<BomFacilityResponse> createFacility(
+            @Valid @RequestBody CreateFacilityRequest request,
+            @RequestParam(required = false) Integer actorUserId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
+        BomFacilityResponse created = facilityService.createFacility(request, effectiveUserId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    // 4. Cập nhật thông tin cơ sở (Mã code bất biến theo PR-M1)
+    // PUT /api/v1/facilities/bom/{id}
+    @PutMapping("/bom/{id}")
+    public ResponseEntity<BomFacilityResponse> updateFacility(
+            @PathVariable Integer id,
+            @Valid @RequestBody UpdateFacilityRequest request,
+            @RequestParam(required = false) Integer actorUserId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
+        BomFacilityResponse updated = facilityService.updateFacility(id, request, effectiveUserId);
+        return ResponseEntity.ok(updated);
+    }
+
+    // 5. Đổi trạng thái cơ sở (PR-11, PR-M2: Chặn INACTIVE nếu còn đơn/hợp đồng hoạt động)
+    // PATCH / PUT /api/v1/facilities/bom/{id}/status
+    @RequestMapping(value = "/bom/{id}/status", method = {RequestMethod.PATCH, RequestMethod.PUT})
+    public ResponseEntity<BomFacilityResponse> updateFacilityStatus(
+            @PathVariable Integer id,
+            @Valid @RequestBody UpdateFacilityStatusRequest request,
+            @RequestParam(required = false) Integer actorUserId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
+        BomFacilityResponse updated = facilityService.updateFacilityStatus(id, request, effectiveUserId);
+        return ResponseEntity.ok(updated);
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Exception Handlers
+    // ──────────────────────────────────────────────────────
+    @ExceptionHandler(FacilityException.class)
+    public ResponseEntity<Map<String, String>> handleFacilityException(FacilityException ex) {
+        return ResponseEntity.status(ex.getStatus())
+            .body(Map.of(
+                "error", ex.getCode(),
+                "message", ex.getMessage()
+            ));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            .body(Map.of(
+                "error", "INVALID_INPUT",
+                "message", "Dữ liệu không hợp lệ",
+                "details", errors
+            ));
     }
 }

@@ -8,10 +8,17 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface FacilityRepository extends JpaRepository<Facility, Integer> {
 
     List<Facility> findByStatus(String status);
+
+    boolean existsByCode(String code);
+
+    Optional<Facility> findByCode(String code);
+
+    List<Facility> findAllByOrderByIdAsc();
 
     @Query("SELECT f FROM Facility f WHERE f.status = 'ACTIVE' " +
            "AND (:keyword IS NULL OR f.name LIKE CONCAT('%', :keyword, '%') " +

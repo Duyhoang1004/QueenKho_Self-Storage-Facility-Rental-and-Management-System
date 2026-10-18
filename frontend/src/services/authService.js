@@ -1,4 +1,4 @@
-﻿import api from './api'
+import api from './api'
 
 export async function login(credentials) {
   const response = await api.post('/auth/login', credentials)
@@ -25,6 +25,7 @@ const HOME_PATH_BY_ROLE = {
   STAFF: '/staff',
   FACILITY_MANAGER: '/manager',
   ADMIN: '/admin',
+  BOM: '/bom',
 }
 
 export function getHomePath(role) {

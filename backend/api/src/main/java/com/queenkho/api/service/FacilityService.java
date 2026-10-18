@@ -1,10 +1,15 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.dto.BomFacilityResponse;
+import com.queenkho.api.dto.CreateFacilityRequest;
+import com.queenkho.api.dto.UpdateFacilityRequest;
+import com.queenkho.api.dto.UpdateFacilityStatusRequest;
 import com.queenkho.api.dto.FacilityAvailabilityResponse;
 import com.queenkho.api.dto.FacilitySearchResultItem;
 import com.queenkho.api.dto.FacilitySummaryResponse;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.UnitType;
+import com.queenkho.api.exception.FacilityException;
 import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.ReservationRepository;
 import com.queenkho.api.repository.StorageUnitRepository;
@@ -13,6 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,10 +41,13 @@ public class FacilityService {
     @Autowired
     private UnitTypeRepository unitTypeRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private static final List<String> PENDING_STATUSES = List.of("PENDING", "DEPOSIT_PAID");
 
     // ──────────────────────────────────────────────────────
-    // API 1: Lấy tất cả cơ sở ACTIVE kèm tổng số ô trống
+    // UC-09 API 1: Lấy tất cả cơ sở ACTIVE kèm tổng số ô trống
     // ──────────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public List<FacilitySummaryResponse> getAllActiveFacilities() {
@@ -46,14 +56,14 @@ public class FacilityService {
         return facilities.stream().map(f -> {
             int totalAvailable = storageUnitRepository.countByFacility_IdAndStatus(f.getId(), "AVAILABLE");
             return new FacilitySummaryResponse(
-                f.getId(), f.getName(), f.getCity(), f.getDistrict(),
+                f.getId(), f.getCode(), f.getName(), f.getCity(), f.getDistrict(),
                 f.getAddress(), f.getHotline(), totalAvailable
             );
         }).toList();
     }
 
     // ──────────────────────────────────────────────────────
-    // API 2: Tìm kiếm cơ sở theo bộ lọc + trả kết quả kèm available count
+    // UC-09 API 2: Tìm kiếm cơ sở theo bộ lọc + trả kết quả kèm available count
     // ──────────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public Page<FacilitySearchResultItem> searchFacilities(
@@ -109,7 +119,7 @@ public class FacilityService {
     }
 
     // ──────────────────────────────────────────────────────
-    // API 3: Chi tiết availability của 1 facility
+    // UC-09 API 3: Chi tiết availability của 1 facility
     // ──────────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public FacilityAvailabilityResponse getFacilityAvailability(Integer facilityId) {
@@ -155,11 +165,260 @@ public class FacilityService {
     }
 
     // ──────────────────────────────────────────────────────
-    // API phụ: Lấy danh sách thành phố có cơ sở hoạt động
+    // UC-09 API phụ: Lấy danh sách thành phố có cơ sở hoạt động
     // ──────────────────────────────────────────────────────
     @Transactional(readOnly = true)
     public List<String> getActiveCities() {
         return facilityRepository.findDistinctCities();
+    }
+
+    // ──────────────────────────────────────────────────────
+    // UC-04 (BOM): Quản lý danh sách cơ sở kho bãi
+    // ──────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<BomFacilityResponse> getAllFacilitiesForBom(String keyword, String city, String status) {
+        List<Facility> all = facilityRepository.findAllByOrderByIdAsc();
+
+        return all.stream()
+            .filter(f -> {
+                if (keyword != null && !keyword.isBlank()) {
+                    String kw = keyword.toLowerCase().trim();
+                    boolean matchesCode = f.getCode() != null && f.getCode().toLowerCase().contains(kw);
+                    boolean matchesName = f.getName() != null && f.getName().toLowerCase().contains(kw);
+                    boolean matchesAddress = f.getAddress() != null && f.getAddress().toLowerCase().contains(kw);
+                    boolean matchesHotline = f.getHotline() != null && f.getHotline().contains(kw);
+                    boolean matchesDistrict = f.getDistrict() != null && f.getDistrict().toLowerCase().contains(kw);
+                    if (!matchesCode && !matchesName && !matchesAddress && !matchesHotline && !matchesDistrict) {
+                        return false;
+                    }
+                }
+                if (city != null && !city.isBlank() && !"ALL".equalsIgnoreCase(city)) {
+                    if (f.getCity() == null || !f.getCity().equalsIgnoreCase(city.trim())) {
+                        return false;
+                    }
+                }
+                if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+                    if (f.getStatus() == null || !f.getStatus().equalsIgnoreCase(status.trim())) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .map(this::buildBomFacilityResponse)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public BomFacilityResponse getFacilityDetailForBom(Integer id) {
+        Facility f = facilityRepository.findById(id)
+            .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "FACILITY_NOT_FOUND", "Không tìm thấy cơ sở với ID: " + id));
+        return buildBomFacilityResponse(f);
+    }
+
+    @Transactional
+    public BomFacilityResponse createFacility(CreateFacilityRequest request, Integer actorUserId) {
+        String cleanCode = request.getCode() != null ? request.getCode().trim().toUpperCase() : "";
+        if (!cleanCode.matches("^[A-Z0-9]{2,4}$")) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "INVALID_FACILITY_CODE",
+                "Mã cơ sở phải gồm 2 đến 4 ký tự in hoa hoặc số (vd: TB, BT, Q7)");
+        }
+
+        if (facilityRepository.existsByCode(cleanCode)) {
+            throw new FacilityException(HttpStatus.CONFLICT, "FACILITY_CODE_EXISTS",
+                "Mã cơ sở '" + cleanCode + "' đã tồn tại trong hệ thống");
+        }
+
+        Facility facility = Facility.builder()
+            .code(cleanCode)
+            .name(request.getName().trim())
+            .city(request.getCity().trim())
+            .district(request.getDistrict().trim())
+            .address(request.getAddress().trim())
+            .hotline(request.getHotline() != null && !request.getHotline().isBlank() ? request.getHotline().trim() : null)
+            .status("ACTIVE")
+            .build();
+
+        facility = facilityRepository.save(facility);
+
+        // PR-10: Tự tạo chính sách thuê mặc định cho cơ sở mới
+        try {
+            String policyName = "Chính sách " + facility.getName() + " - Tiêu chuẩn";
+            jdbcTemplate.update(
+                "INSERT INTO rental_policy (facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_per_day, lock_account_days, liquidation_days) " +
+                "VALUES (?, ?, 1, 50, 24, 50000, 5, 30)",
+                facility.getId(), policyName
+            );
+        } catch (Exception e) {
+            System.err.println("Warning: Could not create default rental policy: " + e.getMessage());
+        }
+
+        // PR-91 / PR-A9: Ghi activity_logs
+        recordActivityLog(actorUserId, "Tạo cơ sở mới: " + facility.getName() + " (Mã: " + cleanCode + ")", facility.getId());
+
+        return buildBomFacilityResponse(facility);
+    }
+
+    @Transactional
+    public BomFacilityResponse updateFacility(Integer id, UpdateFacilityRequest request, Integer actorUserId) {
+        Facility facility = facilityRepository.findById(id)
+            .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "FACILITY_NOT_FOUND", "Không tìm thấy cơ sở với ID: " + id));
+
+        facility.setName(request.getName().trim());
+        facility.setCity(request.getCity().trim());
+        facility.setDistrict(request.getDistrict().trim());
+        facility.setAddress(request.getAddress().trim());
+        facility.setHotline(request.getHotline() != null && !request.getHotline().isBlank() ? request.getHotline().trim() : null);
+
+        facility = facilityRepository.save(facility);
+
+        recordActivityLog(actorUserId, "Cập nhật thông tin cơ sở: " + facility.getName() + " (Mã: " + facility.getCode() + ")", facility.getId());
+
+        return buildBomFacilityResponse(facility);
+    }
+
+    @Transactional
+    public BomFacilityResponse updateFacilityStatus(Integer id, UpdateFacilityStatusRequest request, Integer actorUserId) {
+        Facility facility = facilityRepository.findById(id)
+            .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "FACILITY_NOT_FOUND", "Không tìm thấy cơ sở với ID: " + id));
+
+        String targetStatus = request.getStatus().trim().toUpperCase();
+        if (!List.of("ACTIVE", "INACTIVE").contains(targetStatus)) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "INVALID_STATUS", "Trạng thái chỉ có thể là ACTIVE hoặc INACTIVE");
+        }
+
+        if ("INACTIVE".equalsIgnoreCase(targetStatus) && !"INACTIVE".equalsIgnoreCase(facility.getStatus())) {
+            // PR-11: Chặn nếu còn đơn PENDING/DEPOSIT_PAID/UNIT_ASSIGNED hoặc hợp đồng còn hiệu lực
+            int pendingRes = 0;
+            int activeContracts = 0;
+            try {
+                Integer r = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND status IN ('PENDING', 'DEPOSIT_PAID', 'UNIT_ASSIGNED')",
+                    Integer.class, id
+                );
+                if (r != null) pendingRes = r;
+
+                Integer c = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM rental_contracts rc JOIN storage_units su ON rc.storage_unit_id = su.id " +
+                    "WHERE su.facility_id = ? AND rc.status IN ('PENDING_CHECK_IN', 'ACTIVE', 'OVERDUE', 'TERMINATION_PENDING')",
+                    Integer.class, id
+                );
+                if (c != null) activeContracts = c;
+            } catch (Exception ignored) {}
+
+            if (pendingRes > 0 || activeContracts > 0) {
+                throw new FacilityException(
+                    HttpStatus.CONFLICT,
+                    "FACILITY_HAS_ACTIVE_RENTALS",
+                    "Không thể tạm dừng cơ sở do đang có " + pendingRes + " đơn đặt chỗ và " +
+                    activeContracts + " hợp đồng đang có hiệu lực. Vui lòng hoàn tất hoặc thanh lý trước."
+                );
+            }
+        }
+
+        facility.setStatus(targetStatus);
+        facility = facilityRepository.save(facility);
+
+        recordActivityLog(actorUserId, "Đổi trạng thái cơ sở '" + facility.getName() + "' sang " + targetStatus, facility.getId());
+
+        return buildBomFacilityResponse(facility);
+    }
+
+    private BomFacilityResponse buildBomFacilityResponse(Facility f) {
+        int totalUnits = 0;
+        int availableUnits = 0;
+        int occupiedUnits = 0;
+        int maintenanceUnits = 0;
+        int activeContractsCount = 0;
+        int pendingReservationsCount = 0;
+
+        try {
+            totalUnits = storageUnitRepository.countByFacility_Id(f.getId());
+            occupiedUnits = storageUnitRepository.countByFacility_IdAndStatus(f.getId(), "OCCUPIED");
+            maintenanceUnits = storageUnitRepository.countByFacility_IdAndStatus(f.getId(), "MAINTENANCE");
+
+            Integer contracts = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts rc JOIN storage_units su ON rc.storage_unit_id = su.id " +
+                "WHERE su.facility_id = ? AND rc.status IN ('PENDING_CHECK_IN', 'ACTIVE', 'OVERDUE', 'TERMINATION_PENDING')",
+                Integer.class, f.getId()
+            );
+            if (contracts != null) activeContractsCount = contracts;
+
+            Integer reservations = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND status IN ('PENDING', 'DEPOSIT_PAID', 'UNIT_ASSIGNED')",
+                Integer.class, f.getId()
+            );
+            if (reservations != null) pendingReservationsCount = reservations;
+
+            // Ô thực tế còn trống sẵn sàng cho thuê mới = Tổng ô - Đang thuê - Đang bảo trì - Đơn chờ nhận
+            availableUnits = Math.max(0, totalUnits - occupiedUnits - maintenanceUnits - pendingReservationsCount);
+        } catch (Exception ignored) {}
+
+        // Tìm Facility Manager được phân công
+        Integer managerId = null;
+        String managerName = null;
+        String managerEmail = null;
+        String managerPhone = null;
+
+        try {
+            List<Map<String, Object>> fmRows = jdbcTemplate.queryForList(
+                "SELECT TOP 1 u.id, u.full_name, u.email, u.phone FROM users u " +
+                "JOIN roles r ON u.role_id = r.id " +
+                "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE'",
+                f.getId()
+            );
+            if (!fmRows.isEmpty()) {
+                Map<String, Object> row = fmRows.get(0);
+                managerId = ((Number) row.get("id")).intValue();
+                managerName = (String) row.get("full_name");
+                managerEmail = (String) row.get("email");
+                managerPhone = (String) row.get("phone");
+            }
+        } catch (Exception ignored) {}
+
+        return BomFacilityResponse.builder()
+            .id(f.getId())
+            .code(f.getCode())
+            .name(f.getName())
+            .city(f.getCity())
+            .district(f.getDistrict())
+            .address(f.getAddress())
+            .hotline(f.getHotline())
+            .status(f.getStatus())
+            .totalUnits(totalUnits)
+            .availableUnits(availableUnits)
+            .occupiedUnits(occupiedUnits)
+            .maintenanceUnits(maintenanceUnits)
+            .activeContractsCount(activeContractsCount)
+            .pendingReservationsCount(pendingReservationsCount)
+            .managerId(managerId)
+            .managerName(managerName)
+            .managerEmail(managerEmail)
+            .managerPhone(managerPhone)
+            .build();
+    }
+
+    private Integer getDefaultBomUserId() {
+        try {
+            Integer id = jdbcTemplate.queryForObject(
+                "SELECT TOP 1 u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'BOM' ORDER BY u.id ASC",
+                Integer.class
+            );
+            if (id != null) return id;
+        } catch (Exception ignored) {}
+        return 1;
+    }
+
+    private void recordActivityLog(Integer userId, String action, Integer targetId) {
+        try {
+            Integer effectiveUserId = userId != null ? userId : getDefaultBomUserId();
+            jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) VALUES (?, ?, 'facilities', ?, SYSDATETIME())",
+                effectiveUserId, action, String.valueOf(targetId)
+            );
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to record activity_log: " + e.getMessage());
+        }
     }
 
     // ──────────────────────────────────────────────────────

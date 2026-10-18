@@ -44,6 +44,7 @@ GO
 /* ---------- 2. facilities ---------- */
 CREATE TABLE facilities (
     id              INT IDENTITY(1,1) PRIMARY KEY,
+    code            NVARCHAR(4)   NOT NULL UNIQUE,            -- Mã cơ sở (2-4 ký tự hoa, UC-04, PR-M1)
     name            NVARCHAR(150) NOT NULL,
     city            NVARCHAR(100) NOT NULL,
     district        NVARCHAR(100) NOT NULL,
@@ -319,13 +320,13 @@ GO
 
 /* ---------- facilities (id cố định 1..6) ---------- */
 SET IDENTITY_INSERT facilities ON;
-INSERT INTO facilities (id, name, city, district, address, hotline, status) VALUES
-    (1, N'QueenKho Tân Bình',   N'TP.HCM', N'Tân Bình',   N'142 Cộng Hòa, P.13',               N'028-3811-0001', 'ACTIVE'),
-    (2, N'QueenKho Bình Thạnh', N'TP.HCM', N'Bình Thạnh', N'456 Điện Biên Phủ, P.22',          N'028-3811-0003', 'ACTIVE'),
-    (3, N'QueenKho Thủ Đức',    N'TP.HCM', N'Thủ Đức',    N'789 Võ Văn Ngân, P.Linh Chiểu',    N'028-3811-0004', 'ACTIVE'),
-    (4, N'QueenKho Gò Vấp',     N'TP.HCM', N'Gò Vấp',     N'321 Quang Trung, P.10',            N'028-3811-0005', 'ACTIVE'),
-    (5, N'QueenKho Cầu Giấy',   N'Hà Nội', N'Cầu Giấy',   N'56 Duy Tân, P.Dịch Vọng Hậu',      N'024-3511-0001', 'ACTIVE'),
-    (6, N'QueenKho Quận 7',     N'TP.HCM', N'Quận 7',     N'123 Nguyễn Văn Linh, P.Tân Phong', N'028-3811-0002', 'ACTIVE');
+INSERT INTO facilities (id, code, name, city, district, address, hotline, status) VALUES
+    (1, 'TB', N'QueenKho Tân Bình',   N'TP.HCM', N'Tân Bình',   N'142 Cộng Hòa, P.13',               N'028-3811-0001', 'ACTIVE'),
+    (2, 'BT', N'QueenKho Bình Thạnh', N'TP.HCM', N'Bình Thạnh', N'456 Điện Biên Phủ, P.22',          N'028-3811-0003', 'ACTIVE'),
+    (3, 'TD', N'QueenKho Thủ Đức',    N'TP.HCM', N'Thủ Đức',    N'789 Võ Văn Ngân, P.Linh Chiểu',    N'028-3811-0004', 'ACTIVE'),
+    (4, 'GV', N'QueenKho Gò Vấp',     N'TP.HCM', N'Gò Vấp',     N'321 Quang Trung, P.10',            N'028-3811-0005', 'ACTIVE'),
+    (5, 'CG', N'QueenKho Cầu Giấy',   N'Hà Nội', N'Cầu Giấy',   N'56 Duy Tân, P.Dịch Vọng Hậu',      N'024-3511-0001', 'ACTIVE'),
+    (6, 'Q7', N'QueenKho Quận 7',     N'TP.HCM', N'Quận 7',     N'123 Nguyễn Văn Linh, P.Tân Phong', N'028-3811-0002', 'ACTIVE');
 SET IDENTITY_INSERT facilities OFF;
 GO
 
@@ -420,6 +421,11 @@ SELECT N'Nhân viên ' + s.short_name + N' ' + CAST(n.no AS NVARCHAR(2)),
        (SELECT id FROM roles WHERE name = 'STAFF'), s.facility_id, 'ACTIVE'
 FROM @site s
 CROSS JOIN (VALUES (1), (2), (3)) AS n(no);
+
+-- 1 BOM (Quản lý vận hành toàn hệ thống): bom@queenkho.com / 123456
+INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
+VALUES (N'Business Operations Manager', 'bom@queenkho.com', @pw, '0908889999',
+       (SELECT id FROM roles WHERE name = 'BOM'), NULL, 'ACTIVE');
 GO
 
 /* ---------- Kiểm tra ---------- */

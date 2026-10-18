@@ -9,10 +9,14 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
+@Builder
 public class Facility {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
+
+    @Column(nullable = false, unique = true, length = 4)
+    private String code;
 
     @Column(nullable = false, length = 150)
     private String name;

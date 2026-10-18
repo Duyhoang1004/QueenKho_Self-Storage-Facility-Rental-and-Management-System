@@ -34,6 +34,11 @@ import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
 import AdminLayout from './layouts/AdminLayout';
 import AdminComingSoonPage from './pages/admin/AdminComingSoonPage';
 
+// Import BOM Pages (UC-04, UC-05, UC-07, UC-29)
+import BomLayout from './layouts/BomLayout';
+import BomFacilitiesPage from './pages/bom/BomFacilitiesPage';
+import BomComingSoonPage from './pages/bom/BomComingSoonPage';
+
 
 export default function App() {
   return (
@@ -86,6 +91,15 @@ export default function App() {
         <Route path="/admin/users" element={<AdminComingSoonPage title="Người dùng" uc="UC-08" icon="manage_accounts" />} />
         <Route path="/admin/roles" element={<AdminComingSoonPage title="Vai trò & phân quyền" uc="UC-03" icon="admin_panel_settings" />} />
         <Route path="/admin/logs" element={<AdminComingSoonPage title="Nhật ký hoạt động" uc="UC-31" icon="history" />} />
+      </Route>
+
+      {/* ========== BOM Portal (UC-04, UC-05, UC-07, UC-29) ========== */}
+      <Route element={<BomLayout />}>
+        <Route path="/bom" element={<BomFacilitiesPage />} />
+        <Route path="/bom/facilities" element={<BomFacilitiesPage />} />
+        <Route path="/bom/unit-types" element={<BomComingSoonPage title="Loại kho & Giá niêm yết" uc="UC-05" icon="view_in_ar" />} />
+        <Route path="/bom/policies" element={<BomComingSoonPage title="Chính sách thuê" uc="UC-07" icon="policy" />} />
+        <Route path="/bom/revenue" element={<BomComingSoonPage title="Dashboard doanh thu & Báo cáo" uc="UC-29" icon="monitoring" />} />
       </Route>
     </Routes>
   );

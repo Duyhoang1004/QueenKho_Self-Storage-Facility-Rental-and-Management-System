@@ -1,7 +1,6 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.repository.*;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -23,7 +22,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 public class VnpayService {
     @Value("${vnpay.tmn-code:}") private String tmnCode; 
     @Value("${vnpay.hash-secret:}") private String hashSecret;
@@ -36,6 +34,19 @@ public class VnpayService {
     private final RentalContractRepository contracts; 
     private final ReservationRepository reservations;
     private final StaffTaskService staffTasks;
+    private final LateFeeService lateFeeService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
+                        ReservationRepository reservations, StaffTaskService staffTasks,
+                        LateFeeService lateFeeService, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+        this.payments = payments;
+        this.contracts = contracts;
+        this.reservations = reservations;
+        this.staffTasks = staffTasks;
+        this.lateFeeService = lateFeeService;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     public Map<String, Object> createReservation(Integer id, String ip) {
         var r = payments.findReservation(id);
@@ -55,15 +66,75 @@ public class VnpayService {
         return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, price, ip);
     }
     
+    @Transactional
     public Map<String, Object> createRenewal(Integer id, Integer m, String ip) {
+        if (id == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng");
+        }
         var c = contracts.findDetailById(id)
                          .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
-                         
-        BigDecimal subtotal = c.getStorageUnit().getUnitType().getBasePriceMonthly().multiply(BigDecimal.valueOf(m));
+
+        // PR-R1: Chỉ nhận số tháng 1, 3, 6, 12; giá trị khác trả 400 INVALID_INPUT
+        if (m == null || (m != 1 && m != 3 && m != 6 && m != 12)) {
+            throw new com.queenkho.api.exception.ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Số tháng gia hạn không hợp lệ. Chỉ chấp nhận các gói 1, 3, 6, 12 tháng.");
+        }
+
+        // PR-R1: Chỉ cho gia hạn khi hợp đồng ACTIVE, TERMINATION_PENDING hoặc OVERDUE. Trạng thái khác trả 409 CONTRACT_NOT_RENEWABLE
+        String status = c.getStatus() != null ? c.getStatus().toUpperCase() : "";
+        if (!status.matches("ACTIVE|TERMINATION_PENDING|OVERDUE")) {
+            throw new com.queenkho.api.exception.ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_RENEWABLE",
+                    "Hợp đồng đang ở trạng thái " + c.getStatus() + ", không thể gia hạn.");
+        }
+
+        // Tính tiền thuê các tháng gia hạn
+        BigDecimal basePrice = BigDecimal.ZERO;
+        if (c.getStorageUnit() != null && c.getStorageUnit().getUnitType() != null
+                && c.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
+            basePrice = c.getStorageUnit().getUnitType().getBasePriceMonthly();
+        }
+        BigDecimal subtotal = basePrice.multiply(BigDecimal.valueOf(m));
         BigDecimal discount = m >= 12 ? new BigDecimal("0.10") : m >= 6 ? new BigDecimal("0.05") : BigDecimal.ZERO;
-        BigDecimal finalAmount = subtotal.subtract(subtotal.multiply(discount)).setScale(0, RoundingMode.HALF_UP);
-        
-        return create("RENEWAL", c.getReservation().getId(), id, m, c.getCustomer().getId(), finalAmount, BigDecimal.ZERO, ip);
+        BigDecimal rentAmount = subtotal.subtract(subtotal.multiply(discount)).setScale(0, RoundingMode.HALF_UP);
+
+        // PR-Q6: Tính phí trễ bằng LateFeeService tại thời điểm tạo link và CHỐT CỨNG số tiền này
+        BigDecimal lateFeeAmount = BigDecimal.ZERO;
+        if ("OVERDUE".equals(status)) {
+            var lateFeeResult = lateFeeService.calculateLateFee(c);
+            if (lateFeeResult != null && lateFeeResult.getLateFeeAmount() != null) {
+                lateFeeAmount = lateFeeResult.getLateFeeAmount().setScale(0, RoundingMode.HALF_UP);
+            }
+        }
+
+        BigDecimal totalAmount = rentAmount.add(lateFeeAmount).setScale(0, RoundingMode.HALF_UP);
+
+        // PR-Q6: Trong MỘT @Transactional, tạo sẵn 2 dòng PENDING trong payment_transactions:
+        // (a) dòng chính loại MONTHLY_RENT, số tiền = tiền thuê các tháng gia hạn;
+        // (b) dòng phụ loại LATE_FEE, số tiền = phí trễ chốt cứng (nếu phí trễ > 0).
+        String prefix = "QKR" + String.format("%02d", m);
+        String ref = prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+
+        Integer customerId = c.getCustomer() != null ? c.getCustomer().getId() : null;
+        Integer reservationId = c.getReservation() != null ? c.getReservation().getId() : null;
+
+        // Tạo dòng chính MONTHLY_RENT
+        payments.createPending(ref, customerId, reservationId, id, "MONTHLY_RENT", rentAmount);
+
+        // Tạo dòng phụ LATE_FEE nếu phí trễ > 0
+        if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
+            String lateFeeRef = "LF" + ref;
+            payments.createPending(lateFeeRef, customerId, reservationId, id, "LATE_FEE", lateFeeAmount);
+        }
+
+        // vnp_TxnRef chỉ giữ mã của dòng chính (để khớp với callback URL hiện có). Tiền gửi sang VNPAY vnp_Amount là TỔNG (tiền thuê + phí trễ chốt cứng)
+        return Map.of(
+            "orderId", ref, 
+            "payUrl", payUrl(ref, "RENEWAL", totalAmount, ip), 
+            "amount", totalAmount, 
+            "depositAmount", BigDecimal.ZERO,
+            "rentAmount", rentAmount,
+            "lateFeeAmount", lateFeeAmount
+        );
     }
     
     private Map<String, Object> create(String kind, Integer rId, Integer cId, Integer m, Object uId, BigDecimal amount, BigDecimal deposit, String ip) {
@@ -141,6 +212,10 @@ public class VnpayService {
         
         if (!"00".equals(p.get("vnp_ResponseCode")) || !"00".equals(p.get("vnp_TransactionStatus"))) { 
             payments.updatePayment(ref, "FAILED"); 
+            var lateFeeDb = payments.findPayment("LF" + ref, true);
+            if (lateFeeDb != null) {
+                payments.updatePayment("LF" + ref, "FAILED");
+            }
             if ("DEPOSIT".equals(db.get("payment_type")) && db.get("reservation_id") != null) {
                 payments.updateReservationToCancelled(((Number) db.get("reservation_id")).intValue());
             }
@@ -152,6 +227,10 @@ public class VnpayService {
         if (err != null) return Map.of("RspCode", "02", "Message", err);
         
         payments.updatePayment(ref, "SUCCESS");
+        var lateFeeDb = payments.findPayment("LF" + ref, true);
+        if (lateFeeDb != null) {
+            payments.updatePayment("LF" + ref, "SUCCESS");
+        }
         return Map.of("RspCode", "00", "Message", "Success");
     }
     
@@ -178,11 +257,40 @@ public class VnpayService {
             c.setStatus("ACTIVE");
             // UC-16: khách gia hạn → huỷ task check-out đang mở
             staffTasks.cancelOpenTasks(c.getId(), "CHECK_OUT");
-            c.getReservation().setStatus("UNIT_ASSIGNED");
-            reservations.save(c.getReservation()); 
+            if (c.getReservation() != null) {
+                c.getReservation().setStatus("UNIT_ASSIGNED");
+                reservations.save(c.getReservation()); 
+            }
         }
         
         contracts.save(c); 
+
+        // PR-A9 & PR-A10: Ghi nhật ký hoạt động gia hạn hợp đồng (nuốt lỗi để không làm hỏng giao dịch tiền)
+        try {
+            var lateFeeDb = payments.findPayment("LF" + ref, false);
+            BigDecimal lateFeeAmount = (lateFeeDb != null && lateFeeDb.get("amount") != null)
+                    ? (BigDecimal) lateFeeDb.get("amount")
+                    : BigDecimal.ZERO;
+
+            String lateFeeInfo = lateFeeAmount.compareTo(BigDecimal.ZERO) > 0
+                    ? " (kèm phí phạt trễ " + lateFeeAmount.setScale(0, RoundingMode.HALF_UP).toPlainString() + "đ)"
+                    : "";
+            String action = "[RENEW] Gia hạn hợp đồng " + c.getContractCode() + " thêm " + monthsToRenew + " tháng qua VNPAY"
+                    + lateFeeInfo + ". Hạn mới: " + c.getEndDate();
+
+            Integer userId = c.getCustomer() != null ? c.getCustomer().getId() : null;
+            if (userId != null) {
+                String truncatedAction = action.length() > 500 ? action.substring(0, 500) : action;
+                jdbcTemplate.update(
+                        "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                                "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
+                        userId, truncatedAction, String.valueOf(c.getId())
+                );
+            }
+        } catch (Exception e) {
+            System.err.println("[VNPAY Renewal] ⚠️ Lỗi ghi activity_logs cho HĐ " + c.getId() + ": " + e.getMessage());
+        }
+
         return null;
     }
     
@@ -217,8 +325,19 @@ public class VnpayService {
     private boolean same(Map<String, String> p, Map<String, Object> db) { 
         try { 
             BigDecimal receivedAmount = new BigDecimal(p.getOrDefault("vnp_Amount", "-1"));
-            BigDecimal expectedAmount = ((BigDecimal) db.get("amount")).multiply(BigDecimal.valueOf(100));
-            return receivedAmount.compareTo(expectedAmount) == 0;
+            BigDecimal expectedAmount = (BigDecimal) db.get("amount");
+
+            // PR-Q6: Đối soát tổng tiền: nếu có dòng phụ LATE_FEE ("LF" + ref) đi kèm, cộng thêm vào expectedAmount
+            String ref = (String) db.get("transaction_code");
+            if (ref != null && ref.startsWith("QKR")) {
+                var lateFeeDb = payments.findPayment("LF" + ref, false);
+                if (lateFeeDb != null && lateFeeDb.get("amount") != null) {
+                    expectedAmount = expectedAmount.add((BigDecimal) lateFeeDb.get("amount"));
+                }
+            }
+
+            BigDecimal expectedVnpAmount = expectedAmount.multiply(BigDecimal.valueOf(100));
+            return receivedAmount.compareTo(expectedVnpAmount) == 0;
         } catch (Exception e) { 
             return false; 
         } 

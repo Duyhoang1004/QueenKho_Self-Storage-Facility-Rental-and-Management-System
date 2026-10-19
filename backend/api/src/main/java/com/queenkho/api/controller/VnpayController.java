@@ -27,4 +27,11 @@ public class VnpayController {
     }
     @GetMapping("/ipn") public Map<String, String> ipn(@RequestParam Map<String, String> params) { return service.receiveIpn(params); }
     @GetMapping("/status/{txnRef}") public Map<String, Object> status(@PathVariable String txnRef) { return service.status(txnRef); }
+
+    @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
+    public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
+    }
 }
+

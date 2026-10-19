@@ -43,6 +43,14 @@ public class CustomerContractResponse {
     private Boolean isInspectionCompleted;    // 🌟 Đã hoàn tất biên bản nghiệm thu (CHECK_OUT)
     private BigDecimal depositRefund;         // 🌟 Tiền cọc hoàn lại sau khấu trừ
     private BigDecimal earlyRentRefund;       // 🌟 Tiền thuê các tháng còn lại được hoàn khi trả sớm (PR-O2)
-    private Integer usedMonths;               // 🌟 Số tháng đã sử dụng (làm tròn lên)
+    private Integer usedMonths;
     private BigDecimal breakFee;              // 🌟 Phí phạt trả kho sớm (1 tháng giá gốc)
+
+    // === CÁC TRƯỜNG BỔ SUNG CHO UC-28 (LƯỢT 2) ===
+    private BigDecimal maxLateFeeAmount;              // Mức trần phạt trễ hạn (50% cọc)
+    private Boolean isMaxLateFeeReached;             // Đã chạm trần phạt 50% hay chưa
+    private Boolean isPinLocked;                     // Trạng thái khóa PIN ở màn hình hiển thị
+    private Boolean canLiquidate;                    // Đủ điều kiện thanh lý (quá hạn >= 30 ngày)
+    private Integer liquidationDaysThreshold;        // Ngưỡng số ngày thanh lý (mặc định 30)
+    private BigDecimal estimatedOverdueDepositRefund; // Cọc ước tính sau trừ phí trễ (= max(0, cọc - phí trễ))
 }

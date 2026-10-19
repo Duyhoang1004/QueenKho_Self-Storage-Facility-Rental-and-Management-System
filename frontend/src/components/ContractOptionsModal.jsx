@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
 
@@ -13,23 +13,7 @@ function formatDate(val) {
   return `${d}/${m}/${y}`
 }
 
-export default function ContractOptionsModal({ isOpen, onClose, contract, onSuccess }) {
-  const [activeTab, setActiveTab] = useState('renew') // 'renew' | 'checkout'
-
-  // Tab 1 state: Gia hạn
-  const [selectedMonths, setSelectedMonths] = useState(6)
-  const [renewLoading, setRenewLoading] = useState(false)
-  const [renewError, setRenewError] = useState('')
-
-  // Tab 2 state: Trả kho (PR-O1, PR-O2, PR-O3, PR-O14)
-  const [checkoutDate, setCheckoutDate] = useState('')
-  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER') // 'BANK_TRANSFER' | 'CASH'
-  const [bankName, setBankName] = useState('')
-  const [bankAccountNumber, setBankAccountNumber] = useState('')
-  const [bankAccountName, setBankAccountName] = useState('')
-  const [checkoutLoading, setCheckoutLoading] = useState(false)
-  const [checkoutError, setCheckoutError] = useState('')
-
+export default function ContractOptionsModal({ isOpen, onClose, contract, onSuccess, initialTab = 'renew' }) {
   const isTerminationPending = contract?.status === 'TERMINATION_PENDING'
   const today = new Date().toISOString().split('T')[0]
   const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
@@ -49,36 +33,54 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     ? (prevScheduledDate || addDays(contract?.endDate, 5))
     : addDays(contract?.endDate, 5)
 
-  useEffect(() => {
-    if (contract) {
-      if (contract.status === 'TERMINATION_PENDING') {
-        setActiveTab('checkout')
-      }
-      const initialDate = contract.scheduledCheckoutDate || (isOverdue ? today : contract.endDate)
-      if (initialDate && initialDate >= today) {
-        setCheckoutDate(initialDate)
-      } else {
-        setCheckoutDate(today)
-      }
+  const getInitialCheckoutDate = () => {
+    const initialDate = contract?.scheduledCheckoutDate || (isOverdue ? today : contract?.endDate)
+    return initialDate && initialDate >= today ? initialDate : today
+  }
 
-      // Tự động gợi ý tên chủ tài khoản từ thông tin khách hàng nếu chưa điền
-      if (!bankAccountName) {
-        let fallbackName = contract.customerFullName || ''
-        if (!fallbackName) {
-          try {
-            const userStr = localStorage.getItem('user')
-            if (userStr) {
-              const u = JSON.parse(userStr)
-              fallbackName = u.fullName || u.name || ''
-            }
-          } catch (e) {}
+  const getInitialAccountName = () => {
+    let fallbackName = contract?.customerFullName || ''
+    if (!fallbackName) {
+      try {
+        const userStr = localStorage.getItem('user')
+        if (userStr) {
+          const u = JSON.parse(userStr)
+          fallbackName = u.fullName || u.name || ''
         }
-        if (fallbackName) {
-          setBankAccountName(fallbackName.toUpperCase())
-        }
+      } catch {
+        // ignore parsing error
       }
     }
-  }, [contract, isOverdue, today])
+    return fallbackName ? fallbackName.toUpperCase() : ''
+  }
+
+  const isRenewable = ['ACTIVE', 'TERMINATION_PENDING', 'OVERDUE'].includes(contract?.status)
+  const [activeTab, setActiveTab] = useState(isRenewable ? (initialTab || 'renew') : 'checkout')
+  const [checkoutDate, setCheckoutDate] = useState(getInitialCheckoutDate)
+  const [bankAccountName, setBankAccountName] = useState(getInitialAccountName)
+
+  const [prevContractKey, setPrevContractKey] = useState(contract ? `${contract.contractId}_${initialTab}` : '')
+
+  if (contract && `${contract.contractId}_${initialTab}` !== prevContractKey) {
+    setPrevContractKey(`${contract.contractId}_${initialTab}`)
+    setActiveTab(isRenewable ? (initialTab || 'renew') : 'checkout')
+    setCheckoutDate(getInitialCheckoutDate())
+    if (!bankAccountName) {
+      setBankAccountName(getInitialAccountName())
+    }
+  }
+
+  // Tab 1 state: Gia hạn
+  const [selectedMonths, setSelectedMonths] = useState(6)
+  const [renewLoading, setRenewLoading] = useState(false)
+  const [renewError, setRenewError] = useState('')
+
+  // Tab 2 state: Trả kho (PR-O1, PR-O2, PR-O3, PR-O14)
+  const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER') // 'BANK_TRANSFER' | 'CASH'
+  const [bankName, setBankName] = useState('')
+  const [bankAccountNumber, setBankAccountNumber] = useState('')
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
 
   const basePrice = Number(contract?.basePriceMonthly || 0)
   const depositAmount = contract?.depositHeldAmount != null ? formatVND(contract.depositHeldAmount) : '—'
@@ -113,6 +115,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   }
 
   const currentPricing = getPricing(selectedMonths)
+  const lateFee = contract?.status === 'OVERDUE' ? Number(contract?.lateFeeAmount || 0) : 0
+  const totalPayment = currentPricing.total + lateFee
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
   const handleRenewSubmit = async (e) => {
@@ -292,18 +296,20 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
         {/* Strict Segmented Tabs */}
         <div className="px-6 pt-4 pb-2">
           <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('renew')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-title-md text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'renew'
-                  ? 'bg-primary text-white shadow-sm'
-                  : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">autorenew</span>
-              Gia Hạn Thuê
-            </button>
+            {isRenewable && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('renew')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-title-md text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+                  activeTab === 'renew'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'bg-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">autorenew</span>
+                Gia Hạn Thuê
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setActiveTab('checkout')}
@@ -319,140 +325,139 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
           </div>
         </div>
 
-        {/* Tab 1: Gia Hạn Thuê (UC-21) */}
-        {activeTab === 'renew' && (
-          isTerminationPending ? (
-            <div className="px-6 py-10 flex flex-col items-center justify-center text-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-amber-50 border-2 border-amber-200 flex items-center justify-center text-amber-600">
-                <span className="material-symbols-outlined text-[32px]">warning</span>
+        {/* Tab 1: Gia Hạn Thuê (UC-21 & PR-R1/R3/R6) */}
+        {activeTab === 'renew' && isRenewable && (
+          <form onSubmit={handleRenewSubmit} className="px-6 pt-2 pb-5 space-y-4">
+            {renewError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-red-600 text-[18px]">error</span>
+                <span>{renewError}</span>
               </div>
-              <h3 className="font-title-md text-base font-bold text-slate-800">
-                Không thể gia hạn vì HĐ đã vào trạng thái chờ trả kho.
-              </h3>
-              <p className="text-xs text-slate-500 max-w-md leading-relaxed">
-                Hợp đồng này đang trong tiến trình chờ trả kho và kiểm tra khoang. Quý khách có thể chuyển sang phần <strong className="text-slate-700">"Hẹn Ngày Trả Kho"</strong> để dời ngày trả kho sớm hơn nếu cần.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab('checkout')}
-                className="mt-2 px-5 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-white font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <span className="material-symbols-outlined text-[18px]">event_available</span>
-                Chuyển sang Hẹn Ngày Trả Kho
-              </button>
+            )}
+
+            {isTerminationPending && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-[18px]">info</span>
+                <span>Gia hạn sẽ hủy yêu cầu trả kho đang chờ của quý khách.</span>
+              </div>
+            )}
+
+            {/* Chọn gói gia hạn */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-title-md text-xs sm:text-sm text-slate-800 font-semibold">
+                  Chọn gói thời gian gia hạn thêm:
+                </span>
+                <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến 10%</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { m: 1, label: '+1 Tháng', desc: 'Chu kỳ gốc', discount: 0 },
+                  { m: 3, label: '+3 Tháng', desc: 'Không ưu đãi', discount: 0 },
+                  { m: 6, label: '+6 Tháng', desc: 'Giảm 5%', popular: true, discount: 5 },
+                  { m: 12, label: '+12 Tháng', desc: 'Giảm 10%', best: true, discount: 10 },
+                ].map((item) => {
+                  const isSelected = selectedMonths === item.m
+                  return (
+                    <button
+                      key={item.m}
+                      type="button"
+                      onClick={() => setSelectedMonths(item.m)}
+                      className={`relative flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50/80 text-primary border-primary font-bold shadow-sm ring-1 ring-primary'
+                          : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      {item.popular && (
+                        <span className="absolute -top-2.5 px-2 py-0.5 bg-blue-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
+                          PHỔ BIẾN
+                        </span>
+                      )}
+                      {item.best && (
+                        <span className="absolute -top-2.5 px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
+                          TIẾT KIỆM
+                        </span>
+                      )}
+                      <span className="font-title-md text-sm font-semibold">{item.label}</span>
+                      <span className={`text-[11px] mt-0.5 ${item.discount > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>
+                        {item.desc}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleRenewSubmit} className="px-6 pt-2 pb-5 space-y-4">
-              {renewError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
-                  <span className="material-symbols-outlined text-red-600 text-[18px]">error</span>
-                  <span>{renewError}</span>
+
+            {/* Bảng tính chi phí */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs sm:text-sm">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <span className="text-slate-500 flex items-center gap-1.5 text-xs">
+                  <span className="material-symbols-outlined text-[16px] text-primary">event</span>
+                  Hạn mới sau gia hạn:
+                </span>
+                <span className="font-title-md text-slate-800 font-bold font-mono">
+                  {calculateNewEndDate(selectedMonths)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <span>Đơn giá thuê:</span>
+                <span className="text-slate-700">
+                  {formatVND(basePrice)} × {selectedMonths} tháng
+                </span>
+              </div>
+              {currentPricing.discountPercent > 0 && (
+                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
+                  <span>Chiết khấu kỳ hạn dài:</span>
+                  <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
                 </div>
               )}
-
-              {/* Chọn gói gia hạn */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-title-md text-xs sm:text-sm text-slate-800 font-semibold">
-                    Chọn gói thời gian gia hạn thêm:
+              {contract?.status === 'OVERDUE' && lateFee > 0 && (
+                <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-amber-600">warning</span>
+                    Phí trễ hạn ({contract.overdueDays || 0} ngày):
                   </span>
-                  <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến 10%</span>
+                  <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { m: 1, label: '+1 Tháng', desc: 'Chu kỳ gốc', discount: 0 },
-                    { m: 3, label: '+3 Tháng', desc: 'Không ưu đãi', discount: 0 },
-                    { m: 6, label: '+6 Tháng', desc: 'Giảm 5%', popular: true, discount: 5 },
-                    { m: 12, label: '+12 Tháng', desc: 'Giảm 10%', best: true, discount: 10 },
-                  ].map((item) => {
-                    const isSelected = selectedMonths === item.m
-                    return (
-                      <button
-                        key={item.m}
-                        type="button"
-                        onClick={() => setSelectedMonths(item.m)}
-                        className={`relative flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-50/80 text-primary border-primary font-bold shadow-sm ring-1 ring-primary'
-                            : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                        }`}
-                      >
-                        {item.popular && (
-                          <span className="absolute -top-2.5 px-2 py-0.5 bg-blue-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
-                            PHỔ BIẾN
-                          </span>
-                        )}
-                        {item.best && (
-                          <span className="absolute -top-2.5 px-2 py-0.5 bg-emerald-600 text-white rounded-full text-[10px] uppercase font-bold tracking-tight shadow-sm">
-                            TIẾT KIỆM
-                          </span>
-                        )}
-                        <span className="font-title-md text-sm font-semibold">{item.label}</span>
-                        <span className={`text-[11px] mt-0.5 ${item.discount > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>
-                          {item.desc}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Bảng tính chi phí */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5 text-xs sm:text-sm">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <span className="text-slate-500 flex items-center gap-1.5 text-xs">
-                    <span className="material-symbols-outlined text-[16px] text-primary">event</span>
-                    Hạn mới sau gia hạn:
+              )}
+              <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
+                    TỔNG THANH TOÁN
                   </span>
-                  <span className="font-title-md text-slate-800 font-bold font-mono">
-                    {calculateNewEndDate(selectedMonths)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-600">
-                  <span>Đơn giá thuê:</span>
-                  <span className="text-slate-700">
-                    {formatVND(basePrice)} × {selectedMonths} tháng
-                  </span>
-                </div>
-                {currentPricing.discountPercent > 0 && (
-                  <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
-                    <span>Chiết khấu kỳ hạn dài:</span>
-                    <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
-                  </div>
-                )}
-                <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
-                  <div>
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
-                      TỔNG THANH TOÁN
+                  <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
+                  {contract?.status === 'OVERDUE' && (
+                    <span className="text-[11px] text-amber-600 block mt-1 italic">
+                      * Phí trễ được chốt khi tạo liên kết thanh toán, không đổi nếu quá trình thanh toán kéo dài
                     </span>
-                    <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
-                  </div>
-                  <span className="text-lg sm:text-xl font-extrabold text-primary">
-                    {formatVND(currentPricing.total)}
-                  </span>
+                  )}
                 </div>
+                <span className="text-lg sm:text-xl font-extrabold text-primary">
+                  {formatVND(totalPayment)}
+                </span>
               </div>
+            </div>
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={renewLoading}
-                className="w-full py-3 px-6 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-              >
-                {renewLoading ? (
-                  <>
-                    <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
-                    <span>Đang xử lý...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[20px]">credit_card</span>
-                    <span>Thanh Toán & Gia Hạn Ngay</span>
-                  </>
-                )}
-              </button>
-            </form>
-          )
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={renewLoading}
+              className="w-full py-3 px-6 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {renewLoading ? (
+                <>
+                  <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                  <span>Đang xử lý...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">credit_card</span>
+                  <span>Thanh Toán & Gia Hạn Ngay</span>
+                </>
+              )}
+            </button>
+          </form>
         )}
 
         {/* Tab 2: Hẹn Ngày Trả Kho (UC-22) - Chuẩn 100% Stitch */}

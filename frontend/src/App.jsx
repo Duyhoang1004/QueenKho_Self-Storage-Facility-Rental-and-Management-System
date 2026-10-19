@@ -24,6 +24,7 @@ import StorageManagementPage from './pages/manager/StorageManagementPage';
 import CustomerContractsPage from './pages/manager/CustomerContractsPage';
 import ContractDetailPage from './pages/manager/ContractDetailPage';
 import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
+import OverdueContractsPage from './pages/manager/OverdueContractsPage';
 
 // Import Staff Pages (UC-16, UC-17, UC-18)
 import StaffLayout from './layouts/StaffLayout';
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="/manager" element={<ManagerDashboardPage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
+        <Route path="/manager/overdue" element={<OverdueContractsPage />} />
         <Route path="/manager/customers" element={<CustomerContractsPage />} />
         <Route path="/manager/contracts/:id" element={<ContractDetailPage />} />
         <Route path="/manager/tasks" element={<ManagerTaskBoardPage key="tasks" initialTypeFilter="ALL" />} />

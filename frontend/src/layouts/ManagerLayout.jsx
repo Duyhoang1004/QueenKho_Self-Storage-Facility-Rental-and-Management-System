@@ -6,6 +6,7 @@ const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
   { path: '/manager/pending', icon: 'pending_actions', label: 'Đơn chờ gán ô' },
   { path: '/manager/tasks', icon: 'assignment', label: 'Bảng công việc' },
+  { path: '/manager/overdue', icon: 'event_busy', label: 'Hợp đồng quá hạn' },
   { path: '/manager/refunds', icon: 'payments', label: 'Hoàn tiền' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
   { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },

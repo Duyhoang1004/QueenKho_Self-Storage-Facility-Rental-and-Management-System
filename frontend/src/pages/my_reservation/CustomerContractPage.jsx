@@ -81,6 +81,7 @@ export default function CustomerContractPage() {
 
   const [toastMessage, setToastMessage] = useState("");
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false);
+  const [optionsModalTab, setOptionsModalTab] = useState('renew');
 
   const fetchContract = () => {
     setLoading(true);
@@ -299,6 +300,30 @@ export default function CustomerContractPage() {
         </div>
       )}
 
+      {/* Thông báo hợp đồng đã thanh lý do quá hạn kéo dài */}
+      {contract.status === "LIQUIDATED" && (
+        <div className="bg-[#FFF2F2] border-2 border-[#FF4B4B] rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+          <div className="w-12 h-12 rounded-full bg-[#FFDFDF] flex items-center justify-center shrink-0 border-2 border-[#FF4B4B]">
+            <span className="material-symbols-outlined text-[#FF4B4B] text-[28px]">
+              gavel
+            </span>
+          </div>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-base font-black text-[#FF4B4B]">
+                Hợp đồng đã bị thanh lý do quá hạn kéo dài
+              </span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FF4B4B] text-white">
+                ĐÃ THANH LÝ
+              </span>
+            </div>
+            <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
+              Hợp đồng đã bị thanh lý do quá hạn kéo dài; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong>; vui lòng đến cơ sở làm việc với quản lý.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Banner HD */}
       <div className="bg-[#1CB0F6] border-b-4 border-[#1899D6] rounded-2xl p-6 text-white flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="flex flex-col">
@@ -340,20 +365,37 @@ export default function CustomerContractPage() {
                 Hợp đồng đã quá hạn {contract.overdueDays || 1} ngày
               </h3>
               <p className="text-xs text-[#777777] mt-1 leading-relaxed">
-                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 50000)}</strong> (50.000đ/ngày). Tiền cọc hoàn ước tính còn lại: <strong className="text-[#58A700]">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</strong>.
-                {contract.overdueDays >= 5
-                  ? " Mã PIN SmartLock của khoang đã bị tạm khóa do trễ hạn quá 5 ngày."
-                  : ` Lưu ý: Sau 5 ngày trễ hạn (${5 - (contract.overdueDays || 1)} ngày nữa), mã PIN sẽ bị tạm khóa theo quy định.`}
+                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>. Tiền cọc ước tính sau khi trừ phí trễ: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
+                {contract.isPinLocked && (
+                  <span className="text-[#FF4B4B] font-bold block mt-1">
+                    * Mã PIN SmartLock của khoang đã bị khóa.
+                  </span>
+                )}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setIsOptionsModalOpen(true)}
-            className="duo-btn-red px-4 py-2.5 text-xs uppercase tracking-wider shrink-0 flex items-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">event_available</span>
-            <span>Xử lý trả kho ngay</span>
-          </button>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                setOptionsModalTab('renew');
+                setIsOptionsModalOpen(true);
+              }}
+              className="duo-btn-green px-4 py-2.5 text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">autorenew</span>
+              <span>Gia hạn kèm phí trễ</span>
+            </button>
+            <button
+              onClick={() => {
+                setOptionsModalTab('checkout');
+                setIsOptionsModalOpen(true);
+              }}
+              className="duo-btn-red px-4 py-2.5 text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">event_available</span>
+              <span>Hẹn trả kho trong 3 ngày tới</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -590,7 +632,19 @@ export default function CustomerContractPage() {
                     check-in xong.
                   </span>
                 </div>
-              ) : isTerminated || contract.status === "LIQUIDATED" ? (
+              ) : contract.status === "LIQUIDATED" ? (
+                <div className="bg-[#FFF2F2] border-2 border-[#FFDFDF] rounded-2xl p-4 flex items-start gap-3 mt-1 text-left">
+                  <span className="material-symbols-outlined text-[#FF4B4B] text-[22px]">
+                    gavel
+                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs font-bold text-[#4B4B4B]">
+                      Hợp đồng này đã bị thanh lý do quá hạn kéo dài. Hệ thống đang tạm giữ{" "}
+                      <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc. Vui lòng đến cơ sở làm việc với Quản lý.
+                    </span>
+                  </div>
+                </div>
+              ) : isTerminated ? (
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex items-start gap-3 mt-1 text-left">
                   <span className="material-symbols-outlined text-[#58A700] text-[22px]">
                     task_alt
@@ -681,13 +735,17 @@ export default function CustomerContractPage() {
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
                   Đã vô hiệu hoá (Đã trả kho)
                 </span>
-              ) : contract.status === "OVERDUE" && (contract.overdueDays || 0) >= 5 ? (
+              ) : contract.status === "LIQUIDATED" ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã vô hiệu hoá (Đã thanh lý)
+                </span>
+              ) : contract.isPinLocked ? (
                 <div className="flex flex-col items-center gap-1">
                   <span className="text-xl font-mono font-black text-[#FF4B4B] tracking-wider">
-                    BỊ TẠM KHÓA
+                    ĐÃ KHÓA
                   </span>
                   <span className="text-[10px] text-[#FF4B4B] font-bold">
-                    (Quá hạn trên 5 ngày - Vui lòng đến quầy)
+                    (Vui lòng thanh toán gia hạn hoặc liên hệ quản lý)
                   </span>
                 </div>
               ) : contract.accessPinCode ? (
@@ -709,6 +767,10 @@ export default function CustomerContractPage() {
                 Mã thẻ RFID
               </span>
               {isTerminated ? (
+                <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
+                  Đã thu hồi thẻ
+                </span>
+              ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
                   Đã thu hồi thẻ
                 </span>
@@ -744,6 +806,7 @@ export default function CustomerContractPage() {
         onClose={() => setIsOptionsModalOpen(false)}
         contract={contract}
         onSuccess={handleModalSuccess}
+        initialTab={optionsModalTab}
       />
 
       {/* Modal xác nhận Hủy chờ trả kho */}

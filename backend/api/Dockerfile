@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy công cụ Maven và cấu hình
 COPY .mvn/ .mvn
 COPY mvnw pom.xml ./
+RUN chmod +x ./mvnw
 # Tải trước thư viện về để chạy cho lẹ
 RUN ./mvnw dependency:go-offline
 

@@ -201,7 +201,7 @@ export default function CreateReservationPage() {
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
 
   return (
-    <div className="max-w-[1100px] mx-auto px-6 py-8 select-none">
+    <div className="max-w-[1100px] mx-auto px-6 py-8">
       {/* Tiêu đề trang */}
       <div className="mb-6">
         <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">

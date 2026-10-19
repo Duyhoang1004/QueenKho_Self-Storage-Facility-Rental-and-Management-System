@@ -122,7 +122,7 @@ export default function CancelReservationModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
       <div className="bg-white rounded-3xl max-w-[620px] w-full max-h-[92vh] flex flex-col shadow-2xl border-2 border-[#E5E5E5] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="p-6 border-b-2 border-[#F0F0F0] flex items-center justify-between">

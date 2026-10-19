@@ -69,7 +69,7 @@ export default function ContractDetailPage() {
   )
 
   if (error || !contract) return (
-    <div className="p-8 flex flex-col items-center gap-4 min-h-[60vh] justify-center text-center select-none">
+    <div className="p-8 flex flex-col items-center gap-4 min-h-[60vh] justify-center text-center">
       <span className="material-symbols-outlined text-[#FF4B4B] text-[56px]">error</span>
       <p className="text-sm font-black text-[#FF4B4B]">{error || 'Không tìm thấy hợp đồng.'}</p>
       <button
@@ -88,7 +88,7 @@ export default function ContractDetailPage() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto select-none">
+    <div className="p-8 max-w-5xl mx-auto">
       {/* Breadcrumb + Back */}
       <div className="flex items-center gap-2 mb-6">
         <button

@@ -82,7 +82,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white lg:grid lg:grid-cols-[1.05fr_0.95fr] select-none">
+    <main className="min-h-screen bg-white lg:grid lg:grid-cols-[1.05fr_0.95fr]">
       {/* Duolingo Brand Showcase Hero (Left Panel) */}
       <section className="relative hidden min-h-screen flex-col justify-between bg-[#58CC02] border-r-4 border-[#58A700] px-12 py-12 text-white lg:flex xl:px-20">
         {/* Top brand */}

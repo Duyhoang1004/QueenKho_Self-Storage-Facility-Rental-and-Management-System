@@ -70,7 +70,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
       <div className="duo-card bg-white w-full max-w-[620px] shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
         
         {/* Modal Header */}

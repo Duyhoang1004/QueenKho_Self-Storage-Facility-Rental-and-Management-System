@@ -11,7 +11,7 @@ export function TaskConfirmDialog({ open, icon, title, message, confirmLabel, to
   if (!open) return null
   const t = TONES[tone] || TONES.green
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
       <div className="duo-card bg-white w-full max-w-[440px] shadow-2xl p-6 flex flex-col gap-5">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-2xl border-b-2 text-white flex items-center justify-center shrink-0 ${t.icon}`}>

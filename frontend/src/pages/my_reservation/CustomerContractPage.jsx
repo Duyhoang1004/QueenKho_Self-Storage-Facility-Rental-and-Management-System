@@ -236,7 +236,7 @@ export default function CustomerContractPage() {
   const totalPaidAll = depositAmount + rentPaid;
 
   return (
-    <div className="max-w-[1000px] w-full mx-auto px-8 py-8 flex flex-col gap-6 select-none">
+    <div className="max-w-[1000px] w-full mx-auto px-8 py-8 flex flex-col gap-6">
       {toastMessage && (
         <div className="bg-[#D7FFB8] border-2 border-[#58CC02] rounded-2xl p-4 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2 font-bold text-[#58A700]">

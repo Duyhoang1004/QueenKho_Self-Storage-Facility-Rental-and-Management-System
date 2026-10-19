@@ -135,7 +135,7 @@ export default function PendingReservationsPage() {
   }
 
   return (
-    <div className="max-w-[1200px] mx-auto px-8 py-8 select-none">
+    <div className="max-w-[1200px] mx-auto px-8 py-8">
       <div className="flex flex-col gap-6">
 
         {/* Toast notification */}

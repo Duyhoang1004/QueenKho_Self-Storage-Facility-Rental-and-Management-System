@@ -38,7 +38,7 @@ export default function ContactReportModal({ isOpen, task, onClose, onSuccess })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
       <div className="bg-white rounded-3xl border-2 border-b-4 border-[#E5E5E5] shadow-xl w-full max-w-md mx-4 p-6 flex flex-col gap-5">
 
         {/* Header */}

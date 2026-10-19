@@ -569,6 +569,9 @@ export default function StaffTaskDetailPage() {
     const amount = effectiveRefundAmount > 0 ? effectiveRefundAmount : undefined;
     completeRefundTask(task.id, userId, {
       refundAmount: amount,
+      paymentMethod: parsedRefund?.isCash ? 'CASH' : 'BANK_TRANSFER',
+      bankTransactionCode: refundNotes.trim(),
+      cashReceiptConfirmed: parsedRefund?.isCash ? true : undefined,
       evidenceImageUrl: evidenceImageUrl.trim(),
       notes: refundNotes.trim()
     })
@@ -639,7 +642,7 @@ export default function StaffTaskDetailPage() {
   const isCheckOut = task.taskType === 'CHECK_OUT';
 
   return (
-    <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
+    <div className="max-w-[1240px] mx-auto px-8 py-8">
       {/* Header breadcrumb */}
       <Link
         to={isManager ? (task.taskType === 'REFUND' || location.pathname.startsWith('/manager/refunds') ? "/manager/refunds" : "/manager/tasks") : "/staff"}

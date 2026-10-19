@@ -1197,6 +1197,9 @@ public class StaffTaskService {
         // PR-O15: Bắt buộc bằng chứng hoàn tiền (chấp nhận cả khi upload ảnh chứng từ trên trang chi tiết)
         boolean hasEvidenceImg = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank();
         String ftCode = request.getBankTransactionCode() != null ? request.getBankTransactionCode().trim() : "";
+        if (ftCode.isEmpty() && !extraNote.isEmpty()) {
+            ftCode = extraNote;
+        }
 
         if ("CASH".equals(method)) {
             if (!Boolean.TRUE.equals(request.getCashReceiptConfirmed()) && !hasEvidenceImg && extraNote.isEmpty()) {

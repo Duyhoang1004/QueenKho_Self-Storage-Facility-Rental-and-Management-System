@@ -33,6 +33,7 @@ import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
 // Import Admin Pages (UC-03, UC-08, UC-31)
 import AdminLayout from './layouts/AdminLayout';
 import AdminComingSoonPage from './pages/admin/AdminComingSoonPage';
+import AdminRolesPage from './pages/admin/AdminRolesPage';
 
 // Import BOM Pages (UC-04, UC-05, UC-07, UC-29)
 import BomLayout from './layouts/BomLayout';
@@ -89,7 +90,7 @@ export default function App() {
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<AdminComingSoonPage title="Tổng quan" uc="Dashboard Admin" icon="space_dashboard" />} />
         <Route path="/admin/users" element={<AdminComingSoonPage title="Người dùng" uc="UC-08" icon="manage_accounts" />} />
-        <Route path="/admin/roles" element={<AdminComingSoonPage title="Vai trò & phân quyền" uc="UC-03" icon="admin_panel_settings" />} />
+        <Route path="/admin/roles" element={<AdminRolesPage />} />
         <Route path="/admin/logs" element={<AdminComingSoonPage title="Nhật ký hoạt động" uc="UC-31" icon="history" />} />
       </Route>
 

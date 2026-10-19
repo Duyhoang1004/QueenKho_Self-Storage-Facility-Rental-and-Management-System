@@ -11,6 +11,9 @@
      - Quản lý (1 / cơ sở)   : fm<cơ sở>@gmail.com           vd fmtanbinh@gmail.com
      - Nhân viên (3 / cơ sở) : staff<cơ sở><1..3>@gmail.com  vd stafftanbinh1@gmail.com
      <cơ sở> = tanbinh | binhthanh | thuduc | govap | caugiay | quan7
+     - BOM                   : bom@queenkho.com
+     - Quản trị (2)          : admin@queenkho.com, admin2@queenkho.com
+     - system@queenkho.local : tài khoản của job tự động, KHÔNG đăng nhập được
    ============================================================ */
 
 USE master;
@@ -426,6 +429,19 @@ CROSS JOIN (VALUES (1), (2), (3)) AS n(no);
 INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
 VALUES (N'Business Operations Manager', 'bom@queenkho.com', @pw, '0908889999',
        (SELECT id FROM roles WHERE name = 'BOM'), NULL, 'ACTIVE');
+
+-- UC-03: 2 Quản trị viên (admin2 để test PR-A7 "luôn còn ≥ 1 Admin ACTIVE")
+INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
+SELECT v.full_name, v.email, @pw, v.phone,
+       (SELECT id FROM roles WHERE name = 'ADMIN'), NULL, 'ACTIVE'
+FROM (VALUES (N'Quản trị viên',   'admin@queenkho.com',  '0903000001'),
+             (N'Quản trị viên 2', 'admin2@queenkho.com', '0903000002')) AS v(full_name, email, phone);
+
+-- PR-A8: tài khoản "system" = người thao tác của các job tự động trong activity_logs.
+-- DISABLED + hash không phải BCrypt → passwordEncoder.matches() luôn false → không đăng nhập được.
+INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
+VALUES (N'Hệ thống', 'system@queenkho.local', 'NO_LOGIN', '0000000000',
+        (SELECT id FROM roles WHERE name = 'ADMIN'), NULL, 'DISABLED');
 GO
 
 /* ---------- Kiểm tra ---------- */

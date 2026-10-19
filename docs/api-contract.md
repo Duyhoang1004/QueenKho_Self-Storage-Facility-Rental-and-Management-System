@@ -415,3 +415,36 @@
 # 409 TASK_ALREADY_COMPLETED  : da check-in roi (bam 2 lan)
 # 409 CONTRACT_STATUS_INVALID : hop dong khong o PENDING_CHECK_IN
 # 409 PIN_TAKEN / RFID_TAKEN  : ma da duoc cap cho hop dong khac
+
+
+# ==============================================================================
+# UC-03: QUAN TRI VAI TRO & PHAN QUYEN (Admin Roles)
+# ==============================================================================
+# Endpoint 1: GET /api/v1/admin/roles                                (danh sach 5 role + so nguoi dung)
+# Endpoint 2: PUT /api/v1/admin/roles/{id}?actorUserId={adminId}    (sua mo ta role)
+# ==============================================================================
+#
+# Quy tac (PR-A1):
+#   - 5 role co dinh: khong tao / xoa / doi ten, chi sua description
+#   - userCount: moi trang thai; activeCount: chi ACTIVE; khong tinh tai khoan system@queenkho.local
+#   - actorUserId phai la ADMIN dang ACTIVE (tam nhan qua query - no PR-90)
+#   - description: trim, bat buoc, toi da 255 ky tu
+#   - Mo ta khong doi -> 200, khong ghi log
+#   - Doi mo ta -> ghi activity_logs: "[ROLE_UPDATE] Sua mo ta vai tro X: "cu" → "moi"", target_entity = 'roles'
+#
+# --- REQUEST (Endpoint 2) ---
+# { "description": "Nhân viên tại cơ sở" }
+#
+# --- RESPONSE THANH CONG ---
+# Endpoint 1 - HTTP 200 OK: mang 5 phan tu, sap xep theo id
+# [
+#   { "id": 1, "name": "CUSTOMER", "description": "Khách hàng thuê kho", "userCount": 5, "activeCount": 5 },
+#   { "id": 2, "name": "STAFF", "description": "Nhân viên tại cơ sở", "userCount": 18, "activeCount": 18 },
+#   ...
+# ]
+# Endpoint 2 - HTTP 200 OK: 1 object role da cap nhat (cung format phan tu o tren)
+#
+# --- RESPONSE LOI ---  { "error": "CODE", "message": "..." }
+# 400 INVALID_INPUT   : thieu actorUserId / mo ta rong / qua 255 ky tu
+# 403 FORBIDDEN_ROLE  : nguoi thao tac khong ton tai / khong phai ADMIN / khong ACTIVE
+# 404 ROLE_NOT_FOUND  : khong tim thay role

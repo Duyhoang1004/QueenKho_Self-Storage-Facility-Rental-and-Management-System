@@ -38,9 +38,10 @@ export default function StaffTaskBoardPage() {
     const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT')
       && task.status === 'IN_PROGRESS'
       && task.staffId === user.userId;
+    const isOverdue = task.status === 'OVERDUE' || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) < new Date());
     return (
       <div className="flex flex-wrap items-center gap-2">
-        {task.taskType === 'CHECK_IN' && ['OVERDUE', 'IN_PROGRESS', 'OPEN'].includes(task.status) && (
+        {task.taskType === 'CHECK_IN' && isOverdue && (
           <button
             type="button"
             onClick={() => setReportTask(task)}

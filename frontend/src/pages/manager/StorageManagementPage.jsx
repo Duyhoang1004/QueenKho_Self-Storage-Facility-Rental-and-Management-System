@@ -1,6 +1,6 @@
 export default function StorageManagementPage() {
   return (
-    <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
+    <div className="max-w-[1240px] mx-auto px-8 py-8">
       <div className="flex flex-col w-full gap-6">
 
         {/* Top Section: Header & Live Metrics */}

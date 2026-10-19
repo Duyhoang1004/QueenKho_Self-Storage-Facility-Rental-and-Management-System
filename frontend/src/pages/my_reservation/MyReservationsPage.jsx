@@ -257,7 +257,7 @@ export default function MyReservationsPage() {
   }, [reservations, filter]);
 
   return (
-    <div className="max-w-[1240px] w-full mx-auto px-6 py-6 flex flex-col gap-6 select-none">
+    <div className="max-w-[1240px] w-full mx-auto px-6 py-6 flex flex-col gap-6">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
         <Link to="/" className="hover:text-[#4B4B4B] transition-colors">

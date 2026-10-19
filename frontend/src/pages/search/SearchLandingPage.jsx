@@ -60,7 +60,7 @@ export default function SearchLandingPage() {
   }
 
   return (
-    <div className="flex flex-col w-full pb-20 bg-white select-none">
+    <div className="flex flex-col w-full pb-20 bg-white">
       <div className="max-w-[1040px] w-full mx-auto px-6 pt-8 flex flex-col gap-8">
 
         {/* BREADCRUMB */}

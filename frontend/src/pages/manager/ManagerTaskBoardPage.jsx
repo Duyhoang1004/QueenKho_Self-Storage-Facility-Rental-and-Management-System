@@ -149,7 +149,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   }
 
   return (
-    <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
+    <div className="max-w-[1240px] mx-auto px-8 py-8">
       {isRefundMode ? (
         <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5]">
           <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">

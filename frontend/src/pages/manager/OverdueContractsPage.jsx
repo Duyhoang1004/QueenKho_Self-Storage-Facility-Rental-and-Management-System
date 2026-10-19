@@ -184,7 +184,7 @@ export default function OverdueContractsPage() {
   )
 
   return (
-    <div className="p-8 max-w-7xl mx-auto select-none">
+    <div className="p-8 max-w-7xl mx-auto">
       {/* Toast thông báo */}
       {successToast && (
         <div className="fixed top-6 right-6 z-50 bg-[#D7FFB8] border-2 border-[#58CC02] text-[#58A700] px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2 font-bold text-sm animate-in fade-in slide-in-from-top-4 duration-300">

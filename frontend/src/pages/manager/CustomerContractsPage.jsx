@@ -61,7 +61,7 @@ export default function CustomerContractsPage() {
   }
 
   return (
-    <div className="max-w-[1240px] mx-auto px-8 py-8 select-none">
+    <div className="max-w-[1240px] mx-auto px-8 py-8">
       {/* Header */}
       <div className="pb-4 mb-6 border-b-2 border-[#E5E5E5]">
         <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Khách Hàng & Hợp Đồng</h1>

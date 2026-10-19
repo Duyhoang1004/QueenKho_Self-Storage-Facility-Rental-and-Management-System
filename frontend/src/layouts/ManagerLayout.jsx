@@ -35,7 +35,7 @@ export default function ManagerLayout() {
   const headerLeft = collapsed ? 'left-[72px]' : 'left-[260px]';
 
   return (
-    <div className="bg-[#FFFFFF] text-[#4B4B4B] min-h-screen select-none font-sans">
+    <div className="bg-[#FFFFFF] text-[#4B4B4B] min-h-screen font-sans">
 
       {/* Sidebar */}
       <aside className={`fixed left-0 top-0 h-screen bg-white z-50 flex flex-col justify-between border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>

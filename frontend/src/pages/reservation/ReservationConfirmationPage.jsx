@@ -82,7 +82,7 @@ export default function ReservationConfirmationPage() {
   }, [searchParams])
 
   return (
-    <div className="p-6 max-w-3xl mx-auto select-none">
+    <div className="p-6 max-w-3xl mx-auto">
 
       {/* Step indicator */}
       <div className="flex items-center justify-between mb-6">

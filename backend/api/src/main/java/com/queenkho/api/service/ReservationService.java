@@ -5,7 +5,11 @@ import com.queenkho.api.dto.CancelReservationRequest;
 import com.queenkho.api.dto.CreateReservationRequest;
 import com.queenkho.api.dto.CreateReservationResponse;
 import com.queenkho.api.dto.MyReservationResponse;
+import com.queenkho.api.dto.NoShowEligibility;
+import com.queenkho.api.dto.NoShowRequest;
 import com.queenkho.api.dto.PendingReservationResponse;
+import com.queenkho.api.exception.StaffTaskException;
+import org.springframework.http.HttpStatus;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.Reservation;
 import com.queenkho.api.entity.StaffTask;
@@ -225,6 +229,7 @@ public class ReservationService {
                         }
                     } catch (Exception ignored) {
                     }
+                    NoShowEligibility eligibility = evaluateNoShowEligibility(r);
                     return new PendingReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
@@ -236,7 +241,10 @@ public class ReservationService {
                             r.getDepositAmount(),
                             r.getCreatedAt(),
                             staffNote,
-                            staffName);
+                            staffName,
+                            eligibility.eligible(),
+                            eligibility.failedCount(),
+                            eligibility.reason());
                 })
                 .toList();
     }
@@ -599,18 +607,188 @@ public class ReservationService {
                 reservation.getId());
     }
 
+    // PR-X3: Đánh giá điều kiện đủ để xử lý No-Show
+    public NoShowEligibility evaluateNoShowEligibility(Reservation reservation) {
+        if (reservation == null) {
+            return new NoShowEligibility(false, 0, "Đơn đặt chỗ không tồn tại");
+        }
+
+        // 1. Mốc giờ hẹn: expectedAppointmentTime, nếu null lấy 09:00 ngày startDate, fallback createdAt
+        LocalDateTime appointmentTime = reservation.getExpectedAppointmentTime();
+        if (appointmentTime == null && reservation.getStartDate() != null) {
+            appointmentTime = reservation.getStartDate().atTime(9, 0);
+        }
+        if (appointmentTime == null) {
+            appointmentTime = reservation.getCreatedAt();
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        boolean past48Hours = appointmentTime != null && !now.isBefore(appointmentTime.plusHours(48));
+
+        // 2. Tìm tất cả các lần liên hệ thất bại từ activity_logs
+        List<LocalDateTime> failedAttemptTimes = new java.util.ArrayList<>();
+        try {
+            List<Map<String, Object>> logs = jdbcTemplate.queryForList(
+                    "SELECT created_at, action FROM activity_logs " +
+                            "WHERE (target_entity = 'reservations' AND target_id = ?) " +
+                            "   OR (target_entity = 'facility_tasks' AND target_id IN (" +
+                            "       SELECT CAST(ft.id AS NVARCHAR(50)) FROM facility_tasks ft " +
+                            "       JOIN rental_contracts rc ON ft.contract_id = rc.id " +
+                            "       WHERE rc.reservation_id = ?" +
+                            "   )) " +
+                            "ORDER BY created_at ASC",
+                    String.valueOf(reservation.getId()), reservation.getId());
+
+            for (Map<String, Object> log : logs) {
+                String action = log.get("action") != null ? log.get("action").toString() : "";
+                String actionLower = action.toLowerCase();
+                boolean isFailed = action.contains("[CONTACT][FAILED]")
+                        || actionLower.contains("không nghe máy")
+                        || actionLower.contains("khong nghe may")
+                        || actionLower.contains("thuê bao")
+                        || actionLower.contains("thue bao")
+                        || actionLower.contains("từ chối")
+                        || actionLower.contains("tu choi")
+                        || actionLower.contains("thất bại")
+                        || actionLower.contains("that bai");
+
+                if (isFailed) {
+                    Object ca = log.get("created_at");
+                    if (ca instanceof java.sql.Timestamp ts) {
+                        failedAttemptTimes.add(ts.toLocalDateTime());
+                    } else if (ca instanceof LocalDateTime ldt) {
+                        failedAttemptTimes.add(ldt);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        // Khử trùng lặp các lần gọi ghi nhận đồng thời (trong vòng 10 phút tính là 1 lần liên hệ)
+        List<LocalDateTime> distinctAttempts = new java.util.ArrayList<>();
+        for (LocalDateTime t : failedAttemptTimes) {
+            if (distinctAttempts.isEmpty() || java.time.Duration.between(distinctAttempts.get(distinctAttempts.size() - 1), t).abs().toMinutes() >= 10) {
+                distinctAttempts.add(t);
+            }
+        }
+
+        int failedCount = distinctAttempts.size();
+        boolean enoughAttempts = failedCount >= 2;
+
+        boolean has24hGap = false;
+        if (enoughAttempts) {
+            // Danh sách đã được sắp xếp tăng dần theo thời gian, kiểm tra khoảng cách giữa lần đầu và lần cuối
+            long hoursGap = java.time.Duration.between(distinctAttempts.get(0), distinctAttempts.get(distinctAttempts.size() - 1)).abs().toHours();
+            if (hoursGap >= 24) {
+                has24hGap = true;
+            }
+        }
+
+        boolean eligible = past48Hours && enoughAttempts && has24hGap;
+        String reason = null;
+        if (!past48Hours) {
+            String deadlineStr = appointmentTime != null
+                    ? appointmentTime.plusHours(48).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
+                    : "48h";
+            reason = "Chưa đủ 48 giờ kể từ giờ hẹn nhận kho (cần đến " + deadlineStr + ").";
+        } else if (!enoughAttempts) {
+            reason = "Cần tối thiểu 2 lần liên hệ thất bại với khách hàng (hiện có " + failedCount + "/2 lần).";
+        } else if (!has24hGap) {
+            reason = "Hai lần liên hệ thất bại phải cách nhau tối thiểu 24 giờ để đảm bảo khách có đủ thời gian phản hồi.";
+        }
+
+        return new NoShowEligibility(eligible, failedCount, reason);
+    }
+
     // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show Handling)
-    // neu nhan vien goi nhung khach k nghe may
     @Transactional
     public void handleNoShow(Integer reservationId, com.queenkho.api.dto.NoShowRequest request) {
         // tim don dat cho trong db
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
 
-        // 2no show handling voi don da dat coc, gan kho
+        // no show handling voi don da dat coc, gan kho
         if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"UNIT_ASSIGNED".equals(reservation.getStatus())) {
             throw new IllegalStateException(
                     "Trạng thái đơn không hợp lệ để xử lý No-Show (chỉ áp dụng cho đơn đã cọc hoặc đã gán kho)");
+        }
+
+        // PR-X3: Ràng buộc điều kiện No-Show (48h quá hạn & 2 lần liên hệ cách nhau 24h)
+        NoShowEligibility eligibility = evaluateNoShowEligibility(reservation);
+        if (!eligibility.eligible()) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "NO_SHOW_NOT_ALLOWED_YET", eligibility.reason());
+        }
+
+        // PR-X1: Tính toán tài chính No-Show
+        BigDecimal totalPaid = BigDecimal.ZERO;
+        try {
+            totalPaid = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE (reservation_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE reservation_id = ?)) " +
+                            "  AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                    BigDecimal.class,
+                    reservationId, reservationId);
+        } catch (Exception ignored) {
+        }
+        BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
+        if (totalPaid == null || totalPaid.compareTo(BigDecimal.ZERO) == 0) {
+            totalPaid = reservation.getTotalDepositPaid() != null && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                    ? reservation.getTotalDepositPaid()
+                    : deposit;
+        }
+
+        boolean waivePenalty = Boolean.TRUE.equals(request != null ? request.getWaivePenalty() : null);
+        BigDecimal refundAmount;
+        BigDecimal penaltyAmount;
+
+        if (waivePenalty) {
+            // FM phê duyệt miễn phạt: hoàn 100% toàn bộ tiền khách đã thanh toán (cọc + tiền thuê)
+            penaltyAmount = BigDecimal.ZERO;
+            refundAmount = totalPaid;
+        } else {
+            // Mặc định No-Show: Tịch thu 100% tiền cọc; hoàn lại tiền thuê trả trước (nếu có)
+            penaltyAmount = deposit;
+            refundAmount = totalPaid.compareTo(deposit) > 0 ? totalPaid.subtract(deposit) : BigDecimal.ZERO;
+        }
+
+        // Sinh task REFUND trong facility_tasks nếu có tiền cần hoàn cho khách
+        if (refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+            LocalDateTime deadline = calculateRefundDeadline(LocalDateTime.now());
+            Integer managerId = null;
+            try {
+                managerId = jdbcTemplate.queryForObject(
+                        "SELECT TOP 1 u.id FROM users u " +
+                                "JOIN roles r ON u.role_id = r.id " +
+                                "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE'",
+                        Integer.class,
+                        reservation.getFacility().getId());
+            } catch (Exception ignored) {
+            }
+
+            String waiveNote = waivePenalty
+                    ? " (FM phê duyệt miễn phạt No-Show: hoàn 100% cọc + tiền thuê. Lý do: " + (request.getWaiveReason() != null ? request.getWaiveReason() : "Miễn phạt") + ")"
+                    : " (Tịch thu 100% cọc: " + penaltyAmount.toPlainString() + " VND, hoàn tiền thuê trả trước)";
+
+            String refundTaskNote = String.format(
+                    "[HOÀN TIỀN NO-SHOW] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Lý do No-Show: %s",
+                    reservation.getReservationCode(),
+                    reservation.getCustomer().getFullName(),
+                    reservation.getCustomer().getPhone(),
+                    refundAmount.toPlainString(),
+                    waiveNote,
+                    request != null && request.getReason() != null ? request.getReason() : "Khách không đến nhận kho");
+
+            if (refundTaskNote.length() > 1000) {
+                refundTaskNote = refundTaskNote.substring(0, 997) + "...";
+            }
+
+            jdbcTemplate.update(
+                    "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
+                            "VALUES (?, 'REFUND', NULL, ?, 'OPEN', ?, ?, SYSDATETIME())",
+                    reservation.getFacility().getId(),
+                    managerId,
+                    deadline,
+                    refundTaskNote);
         }
 
         reservation.setStatus("CANCELLED");
@@ -634,17 +812,20 @@ public class ReservationService {
             staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
         });
 
-        // ghi log vao activitylog
+        // ghi log vao activity_logs
         String staffNote = (request != null && request.getNote() != null && !request.getNote().isBlank())
                 ? " - Ghi chú: " + request.getNote()
                 : "";
         String reasonStr = (request != null && request.getReason() != null) ? request.getReason()
                 : "Khách không đến nhận kho";
 
+        String penaltyLogStr = waivePenalty
+                ? "FM phê duyệt miễn phạt (Hoàn 100% tiền đã đóng: " + refundAmount.toPlainString() + "đ)"
+                : "Tịch thu cọc: " + penaltyAmount.toPlainString() + "đ" + (refundAmount.compareTo(BigDecimal.ZERO) > 0 ? ", hoàn tiền thuê trả trước: " + refundAmount.toPlainString() + "đ" : "");
+
         String logAction = "[NO-SHOW] Hủy đơn " + reservation.getReservationCode()
                 + ". Lý do: " + reasonStr + staffNote
-                + ". Tịch thu cọc: " + (reservation.getDepositAmount() != null ? reservation.getDepositAmount() : "0")
-                + "đ";
+                + ". " + penaltyLogStr;
 
         if (freedUnitId != null) {
             logAction += ". Đã giải phóng ô kho " + freedUnitId + " về AVAILABLE";

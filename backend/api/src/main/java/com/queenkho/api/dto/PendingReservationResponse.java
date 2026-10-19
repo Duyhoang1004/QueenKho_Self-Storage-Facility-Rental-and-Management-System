@@ -24,10 +24,13 @@ public class PendingReservationResponse {
     private LocalDateTime createdAt;
     private String staffNote;
     private String staffName;
+    private Boolean noShowEligible;
+    private Integer failedContactCount;
+    private String noShowIneligibleReason;
 
     public PendingReservationResponse(Integer id, String reservationCode, String customerName,
                                       String customerPhone, String unitTypeName, LocalDate startDate,
                                       Integer durationMonths, BigDecimal depositAmount, LocalDateTime createdAt) {
-        this(id, reservationCode, customerName, customerPhone, unitTypeName, startDate, durationMonths, depositAmount, createdAt, null, null);
+        this(id, reservationCode, customerName, customerPhone, unitTypeName, startDate, durationMonths, depositAmount, createdAt, null, null, null, null, null);
     }
 }

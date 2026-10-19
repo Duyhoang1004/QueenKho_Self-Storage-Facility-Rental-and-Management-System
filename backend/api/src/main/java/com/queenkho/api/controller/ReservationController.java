@@ -112,6 +112,8 @@ public class ReservationController {
         try {
             reservationService.handleNoShow(reservationId, request);
             return ResponseEntity.ok(Map.of("message", "Đã xử lý No-Show, hủy đơn và giải phóng ô kho thành công"));
+        } catch (com.queenkho.api.exception.StaffTaskException e) {
+            return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_ACTION", "message", e.getMessage()));
         } catch (Exception e) {

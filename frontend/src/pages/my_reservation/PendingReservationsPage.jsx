@@ -378,20 +378,49 @@ export default function PendingReservationsPage() {
                         </td>
                         <td className="py-4 px-5 font-black text-[#FF4B4B]">{formatVND(r.depositAmount)}</td>
                         <td className="py-4 px-5">
-                          {r.staffNote ? (
-                            <div className="flex flex-col gap-1 p-2.5 rounded-xl bg-[#FFF0E6] border-2 border-[#FF9600] text-[11px] font-bold text-[#D06B00]">
-                              <div className="flex items-center gap-1 text-[10px] uppercase font-black text-[#E58800]">
-                                <span className="material-symbols-outlined text-[14px]">support_agent</span>
-                                <span>{r.staffName ? `NV ${r.staffName}` : 'Nhân viên'}</span>
+                          <div className="flex flex-col gap-1.5">
+                            {r.staffNote ? (
+                              <div className="flex flex-col gap-1 p-2.5 rounded-xl bg-[#FFF0E6] border-2 border-[#FF9600] text-[11px] font-bold text-[#D06B00]">
+                                <div className="flex items-center gap-1 text-[10px] uppercase font-black text-[#E58800]">
+                                  <span className="material-symbols-outlined text-[14px]">support_agent</span>
+                                  <span>{r.staffName ? `NV ${r.staffName}` : 'Nhân viên'}</span>
+                                </div>
+                                <p className="leading-snug text-[#4B4B4B]">{r.staffNote}</p>
                               </div>
-                              <p className="leading-snug text-[#4B4B4B]">{r.staffNote}</p>
+                            ) : (
+                              <div className="flex items-center gap-1 text-[#AFAFAF] text-[11px] italic">
+                                <span className="material-symbols-outlined text-[14px]">pending</span>
+                                <span>Chưa có báo cáo liên hệ</span>
+                              </div>
+                            )}
+
+                            {/* PR-X3: Đếm số lần liên hệ thất bại và chỉ báo đủ điều kiện */}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                                (r.failedContactCount || 0) >= 2
+                                  ? 'bg-[#EBFBF0] text-[#188838] border-[#A3E5B5]'
+                                  : 'bg-[#FFF8E6] text-[#B26B00] border-[#FFD591]'
+                              }`}>
+                                <span className="material-symbols-outlined text-[12px]">phone_missed</span>
+                                Liên hệ: {r.failedContactCount || 0}/2 lần
+                              </span>
+
+                              {r.noShowEligible ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#EBFBF0] text-[#188838] border border-[#A3E5B5]">
+                                  <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                                  Đủ ĐK No-Show
+                                </span>
+                              ) : (
+                                <span
+                                  title={r.noShowIneligibleReason || 'Chưa đủ điều kiện No-Show theo PR-X3'}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#FFF0E6] text-[#E05300] border border-[#FFBB96] cursor-help"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                  Chưa đủ ĐK (PR-X3)
+                                </span>
+                              )}
                             </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-[#AFAFAF] text-[11px] italic">
-                              <span className="material-symbols-outlined text-[14px]">pending</span>
-                              <span>Chưa có báo cáo liên hệ</span>
-                            </div>
-                          )}
+                          </div>
                         </td>
                         <td className="py-4 px-5 text-right whitespace-nowrap">
                           <div className="flex gap-2 justify-end">
@@ -406,9 +435,16 @@ export default function PendingReservationsPage() {
                             <button
                               type="button"
                               onClick={() => setNoShowTarget(r)}
-                              className="px-3 py-2 text-xs font-black uppercase tracking-wider rounded-2xl border-2 border-b-4 border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e] transition-colors"
+                              className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-2xl border-2 border-b-4 transition-colors ${
+                                r.noShowEligible === false
+                                  ? 'border-[#FFA39E] bg-[#FFF1F0] text-[#CF1322] hover:bg-[#FFCCC7]'
+                                  : 'border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e]'
+                              }`}
+                              title={r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý No-Show'}
                             >
-                              <span className="material-symbols-outlined text-[14px] mr-1 align-middle">person_off</span>
+                              <span className="material-symbols-outlined text-[14px] mr-1 align-middle">
+                                {r.noShowEligible === false ? 'info' : 'person_off'}
+                              </span>
                               No-Show
                             </button>
                           </div>

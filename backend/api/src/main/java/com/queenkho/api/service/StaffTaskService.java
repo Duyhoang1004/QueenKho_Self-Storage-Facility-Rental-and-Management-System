@@ -1151,8 +1151,13 @@ public class StaffTaskService {
         }
         staffTaskRepository.save(task);
 
-        // Ghi nhật ký hoạt động
-        String logAction = "Nhân viên " + staff.getFullName() + " báo cáo liên hệ task #" + task.getId()
+        // PR-X3, PR-A10: Ghi nhận mã [CONTACT][FAILED] hoặc [CONTACT][SUCCESS] để đếm số lần liên hệ No-Show
+        String outcomeLower = outcome.toLowerCase();
+        boolean isFailed = outcomeLower.contains("không nghe máy") || outcomeLower.contains("thuê bao")
+                || outcomeLower.contains("từ chối") || outcomeLower.contains("hủy") || outcomeLower.contains("thất bại");
+        String contactTag = isFailed ? "[CONTACT][FAILED]" : "[CONTACT][SUCCESS]";
+
+        String logAction = contactTag + " Nhân viên " + staff.getFullName() + " báo cáo liên hệ task #" + task.getId()
                 + ": " + formattedNote;
         if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
 
@@ -1162,6 +1167,15 @@ public class StaffTaskService {
                 staff.getId(),
                 logAction,
                 task.getId());
+
+        if (task.getContract() != null && task.getContract().getReservation() != null) {
+            jdbcTemplate.update(
+                    "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                            "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
+                    staff.getId(),
+                    logAction,
+                    task.getContract().getReservation().getId());
+        }
 
         return toResponse(task);
     }

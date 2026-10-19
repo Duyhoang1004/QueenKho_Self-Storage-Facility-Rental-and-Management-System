@@ -60,6 +60,7 @@ export default function CreateReservationPage() {
   const [voucherCode, setVoucherCode] = useState('')
   const [voucherApplied, setVoucherApplied] = useState({ code: 'NEWKHO', discount: VOUCHER_DISCOUNT })
   const [voucherError, setVoucherError] = useState('')
+  const [hasDebtError, setHasDebtError] = useState(false)
 
   const handleApplyVoucher = () => {
     const code = voucherCode.trim().toUpperCase()
@@ -162,6 +163,7 @@ export default function CreateReservationPage() {
     try {
       setLoading(true)
       setError('')
+      setHasDebtError(false)
       const response = await createReservation({
         customerId: sessionUser.userId ?? 1,
         facilityId: unit.facilityId,
@@ -184,7 +186,14 @@ export default function CreateReservationPage() {
       window.location.assign(paymentData.payUrl)
 
     } catch (err) {
-      setError(err.response?.data?.detail || err.response?.data?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
+      const errData = err.response?.data
+      if (err.response?.status === 409 && errData?.error === 'CUSTOMER_HAS_DEBT') {
+        setHasDebtError(true)
+        setError(errData.message || 'Quý khách đang có hợp đồng quá hạn chưa thanh toán hoặc chưa bàn giao kho.')
+      } else {
+        setHasDebtError(false)
+        setError(errData?.detail || errData?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
+      }
       setLoading(false)
     }
   }
@@ -430,9 +439,22 @@ export default function CreateReservationPage() {
           </div>
 
           {error && (
-            <div className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] text-[#FF4B4B] text-xs font-black p-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px]">error</span>
-              <span>{error}</span>
+            <div className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] text-[#FF4B4B] text-xs font-black p-4 flex flex-col gap-2.5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{error}</span>
+              </div>
+              {hasDebtError && (
+                <div className="pt-2 border-t border-red-200 flex justify-end">
+                  <Link
+                    to="/kho-cua-toi"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4B4B] hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors"
+                  >
+                    <span>Xem hợp đồng của tôi</span>
+                    <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                  </Link>
+                </div>
+              )}
             </div>
           )}
         </div>

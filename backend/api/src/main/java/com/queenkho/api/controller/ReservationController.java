@@ -23,6 +23,8 @@ public class ReservationController {
         try {
             CreateReservationResponse response = reservationService.createReservation(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (com.queenkho.api.exception.ReservationException e) {
+            return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (RuntimeException e) {
@@ -130,5 +132,10 @@ public class ReservationController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "INTERNAL_ERROR", "message", e.getMessage()));
         }
+    }
+
+    @ExceptionHandler(com.queenkho.api.exception.ReservationException.class)
+    public ResponseEntity<?> handleReservationException(com.queenkho.api.exception.ReservationException e) {
+        return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
     }
 }

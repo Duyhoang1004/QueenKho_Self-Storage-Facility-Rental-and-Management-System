@@ -24,12 +24,6 @@ export async function getContractDetail(contractId) {
   return res.data
 }
 
-// UC-21: Khách hàng gia hạn hợp đồng thuê
-export async function renewContract(contractId, data) {
-  const res = await api.post(`/contracts/${contractId}/renew`, data)
-  return res.data
-}
-
 // UC-22: Khách hàng yêu cầu trả kho & hẹn ngày checkout
 export async function requestCheckout(contractId, data) {
   const res = await api.post(`/contracts/${contractId}/request-checkout`, data)
@@ -41,3 +35,34 @@ export async function cancelCheckout(contractId) {
   const res = await api.post(`/contracts/${contractId}/cancel-checkout`)
   return res.data
 }
+
+// UC-28: Lấy danh sách hợp đồng quá hạn / đã thanh lý cho FM
+export async function getOverdueContracts(managerId, status = 'OVERDUE') {
+  const res = await api.get('/contracts/manager/overdue', { params: { managerId, status } })
+  return res.data
+}
+
+// UC-28: Ghi chú liên hệ khách hàng quá hạn
+export async function addOverdueContact(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/overdue-contacts`, data)
+  return res.data
+}
+
+// UC-28: Lấy lịch sử liên hệ khách hàng quá hạn
+export async function getOverdueContactLogs(contractId, managerId) {
+  const res = await api.get(`/contracts/${contractId}/overdue-contacts`, { params: { managerId } })
+  return res.data
+}
+
+// UC-28: FM thanh lý hợp đồng quá hạn
+export async function liquidateContract(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/liquidate`, data)
+  return res.data
+}
+
+// UC-28: FM yêu cầu hoàn phần cọc còn lại sau thanh lý
+export async function refundRemainingDeposit(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/refund-remaining-deposit`, data)
+  return res.data
+}
+

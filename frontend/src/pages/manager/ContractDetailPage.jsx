@@ -138,18 +138,20 @@ export default function ContractDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
               <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
                 <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Phí phạt lũy kế</span>
-                <span className="text-sm font-black text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 50000)}</span>
-                <span className="text-[10px] text-[#AFAFAF] block">(50.000đ / ngày)</span>
+                <span className="text-sm font-black text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</span>
+                {contract.isMaxLateFeeReached && (
+                  <span className="text-[10px] text-[#FF4B4B] font-bold block">(Đã chạm trần cọc)</span>
+                )}
               </div>
               <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
                 <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Tiền hoàn cọc ước tính</span>
-                <span className="text-sm font-black text-[#58CC02]">{formatVND(contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0)}</span>
+                <span className="text-sm font-black text-[#58CC02]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : (contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0))}</span>
                 <span className="text-[10px] text-[#AFAFAF] block">(Cọc - Phí phạt)</span>
               </div>
               <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
                 <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Chế tài SmartLock</span>
-                <span className={`text-xs font-black block mt-0.5 ${(contract.overdueDays || 0) >= 5 ? 'text-[#FF4B4B]' : 'text-[#FF9600]'}`}>
-                  {(contract.overdueDays || 0) >= 5 ? 'Đã khóa PIN SmartLock' : `Cảnh báo (còn ${5 - (contract.overdueDays || 1)} ngày)`}
+                <span className={`text-xs font-black block mt-0.5 ${contract.isPinLocked ? 'text-[#FF4B4B]' : 'text-[#FF9600]'}`}>
+                  {contract.isPinLocked ? 'Đã khóa PIN SmartLock' : 'Đang mở mã PIN'}
                 </span>
               </div>
             </div>
@@ -215,13 +217,17 @@ export default function ContractDetailPage() {
               <p className="text-[11px] font-black uppercase tracking-wider text-[#1CB0F6] mb-1">
                 MÃ PIN SMARTLOCK
               </p>
-              {contract.accessPinCode ? (
+              {contract.isPinLocked ? (
+                <p className="text-xl font-mono font-black text-[#FF4B4B] py-1">
+                  ĐÃ KHÓA
+                </p>
+              ) : contract.accessPinCode ? (
                 <p className="text-3xl font-mono font-black tracking-[0.4em] text-[#1CB0F6]">
                   {contract.accessPinCode}
                 </p>
               ) : (
                 <p className="text-xs font-bold text-[#AFAFAF] py-1">
-                  Chưa cấp phát
+                  {contract.status === 'LIQUIDATED' ? 'Đã vô hiệu hóa (Đã thanh lý)' : 'Chưa cấp phát'}
                 </p>
               )}
             </div>

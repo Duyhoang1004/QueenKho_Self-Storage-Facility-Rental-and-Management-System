@@ -36,13 +36,14 @@
 | **Facility Manager** | UC-13 Đơn chờ gán ô · UC-14 Gán ô + sinh hợp đồng · EX-03 No-Show / dời lịch · UC-16/17 Xem bảng việc, gỡ người nhận · Xem khách hàng & hợp đồng | ✅ |
 | | UC-06 Ô kho · UC-30 Dashboard | 🟡 giao diện giả |
 | | UC-25 Hoàn cọc · UC-28 Hợp đồng quá hạn · UC-32 Nhân viên | ⬜ |
-| **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu | ⬜ (chưa có portal) |
-| **Admin** | UC-03 Vai trò · UC-08 Tài khoản · UC-31 Nhật ký | ⬜ (chưa có portal) |
+| **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu | ⬜ (portal `/bom` đã có) |
+| **Admin** | UC-03 Vai trò | ✅ |
+| | UC-08 Tài khoản · UC-31 Nhật ký · Dashboard `/admin` | ⬜ (portal `/admin` đã có — #56) |
 | **Chung** | UC-01 Đăng nhập | ✅ |
 | **Hệ thống** | EX-01 Hết hạn giữ chỗ · EX-02 Thanh toán lỗi · job task quá hạn | ✅ |
 
 ### 0.2 Việc tiên quyết
-- **Portal riêng `/bom` và `/admin`** (hiện BOM đăng nhập bị đá ra, Admin dùng chung `/manager`) → phải có trước khi làm UC-03/04/05/07/08/29/31.
+- ~~**Portal riêng `/bom` và `/admin`**~~ ✅ Đã có: `/admin` (#56, `getHomePath(role)` điều hướng theo role), `/bom` (UC-04).
 - **Entity `RentalPolicy`** (PR-Q13) → cần cho UC-07, UC-15 (PR-15), UC-28.
 - **Task `REFUND` cho FM** (PR-O12, đã có từ #55 / #57) → dùng chung cho UC-15, EX-03, UC-23, UC-28; các UC sau chỉ cần sinh task `REFUND`.
 
@@ -430,10 +431,13 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-M14 | Bỏ hết số giả. Số thật của cơ sở: ô theo trạng thái + tỉ lệ lấp đầy; đơn chờ gán ô; đơn No-Show; task hôm nay (mở / đang làm / quá hạn); hợp đồng sắp hết hạn (≤ 7 ngày); hợp đồng `OVERDUE`; yêu cầu hoàn tiền chờ xử lý; doanh thu tháng (PR-M7). Mỗi ô số dẫn tới màn tương ứng. Bỏ "ca trực", "mục tiêu doanh thu". |
 
-### UC-03 Vai trò & phân quyền (Admin) ⬜
+### UC-03 Vai trò & phân quyền (Admin) ✅
+**Đang chạy** (`AdminRoleService`, `AdminRolesPage.jsx`)
 | Mã | Rule |
 |---|---|
 | PR-A1 | **Không tạo role mới**, không xoá, không đổi tên 5 role gốc. Màn hình: danh sách role + số người dùng + ma trận quyền (mục 1.3, chỉ đọc) + sửa **mô tả**. Không làm bảng permission riêng. |
+| BR-90 | Mỗi role hiện **tổng số người dùng** (mọi trạng thái) và **số đang `ACTIVE`**, không tính tài khoản `system`. Ma trận quyền là hằng số FE (`utils/roles.js`), chép từ mục 1.3. |
+| BR-91 | Sửa mô tả: người thao tác phải là `ADMIN` `ACTIVE` (403 `FORBIDDEN_ROLE`); mô tả trim, bắt buộc, ≤ 255 ký tự (400 `INVALID_INPUT`); không đổi → 200, không log; đổi → log `[ROLE_UPDATE]` (`target_entity = 'roles'`). |
 
 ### UC-08 Tài khoản người dùng (Admin) ⬜
 | Mã | Rule |
@@ -551,6 +555,7 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 409 | `NO_SHOW_NOT_ALLOWED_YET` | Chưa đủ 2 lần liên hệ cách 24h / chưa qua 48h | PR-X3 |
 | 400 | `REFUND_EVIDENCE_REQUIRED` | Hoàn tất hoàn tiền thiếu mã FT / xác nhận ký nhận | PR-O15 |
 | 409 | `CUSTOMER_HAS_ACTIVE_RENTAL` | Khoá / vô hiệu khách đang thuê | PR-A5 |
+| 404 | `ROLE_NOT_FOUND` | Sửa mô tả role không tồn tại | BR-91 |
 | 409 | `TASK_*`, `PIN_TAKEN`, `RFID_TAKEN`, `CHECKLIST_INCOMPLETE`… | Đã có trong `StaffTaskException` (UC-17/18) | BR-64 → 74 |
 
 ---

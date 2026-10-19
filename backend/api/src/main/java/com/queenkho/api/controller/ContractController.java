@@ -28,6 +28,15 @@ public class ContractController {
     @Autowired
     private com.queenkho.api.service.StaffTaskService staffTaskService;
 
+    @Autowired
+    private com.queenkho.api.service.LateFeeService lateFeeService;
+
+    @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
+    public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
+    }
+
     private CustomerContractResponse toDto(RentalContract rc) {
         var su = rc.getStorageUnit();
         var ut = su.getUnitType();
@@ -73,33 +82,34 @@ public class ContractController {
             }
         }
 
-        // Tính số ngày trễ hạn và phí phạt trễ hạn nếu hợp đồng quá hạn
-        long overdueDays = 0;
-        BigDecimal lateFeePerDay = BigDecimal.valueOf(50000); // 50.000 VNĐ / ngày theo rental_policy
-        try {
-            Integer polFee = jdbcTemplate.queryForObject(
-                    "SELECT late_fee_per_day FROM rental_policy WHERE facility_id = ?",
-                    Integer.class,
-                    su.getFacility().getId());
-            if (polFee != null) {
-                lateFeePerDay = BigDecimal.valueOf(polFee);
-            }
-        } catch (Exception ignored) {
-        }
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
 
-        LocalDate today = LocalDate.now();
-        if (("OVERDUE".equalsIgnoreCase(rc.getStatus()) || "ACTIVE".equalsIgnoreCase(rc.getStatus()))
-                && rc.getEndDate() != null && today.isAfter(rc.getEndDate())) {
-            overdueDays = java.time.temporal.ChronoUnit.DAYS.between(rc.getEndDate(), today);
-        }
-        BigDecimal lateFeeAmount = lateFeePerDay.multiply(BigDecimal.valueOf(overdueDays));
-        BigDecimal maxLateFee = deposit.multiply(new BigDecimal("0.5"));
-        if (lateFeeAmount.compareTo(maxLateFee) > 0) {
-            lateFeeAmount = maxLateFee;
-        }
-        BigDecimal estimatedDepositRefund = deposit.subtract(lateFeeAmount);
-        if (estimatedDepositRefund.compareTo(BigDecimal.ZERO) < 0) {
-            estimatedDepositRefund = BigDecimal.ZERO;
+        // Tính phí trễ hạn và các chỉ số quá hạn cho UC-28 (LƯỢT 2)
+        // Phí trễ và isPinLocked chỉ tính khi status = OVERDUE; các trạng thái khác trả 0 / false
+        long overdueDays = 0L;
+        BigDecimal lateFeeAmount = BigDecimal.ZERO;
+        BigDecimal maxLateFeeAmount = BigDecimal.ZERO;
+        Boolean isMaxLateFeeReached = false;
+        Boolean isPinLocked = false;
+        Boolean canLiquidate = false;
+        Integer liquidationDaysThreshold = 30;
+        BigDecimal estimatedOverdueDepositRefund = deposit;
+        BigDecimal estimatedDepositRefund = deposit;
+
+        if ("OVERDUE".equalsIgnoreCase(rc.getStatus())) {
+            var lateCalc = lateFeeService.calculateLateFee(rc);
+            overdueDays = lateCalc.getOverdueDays();
+            lateFeeAmount = lateCalc.getLateFeeAmount();
+            maxLateFeeAmount = lateCalc.getMaxLateFeeAmount();
+            isMaxLateFeeReached = lateCalc.isMaxLateFeeReached();
+            isPinLocked = lateCalc.isPinLocked();
+            canLiquidate = lateCalc.isCanLiquidate();
+            liquidationDaysThreshold = lateCalc.getLiquidationDaysThreshold();
+            estimatedOverdueDepositRefund = lateCalc.getEstimatedDepositRefund();
+            estimatedDepositRefund = deposit.subtract(lateFeeAmount);
+            if (estimatedDepositRefund.compareTo(BigDecimal.ZERO) < 0) {
+                estimatedDepositRefund = BigDecimal.ZERO;
+            }
         }
 
         // Tính tổng tiền hoàn thực tế (từ giao dịch REFUND hoặc task REFUND của hợp đồng)
@@ -132,11 +142,6 @@ public class ContractController {
                     if (m.find()) {
                         String val = m.group(1).replace(",", "").replace(".", "");
                         damageFee = new BigDecimal(val);
-                    }
-                    java.util.regex.Matcher mLate = java.util.regex.Pattern.compile("(?:Phí trễ|Phi tre|Ph\\? tr\\?|Phí trễ hạn:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
-                    if (mLate.find()) {
-                        String val = mLate.group(1).replace(",", "").replace(".", "");
-                        lateFeeAmount = new BigDecimal(val);
                     }
                 }
             } catch (Exception ignored) {
@@ -214,7 +219,13 @@ public class ContractController {
                 depositRefund,
                 earlyRentRefund,
                 usedMonths,
-                breakFee);
+                breakFee,
+                maxLateFeeAmount,
+                isMaxLateFeeReached,
+                isPinLocked,
+                canLiquidate,
+                liquidationDaysThreshold,
+                estimatedOverdueDepositRefund);
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -258,19 +269,6 @@ public class ContractController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // UC-21: Khách hàng gia hạn hợp đồng thuê
-    @PostMapping("/{id}/renew")
-    public ResponseEntity<?> renewContract(@PathVariable Integer id,
-            @RequestBody com.queenkho.api.dto.RenewContractRequest request) {
-        try {
-            return ResponseEntity.ok(contractService.renewContract(id, request));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
-        }
-    }
 
     // UC-22: Khách hàng yêu cầu trả kho & hẹn ngày checkout
     @PostMapping("/{id}/request-checkout")
@@ -298,4 +296,57 @@ public class ContractController {
                     .body(Map.of("error", "SERVER_ERROR", "message", e.getMessage()));
         }
     }
+
+    // =========================================================================
+    // UC-28: QUẢN LÝ HỢP ĐỒNG QUÁ HẠN (LƯỢT 2)
+    // =========================================================================
+
+    // GET /api/v1/contracts/manager/overdue?managerId=3&status=OVERDUE|LIQUIDATED
+    @GetMapping("/manager/overdue")
+    public ResponseEntity<?> getOverdueContractsForManager(
+            @RequestParam(required = false) Integer managerId,
+            @RequestParam(required = false) Integer userId,
+            @RequestParam(required = false) Integer facilityId,
+            @RequestParam(required = false, defaultValue = "OVERDUE") String status) {
+        Integer effectiveManagerId = managerId != null ? managerId : userId;
+        return ResponseEntity.ok(contractService.getOverdueContractsForManager(effectiveManagerId, facilityId, status));
+    }
+
+    // POST /api/v1/contracts/{id}/liquidate
+    @PostMapping("/{id}/liquidate")
+    public ResponseEntity<?> liquidateContract(
+            @PathVariable Integer id,
+            @RequestBody com.queenkho.api.dto.LiquidateContractRequest request) {
+        return ResponseEntity.ok(contractService.liquidateContract(id, request));
+    }
+
+    // POST /api/v1/contracts/{id}/refund-remaining-deposit
+    @PostMapping("/{id}/refund-remaining-deposit")
+    public ResponseEntity<?> refundRemainingDeposit(
+            @PathVariable Integer id,
+            @RequestBody com.queenkho.api.dto.RefundDepositRequest request) {
+        Integer managerId = request != null ? request.getManagerId() : null;
+        return ResponseEntity.ok(contractService.refundRemainingDeposit(id, managerId));
+    }
+
+    // POST /api/v1/contracts/{id}/overdue-contacts
+    @PostMapping("/{id}/overdue-contacts")
+    public ResponseEntity<?> addOverdueContact(
+            @PathVariable Integer id,
+            @RequestBody com.queenkho.api.dto.CreateOverdueContactRequest request) {
+        contractService.addOverdueContactLog(id, request);
+        return ResponseEntity.ok(Map.of("message", "Đã ghi nhận nhật ký liên hệ thành công"));
+    }
+
+    // GET /api/v1/contracts/{id}/overdue-contacts?managerId=3
+    @GetMapping("/{id}/overdue-contacts")
+    public ResponseEntity<?> getOverdueContactLogs(
+            @PathVariable Integer id,
+            @RequestParam(required = false) Integer managerId,
+            @RequestParam(required = false) Integer userId) {
+        Integer effectiveManagerId = managerId != null ? managerId : userId;
+        return ResponseEntity.ok(contractService.getOverdueContactLogs(id, effectiveManagerId));
+    }
 }
+
+

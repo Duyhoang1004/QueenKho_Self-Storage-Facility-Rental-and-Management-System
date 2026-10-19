@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 @Service
@@ -253,6 +254,24 @@ public class ReservationService {
         // Kiem tra khach hang
         User customer = userRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
+
+        // PR-B3 / PR-Q12: Kiểm tra nợ của khách hàng trước khi cho phép đặt chỗ mới
+        Map<String, Object> debtCheck = jdbcTemplate.queryForMap(
+                "SELECT " +
+                        "  (SELECT COUNT(1) FROM rental_contracts WHERE customer_id = ? AND status = 'OVERDUE') AS overdue_count, " +
+                        "  (SELECT COUNT(1) FROM payment_transactions WHERE (user_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE customer_id = ?)) AND payment_type = 'DAMAGE_FEE' AND status = 'PENDING') AS damage_count",
+                customer.getId(), customer.getId(), customer.getId()
+        );
+        int overdueCount = ((Number) debtCheck.get("overdue_count")).intValue();
+        int damageCount = ((Number) debtCheck.get("damage_count")).intValue();
+
+        if (overdueCount > 0 || damageCount > 0) {
+            throw new com.queenkho.api.exception.ReservationException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "CUSTOMER_HAS_DEBT",
+                    "Quý khách đang có hợp đồng quá hạn hoặc khoản bồi thường thiệt hại (DAMAGE_FEE) chưa thanh toán. Vui lòng thanh toán khoản nợ trước khi đặt chỗ kho mới."
+            );
+        }
 
         if (request.getFacilityId() == null || request.getUnitTypeId() == null) {
             throw new IllegalArgumentException("Vui lòng chọn cơ sở và loại kho");

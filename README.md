@@ -39,15 +39,23 @@ Các chức năng MVP (Minimum Viable Product) đã hoàn thiện đến thời 
     *   Trang chủ (HomePage).
     *   Tìm kiếm và khám phá danh mục kho, xem tình trạng ô trống (UC-09: Search & Landing Page).
     *   Quy trình đặt chỗ kho (UC-10: Booking).
-    *   Quản lý kho của tôi (UC-12: My Reservations).
+    *   Quản lý kho của tôi & Hợp đồng (UC-12: My Reservations).
+    *   **UC-21: Gia hạn hợp đồng thuê:** Gia hạn trực tuyến qua cổng VNPAY với các gói chu kỳ linh hoạt kèm ưu đãi chiết khấu.
+    *   **UC-22: Hẹn ngày trả kho & dời ngày trả kho sớm:** Hẹn lịch bàn giao khoang, chọn phương thức hoàn cọc (chuyển khoản / tiền mặt), tính toán dự kiến tiền hoàn theo thời gian thực.
+    *   **UC-28: Xử lý hợp đồng quá hạn & thanh lý (Phía Khách hàng):** Hiển thị cảnh báo quá hạn, tra cứu công nợ phí trễ hạn lũy kế, gia hạn hợp đồng quá hạn qua VNPAY gộp phí phạt, khóa mã truy cập PIN SmartLock tự động.
 *   **Cổng Thanh Toán:**
     *   Tích hợp thành công VNPAY sandbox.
     *   Trang xác nhận thành công sau khi hoàn tất thanh toán.
-    *   Backend có Webhook (IPN) tự động nhận tín hiệu thanh toán để cập nhật trạng thái `DEPOSIT_PAID` vào Database.
+    *   Backend có Webhook (IPN) tự động nhận tín hiệu thanh toán để cập nhật trạng thái `DEPOSIT_PAID` vào Database, xử lý gia hạn hợp đồng và gộp phí trễ hạn.
 *   **Trang Quản trị Cơ sở (Manager Portal):**
     *   Bảng điều khiển tổng quan (Dashboard) với các thông số realtime.
     *   Quản lý Danh mục Ô kho (Lọc trạng thái, xem ma trận kho).
     *   Duyệt Đơn Đặt Chỗ & Gán Ô Kho (Giao diện bảng danh sách + Modal thao tác gắn mã số khoang thông minh).
+    *   **UC-28: Xử lý hợp đồng quá hạn & thanh lý (Phía Quản lý):** Theo dõi danh sách hợp đồng quá hạn, ghi nhận nhật ký đôn đốc khách hàng (contact logs), thực hiện thanh lý hợp đồng quá hạn kéo dài (khấu trừ phí trễ vào cọc, chuyển ô kho bảo trì, hủy mã truy cập), tạo yêu cầu hoàn trả phần cọc còn lại sau thanh lý.
+
+### Giới hạn đã biết của UC-28:
+1. Nếu hợp đồng đã quá hạn rồi mới hẹn trả kho (UC-22) thì quy trình trả kho hiện tại (UC-23) vẫn tính phí theo bảng ân hạn của UC-22 thay vì phí trễ hạn lũy kế của UC-28; tiền cọc thực hoàn được chốt tại thời điểm FM xác nhận trả kho.
+2. Phí trễ khi gia hạn hợp đồng quá hạn được chốt tại thời điểm tạo liên kết thanh toán VNPAY; nếu khách thanh toán chậm sau đó nhiều ngày, số tiền đã trả không tự động tăng thêm.
 
 ---
 

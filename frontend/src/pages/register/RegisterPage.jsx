@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { register } from '../../services/authService'
 
 function DuoBrandMark() {
@@ -25,6 +25,8 @@ function EyeIcon({ open }) {
 
 export default function RegisterPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectParam = searchParams.get('redirect')
   const [form, setForm] = useState({ fullName: '', phone: '', email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -68,7 +70,7 @@ export default function RegisterPage() {
       })
 
       setSuccess('Đăng ký tài khoản thành công! Đang chuyển đến đăng nhập...')
-      setTimeout(() => navigate('/login'), 1500)
+      setTimeout(() => navigate(redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : '/login'), 1500)
     } catch (requestError) {
       const errorMessage = requestError.response?.data?.message || requestError.response?.data || 'Không thể kết nối đến hệ thống. Vui lòng thử lại.'
       if (typeof errorMessage === 'string' && errorMessage.includes('Email')) {
@@ -255,7 +257,7 @@ export default function RegisterPage() {
                 Bạn đã có tài khoản rồi?
               </p>
               <Link
-                to="/login"
+                to={redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : '/login'}
                 className="duo-btn-white w-full py-3.5 text-xs uppercase tracking-wider block text-center"
               >
                 ĐĂNG NHẬP NGAY

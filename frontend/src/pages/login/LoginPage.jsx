@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { login, saveSession, getHomePath } from '../../services/authService'
 
 function DuoBrandMark() {
@@ -25,6 +25,8 @@ function EyeIcon({ open }) {
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectParam = searchParams.get('redirect')
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -62,7 +64,10 @@ export default function LoginPage() {
       })
 
       saveSession(response, form.email.trim())
-      navigate(getHomePath(response.role), { replace: true })
+      const safeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
+        ? redirectParam
+        : null
+      navigate(safeRedirect || getHomePath(response.role), { replace: true })
     } catch (requestError) {
       const status = requestError.response?.status
       const errorCode = requestError.response?.data?.error
@@ -210,7 +215,7 @@ export default function LoginPage() {
                 Bạn chưa có tài khoản QueenKho?
               </p>
               <Link
-                to="/register"
+                to={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : '/register'}
                 className="duo-btn-white w-full py-3.5 text-xs uppercase tracking-wider block text-center"
               >
                 TẠO TÀI KHOẢN MỚI

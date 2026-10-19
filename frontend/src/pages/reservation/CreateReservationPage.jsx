@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability } from '../../services/facilityService'
@@ -44,9 +44,11 @@ const VOUCHER_MAP = {
 
 export default function CreateReservationPage() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const facilityId = Number(searchParams.get('facilityId'))
   const unitTypeId = Number(searchParams.get('unitTypeId'))
   const hasParams = facilityId > 0 && unitTypeId > 0
+  const loginRedirectTarget = location.pathname + location.search
 
   const [unit, setUnit] = useState(null)
   const [unitLoading, setUnitLoading] = useState(hasParams)
@@ -75,10 +77,18 @@ export default function CreateReservationPage() {
     }
   }
 
-  const sessionUser = JSON.parse(sessionStorage.getItem('user') || '{}')
+  const sessionUser = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('user') || '{}')
+    } catch {
+      return {}
+    }
+  })()
+  const isAuthenticated = Boolean(sessionUser?.userId)
+
   const [customerInfo, setCustomerInfo] = useState({
     fullName: sessionUser.fullName || '',
-    phone: '',
+    phone: sessionUser.phone || '',
     cccd: '',
     email: sessionUser.email || '',
     address: '',
@@ -147,6 +157,10 @@ export default function CreateReservationPage() {
   const totalPayment = netRent + deposit - voucherApplied.discount
 
   const handleSubmit = async () => {
+    if (!isAuthenticated || !sessionUser?.userId) {
+      setError('Bạn cần đăng nhập tài khoản trước khi thực hiện thanh toán đặt chỗ.')
+      return
+    }
     if (!agreed) {
       setError('Bạn cần đồng ý với cam kết lưu trữ trước khi tiếp tục.')
       return
@@ -165,7 +179,7 @@ export default function CreateReservationPage() {
       setError('')
       setHasDebtError(false)
       const response = await createReservation({
-        customerId: sessionUser.userId ?? 1,
+        customerId: sessionUser.userId,
         facilityId: unit.facilityId,
         unitTypeId: unit.unitTypeId,
         startDate,
@@ -211,6 +225,29 @@ export default function CreateReservationPage() {
           Xác nhận thông tin hợp đồng điện tử và tiếp tục thanh toán giữ chỗ.
         </p>
       </div>
+
+      {!isAuthenticated && (
+        <div className="mb-6 duo-card p-5 border-2 border-b-4 border-[#FFE8CC] bg-[#FFF9F0] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] flex items-center justify-center text-white shrink-0 mt-0.5 sm:mt-0">
+              <span className="material-symbols-outlined text-[22px]">account_circle</span>
+            </div>
+            <div>
+              <p className="text-sm font-black text-[#4B4B4B]">Bạn chưa đăng nhập tài khoản</p>
+              <p className="text-xs font-bold text-[#777777] mt-0.5">
+                Vui lòng đăng nhập để đơn đặt cọc được liên kết chính xác với tài khoản và theo dõi tại "Kho của tôi".
+              </p>
+            </div>
+          </div>
+          <Link
+            to={`/login?redirect=${encodeURIComponent(loginRedirectTarget)}`}
+            className="duo-btn-green px-5 py-2.5 text-xs tracking-wider shrink-0 whitespace-nowrap inline-flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px]">login</span>
+            <span>ĐĂNG NHẬP NGAY</span>
+          </Link>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
 
@@ -339,14 +376,27 @@ export default function CreateReservationPage() {
 
           {/* Section 3: Thông tin khách hàng */}
           <div className="duo-card p-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] flex items-center justify-center text-white text-xs font-black">
                   3
                 </div>
                 <span className="text-base font-black text-[#4B4B4B]">Thông tin khách hàng</span>
               </div>
-              <span className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider">* Bắt buộc</span>
+              <div className="flex items-center gap-2">
+                {isAuthenticated ? (
+                  <span className="text-[11px] font-black uppercase text-[#58A700] bg-[#D7FFB8] border border-[#58CC02] px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">verified</span>
+                    Tài khoản đã xác thực
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-black uppercase text-[#E58800] bg-[#FFE8CC] border border-[#FF9600] px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                    Chưa đăng nhập
+                  </span>
+                )}
+                <span className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider">* Bắt buộc</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -546,15 +596,25 @@ export default function CreateReservationPage() {
 
               
 
-              {/* Giant Green CTA Button */}
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="duo-btn-green w-full py-4 text-sm tracking-wider mt-2 disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined text-[18px] mr-1">lock</span>
-                <span>{loading ? 'Đang chuyển sang VNPAY...' : 'THANH TOÁN GIỮ KHO'}</span>
-              </button>
+              {/* Giant CTA Button */}
+              {!isAuthenticated ? (
+                <Link
+                  to={`/login?redirect=${encodeURIComponent(loginRedirectTarget)}`}
+                  className="duo-btn-blue w-full py-4 text-sm tracking-wider mt-2 flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">login</span>
+                  <span>ĐĂNG NHẬP ĐỂ GIỮ KHO</span>
+                </Link>
+              ) : (
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="duo-btn-green w-full py-4 text-sm tracking-wider mt-2 disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                  <span>{loading ? 'Đang chuyển sang VNPAY...' : 'THANH TOÁN GIỮ KHO'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

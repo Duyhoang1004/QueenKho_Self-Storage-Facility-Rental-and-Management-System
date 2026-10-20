@@ -42,4 +42,10 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     // UC-08 / PR-A5: khách còn hợp đồng đang hiệu lực không
     boolean existsByCustomer_IdAndStatusIn(Integer customerId, List<String> statuses);
+
+    // UC-06 / PR-21: Kiểm tra ô kho đã từng có hợp đồng nào chưa (chặn xóa)
+    boolean existsByStorageUnit_Id(String storageUnitId);
+
+    // UC-06: Lấy hợp đồng mới nhất của ô kho để hiển thị thông tin khách thuê / hạn hợp đồng
+    Optional<RentalContract> findFirstByStorageUnit_IdOrderByIdDesc(String storageUnitId);
 }

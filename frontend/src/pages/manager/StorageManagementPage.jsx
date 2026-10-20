@@ -1,244 +1,932 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  getStorageUnits,
+  createStorageUnit,
+  updateStorageUnitStatus,
+  deleteStorageUnit
+} from '../../services/storageUnitService';
+import { getAllUnitTypes } from '../../services/facilityService';
+
 export default function StorageManagementPage() {
+  const navigate = useNavigate();
+
+  // 1. User & Facility session context
+  const currentUser = useMemo(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  }, []);
+
+  const facilityId = currentUser.facilityId || 1;
+  const facilityName = currentUser.facilityName || 'Cơ sở Tân Bình';
+  const actorUserId = currentUser.userId || 1;
+
+  // 2. Data state
+  const [data, setData] = useState({
+    units: [],
+    totalUnits: 0,
+    availableUnits: 0,
+    occupiedUnits: 0,
+    maintenanceUnits: 0,
+    overdueUnits: 0,
+    occupancyRate: 0,
+    floors: []
+  });
+  const [unitTypes, setUnitTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: '' }
+
+  // 3. Filter state
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [floorFilter, setFloorFilter] = useState('ALL');
+  const [unitTypeFilter, setUnitTypeFilter] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 4. Modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({
+    unitTypeId: '',
+    floor: 'Tầng 1',
+    zone: 'A',
+    roomNumber: ''
+  });
+  const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
+
+  const [statusModal, setStatusModal] = useState({
+    show: false,
+    unit: null,
+    targetStatus: 'MAINTENANCE',
+    note: '',
+    isSubmitting: false
+  });
+
+  const [deleteModal, setDeleteModal] = useState({
+    show: false,
+    unit: null,
+    isSubmitting: false
+  });
+
+  // Tự động tắt Toast sau 4 giây
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Load danh mục loại kho
+  useEffect(() => {
+    getAllUnitTypes()
+      .then(res => {
+        setUnitTypes(res || []);
+        if (res && res.length > 0) {
+          setAddForm(prev => ({ ...prev, unitTypeId: res[0].id }));
+        }
+      })
+      .catch(err => console.error('Không thể tải danh sách loại kho:', err));
+  }, []);
+
+  // Fetch danh sách ô kho
+  const fetchStorageUnits = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await getStorageUnits({
+        facilityId,
+        status: statusFilter,
+        floor: floorFilter,
+        unitTypeId: unitTypeFilter || undefined,
+        keyword: searchKeyword || undefined
+      });
+      setData(res);
+    } catch (err) {
+      console.error('Lỗi lấy danh sách ô kho:', err);
+      const msg = err.response?.data?.message || 'Không thể tải danh sách ô kho từ máy chủ.';
+      setErrorMsg(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStorageUnits();
+  }, [facilityId, statusFilter, floorFilter, unitTypeFilter, searchKeyword]);
+
+  // Xử lý tạo ô kho mới (PR-M9)
+  const handleCreateUnit = async (e) => {
+    e.preventDefault();
+    if (!addForm.roomNumber.trim()) {
+      setToast({ type: 'error', message: 'Vui lòng nhập số phòng' });
+      return;
+    }
+
+    setIsSubmittingAdd(true);
+    try {
+      const res = await createStorageUnit(
+        {
+          unitTypeId: Number(addForm.unitTypeId),
+          floor: addForm.floor.trim(),
+          zone: addForm.zone.trim().toUpperCase(),
+          roomNumber: addForm.roomNumber.trim()
+        },
+        facilityId,
+        actorUserId
+      );
+
+      setToast({
+        type: 'success',
+        message: `Đã khởi tạo thành công ô kho ${res.id}!`
+      });
+      setShowAddModal(false);
+      setAddForm(prev => ({ ...prev, roomNumber: '' }));
+      fetchStorageUnits();
+    } catch (err) {
+      console.error('Lỗi tạo ô kho:', err);
+      const msg = err.response?.data?.message || 'Không thể tạo ô kho mới.';
+      setToast({ type: 'error', message: msg });
+    } finally {
+      setIsSubmittingAdd(false);
+    }
+  };
+
+  // Mở modal xác nhận đổi trạng thái
+  const openStatusModal = (unit, targetStatus) => {
+    setStatusModal({
+      show: true,
+      unit,
+      targetStatus,
+      note: '',
+      isSubmitting: false
+    });
+  };
+
+  // Xác nhận đổi trạng thái AVAILABLE ⇄ MAINTENANCE (PR-M10, BR-11)
+  const handleConfirmStatusChange = async () => {
+    if (!statusModal.unit) return;
+    setStatusModal(prev => ({ ...prev, isSubmitting: true }));
+
+    try {
+      await updateStorageUnitStatus(
+        statusModal.unit.id,
+        statusModal.targetStatus,
+        statusModal.note,
+        actorUserId
+      );
+
+      setToast({
+        type: 'success',
+        message: `Đã chuyển ô kho ${statusModal.unit.id} sang trạng thái ${
+          statusModal.targetStatus === 'AVAILABLE' ? 'Còn trống (Khả dụng)' : 'Bảo trì'
+        } thành công.`
+      });
+      setStatusModal({ show: false, unit: null, targetStatus: 'MAINTENANCE', note: '', isSubmitting: false });
+      fetchStorageUnits();
+    } catch (err) {
+      console.error('Lỗi đổi trạng thái:', err);
+      const msg = err.response?.data?.message || 'Không thể cập nhật trạng thái ô kho.';
+      setToast({ type: 'error', message: msg });
+      setStatusModal(prev => ({ ...prev, isSubmitting: false }));
+    }
+  };
+
+  // Mở modal xóa
+  const openDeleteModal = (unit) => {
+    setDeleteModal({
+      show: true,
+      unit,
+      isSubmitting: false
+    });
+  };
+
+  // Xác nhận xóa ô kho (PR-21)
+  const handleConfirmDelete = async () => {
+    if (!deleteModal.unit) return;
+    setDeleteModal(prev => ({ ...prev, isSubmitting: true }));
+
+    try {
+      await deleteStorageUnit(deleteModal.unit.id, actorUserId);
+      setToast({
+        type: 'success',
+        message: `Đã xóa ô kho ${deleteModal.unit.id} thành công.`
+      });
+      setDeleteModal({ show: false, unit: null, isSubmitting: false });
+      fetchStorageUnits();
+    } catch (err) {
+      console.error('Lỗi xóa ô kho:', err);
+      const msg = err.response?.data?.message || 'Không thể xóa ô kho.';
+      setToast({ type: 'error', message: msg });
+      setDeleteModal(prev => ({ ...prev, isSubmitting: false }));
+    }
+  };
+
+  // Reset bộ lọc
+  const handleResetFilters = () => {
+    setStatusFilter('ALL');
+    setFloorFilter('ALL');
+    setUnitTypeFilter('');
+    setSearchKeyword('');
+  };
+
+  // Dự tính mã ô kho khi gõ form (PR-M9 preview)
+  const calculatedCodePreview = useMemo(() => {
+    const fCode = data.units?.[0]?.facilityCode || 'CS';
+    const z = (addForm.zone || 'A').trim().toUpperCase();
+    let r = (addForm.roomNumber || '101').trim();
+    if (r.match(/^\d+$/) && r.length < 3) {
+      r = r.padStart(3, '0');
+    }
+    return `KV-${fCode}-${z}${r}`;
+  }, [data.units, addForm.zone, addForm.roomNumber]);
+
   return (
-    <div className="max-w-[1240px] mx-auto px-8 py-8">
+    <div className="max-w-[1240px] mx-auto px-6 py-8">
+      {/* Toast Alert Notification (Duolingo Style) */}
+      {toast && (
+        <div
+          className={`fixed top-6 right-6 z-50 px-5 py-3.5 rounded-2xl border-2 shadow-xl flex items-center gap-3 transition-all animate-bounce ${
+            toast.type === 'success'
+              ? 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]'
+              : 'bg-[#FFDFDF] border-[#FF4B4B] text-[#FF4B4B]'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[22px]">
+            {toast.type === 'success' ? 'check_circle' : 'error'}
+          </span>
+          <span className="text-sm font-black">{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            className="hover:opacity-75 transition-opacity ml-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col w-full gap-6">
 
-        {/* Top Section: Header & Live Metrics */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b-2 border-[#E5E5E5]">
+        {/* 1. Header & Live Metrics (Thống nhất chuẩn Duolingo) */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b-2 border-[#E5E5E5]">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#AFAFAF]">
-              <span>Cơ sở Tân Bình</span>
+              <span>QueenKho</span>
               <span>/</span>
-              <span>Mặt bằng</span>
+              <span>{facilityName}</span>
               <span>/</span>
-              <span className="text-[#58CC02]">Danh mục ô kho</span>
+              <span className="text-[#58CC02]">Quản lý ô kho (UC-06)</span>
             </div>
             <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">
               Quản Lý Danh Mục Ô Kho
             </h1>
             <p className="text-xs font-bold text-[#AFAFAF]">
-              Tổng 120 khoang chứa tiêu chuẩn • Cập nhật tự động theo mã khoá SmartLock và hợp đồng
+              Tổng {data.totalUnits} khoang chứa tiêu chuẩn • Cập nhật tự động theo mã khoá SmartLock và hợp đồng
             </p>
           </div>
 
+          {/* Quick KPI Counters */}
           <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            {/* Thẻ Khả dụng */}
             <div className="duo-card px-4 py-2.5 flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700]">
+                <span className="material-symbols-outlined text-[22px]">inventory_2</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Khả dụng</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base font-black text-[#4B4B4B]">{data.availableUnits}</span>
+                  <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
+                    Ô trống
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Thẻ Tỉ lệ lấp đầy */}
+            <div className="duo-card px-4 py-2.5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#DDF4FF] border-2 border-[#1CB0F6] flex items-center justify-center text-[#1CB0F6]">
                 <span className="material-symbols-outlined text-[22px]">door_sliding</span>
               </div>
               <div className="flex flex-col">
                 <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Tỉ lệ lấp đầy</span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-base font-black text-[#4B4B4B]">88.3%</span>
-                  <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">+2.4%</span>
+                  <span className="text-base font-black text-[#4B4B4B]">{data.occupancyRate}%</span>
+                  <span className="duo-badge bg-[#DDF4FF] text-[#1CB0F6] border border-[#84D8FF] text-[10px]">
+                    {data.occupiedUnits}/{data.totalUnits}
+                  </span>
                 </div>
               </div>
             </div>
 
-            <div className="duo-card px-4 py-2.5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] flex items-center justify-center text-[#FF4B4B]">
-                <span className="material-symbols-outlined text-[22px]">warning</span>
+            {/* Thẻ Cần chú ý (Nếu có ô quá hạn hoặc bảo trì) */}
+            {(data.maintenanceUnits > 0 || data.overdueUnits > 0) && (
+              <div className="duo-card px-4 py-2.5 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] flex items-center justify-center text-[#FF4B4B]">
+                  <span className="material-symbols-outlined text-[22px]">warning</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Cần xử lý</span>
+                  <span className="text-base font-black text-[#FF4B4B]">
+                    {data.overdueUnits > 0 && `${data.overdueUnits} Quá hạn`}
+                    {data.overdueUnits > 0 && data.maintenanceUnits > 0 && ' • '}
+                    {data.maintenanceUnits > 0 && `${data.maintenanceUnits} Bảo trì`}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Cần xử lý gấp</span>
-                <span className="text-base font-black text-[#FF4B4B]">1 Quá hạn • 1 Lỗi</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Filter & Action Bar Duolingo Card */}
+        {/* 2. Filter & Action Bar (Duo-Card Style) */}
         <div className="duo-card p-5 flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button className="duo-btn-green px-4 py-2 text-xs" type="button">Tất cả (120)</button>
-              <button className="duo-btn-gray px-4 py-2 text-xs" type="button">Tầng trệt (50)</button>
-              <button className="duo-btn-gray px-4 py-2 text-xs" type="button">Tầng 1 (45)</button>
-              <button className="duo-btn-gray px-4 py-2 text-xs" type="button">Tầng 2 (25)</button>
+            {/* Quick Filter Tabs */}
+            <div className="flex items-center flex-wrap gap-2">
+              {[
+                { id: 'ALL', label: `Tất cả (${data.totalUnits})` },
+                { id: 'AVAILABLE', label: `Còn trống (${data.availableUnits})` },
+                { id: 'OCCUPIED', label: `Đang thuê (${data.occupiedUnits})` },
+                { id: 'MAINTENANCE', label: `Bảo trì (${data.maintenanceUnits})` },
+                ...(data.overdueUnits > 0
+                  ? [{ id: 'OVERDUE', label: `Quá hạn (${data.overdueUnits})` }]
+                  : [])
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.id)}
+                  className={`px-4 py-2 text-xs font-black rounded-2xl transition-all cursor-pointer ${
+                    statusFilter === tab.id
+                      ? 'duo-btn-green'
+                      : 'duo-btn-gray'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
+
+            {/* Action Buttons: Làm mới & Thêm Kho Mới */}
             <div className="flex items-center gap-2.5">
-              <button className="duo-btn-white px-4 py-2.5 text-xs" type="button">
-                <span className="material-symbols-outlined text-[18px] mr-1">download</span>
-                <span>XUẤT EXCEL</span>
+              <button
+                type="button"
+                onClick={fetchStorageUnits}
+                className="duo-btn-white px-4 py-2.5 text-xs"
+              >
+                <span className="material-symbols-outlined text-[18px] mr-1">refresh</span>
+                <span>LÀM MỚI</span>
               </button>
-              <button className="duo-btn-green px-4 py-2.5 text-xs" type="button">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="duo-btn-green px-4 py-2.5 text-xs"
+              >
                 <span className="material-symbols-outlined text-[18px] mr-1">add_box</span>
                 <span>+ THÊM Ô KHO MỚI</span>
               </button>
             </div>
           </div>
 
+          {/* Row 2: Search, Floor, Unit Type filters */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-3 border-t-2 border-[#E5E5E5]">
             <div className="md:col-span-5 relative">
-              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF]">search</span>
-              <input className="duo-input w-full pl-10 text-xs" placeholder="Tìm kiếm mã ô kho, vị trí, khách thuê..." type="text"/>
+              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF]">
+                search
+              </span>
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={e => setSearchKeyword(e.target.value)}
+                placeholder="Tìm kiếm mã ô kho, vị trí, khách thuê..."
+                className="duo-input w-full pl-10 text-xs py-2.5"
+              />
             </div>
+
             <div className="md:col-span-3 relative">
-              <select className="duo-input w-full text-xs cursor-pointer appearance-none">
-                <option value="">Trạng thái: Tất cả</option>
-                <option value="available">Còn trống (14)</option>
-                <option value="reserved">Đã đặt chỗ (3)</option>
-                <option value="occupied">Đang sử dụng (98)</option>
-                <option value="maintenance">Bảo trì (4)</option>
-                <option value="overdue">Quá hạn (1)</option>
+              <select
+                value={floorFilter}
+                onChange={e => setFloorFilter(e.target.value)}
+                className="duo-input w-full text-xs py-2.5 cursor-pointer appearance-none"
+              >
+                <option value="ALL">Vị trí: Tất cả tầng</option>
+                {data.floors?.map(f => (
+                  <option key={f} value={f}>{f}</option>
+                ))}
               </select>
-              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF] pointer-events-none">expand_more</span>
+              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF] pointer-events-none">
+                expand_more
+              </span>
             </div>
+
             <div className="md:col-span-3 relative">
-              <select className="duo-input w-full text-xs cursor-pointer appearance-none">
+              <select
+                value={unitTypeFilter}
+                onChange={e => setUnitTypeFilter(e.target.value)}
+                className="duo-input w-full text-xs py-2.5 cursor-pointer appearance-none"
+              >
                 <option value="">Loại kho: Tất cả phân loại</option>
-                <option value="mini">Kho Mini (2.0 - 3.5 m²)</option>
-                <option value="standard">Kho Tiêu Chuẩn (4.0 - 8.0 m²)</option>
-                <option value="large">Kho Lớn / Gia Đình (&gt; 10 m²)</option>
+                {unitTypes.map(ut => (
+                  <option key={ut.id} value={ut.id}>
+                    {ut.name} ({ut.areaSqm}m²)
+                  </option>
+                ))}
               </select>
-              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF] pointer-events-none">expand_more</span>
+              <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#AFAFAF] pointer-events-none">
+                expand_more
+              </span>
             </div>
+
             <div className="md:col-span-1 flex items-center justify-end">
-              <button className="duo-btn-gray w-full h-full py-2.5 flex items-center justify-center text-xs" title="Đặt lại bộ lọc" type="button">
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="duo-btn-gray w-full h-full py-2.5 flex items-center justify-center text-xs"
+                title="Đặt lại bộ lọc"
+              >
                 <span className="material-symbols-outlined text-[18px]">filter_alt_off</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* High-Density Inventory Table Duolingo Card */}
+        {/* 3. High-Density Inventory Table (Duo-Card Style) */}
         <div className="duo-card overflow-hidden">
-          <div className="overflow-x-auto w-full">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
-              <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
-                <tr>
-                  <th className="px-5 py-3.5">Mã ô kho</th>
-                  <th className="px-5 py-3.5">Phân loại kho</th>
-                  <th className="px-5 py-3.5">Vị trí</th>
-                  <th className="px-5 py-3.5 text-right">Diện tích</th>
-                  <th className="px-5 py-3.5 text-right">Đơn giá tháng</th>
-                  <th className="px-5 py-3.5 text-center">Trạng thái</th>
-                  <th className="px-5 py-3.5">Khách thuê</th>
-                  <th className="px-5 py-3.5">Hạn hợp đồng</th>
-                  <th className="px-5 py-3.5 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="text-xs font-bold text-[#4B4B4B] divide-y-2 divide-[#E5E5E5]">
-                {/* Row 1 */}
-                <tr className="hover:bg-[#FDFDFD] transition-colors">
-                  <td className="px-5 py-3.5 font-black font-mono text-[#1CB0F6]">KV-TB-A101</td>
-                  <td className="px-5 py-3.5">Kho Tiêu Chuẩn</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Tầng 1 • Dãy A</td>
-                  <td className="px-5 py-3.5 text-right font-black">6.0 m²</td>
-                  <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">1.850.000₫</td>
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
-                      Còn trống
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">---</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Sẵn sàng giao</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button className="duo-btn-white px-3 py-1.5 text-[11px]" type="button">Khóa bảo trì</button>
-                  </td>
-                </tr>
-
-                {/* Row 2 */}
-                <tr className="hover:bg-[#FDFDFD] transition-colors">
-                  <td className="px-5 py-3.5 font-black font-mono text-[#1CB0F6]">KV-TB-A102</td>
-                  <td className="px-5 py-3.5">Kho Tiêu Chuẩn</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Tầng 1 • Dãy A</td>
-                  <td className="px-5 py-3.5 text-right font-black">6.0 m²</td>
-                  <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">1.850.000₫</td>
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="duo-badge bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]">
-                      Đã đặt cọc
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 font-black text-[#4B4B4B]">Nguyễn Thu Trang</td>
-                  <td className="px-5 py-3.5 text-[#1CB0F6]">Nhận: 01/11/2026</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button className="duo-btn-blue px-3 py-1.5 text-[11px]" type="button">Xem gán kho</button>
-                  </td>
-                </tr>
-
-                {/* Row 3 */}
-                <tr className="hover:bg-[#FDFDFD] transition-colors">
-                  <td className="px-5 py-3.5 font-black font-mono text-[#1CB0F6]">KV-TB-B205</td>
-                  <td className="px-5 py-3.5">Kho Gia Đình</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Tầng trệt • Khu B</td>
-                  <td className="px-5 py-3.5 text-right font-black">12.0 m²</td>
-                  <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">3.450.000₫</td>
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="duo-badge bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]">
-                      Đang sử dụng
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 font-black text-[#4B4B4B]">Cty Hoàng Phát</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Đến 25/04/2027</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button className="duo-btn-white px-3 py-1.5 text-[11px]" type="button">Xem HĐ</button>
-                  </td>
-                </tr>
-
-                {/* Row 4 */}
-                <tr className="hover:bg-[#FDFDFD] transition-colors">
-                  <td className="px-5 py-3.5 font-black font-mono text-[#1CB0F6]">KV-TB-C105</td>
-                  <td className="px-5 py-3.5">Kho Mini</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Tầng 1 • Khu C</td>
-                  <td className="px-5 py-3.5 text-right font-black">2.5 m²</td>
-                  <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">950.000₫</td>
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="duo-badge bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
-                      Bảo trì
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">---</td>
-                  <td className="px-5 py-3.5 text-[#E58800]">Lỗi cảm biến IoT</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button className="duo-btn-orange px-3 py-1.5 text-[11px]" type="button">Mở lại kho</button>
-                  </td>
-                </tr>
-
-                {/* Row 5 */}
-                <tr className="hover:bg-[#FDFDFD] transition-colors">
-                  <td className="px-5 py-3.5 font-black font-mono text-[#FF4B4B]">KV-TB-B102</td>
-                  <td className="px-5 py-3.5">Kho Lớn</td>
-                  <td className="px-5 py-3.5 text-[#AFAFAF]">Tầng trệt • Khu B</td>
-                  <td className="px-5 py-3.5 text-right font-black">16.0 m²</td>
-                  <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">4.500.000₫</td>
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
-                      Quá hạn
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 font-black text-[#FF4B4B]">Trần Minh Quân</td>
-                  <td className="px-5 py-3.5 text-[#FF4B4B]">Nợ cước 6 ngày</td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button className="duo-btn-red px-3 py-1.5 text-[11px]" type="button">Khóa PIN</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="px-6 py-4 bg-[#FAFAFA] border-t-2 border-[#E5E5E5] flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-xs font-bold text-[#AFAFAF]">
-              Hiển thị <span className="font-black text-[#4B4B4B]">1 - 5</span> trên tổng số <span className="font-black text-[#4B4B4B]">120</span> ô kho
+          {loading ? (
+            <div className="flex flex-col items-center justify-center p-16 gap-3">
+              <span className="material-symbols-outlined text-[36px] text-[#58CC02] animate-spin">
+                progress_activity
+              </span>
+              <span className="text-xs font-black uppercase text-[#AFAFAF]">Đang tải dữ liệu ô kho...</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <button className="duo-btn-gray w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" disabled type="button">
-                ‹
+          ) : errorMsg ? (
+            <div className="flex flex-col items-center justify-center p-16 text-center gap-3">
+              <span className="material-symbols-outlined text-[48px] text-[#FF4B4B]">error</span>
+              <p className="text-sm font-black text-[#FF4B4B]">{errorMsg}</p>
+              <button
+                type="button"
+                onClick={fetchStorageUnits}
+                className="duo-btn-gray px-4 py-2 text-xs"
+              >
+                Thử lại
               </button>
-              <button className="duo-btn-green w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" type="button">1</button>
-              <button className="duo-btn-white w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" type="button">2</button>
-              <button className="duo-btn-white w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" type="button">3</button>
-              <span className="px-1 text-[#AFAFAF] text-xs font-black">...</span>
-              <button className="duo-btn-white w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" type="button">24</button>
-              <button className="duo-btn-white w-8 h-8 rounded-xl text-xs flex items-center justify-center p-0" type="button">
-                ›
-              </button>
+            </div>
+          ) : data.units.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-16 text-center gap-3">
+              <span className="material-symbols-outlined text-[48px] text-[#AFAFAF]">inbox</span>
+              <p className="text-sm font-black text-[#777777]">Không tìm thấy ô kho nào phù hợp</p>
+              <p className="text-xs font-bold text-[#AFAFAF]">Hãy thử thay đổi điều kiện lọc hoặc từ khóa tìm kiếm</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse min-w-[1000px]">
+                <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+                  <tr>
+                    <th className="px-5 py-3.5">Mã ô kho</th>
+                    <th className="px-5 py-3.5">Phân loại kho</th>
+                    <th className="px-5 py-3.5">Vị trí</th>
+                    <th className="px-5 py-3.5 text-right">Diện tích</th>
+                    <th className="px-5 py-3.5 text-right">Đơn giá tháng</th>
+                    <th className="px-5 py-3.5 text-center">Trạng thái</th>
+                    <th className="px-5 py-3.5">Khách thuê</th>
+                    <th className="px-5 py-3.5">Hạn hợp đồng</th>
+                    <th className="px-5 py-3.5 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs font-bold text-[#4B4B4B] divide-y-2 divide-[#E5E5E5]">
+                  {data.units.map((unit) => {
+                    const isAvailable = unit.status === 'AVAILABLE';
+                    const isMaintenance = unit.status === 'MAINTENANCE';
+                    const isOccupied = unit.status === 'OCCUPIED';
+                    const isOverdue = unit.overdue;
+
+                    return (
+                      <tr key={unit.id} className="hover:bg-[#FDFDFD] transition-colors">
+                        {/* Mã ô */}
+                        <td className="px-5 py-3.5 font-black font-mono text-[#1CB0F6]">
+                          {unit.id}
+                        </td>
+
+                        {/* Phân loại kho */}
+                        <td className="px-5 py-3.5">
+                          {unit.unitTypeName}
+                        </td>
+
+                        {/* Vị trí */}
+                        <td className="px-5 py-3.5 text-[#777777]">
+                          {unit.floor} • Khu {unit.zone}
+                        </td>
+
+                        {/* Diện tích */}
+                        <td className="px-5 py-3.5 text-right font-black">
+                          {unit.areaSqm} m²
+                        </td>
+
+                        {/* Đơn giá tháng */}
+                        <td className="px-5 py-3.5 text-right font-black text-[#58CC02]">
+                          {unit.basePriceMonthly?.toLocaleString('vi-VN')}₫
+                        </td>
+
+                        {/* Trạng thái (duo-badge) */}
+                        <td className="px-5 py-3.5 text-center">
+                          {isOverdue ? (
+                            <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
+                              Quá hạn
+                            </span>
+                          ) : isAvailable ? (
+                            <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
+                              Còn trống
+                            </span>
+                          ) : isOccupied ? (
+                            <span className="duo-badge bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]">
+                              Đang sử dụng
+                            </span>
+                          ) : isMaintenance ? (
+                            <span className="duo-badge bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
+                              Bảo trì
+                            </span>
+                          ) : (
+                            <span className="text-[#AFAFAF]">{unit.status}</span>
+                          )}
+                        </td>
+
+                        {/* Khách thuê */}
+                        <td className="px-5 py-3.5">
+                          {unit.currentContract ? (
+                            <div>
+                              <div className="font-black text-[#4B4B4B]">
+                                {unit.currentContract.customerName}
+                              </div>
+                              <div className="text-[10px] text-[#AFAFAF] font-mono">
+                                {unit.currentContract.customerPhone}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[#AFAFAF]">---</span>
+                          )}
+                        </td>
+
+                        {/* Hạn hợp đồng */}
+                        <td className="px-5 py-3.5">
+                          {unit.currentContract ? (
+                            <div>
+                              <span className={isOverdue ? 'text-[#FF4B4B] font-black' : 'text-[#4B4B4B]'}>
+                                Đến {unit.currentContract.endDate || '---'}
+                              </span>
+                              <div className="text-[10px] text-[#AFAFAF]">
+                                HĐ #{unit.currentContract.contractCode}
+                              </div>
+                            </div>
+                          ) : isAvailable ? (
+                            <span className="text-[#58CC02] font-black">Sẵn sàng giao</span>
+                          ) : (
+                            <span className="text-[#AFAFAF]">---</span>
+                          )}
+                        </td>
+
+                        {/* Thao tác */}
+                        <td className="px-5 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Khóa bảo trì */}
+                            {isAvailable && (
+                              <button
+                                type="button"
+                                onClick={() => openStatusModal(unit, 'MAINTENANCE')}
+                                className="duo-btn-white px-3 py-1.5 text-[11px] text-[#E58800] border-[#FF9600]"
+                                title="Khóa ô kho để bảo trì sửa chữa"
+                              >
+                                Khóa bảo trì
+                              </button>
+                            )}
+
+                            {/* Mở lại kho */}
+                            {isMaintenance && (
+                              <button
+                                type="button"
+                                onClick={() => openStatusModal(unit, 'AVAILABLE')}
+                                className="duo-btn-green px-3 py-1.5 text-[11px]"
+                                title="Xác nhận sửa xong, đưa ô vào sử dụng"
+                              >
+                                Mở lại kho
+                              </button>
+                            )}
+
+                            {/* Xem HĐ */}
+                            {isOccupied && unit.currentContract && (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/manager/contracts/${unit.currentContract.contractId}`)}
+                                className="duo-btn-blue px-3 py-1.5 text-[11px]"
+                                title="Xem chi tiết hợp đồng"
+                              >
+                                Xem HĐ
+                              </button>
+                            )}
+
+                            {/* Xóa ô kho */}
+                            {unit.canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => openDeleteModal(unit)}
+                                className="p-1 rounded-xl text-[#AFAFAF] hover:text-[#FF4B4B] hover:bg-[#FFDFDF] transition-colors"
+                                title="Xóa ô kho (Chưa có hợp đồng)"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Footer Metadata Strip */}
+          <div className="px-6 py-4 bg-[#FAFAFA] border-t-2 border-[#E5E5E5] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-bold text-[#AFAFAF]">
+            <div>
+              Hiển thị <span className="font-black text-[#4B4B4B]">{data.units.length}</span> trên tổng số{' '}
+              <span className="font-black text-[#4B4B4B]">{data.totalUnits}</span> ô kho • Tỉ lệ lấp đầy:{' '}
+              <span className="font-black text-[#58CC02]">{data.occupancyRate}%</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[#58A700]">
+              <span className="material-symbols-outlined text-[16px]">verified</span>
+              <span className="text-[11px] font-black uppercase">Đồng bộ trực tiếp từ SQL Server</span>
             </div>
           </div>
         </div>
 
       </div>
+
+      {/* ======================================================== */}
+      {/* MODAL 1: TẠO Ô KHO MỚI (DUOLINGO 3D STYLE) */}
+      {/* ======================================================== */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="duo-card w-full max-w-md p-6 flex flex-col gap-5 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b-2 border-[#E5E5E5] pb-3">
+              <div>
+                <h2 className="text-xl font-black text-[#4B4B4B] uppercase tracking-wide">
+                  Tạo Ô Kho Mới
+                </h2>
+                <p className="text-xs font-bold text-[#AFAFAF]">Đăng ký mã và cấu hình vật lý kho</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-[#AFAFAF] hover:text-[#4B4B4B] p-1"
+              >
+                <span className="material-symbols-outlined text-[22px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUnit} className="flex flex-col gap-4">
+              {/* Dự kiến mã ô kho tự sinh PR-M9 */}
+              <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] rounded-2xl p-3.5 flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#1CB0F6]">
+                    Mã ô tự sinh (PR-M9)
+                  </span>
+                  <span className="text-lg font-black font-mono text-[#1899D6]">
+                    {calculatedCodePreview}
+                  </span>
+                </div>
+                <span className="material-symbols-outlined text-[#1CB0F6] text-[28px]">qr_code_2</span>
+              </div>
+
+              {/* Loại kho */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                  Loại kho <span className="text-[#FF4B4B]">*</span>
+                </label>
+                <select
+                  value={addForm.unitTypeId}
+                  onChange={e => setAddForm({ ...addForm, unitTypeId: e.target.value })}
+                  required
+                  className="duo-input w-full text-xs py-2.5 cursor-pointer"
+                >
+                  {unitTypes.map(ut => (
+                    <option key={ut.id} value={ut.id}>
+                      {ut.name} — {ut.areaSqm}m² ({ut.basePriceMonthly?.toLocaleString('vi-VN')}₫/tháng)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tầng */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                  Vị trí Tầng <span className="text-[#FF4B4B]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={addForm.floor}
+                  onChange={e => setAddForm({ ...addForm, floor: e.target.value })}
+                  placeholder="VD: Tầng trệt, Tầng 1, Tầng 2"
+                  className="duo-input w-full text-xs py-2.5"
+                />
+              </div>
+
+              {/* Khu & Số phòng */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                    Dãy / Khu vực <span className="text-[#FF4B4B]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={2}
+                    value={addForm.zone}
+                    onChange={e => setAddForm({ ...addForm, zone: e.target.value.toUpperCase() })}
+                    placeholder="VD: A, B, C"
+                    className="duo-input w-full text-xs py-2.5 uppercase"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                    Số phòng <span className="text-[#FF4B4B]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={5}
+                    value={addForm.roomNumber}
+                    onChange={e => setAddForm({ ...addForm, roomNumber: e.target.value })}
+                    placeholder="VD: 101, 205"
+                    className="duo-input w-full text-xs py-2.5"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#E5E5E5] mt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  disabled={isSubmittingAdd}
+                  className="duo-btn-gray px-4 py-2.5 text-xs"
+                >
+                  HỦY BỎ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingAdd}
+                  className="duo-btn-green px-6 py-2.5 text-xs flex items-center gap-1.5"
+                >
+                  {isSubmittingAdd ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>ĐANG TẠO...</span>
+                    </>
+                  ) : (
+                    <span>LƯU KHO</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 2: XÁC NHẬN ĐỔI TRẠNG THÁI (BẢO TRÌ ⇄ KHẢ DỤNG) */}
+      {/* ======================================================== */}
+      {statusModal.show && statusModal.unit && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="duo-card w-full max-w-md p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-12 h-12 rounded-2xl border-2 flex items-center justify-center shrink-0 ${
+                  statusModal.targetStatus === 'MAINTENANCE'
+                    ? 'bg-[#FFE8CC] border-[#FF9600] text-[#E58800]'
+                    : 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[28px]">
+                  {statusModal.targetStatus === 'MAINTENANCE' ? 'build' : 'check_circle'}
+                </span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#4B4B4B] uppercase">
+                  {statusModal.targetStatus === 'MAINTENANCE'
+                    ? `Khóa bảo trì ô kho ${statusModal.unit.id}`
+                    : `Mở lại ô kho ${statusModal.unit.id}`}
+                </h3>
+                <p className="text-xs font-bold text-[#AFAFAF]">
+                  {statusModal.targetStatus === 'MAINTENANCE'
+                    ? 'Ô kho sẽ tạm dừng nhận đơn đặt và gán chỗ mới'
+                    : 'Ô kho sẽ sẵn sàng phục vụ khách thuê'}
+                </p>
+              </div>
+            </div>
+
+            {statusModal.targetStatus === 'MAINTENANCE' && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                  Lý do bảo trì / Ghi chú sự cố:
+                </label>
+                <textarea
+                  rows={3}
+                  value={statusModal.note}
+                  onChange={e => setStatusModal({ ...statusModal, note: e.target.value })}
+                  placeholder="VD: Kiểm tra cảm biến SmartLock, sơn lại vách ngăn..."
+                  className="duo-input w-full text-xs py-2.5"
+                />
+                <p className="text-[11px] font-bold text-[#AFAFAF] italic">
+                  * Hệ thống sẽ tự động kiểm tra số suất khả dụng (PR-M10). Nếu hết suất trống đã cọc, thao tác sẽ bị chặn.
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                onClick={() => setStatusModal({ show: false, unit: null, targetStatus: 'MAINTENANCE', note: '', isSubmitting: false })}
+                disabled={statusModal.isSubmitting}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                ĐÓNG
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmStatusChange}
+                disabled={statusModal.isSubmitting}
+                className={`px-6 py-2.5 text-xs ${
+                  statusModal.targetStatus === 'MAINTENANCE'
+                    ? 'duo-btn-orange'
+                    : 'duo-btn-green'
+                }`}
+              >
+                {statusModal.isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>ĐANG XỬ LÝ...</span>
+                  </>
+                ) : (
+                  <span>
+                    {statusModal.targetStatus === 'MAINTENANCE' ? 'XÁC NHẬN KHÓA' : 'XÁC NHẬN MỞ LẠI'}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL 3: XÁC NHẬN XÓA Ô KHO (PR-21) */}
+      {/* ======================================================== */}
+      {deleteModal.show && deleteModal.unit && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="duo-card w-full max-w-sm p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] text-[#FF4B4B] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[28px]">delete</span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#4B4B4B] uppercase">Xác nhận xóa ô kho</h3>
+                <p className="text-xs font-black font-mono text-[#FF4B4B]">{deleteModal.unit.id}</p>
+              </div>
+            </div>
+
+            <p className="text-xs font-bold text-[#777777] leading-relaxed">
+              Bạn có chắc chắn muốn xóa ô kho này không? Hành động này sẽ loại bỏ hoàn toàn ô kho khỏi cơ sở dữ liệu.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ show: false, unit: null, isSubmitting: false })}
+                disabled={deleteModal.isSubmitting}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                HỦY
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleteModal.isSubmitting}
+                className="duo-btn-red px-5 py-2.5 text-xs flex items-center gap-1.5"
+              >
+                {deleteModal.isSubmitting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>ĐANG XÓA...</span>
+                  </>
+                ) : (
+                  <span>XÓA VĨNH VIỄN</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

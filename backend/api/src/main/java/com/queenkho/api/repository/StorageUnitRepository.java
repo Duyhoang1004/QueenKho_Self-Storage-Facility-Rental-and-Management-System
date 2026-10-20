@@ -16,6 +16,8 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, String
     int countByFacility_IdAndUnitType_IdAndStatus(Integer facilityId, Integer unitTypeId, String status);
     List<StorageUnit> findByFacility_IdAndUnitType_IdAndStatus(Integer facilityId, Integer unitTypeId, String status);
 
+    List<StorageUnit> findByFacility_Id(Integer facilityId);
+
     @Query("SELECT su.unitType.id, COUNT(su) FROM StorageUnit su " +
            "WHERE su.facility.id = :facilityId AND su.status = :status " +
            "GROUP BY su.unitType.id")
@@ -26,4 +28,7 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, String
            "WHERE su.facility.id = :facilityId " +
            "GROUP BY su.unitType.id")
     List<Object[]> countAllGroupedByUnitType(@Param("facilityId") Integer facilityId);
+
+    @Query("SELECT DISTINCT su.floor FROM StorageUnit su WHERE su.facility.id = :facilityId AND su.floor IS NOT NULL ORDER BY su.floor")
+    List<String> findDistinctFloorsByFacilityId(@Param("facilityId") Integer facilityId);
 }

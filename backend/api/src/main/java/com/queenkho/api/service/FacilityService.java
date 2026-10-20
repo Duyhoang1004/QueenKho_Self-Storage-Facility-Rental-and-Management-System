@@ -1,5 +1,7 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.dto.FacilityDashboardResponse;
+
 import com.queenkho.api.dto.BomFacilityResponse;
 import com.queenkho.api.dto.CreateFacilityRequest;
 import com.queenkho.api.dto.UpdateFacilityRequest;
@@ -432,5 +434,248 @@ public class FacilityService {
             map.put(id, count);
         }
         return map;
+    }
+
+    // ──────────────────────────────────────────────────────
+    // UC-30: Lấy toàn bộ số liệu thống kê Dashboard cơ sở cho FM
+    // ──────────────────────────────────────────────────────
+    @Transactional(readOnly = true)
+    public FacilityDashboardResponse getFacilityDashboardStats(Integer facilityId) {
+        Facility facility = facilityRepository.findById(facilityId)
+                .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "FACILITY_NOT_FOUND", "Không tìm thấy cơ sở với id: " + facilityId));
+
+        int totalUnits = 0;
+        int occupiedUnits = 0;
+        int availableUnits = 0;
+        int maintenanceUnits = 0;
+        int reservedUnits = 0;
+
+        try {
+            totalUnits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM storage_units WHERE facility_id = ?",
+                    Integer.class, facilityId);
+            occupiedUnits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND status = 'OCCUPIED'",
+                    Integer.class, facilityId);
+            availableUnits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND status = 'AVAILABLE'",
+                    Integer.class, facilityId);
+            maintenanceUnits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND status = 'MAINTENANCE'",
+                    Integer.class, facilityId);
+            reservedUnits = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND status = 'RESERVED'",
+                    Integer.class, facilityId);
+        } catch (Exception e) {
+            System.err.println("Error querying storage unit stats: " + e.getMessage());
+        }
+
+        int activeInUse = occupiedUnits + reservedUnits;
+        double occupancyRate = totalUnits > 0
+                ? Math.round(((double) activeInUse / totalUnits) * 1000.0) / 10.0
+                : 0.0;
+
+        int pendingReservationsCount = 0;
+        try {
+            pendingReservationsCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND status = 'DEPOSIT_PAID' AND (storage_unit_id IS NULL OR storage_unit_id = '')",
+                    Integer.class, facilityId);
+        } catch (Exception ignored) {}
+
+        int overdueContractsCount = 0;
+        int activeContractsCount = 0;
+        try {
+            overdueContractsCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(rc.id) FROM rental_contracts rc JOIN storage_units su ON rc.storage_unit_id = su.id WHERE su.facility_id = ? AND rc.status = 'OVERDUE'",
+                    Integer.class, facilityId);
+            activeContractsCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(rc.id) FROM rental_contracts rc JOIN storage_units su ON rc.storage_unit_id = su.id WHERE su.facility_id = ? AND rc.status = 'ACTIVE'",
+                    Integer.class, facilityId);
+        } catch (Exception ignored) {}
+
+        int openTasksCount = 0;
+        int overdueTasksCount = 0;
+        try {
+            openTasksCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM facility_tasks WHERE facility_id = ? AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
+                    Integer.class, facilityId);
+            overdueTasksCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM facility_tasks WHERE facility_id = ? AND status = 'OVERDUE'",
+                    Integer.class, facilityId);
+        } catch (Exception ignored) {}
+
+        List<FacilityDashboardResponse.CapacityItem> zoneCapacities = new ArrayList<>();
+        try {
+            String zoneSql = "SELECT " +
+                    "COALESCE(NULLIF(su.zone, ''), CASE " +
+                    "WHEN su.id LIKE '%-A%' THEN 'A' " +
+                    "WHEN su.id LIKE '%-B%' THEN 'B' " +
+                    "WHEN su.id LIKE '%-C%' THEN 'C' " +
+                    "ELSE 'D' END) as zone_key, " +
+                    "COUNT(*) as total_cnt, " +
+                    "SUM(CASE WHEN su.status IN ('OCCUPIED', 'RESERVED') THEN 1 ELSE 0 END) as occ_cnt, " +
+                    "SUM(CASE WHEN su.status = 'AVAILABLE' THEN 1 ELSE 0 END) as avail_cnt, " +
+                    "SUM(CASE WHEN su.status = 'MAINTENANCE' THEN 1 ELSE 0 END) as maint_cnt " +
+                    "FROM storage_units su " +
+                    "WHERE su.facility_id = ? " +
+                    "GROUP BY COALESCE(NULLIF(su.zone, ''), CASE " +
+                    "WHEN su.id LIKE '%-A%' THEN 'A' " +
+                    "WHEN su.id LIKE '%-B%' THEN 'B' " +
+                    "WHEN su.id LIKE '%-C%' THEN 'C' " +
+                    "ELSE 'D' END) " +
+                    "ORDER BY zone_key";
+
+            jdbcTemplate.query(zoneSql, (rs) -> {
+                String key = rs.getString("zone_key");
+                int zTotal = rs.getInt("total_cnt");
+                int zOcc = rs.getInt("occ_cnt");
+                int zAvail = rs.getInt("avail_cnt");
+                int zMaint = rs.getInt("maint_cnt");
+                double zRate = zTotal > 0 ? Math.round(((double) zOcc / zTotal) * 1000.0) / 10.0 : 0.0;
+
+                String zoneName;
+                String desc;
+                if ("A".equalsIgnoreCase(key)) {
+                    zoneName = "Khu A (Tầng Trệt)";
+                    desc = "Kho lớn & Thương mại (DT từ 20m² - 45m²)";
+                } else if ("B".equalsIgnoreCase(key)) {
+                    zoneName = "Khu B (Tầng 1)";
+                    desc = "Kho tiêu chuẩn & Kho mát (DT từ 8m² - 16m²)";
+                } else if ("C".equalsIgnoreCase(key)) {
+                    zoneName = "Khu C (Tầng 2)";
+                    desc = "Kho mini compact & Cá nhân (DT từ 2m² - 6m²)";
+                } else {
+                    zoneName = "Khu " + key;
+                    desc = "Khu vực kho đa năng";
+                }
+
+                zoneCapacities.add(FacilityDashboardResponse.CapacityItem.builder()
+                        .key(key)
+                        .name(zoneName)
+                        .description(desc)
+                        .totalUnits(zTotal)
+                        .occupiedUnits(zOcc)
+                        .availableUnits(zAvail)
+                        .maintenanceUnits(zMaint)
+                        .occupancyRate(zRate)
+                        .build());
+            }, facilityId);
+        } catch (Exception e) {
+            System.err.println("Error calculating zone capacities: " + e.getMessage());
+        }
+
+        List<FacilityDashboardResponse.UnitTypeCapacityItem> unitTypeCapacities = new ArrayList<>();
+        try {
+            String utSql = "SELECT ut.id, ut.name, ut.area_sqm, ut.base_price_monthly, " +
+                    "COUNT(su.id) as total_cnt, " +
+                    "SUM(CASE WHEN su.status = 'AVAILABLE' THEN 1 ELSE 0 END) as avail_cnt, " +
+                    "SUM(CASE WHEN su.status IN ('OCCUPIED', 'RESERVED') THEN 1 ELSE 0 END) as occ_cnt " +
+                    "FROM unit_types ut " +
+                    "JOIN storage_units su ON su.unit_type_id = ut.id " +
+                    "WHERE su.facility_id = ? " +
+                    "GROUP BY ut.id, ut.name, ut.area_sqm, ut.base_price_monthly " +
+                    "ORDER BY ut.id";
+
+            jdbcTemplate.query(utSql, (rs) -> {
+                int utTotal = rs.getInt("total_cnt");
+                int utOcc = rs.getInt("occ_cnt");
+                double utRate = utTotal > 0 ? Math.round(((double) utOcc / utTotal) * 1000.0) / 10.0 : 0.0;
+
+                unitTypeCapacities.add(FacilityDashboardResponse.UnitTypeCapacityItem.builder()
+                        .unitTypeId(rs.getInt("id"))
+                        .unitTypeName(rs.getString("name"))
+                        .areaSqm(rs.getBigDecimal("area_sqm"))
+                        .basePriceMonthly(rs.getBigDecimal("base_price_monthly"))
+                        .totalUnits(utTotal)
+                        .availableUnits(rs.getInt("avail_cnt"))
+                        .occupiedUnits(utOcc)
+                        .occupancyRate(utRate)
+                        .build());
+            }, facilityId);
+        } catch (Exception e) {
+            System.err.println("Error calculating unit type capacities: " + e.getMessage());
+        }
+
+        List<FacilityDashboardResponse.DashboardAlertItem> alerts = new ArrayList<>();
+
+        if (pendingReservationsCount > 0) {
+            alerts.add(FacilityDashboardResponse.DashboardAlertItem.builder()
+                    .id("ALERT_PENDING_" + facilityId)
+                    .type("WARNING")
+                    .category("PENDING_RESERVATION")
+                    .title(String.format("%02d Đơn cọc mới chờ gán kho", pendingReservationsCount))
+                    .message("Khách đã cọc thành công qua VNPAY. Cần chỉ định mã ô kho vật lý để bắt đầu thủ tục bàn giao.")
+                    .actionText("GÁN PHÒNG NGAY")
+                    .actionUrl("/manager/pending")
+                    .timeAgo("Vừa cập nhật")
+                    .build());
+        }
+
+        if (overdueContractsCount > 0) {
+            alerts.add(FacilityDashboardResponse.DashboardAlertItem.builder()
+                    .id("ALERT_OVERDUE_" + facilityId)
+                    .type("CRITICAL")
+                    .category("OVERDUE_CONTRACT")
+                    .title(String.format("%02d Hợp đồng quá hạn nợ phí", overdueContractsCount))
+                    .message("Hợp đồng quá hạn thanh toán/trả kho. Cần đối soát nợ phạt hoặc kích hoạt quy trình thanh lý.")
+                    .actionText("ĐỐI SOÁT NỢ")
+                    .actionUrl("/manager/overdue")
+                    .timeAgo("Khẩn cấp")
+                    .build());
+        }
+
+        if (overdueTasksCount > 0) {
+            alerts.add(FacilityDashboardResponse.DashboardAlertItem.builder()
+                    .id("ALERT_TASK_OVERDUE_" + facilityId)
+                    .type("CRITICAL")
+                    .category("TASK_OVERDUE")
+                    .title(String.format("%02d Ca trực quá hạn hoàn thành", overdueTasksCount))
+                    .message("Nhân viên ca trực chưa hoàn tất biên bản check-in hoặc check-out theo đúng thời hạn.")
+                    .actionText("KIỂM TRA TASK")
+                    .actionUrl("/manager/tasks")
+                    .timeAgo("Hôm nay")
+                    .build());
+        }
+
+        if (maintenanceUnits > 0) {
+            alerts.add(FacilityDashboardResponse.DashboardAlertItem.builder()
+                    .id("ALERT_MAINT_" + facilityId)
+                    .type("INFO")
+                    .category("MAINTENANCE")
+                    .title(String.format("%02d Ô kho đang bảo trì / vệ sinh", maintenanceUnits))
+                    .message("Đang kiểm tra kỹ thuật cảm biến SmartLock hoặc vệ sinh sau trả kho để sẵn sàng đón khách.")
+                    .actionText("DANH MỤC Ô KHO")
+                    .actionUrl("/manager/storage")
+                    .timeAgo("Đang thực hiện")
+                    .build());
+        }
+
+        return FacilityDashboardResponse.builder()
+                .facility(FacilityDashboardResponse.FacilityInfo.builder()
+                        .id(facility.getId())
+                        .code(facility.getCode())
+                        .name(facility.getName())
+                        .city(facility.getCity())
+                        .district(facility.getDistrict())
+                        .address(facility.getAddress())
+                        .hotline(facility.getHotline())
+                        .build())
+                .kpi(FacilityDashboardResponse.KpiSummary.builder()
+                        .totalUnits(totalUnits)
+                        .occupiedUnits(occupiedUnits)
+                        .availableUnits(availableUnits)
+                        .maintenanceUnits(maintenanceUnits)
+                        .reservedUnits(reservedUnits)
+                        .occupancyRate(occupancyRate)
+                        .pendingReservationsCount(pendingReservationsCount)
+                        .overdueContractsCount(overdueContractsCount)
+                        .activeContractsCount(activeContractsCount)
+                        .openTasksCount(openTasksCount)
+                        .build())
+                .zoneCapacities(zoneCapacities)
+                .unitTypeCapacities(unitTypeCapacities)
+                .alerts(alerts)
+                .generatedAt(java.time.LocalDateTime.now())
+                .build();
     }
 }

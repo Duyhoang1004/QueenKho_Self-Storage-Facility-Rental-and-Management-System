@@ -45,3 +45,9 @@ export const updateFacility = (id, data) => {
 export const updateFacilityStatus = (id, status) => {
     return api.patch(`/facilities/bom/${id}/status`, { status }).then(res => res.data);
 };
+
+
+// UC-30 (FM): Dashboard tổng quan vận hành cơ sở
+export const getFacilityDashboard = (facilityId) => {
+    return api.get(`/facilities/${facilityId}/dashboard`).then(res => res.data);
+};

@@ -80,6 +80,24 @@ public class FacilityController {
     }
 
     // ──────────────────────────────────────────────────────
+    // ──────────────────────────────────────────────────────
+    // UC-30: FM Dashboard tổng quan vận hành cơ sở
+    // GET /api/v1/facilities/{id}/dashboard
+    // ──────────────────────────────────────────────────────
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<?> getFacilityDashboard(@PathVariable Integer id) {
+        try {
+            return ResponseEntity.ok(facilityService.getFacilityDashboardStats(id));
+        } catch (FacilityException e) {
+            return ResponseEntity.status(e.getStatus())
+                .body(Map.of("error", e.getCode(), "message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "DASHBOARD_ERROR", "message", "Lỗi lấy dữ liệu bảng điều khiển: " + e.getMessage()));
+        }
+    }
+
+    // ──────────────────────────────────────────────────────
     // UC-09 API phụ: Lấy danh sách thành phố (cho dropdown)
     // GET /api/v1/facilities/cities
     // ──────────────────────────────────────────────────────
@@ -87,8 +105,6 @@ public class FacilityController {
     public ResponseEntity<List<String>> getCities() {
         return ResponseEntity.ok(facilityService.getActiveCities());
     }
-
-    // ──────────────────────────────────────────────────────
     // UC-04 (BOM): Quản lý danh sách cơ sở kho bãi
     // ──────────────────────────────────────────────────────
 

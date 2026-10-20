@@ -87,4 +87,7 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     int completeCheckOut(@Param("taskId") Integer taskId,
                          @Param("staffId") Integer staffId,
                          @Param("now") LocalDateTime now);
+
+    // UC-08 / PR-A2, PR-A3, PR-06: Staff có đang giữ task chưa xong không (IN_PROGRESS hoặc OVERDUE đã nhận)
+    boolean existsByStaff_IdAndStatusIn(Integer staffId, List<String> statuses);
 }

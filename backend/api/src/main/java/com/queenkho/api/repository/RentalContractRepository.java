@@ -39,4 +39,7 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     @org.springframework.transaction.annotation.Transactional
     @Query("UPDATE RentalContract rc SET rc.status = 'OVERDUE' WHERE rc.status = 'ACTIVE' AND rc.endDate < :today")
     int markOverdueContracts(@Param("today") java.time.LocalDate today);
+
+    // UC-08 / PR-A5: khách còn hợp đồng đang hiệu lực không
+    boolean existsByCustomer_IdAndStatusIn(Integer customerId, List<String> statuses);
 }

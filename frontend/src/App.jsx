@@ -35,6 +35,7 @@ import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
 import AdminLayout from './layouts/AdminLayout';
 import AdminComingSoonPage from './pages/admin/AdminComingSoonPage';
 import AdminRolesPage from './pages/admin/AdminRolesPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
 
 // Import BOM Pages (UC-04, UC-05, UC-07, UC-29)
 import BomLayout from './layouts/BomLayout';
@@ -92,7 +93,7 @@ export default function App() {
       {/* ========== Admin Portal (UC-03, UC-08, UC-31) ========== */}
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<AdminComingSoonPage title="Tổng quan" uc="Dashboard Admin" icon="space_dashboard" />} />
-        <Route path="/admin/users" element={<AdminComingSoonPage title="Người dùng" uc="UC-08" icon="manage_accounts" />} />
+        <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/roles" element={<AdminRolesPage />} />
         <Route path="/admin/logs" element={<AdminComingSoonPage title="Nhật ký hoạt động" uc="UC-31" icon="history" />} />
       </Route>

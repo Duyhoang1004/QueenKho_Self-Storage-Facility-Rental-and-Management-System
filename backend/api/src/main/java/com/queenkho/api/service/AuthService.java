@@ -5,9 +5,11 @@ import com.queenkho.api.dto.LoginRequest;
 import com.queenkho.api.dto.LoginResponse;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.User;
+import com.queenkho.api.exception.AuthException;
 import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -23,14 +25,28 @@ public class AuthService {
     private FacilityRepository facilityRepository;
 
     public LoginResponse login(LoginRequest request) {
-
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Email không tồn tại"));
-
-        boolean isMatch = passwordEncoder.matches(request.getPassword(), user.getPassword());
-        if (!isMatch) {
-            throw new RuntimeException("Mật khẩu sai");
+        // PR-L3: trim email; thiếu email / mật khẩu → 400
+        String email = (request == null || request.getEmail() == null) ? "" : request.getEmail().trim();
+        String password = (request == null || request.getPassword() == null) ? "" : request.getPassword();
+        if (email.isEmpty() || password.isEmpty()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Vui lòng nhập email và mật khẩu");
         }
+
+        // PR-L2: sai email hay sai mật khẩu đều cùng 1 lỗi → không lộ "email này có tồn tại"
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null || !passwordEncoder.matches(password, user.getPassword())) {
+            throw new AuthException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Email hoặc mật khẩu không đúng");
+        }
+
+        // UC-08 / PR-L1: chỉ báo bị khoá SAU KHI mật khẩu đúng (người đoán mò không biết tài khoản bị khoá)
+        if ("LOCKED".equals(user.getStatus())) {
+            throw new AuthException(HttpStatus.FORBIDDEN, "ACCOUNT_LOCKED",
+                    "Tài khoản đã bị khoá, vui lòng liên hệ quản trị viên");
+        }
+        if ("DISABLED".equals(user.getStatus())) {
+            throw new AuthException(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", "Tài khoản đã bị vô hiệu hoá");
+        }
+
         String token = java.util.UUID.randomUUID().toString();
 
         // UC-16: trả kèm cơ sở để header Staff/Manager hiển thị tên cơ sở

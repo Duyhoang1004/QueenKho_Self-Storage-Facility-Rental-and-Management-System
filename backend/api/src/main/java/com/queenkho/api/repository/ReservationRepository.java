@@ -41,4 +41,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
         @Param("today") java.time.LocalDate today);
 
     java.util.Optional<Reservation> findByReservationCode(String reservationCode);
+
+    // UC-08 / PR-A5: khách còn đơn đang xử lý không
+    boolean existsByCustomer_IdAndStatusIn(Integer customerId, List<String> statuses);
 }

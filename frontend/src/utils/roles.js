@@ -23,6 +23,21 @@ export function getRoleLabel(role) {
   return ROLE_LABELS[role] || role
 }
 
+// UC-08: role Admin được tạo / đổi qua lại (PR-03) — CUSTOMER chỉ tự đăng ký
+export const INTERNAL_ROLES = ['STAFF', 'FACILITY_MANAGER', 'BOM', 'ADMIN']
+
+// UC-08: role bắt buộc gắn cơ sở (PR-04)
+export const FACILITY_ROLES = ['STAFF', 'FACILITY_MANAGER']
+
+// UC-08: trạng thái tài khoản (dùng chung cho UC-31)
+export const USER_STATUS_ORDER = ['ACTIVE', 'LOCKED', 'DISABLED']
+
+export const USER_STATUS_STYLES = {
+  ACTIVE:   { label: 'Hoạt động', icon: 'check_circle', className: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  LOCKED:   { label: 'Đã khoá',   icon: 'lock',         className: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  DISABLED: { label: 'Vô hiệu',   icon: 'block',        className: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' },
+}
+
 // Ma trận vai trò → màn hình (business-rules.md mục 1.3). Chỉ để hiển thị — PR-A1 không làm bảng permission.
 // true = có quyền đầy đủ · chuỗi = quyền hạn chế (ghi chú) · không có key = không có quyền
 export const ADMIN_ROLE_MATRIX = [

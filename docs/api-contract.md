@@ -106,6 +106,8 @@
 #   - ACTIVE   -> cho dang nhap binh thuong
 #   - LOCKED   -> tra loi 403 voi error = ACCOUNT_LOCKED
 #   - DISABLED -> tra loi 403 voi error = ACCOUNT_DISABLED
+#   - (UC-08) Chi bao LOCKED/DISABLED SAU KHI mat khau dung; sai email hay sai mat khau deu 401 (PR-L1, PR-L2)
+#   - (UC-08) HTTP 400 { "error": "INVALID_INPUT" } khi email / mat khau rong (email duoc trim - PR-L3)
 
 
 # ==============================================================================
@@ -448,3 +450,69 @@
 # 400 INVALID_INPUT   : thieu actorUserId / mo ta rong / qua 255 ky tu
 # 403 FORBIDDEN_ROLE  : nguoi thao tac khong ton tai / khong phai ADMIN / khong ACTIVE
 # 404 ROLE_NOT_FOUND  : khong tim thay role
+
+
+# ==============================================================================
+# UC-08: QUAN LY TAI KHOAN NGUOI DUNG (Admin Users)
+# ==============================================================================
+# Endpoint 1: GET   /api/v1/admin/users?keyword=&role=&status=&facilityId=&page=0&size=20   (danh sach + loc)
+# Endpoint 2: GET   /api/v1/admin/users/facility-options                                     (dropdown co so + FM hien tai)
+# Endpoint 3: POST  /api/v1/admin/users?actorUserId={adminId}                                (tao tai khoan noi bo)
+# Endpoint 4: PUT   /api/v1/admin/users/{id}?actorUserId={adminId}                           (sua ten / SDT / role / co so)
+# Endpoint 5: PATCH /api/v1/admin/users/{id}/status?actorUserId={adminId}                    (khoa / vo hieu / mo lai)
+# Endpoint 6: PUT   /api/v1/admin/users/{id}/password?actorUserId={adminId}                  (dat lai mat khau)
+# ==============================================================================
+#
+# Quy tac (PR-03..05, PR-A2..A7):
+#   - Danh sach gom CA khach hang; an tai khoan system@queenkho.local. Sap xep createdAt DESC, id DESC
+#   - keyword tim trong ho ten / email / SDT (khong phan biet hoa thuong); size toi da 100 (sai -> 20)
+#   - Admin chi tao / doi qua lai STAFF, FACILITY_MANAGER, BOM, ADMIN. CUSTOMER chi tu dang ky
+#   - STAFF / FM bat buoc co so ACTIVE (giu nguyen co so cu dang INACTIVE thi van cho); BOM / ADMIN -> facilityId = null
+#   - Moi co so toi da 1 FM ACTIVE (tao / doi role / chuyen co so / mo lai deu kiem tra)
+#   - Email: trim + lowercase, khong trung, KHONG sua duoc. SDT: ^0\d{9}$. Ho ten 1-100. Mat khau >= 6 (BCrypt)
+#   - Khach hang: chi sua ho ten + SDT (roleName / facilityId bi bo qua)
+#   - Staff dang giu task IN_PROGRESS / OVERDUE (staff_id = minh) -> khong doi role / chuyen co so / khoa
+#   - Khong tu khoa minh, khong tu doi role minh; luon con >= 1 Admin ACTIVE
+#   - Khoa / vo hieu bat buoc reason (<= 255, chi luu trong log). Khoa khach dang thue -> 409
+#   - Khoa FM / FM roi co so -> van thanh cong, tra kem "warning": "Co so X chua co quan ly" (PR-A4)
+#   - Khong doi gi -> 200, khong ghi log
+#   - Log activity_logs (target_entity = 'users', target_id = id user):
+#       [USER_CREATE] [USER_UPDATE] [USER_LOCK] [USER_DISABLE] [USER_UNLOCK] [USER_RESET_PASSWORD]
+#     (khong ghi mat khau vao log)
+#
+# --- REQUEST ---
+# Endpoint 3: { "fullName": "Nguyễn Văn A", "email": "a@queenkho.com", "phone": "0901234567",
+#               "roleName": "STAFF", "facilityId": 2, "password": "123456" }
+# Endpoint 4: { "fullName": "Nguyễn Văn A", "phone": "0901234567", "roleName": "FACILITY_MANAGER", "facilityId": 3 }
+# Endpoint 5: { "status": "LOCKED", "reason": "Vi phạm quy định" }     // status: ACTIVE | LOCKED | DISABLED
+# Endpoint 6: { "newPassword": "654321" }
+#
+# --- RESPONSE THANH CONG ---
+# Endpoint 1 - HTTP 200:
+# {
+#   "content": [
+#     { "id": 34, "fullName": "Staff UC08", "email": "uc08.staff@queenkho.com", "phone": "0900000003",
+#       "role": "STAFF", "status": "ACTIVE", "facilityId": 2, "facilityCode": "BT",
+#       "facilityName": "QueenKho Bình Thạnh", "createdAt": "2026-10-20T07:46:59.11" }
+#   ],
+#   "page": 0, "size": 20, "totalElements": 33, "totalPages": 2
+# }
+# Endpoint 2 - HTTP 200:
+# [ { "id": 1, "code": "TB", "name": "QueenKho Tân Bình", "status": "ACTIVE", "managerId": 6, "managerName": "Quản lý Tân Bình" } ]
+# Endpoint 3 - HTTP 201, Endpoint 4/5/6 - HTTP 200:
+# { "user": { ...giong 1 phan tu content... }, "warning": null }
+#   (Endpoint 3: user.createdAt = null vi DB moi dien DEFAULT - FE tai lai danh sach)
+#
+# --- RESPONSE LOI ---  { "error": "CODE", "message": "..." }
+# 400 INVALID_INPUT               : thieu actorUserId / body; sai ten, SDT, email, mat khau; role khong hop le;
+#                                   thieu co so / co so INACTIVE; thieu ly do khoa; status sai
+# 403 FORBIDDEN_ROLE              : nguoi thao tac khong phai ADMIN dang ACTIVE
+# 404 USER_NOT_FOUND              : khong co user / la tai khoan system
+# 409 EMAIL_EXISTS                : email da dung
+# 409 FACILITY_HAS_MANAGER        : co so da co FM ACTIVE khac
+# 409 STAFF_HAS_TASK_IN_PROGRESS  : Staff dang giu task IN_PROGRESS / OVERDUE
+# 409 LAST_ACTIVE_ADMIN           : khoa / doi role Admin ACTIVE cuoi cung
+# 409 CANNOT_LOCK_SELF            : tu khoa minh
+# 409 CANNOT_CHANGE_OWN_ROLE      : tu doi role minh
+# 409 CUSTOMER_HAS_ACTIVE_RENTAL  : khach con don PENDING/DEPOSIT_PAID/UNIT_ASSIGNED
+#                                   hoac hop dong PENDING_CHECK_IN/ACTIVE/OVERDUE/TERMINATION_PENDING

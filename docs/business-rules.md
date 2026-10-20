@@ -37,8 +37,8 @@
 | | UC-06 Ô kho · UC-30 Dashboard | 🟡 giao diện giả |
 | | UC-25 Hoàn cọc · UC-28 Hợp đồng quá hạn · UC-32 Nhân viên | ⬜ |
 | **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu | ⬜ (portal `/bom` đã có) |
-| **Admin** | UC-03 Vai trò | ✅ |
-| | UC-08 Tài khoản · UC-31 Nhật ký · Dashboard `/admin` | ⬜ (portal `/admin` đã có — #56) |
+| **Admin** | UC-03 Vai trò · UC-08 Tài khoản | ✅ |
+| | UC-31 Nhật ký · Dashboard `/admin` | ⬜ (portal `/admin` đã có — #56) |
 | **Chung** | UC-01 Đăng nhập | ✅ |
 | **Hệ thống** | EX-01 Hết hạn giữ chỗ · EX-02 Thanh toán lỗi · job task quá hạn | ✅ |
 
@@ -439,7 +439,8 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-90 | Mỗi role hiện **tổng số người dùng** (mọi trạng thái) và **số đang `ACTIVE`**, không tính tài khoản `system`. Ma trận quyền là hằng số FE (`utils/roles.js`), chép từ mục 1.3. |
 | BR-91 | Sửa mô tả: người thao tác phải là `ADMIN` `ACTIVE` (403 `FORBIDDEN_ROLE`); mô tả trim, bắt buộc, ≤ 255 ký tự (400 `INVALID_INPUT`); không đổi → 200, không log; đổi → log `[ROLE_UPDATE]` (`target_entity = 'roles'`). |
 
-### UC-08 Tài khoản người dùng (Admin) ⬜
+### UC-08 Tài khoản người dùng (Admin) ✅
+**Đang chạy** (`AdminUserService`, `AdminUsersPage.jsx`)
 | Mã | Rule |
 |---|---|
 | PR-03 | Admin tạo `STAFF` / `FACILITY_MANAGER` / `BOM` / `ADMIN`; `CUSTOMER` chỉ tự đăng ký. |
@@ -451,6 +452,11 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-A5 | **Không khoá / vô hiệu khách đang thuê** (còn đơn `PENDING`/`DEPOSIT_PAID`/`UNIT_ASSIGNED` hoặc hợp đồng `PENDING_CHECK_IN`/`ACTIVE`/`OVERDUE`/`TERMINATION_PENDING`) → 409 `CUSTOMER_HAS_ACTIVE_RENTAL`. |
 | PR-A6 | Đặt lại mật khẩu: Admin nhập mật khẩu mới (≥ 6); không gửi email. |
 | PR-A7 | Luôn còn ≥ 1 Admin `ACTIVE`. |
+| BR-92 | Danh sách gồm **cả khách hàng**, ẩn tài khoản `system`; lọc tên/email/SĐT, role, trạng thái, cơ sở; 20 dòng/trang, mới tạo trước. Bộ lọc nằm trên URL (`/admin/users?role=X` từ UC-03). |
+| BR-93 | Form: họ tên 1–100, email trim + lowercase, duy nhất (409 `EMAIL_EXISTS`), **không sửa email**; SĐT `^0\d{9}$`; mật khẩu ban đầu ≥ 6. Khách hàng chỉ sửa tên + SĐT. Cơ sở mới phải `ACTIVE`. |
+| BR-94 | "Đang giữ task" = task `IN_PROGRESS` **hoặc `OVERDUE`** có `staff_id` = người đó → chặn đổi role / chuyển cơ sở / khoá (409 `STAFF_HAS_TASK_IN_PROGRESS`). |
+| BR-95 | Admin không tự đổi role mình (409 `CANNOT_CHANGE_OWN_ROLE`), không tự khoá (409 `CANNOT_LOCK_SELF`). Mở lại FM khi cơ sở đã có FM `ACTIVE` khác → 409 `FACILITY_HAS_MANAGER`. FM `ACTIVE` bị đổi role / chuyển cơ sở cũng trả cảnh báo PR-A4. |
+| BR-96 | `LOCKED` = tạm khoá, `DISABLED` = nghỉ việc / ngừng hẳn; cả hai mở lại được, bắt buộc **lý do** ≤ 255 (chỉ lưu trong log). Log `[USER_CREATE]` / `[USER_UPDATE]` / `[USER_LOCK]` / `[USER_DISABLE]` / `[USER_UNLOCK]` / `[USER_RESET_PASSWORD]`, `target_entity = 'users'`; không ghi mật khẩu; không đổi gì → không log. |
 
 ### UC-31 Nhật ký hoạt động (Admin) 🟡 (bảng đã có, chưa có màn)
 | Mã | Rule |
@@ -503,7 +509,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | L-25 | 🟠 | No-Show bấm được ngay khi task quá hạn, chưa kiểm tra số lần liên hệ / 48h; báo cáo liên hệ ghi log không có mã `[CONTACT]` nên chưa đếm được. | `handleNoShow`, `submitContactReport` (#52) | PR-X3 |
 | L-26 | 🟡 | Checklist check-in mới 5 mục, thiếu cam kết hàng cấm. | `StaffTaskService.checkIn`, `StaffTaskDetailPage.jsx` | PR-C7 |
 | L-27 | 🟡 | Trả kho trước `end_date` không tính hoàn tiền thuê; ngày ân hạn chưa tính phí. | `ContractService.requestCheckout`, nghiệm thu (#57) | PR-O2, PR-O14 |
-| L-07 | 🟡 | Login không chặn `LOCKED` / `DISABLED`; lỗi trả chuỗi thuần và phân biệt "email không tồn tại" / "mật khẩu sai". | `AuthService.login`, `AuthController` | PR-L1, PR-L2 |
+| ~~L-07~~ | ✅ | ~~Login không chặn `LOCKED` / `DISABLED`; lỗi trả chuỗi thuần và phân biệt "email không tồn tại" / "mật khẩu sai".~~ Đã sửa ở UC-08. | `AuthService.login`, `AuthController` | PR-L1, PR-L2 |
 | L-08 | 🟡 | Hết hạn giữ chỗ ghi `CANCELLED` thay `EXPIRED`; giao dịch `PENDING` không chuyển `FAILED`. | `ReservationCleanupService` | PR-B7 |
 | L-09 | 🟡 | Ngày bắt đầu: BE cho hôm nay, FE từ ngày mai; ngày hẹn trả kho không kiểm tra ở BE. | `createReservation`, `requestCheckout` | PR-B4, PR-O1 |
 | L-10 | 🟡 | API No-Show không kiểm tra ngày bắt đầu đã qua. | `handleNoShow` | PR-X2 |
@@ -556,6 +562,12 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 400 | `REFUND_EVIDENCE_REQUIRED` | Hoàn tất hoàn tiền thiếu mã FT / xác nhận ký nhận | PR-O15 |
 | 409 | `CUSTOMER_HAS_ACTIVE_RENTAL` | Khoá / vô hiệu khách đang thuê | PR-A5 |
 | 404 | `ROLE_NOT_FOUND` | Sửa mô tả role không tồn tại | BR-91 |
+| 404 | `USER_NOT_FOUND` | Admin thao tác user không tồn tại / tài khoản `system` | UC-08 |
+| 409 | `EMAIL_EXISTS` | Tạo tài khoản trùng email | BR-93 |
+| 409 | `FACILITY_HAS_MANAGER` | Cơ sở đã có FM `ACTIVE` khác | PR-04, BR-95 |
+| 409 | `STAFF_HAS_TASK_IN_PROGRESS` | Staff đang giữ task `IN_PROGRESS` / `OVERDUE` | BR-94 |
+| 409 | `LAST_ACTIVE_ADMIN` | Khoá / đổi role Admin `ACTIVE` cuối cùng | PR-A7 |
+| 409 | `CANNOT_LOCK_SELF` / `CANNOT_CHANGE_OWN_ROLE` | Admin tự khoá / tự đổi role mình | BR-95 |
 | 409 | `TASK_*`, `PIN_TAKEN`, `RFID_TAKEN`, `CHECKLIST_INCOMPLETE`… | Đã có trong `StaffTaskException` (UC-17/18) | BR-64 → 74 |
 
 ---

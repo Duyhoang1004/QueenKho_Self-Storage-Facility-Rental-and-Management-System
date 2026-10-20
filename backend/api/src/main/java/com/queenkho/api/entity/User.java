@@ -3,6 +3,8 @@ package com.queenkho.api.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "users")
 @NoArgsConstructor
@@ -39,4 +41,9 @@ public class User {
 
     @Column(nullable = false, length = 30)
     private String status;
+
+    // UC-08: ngày tạo — cột có DEFAULT SYSDATETIME() trong DB.
+    // insertable/updatable = false: Hibernate KHÔNG gửi cột này khi INSERT/UPDATE (gửi NULL thì DB không áp DEFAULT).
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

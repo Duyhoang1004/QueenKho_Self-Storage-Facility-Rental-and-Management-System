@@ -34,23 +34,28 @@ export function TaskConfirmDialog({ open, icon, title, message, confirmLabel, to
   )
 }
 
-// toast = { type: 'success' | 'error', message } — tự ẩn sau 4 giây
+// UC-08: thêm 'warning' (vàng) — thao tác thành công nhưng có điều cần chú ý
+const TOAST_STYLES = {
+  success: { className: 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]', icon: 'check_circle' },
+  warning: { className: 'bg-[#FFF3B3] border-[#FFC800] text-[#B38F00]', icon: 'warning' },
+  error: { className: 'bg-[#FFDFDF] border-[#FF4B4B] text-[#EA2B2B]', icon: 'error' },
+}
+
+// toast = { type: 'success' | 'warning' | 'error', message } — tự ẩn sau 4 giây (warning: 6 giây)
 export function TaskToast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return undefined
-    const timer = setTimeout(onClose, 4000)
+    const timer = setTimeout(onClose, toast.type === 'warning' ? 6000 : 4000)
     return () => clearTimeout(timer)
   }, [toast, onClose])
 
   if (!toast) return null
-  const success = toast.type === 'success'
+  const style = TOAST_STYLES[toast.type] || TOAST_STYLES.error
   return (
     <div
-      className={`fixed top-6 right-6 z-[60] max-w-[380px] rounded-2xl border-2 border-b-4 p-4 flex items-start gap-3 shadow-lg ${
-        success ? 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]' : 'bg-[#FFDFDF] border-[#FF4B4B] text-[#EA2B2B]'
-      }`}
+      className={`fixed top-6 right-6 z-[60] max-w-[380px] rounded-2xl border-2 border-b-4 p-4 flex items-start gap-3 shadow-lg ${style.className}`}
     >
-      <span className="material-symbols-outlined text-[24px] shrink-0">{success ? 'check_circle' : 'error'}</span>
+      <span className="material-symbols-outlined text-[24px] shrink-0">{style.icon}</span>
       <span className="text-sm font-bold flex-1">{toast.message}</span>
       <button onClick={onClose} className="cursor-pointer opacity-70 hover:opacity-100">
         <span className="material-symbols-outlined text-[20px]">close</span>

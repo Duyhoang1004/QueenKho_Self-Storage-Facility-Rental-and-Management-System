@@ -409,7 +409,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-M7 | Ghi nhận theo **ngày thực thu** (`paid_at`), giao dịch `SUCCESS`. 4 chỉ số: **Doanh thu thuê** = (`DEPOSIT` − phần cọc) + `MONTHLY_RENT`; **Thu phí phạt** = `LATE_FEE` + `DAMAGE_FEE`; **Đã hoàn tiền** = `REFUND`; **Cọc đang giữ** = Σ `deposit_held_amount` hợp đồng còn hiệu lực + phần cọc còn giữ của hợp đồng thanh lý. Lọc cơ sở, tháng / quý / năm; biểu đồ theo tháng, cơ sở, loại kho; **tỉ lệ lấp đầy** = `OCCUPIED` / (tổng ô − `MAINTENANCE`); số hợp đồng mới / kết thúc. |
 | PR-M8 | Phí trừ vào cọc ghi method `DEPOSIT_OFFSET` → tính vào "Thu phí phạt" nhưng **không** là tiền mới thu vào (tránh tính trùng cọc). |
 
-### UC-06 Danh mục ô kho (FM) 🟡
+### UC-06 Danh mục ô kho (FM) ✅
 | Mã | Rule |
 |---|---|
 | PR-20 | FM chỉ thao tác ô **cơ sở mình**. |

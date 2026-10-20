@@ -18,9 +18,9 @@ import java.util.Map;
  *
  * Tất cả số liệu tài chính tuân theo quy tắc PR-M7:
  *  - Doanh thu = tổng giao dịch status = 'SUCCESS' trong kỳ
- *  - DEPOSIT và MONTHLY_RENT → rentalRevenue
- *  - LATE_FEE và DAMAGE_FEE  → feesRevenue
- *  - REFUND                  → refundDisbursed (âm với doanh thu ròng)
+ *  - DEPOSIT và MONTHLY_RENT ➔ rentalRevenue
+ *  - LATE_FEE và DAMAGE_FEE  ➔ feesRevenue
+ *  - REFUND                  ➔ refundDisbursed (âm với doanh thu ròng)
  *  - Quỹ cọc đang giữ         = deposit_held_amount của HĐ đang ACTIVE / OVERDUE / TERMINATION_PENDING
  */
 @Service
@@ -30,7 +30,7 @@ public class BomRevenueService {
     private JdbcTemplate jdbc;
 
     // ─────────────────────────────────────────────────────────────
-    // 1. OVERVIEW — 8 KPI thẻ tổng quan
+    // 1. OVERVIEW — 8 KPI tài chính tổng quan
     // ─────────────────────────────────────────────────────────────
 
     public RevenueOverviewResponse getOverview(Integer facilityId, String period,
@@ -103,12 +103,13 @@ public class BomRevenueService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 2. TIMELINE — Biểu đồ doanh thu 12 tháng / 4 quý theo năm
+    // 2. TIMELINE — Biểu đồ doanh thu 12 tháng theo năm
     // ─────────────────────────────────────────────────────────────
 
     public List<RevenueTimelineResponse> getTimeline(Integer facilityId, Integer year) {
         String facilityJoin  = buildFacilityJoin(facilityId);
         String facilityWhere = facilityId != null ? " AND f.id = " + facilityId : "";
+        int targetYear = (year != null) ? year : LocalDate.now().getYear();
 
         String sql =
                 "SELECT MONTH(p.paid_at) AS m,"
@@ -118,7 +119,7 @@ public class BomRevenueService {
                 + " FROM payment_transactions p"
                 + facilityJoin
                 + " WHERE p.status = 'SUCCESS'"
-                + " AND YEAR(p.paid_at) = " + year
+                + " AND YEAR(p.paid_at) = " + targetYear
                 + facilityWhere
                 + " GROUP BY MONTH(p.paid_at)"
                 + " ORDER BY MONTH(p.paid_at)";
@@ -134,12 +135,14 @@ public class BomRevenueService {
         }
         for (Map<String, Object> row : rows) {
             int m = ((Number) row.get("m")).intValue() - 1;
-            rents[m]   = toBD(row.get("rent"));
-            fees[m]    = toBD(row.get("fees"));
-            refunds[m] = toBD(row.get("refund"));
+            if (m >= 0 && m < 12) {
+                rents[m]   = toBD(row.get("rent"));
+                fees[m]    = toBD(row.get("fees"));
+                refunds[m] = toBD(row.get("refund"));
+            }
         }
 
-        int currentMonth = (year == LocalDate.now().getYear()) ? LocalDate.now().getMonthValue() : 12;
+        int currentMonth = (targetYear == LocalDate.now().getYear()) ? LocalDate.now().getMonthValue() : 12;
         List<RevenueTimelineResponse> result = new ArrayList<>();
         for (int i = 0; i < 12; i++) {
             String label = "T" + (i + 1) + (i + 1 > currentMonth ? " (DK)" : "");
@@ -158,26 +161,34 @@ public class BomRevenueService {
     // ─────────────────────────────────────────────────────────────
 
     public List<FacilityRevenueResponse> getByFacility(Integer year) {
+        int y = (year != null) ? year : LocalDate.now().getYear();
+
+        // Sử dụng subquery để tránh nhân bản tích Đề-các (Cartesian product)
         String sql =
                 "SELECT f.id AS fid, f.name AS fname,"
-                + " COALESCE(SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','LATE_FEE','DAMAGE_FEE') THEN p.amount"
-                + "                   WHEN p.payment_type = 'REFUND' THEN -p.amount ELSE 0 END), 0) AS revenue,"
-                + " COUNT(DISTINCT CASE WHEN rc.status IN ('ACTIVE','OVERDUE') THEN rc.id END) AS activeUnits,"
-                + " COUNT(DISTINCT su.id) AS totalOperational"
+                + " COALESCE(("
+                + "   SELECT SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','LATE_FEE','DAMAGE_FEE') THEN p.amount"
+                + "                   WHEN p.payment_type = 'REFUND' THEN -p.amount ELSE 0 END)"
+                + "   FROM payment_transactions p"
+                + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
+                + "   LEFT JOIN rental_contracts rc2 ON rc2.id = p.contract_id"
+                + "   LEFT JOIN storage_units su2 ON su2.id = rc2.storage_unit_id"
+                + "   WHERE (res.facility_id = f.id OR su2.facility_id = f.id)"
+                + "     AND p.status = 'SUCCESS' AND YEAR(p.paid_at) = ?"
+                + " ), 0) AS revenue,"
+                + " (SELECT COUNT(DISTINCT rc.id)"
+                + "  FROM rental_contracts rc"
+                + "  JOIN storage_units su ON su.id = rc.storage_unit_id"
+                + "  WHERE su.facility_id = f.id AND rc.status IN ('ACTIVE','OVERDUE')) AS activeUnits,"
+                + " (SELECT COUNT(*)"
+                + "  FROM storage_units su"
+                + "  WHERE su.facility_id = f.id AND su.status <> 'MAINTENANCE') AS totalOperational"
                 + " FROM facilities f"
-                + " LEFT JOIN storage_units su ON su.facility_id = f.id AND su.status NOT IN ('MAINTENANCE','INACTIVE')"
-                + " LEFT JOIN rental_contracts rc ON rc.storage_unit_id = su.id AND rc.status IN ('ACTIVE','OVERDUE')"
-                + " LEFT JOIN payment_transactions p ON ("
-                + "   (p.reservation_id IN (SELECT r.id FROM reservations r WHERE r.facility_id = f.id)"
-                + "    OR p.contract_id IN (SELECT c.id FROM rental_contracts c JOIN storage_units su2 ON su2.id = c.storage_unit_id WHERE su2.facility_id = f.id))"
-                + "   AND p.status = 'SUCCESS' AND YEAR(p.paid_at) = " + year + ")"
                 + " WHERE f.status = 'ACTIVE'"
-                + " GROUP BY f.id, f.name"
                 + " ORDER BY revenue DESC";
 
-        List<Map<String, Object>> rows = jdbc.queryForList(sql);
+        List<Map<String, Object>> rows = jdbc.queryForList(sql, y);
 
-        // Tổng để tính %
         BigDecimal totalRevenue = rows.stream()
                 .map(r -> toBD(r.get("revenue")))
                 .filter(v -> v.compareTo(BigDecimal.ZERO) > 0)
@@ -206,24 +217,30 @@ public class BomRevenueService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 4. BY-UNIT-TYPE — Doanh thu phân bổ theo loại kho
+    // 4. BY-UNIT-TYPE — Doanh thu phân bổ theo loại khoang
     // ─────────────────────────────────────────────────────────────
 
     public List<UnitTypeRevenueResponse> getByUnitType(Integer facilityId) {
-        String facilityFilter = facilityId != null
-                ? " AND su.facility_id = " + facilityId
-                : "";
+        String facFilter = (facilityId != null) ? " AND su.facility_id = " + facilityId : "";
 
         String sql =
                 "SELECT ut.id AS tid, ut.name AS tname,"
-                + " COALESCE(SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT') THEN p.amount ELSE 0 END), 0) AS revenue,"
-                + " COUNT(DISTINCT CASE WHEN rc.status IN ('ACTIVE','OVERDUE') THEN rc.id END) AS totalRented"
+                + " COALESCE(("
+                + "   SELECT SUM(p.amount)"
+                + "   FROM payment_transactions p"
+                + "   JOIN rental_contracts rc ON rc.id = p.contract_id"
+                + "   JOIN storage_units su ON su.id = rc.storage_unit_id"
+                + "   WHERE su.unit_type_id = ut.id"
+                + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT')"
+                +       facFilter
+                + " ), 0) AS revenue,"
+                + " (SELECT COUNT(DISTINCT rc.id)"
+                + "  FROM rental_contracts rc"
+                + "  JOIN storage_units su ON su.id = rc.storage_unit_id"
+                + "  WHERE su.unit_type_id = ut.id AND rc.status IN ('ACTIVE','OVERDUE')"
+                +       facFilter
+                + " ) AS totalRented"
                 + " FROM unit_types ut"
-                + " LEFT JOIN storage_units su ON su.unit_type_id = ut.id" + facilityFilter
-                + " LEFT JOIN rental_contracts rc ON rc.storage_unit_id = su.id"
-                + " LEFT JOIN payment_transactions p ON p.contract_id = rc.id AND p.status = 'SUCCESS'"
-                + "   AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT')"
-                + " GROUP BY ut.id, ut.name"
                 + " ORDER BY revenue DESC";
 
         List<Map<String, Object>> rows = jdbc.queryForList(sql);
@@ -251,36 +268,47 @@ public class BomRevenueService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 5. TRANSACTIONS — Bảng đối soát giao dịch (PR-O15)
+    // 5. TRANSACTIONS — Bảng đối soát giao dịch (PR-O15, PR-M7)
     // ─────────────────────────────────────────────────────────────
 
     public List<RevenueTransactionResponse> getTransactions(Integer facilityId, String paymentType) {
-        String facilityJoin  = buildFacilityJoin(facilityId);
-        String facilityWhere = facilityId != null ? " AND f.id = " + facilityId : "";
-        String typeWhere     = (paymentType != null && !paymentType.isBlank())
-                ? " AND p.payment_type = '" + paymentType.toUpperCase() + "'"
-                : "";
-
-        String sql =
+        StringBuilder sql = new StringBuilder(
                 "SELECT TOP 200 p.id, p.transaction_code, p.paid_at,"
                 + " u.full_name AS customerName, u.phone AS customerPhone,"
-                + " f.name AS facilityName,"
+                + " COALESCE(f.name, N'Hệ thống') AS facilityName,"
                 + " rc.contract_code,"
                 + " p.payment_type, p.payment_method,"
-                + " p.bank_transaction_code,"
+                + " p.transaction_code AS bank_transaction_code,"
                 + " p.amount, p.status,"
                 + " ft.evidence_image_url,"
-                + " p.note"
+                + " ft.note"
                 + " FROM payment_transactions p"
                 + " JOIN users u ON u.id = p.user_id"
-                + facilityJoin
+                + " LEFT JOIN reservations res ON res.id = p.reservation_id"
                 + " LEFT JOIN rental_contracts rc ON rc.id = p.contract_id"
-                + " LEFT JOIN facility_tasks ft ON ft.id = p.task_id"
-                + " WHERE p.status = 'SUCCESS'"
-                + facilityWhere + typeWhere
-                + " ORDER BY p.paid_at DESC";
+                + " LEFT JOIN storage_units su ON su.id = rc.storage_unit_id"
+                + " LEFT JOIN facilities f ON (f.id = res.facility_id OR f.id = su.facility_id)"
+                + " LEFT JOIN facility_tasks ft ON ft.id = ("
+                + "   SELECT TOP 1 ft2.id FROM facility_tasks ft2"
+                + "   WHERE (ft2.contract_id = p.contract_id"
+                + "          OR (res.reservation_code IS NOT NULL AND ft2.note LIKE '%' + res.reservation_code + '%'))"
+                + "     AND ft2.evidence_image_url IS NOT NULL"
+                + "   ORDER BY ft2.id DESC"
+                + " )"
+                + " WHERE p.status = 'SUCCESS'");
 
-        List<Map<String, Object>> rows = jdbc.queryForList(sql);
+        List<Object> args = new ArrayList<>();
+        if (facilityId != null) {
+            sql.append(" AND f.id = ?");
+            args.add(facilityId);
+        }
+        if (paymentType != null && !paymentType.isBlank()) {
+            sql.append(" AND p.payment_type = ?");
+            args.add(paymentType.trim().toUpperCase());
+        }
+        sql.append(" ORDER BY p.paid_at DESC");
+
+        List<Map<String, Object>> rows = jdbc.queryForList(sql.toString(), args.toArray());
         List<RevenueTransactionResponse> result = new ArrayList<>();
 
         for (Map<String, Object> row : rows) {
@@ -305,68 +333,81 @@ public class BomRevenueService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // 6. OCCUPANCY — Tỷ lệ lấp đầy & thống kê hợp đồng
+    // 6. OCCUPANCY — Báo cáo tỷ lệ lấp đầy & biến động hợp đồng
     // ─────────────────────────────────────────────────────────────
 
     public OccupancyReportResponse getOccupancy(Integer facilityId) {
-        String facilityWhere = facilityId != null ? " WHERE su.facility_id = " + facilityId : "";
-        String facilityWhereAnd = facilityId != null
-                ? " JOIN storage_units su ON su.id = rc.storage_unit_id WHERE su.facility_id = " + facilityId
-                : "";
+        // 1. Tổng số ô kho
+        int totalUnits = facilityId != null
+                ? queryCountInt("SELECT COUNT(*) FROM storage_units su WHERE su.facility_id = ?", facilityId)
+                : queryCountInt("SELECT COUNT(*) FROM storage_units su");
 
-        // Tổng số ô kho
-        int totalUnits = queryCountInt(
-                "SELECT COUNT(*) FROM storage_units su" + facilityWhere);
+        // 2. Số ô đang cho thuê (status OCCUPIED hoặc có HĐ ACTIVE/OVERDUE)
+        int occupiedUnits = facilityId != null
+                ? queryCountInt(
+                        "SELECT COUNT(DISTINCT rc.storage_unit_id) FROM rental_contracts rc"
+                        + " JOIN storage_units su ON su.id = rc.storage_unit_id"
+                        + " WHERE su.facility_id = ? AND rc.status IN ('ACTIVE','OVERDUE')", facilityId)
+                : queryCountInt(
+                        "SELECT COUNT(DISTINCT rc.storage_unit_id) FROM rental_contracts rc"
+                        + " WHERE rc.status IN ('ACTIVE','OVERDUE')");
 
-        // Số ô đang cho thuê
-        int occupiedUnits = queryCountInt(
-                "SELECT COUNT(DISTINCT rc.storage_unit_id) FROM rental_contracts rc"
-                + (facilityWhereAnd.isBlank()
-                        ? " WHERE rc.status IN ('ACTIVE','OVERDUE')"
-                        : facilityWhereAnd + " AND rc.status IN ('ACTIVE','OVERDUE')"));
-
-        // Số ô đang bảo trì
-        int maintenanceUnits = queryCountInt(
-                "SELECT COUNT(*) FROM storage_units su"
-                + (facilityWhere.isBlank() ? " WHERE" : facilityWhere + " AND")
-                + " su.status = 'MAINTENANCE'");
+        // 3. Số ô đang bảo trì
+        int maintenanceUnits = facilityId != null
+                ? queryCountInt("SELECT COUNT(*) FROM storage_units su WHERE su.facility_id = ? AND su.status = 'MAINTENANCE'", facilityId)
+                : queryCountInt("SELECT COUNT(*) FROM storage_units su WHERE su.status = 'MAINTENANCE'");
 
         int availableUnits = Math.max(0, totalUnits - occupiedUnits - maintenanceUnits);
         int operationalUnits = totalUnits - maintenanceUnits;
         double occupancyRate = operationalUnits > 0
                 ? round1(occupiedUnits * 100.0 / operationalUnits) : 0.0;
 
-        // HĐ mới trong tháng hiện tại
-        int newContracts = queryCountInt(
-                "SELECT COUNT(*) FROM rental_contracts rc"
-                + (facilityWhereAnd.isBlank()
-                        ? " WHERE"
-                        : facilityWhereAnd + " AND")
-                + " YEAR(rc.created_at) = " + LocalDate.now().getYear()
-                + " AND MONTH(rc.created_at) = " + LocalDate.now().getMonthValue());
+        // 4. HĐ mới trong tháng hiện tại (dùng start_date, KHÔNG dùng created_at vì bảng rental_contracts không có)
+        int currentYear = LocalDate.now().getYear();
+        int currentMonth = LocalDate.now().getMonthValue();
+        int newContracts = facilityId != null
+                ? queryCountInt(
+                        "SELECT COUNT(*) FROM rental_contracts rc"
+                        + " JOIN storage_units su ON su.id = rc.storage_unit_id"
+                        + " WHERE su.facility_id = ? AND YEAR(rc.start_date) = ? AND MONTH(rc.start_date) = ?",
+                        facilityId, currentYear, currentMonth)
+                : queryCountInt(
+                        "SELECT COUNT(*) FROM rental_contracts rc"
+                        + " WHERE YEAR(rc.start_date) = ? AND MONTH(rc.start_date) = ?",
+                        currentYear, currentMonth);
 
-        // HĐ kết thúc trong tháng
-        int terminatedContracts = queryCountInt(
-                "SELECT COUNT(*) FROM rental_contracts rc"
-                + (facilityWhereAnd.isBlank()
-                        ? " WHERE"
-                        : facilityWhereAnd + " AND")
-                + " rc.status IN ('TERMINATED','LIQUIDATED')"
-                + " AND YEAR(rc.updated_at) = " + LocalDate.now().getYear()
-                + " AND MONTH(rc.updated_at) = " + LocalDate.now().getMonthValue());
+        // 5. HĐ kết thúc trong tháng (dùng end_date, KHÔNG dùng updated_at vì bảng rental_contracts không có)
+        int terminatedContracts = facilityId != null
+                ? queryCountInt(
+                        "SELECT COUNT(*) FROM rental_contracts rc"
+                        + " JOIN storage_units su ON su.id = rc.storage_unit_id"
+                        + " WHERE su.facility_id = ? AND rc.status IN ('TERMINATED','LIQUIDATED')"
+                        + " AND rc.end_date IS NOT NULL AND YEAR(rc.end_date) = ? AND MONTH(rc.end_date) = ?",
+                        facilityId, currentYear, currentMonth)
+                : queryCountInt(
+                        "SELECT COUNT(*) FROM rental_contracts rc"
+                        + " WHERE rc.status IN ('TERMINATED','LIQUIDATED')"
+                        + " AND rc.end_date IS NOT NULL AND YEAR(rc.end_date) = ? AND MONTH(rc.end_date) = ?",
+                        currentYear, currentMonth);
 
-        // Tỷ lệ tái ký (gia hạn / tổng kết thúc)
+        // 6. Tỷ lệ tái ký (gia hạn / tổng kết thúc): Dựa vào activity_logs ghi nhận RENEW
         double retentionRate = 0.0;
         if (terminatedContracts > 0) {
-            int renewedContracts = queryCountInt(
-                    "SELECT COUNT(*) FROM rental_contracts rc"
-                    + (facilityWhereAnd.isBlank()
-                            ? " WHERE"
-                            : facilityWhereAnd + " AND")
-                    + " rc.status = 'ACTIVE'"
-                    + " AND rc.reservation_id IN ("
-                    + "   SELECT r.id FROM reservations r WHERE r.reservation_code LIKE 'RE%'"
-                    + " )");
+            int renewedContracts = facilityId != null
+                    ? queryCountInt(
+                            "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
+                            + " JOIN rental_contracts rc ON rc.id = TRY_CAST(al.target_id AS INT)"
+                            + " JOIN storage_units su ON su.id = rc.storage_unit_id"
+                            + " WHERE su.facility_id = ? AND al.target_entity = 'rental_contracts'"
+                            + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
+                            + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
+                            facilityId, currentYear, currentMonth)
+                    : queryCountInt(
+                            "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
+                            + " WHERE al.target_entity = 'rental_contracts'"
+                            + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
+                            + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
+                            currentYear, currentMonth);
             retentionRate = round1(renewedContracts * 100.0 / terminatedContracts);
         }
 
@@ -383,7 +424,7 @@ public class BomRevenueService {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // Private helpers
+    // PRIVATE HELPERS
     // ─────────────────────────────────────────────────────────────
 
     /** Tạo JOIN với bảng facilities qua reservation hoặc contract */
@@ -416,16 +457,15 @@ public class BomRevenueService {
     /** Tính % tăng trưởng so với kỳ liền trước */
     private double calcGrowthRate(BigDecimal currentNet, Integer facilityId,
                                   String period, Integer year, Integer month, Integer quarter) {
-        // Xác định kỳ trước
         Integer prevYear = year, prevMonth = month, prevQuarter = quarter;
         if ("MONTH".equalsIgnoreCase(period)) {
             if (month != null && month > 1)      { prevMonth = month - 1; }
-            else                                  { prevYear = year - 1; prevMonth = 12; }
+            else                                  { prevYear = (year != null ? year - 1 : LocalDate.now().getYear() - 1); prevMonth = 12; }
         } else if ("QUARTER".equalsIgnoreCase(period)) {
             if (quarter != null && quarter > 1)  { prevQuarter = quarter - 1; }
-            else                                  { prevYear = year - 1; prevQuarter = 4; }
+            else                                  { prevYear = (year != null ? year - 1 : LocalDate.now().getYear() - 1); prevQuarter = 4; }
         } else {
-            prevYear = year - 1;
+            prevYear = (year != null ? year - 1 : LocalDate.now().getYear() - 1);
         }
 
         String prevDateFilter   = buildDateFilter(period, prevYear, prevMonth, prevQuarter, "p.paid_at");
@@ -451,18 +491,24 @@ public class BomRevenueService {
                 .doubleValue());
     }
 
-    private BigDecimal querySum(String sql) {
-        BigDecimal result = jdbc.queryForObject(sql, BigDecimal.class);
+    private BigDecimal querySum(String sql, Object... args) {
+        BigDecimal result = (args != null && args.length > 0)
+                ? jdbc.queryForObject(sql, BigDecimal.class, args)
+                : jdbc.queryForObject(sql, BigDecimal.class);
         return result != null ? result : BigDecimal.ZERO;
     }
 
-    private long queryCount(String sql) {
-        Long result = jdbc.queryForObject(sql, Long.class);
+    private long queryCount(String sql, Object... args) {
+        Long result = (args != null && args.length > 0)
+                ? jdbc.queryForObject(sql, Long.class, args)
+                : jdbc.queryForObject(sql, Long.class);
         return result != null ? result : 0L;
     }
 
-    private int queryCountInt(String sql) {
-        Integer result = jdbc.queryForObject(sql, Integer.class);
+    private int queryCountInt(String sql, Object... args) {
+        Integer result = (args != null && args.length > 0)
+                ? jdbc.queryForObject(sql, Integer.class, args)
+                : jdbc.queryForObject(sql, Integer.class);
         return result != null ? result : 0;
     }
 

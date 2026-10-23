@@ -167,16 +167,24 @@ CREATE TABLE payment_transactions (
     payment_type        NVARCHAR(30) NOT NULL,   -- DEPOSIT / MONTHLY_RENT / REFUND / LATE_FEE
     payment_method      NVARCHAR(30) NOT NULL,   -- VNPAY / MOMO / BANK_TRANSFER / CASH
     amount              DECIMAL(12,2) NOT NULL,
+    renewal_months      INT NULL,                -- gói gia hạn 1 / 3 / 6 / 12 tháng; không suy ra từ transaction_code
     status              NVARCHAR(30) NOT NULL DEFAULT 'PENDING', -- PENDING / SUCCESS / FAILED / REFUNDED
     paid_at             DATETIME2 NULL,
     CONSTRAINT FK_payments_user        FOREIGN KEY (user_id)        REFERENCES users(id),
     CONSTRAINT FK_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id),
-    CONSTRAINT FK_payments_contract    FOREIGN KEY (contract_id)    REFERENCES rental_contracts(id)
+    CONSTRAINT FK_payments_contract    FOREIGN KEY (contract_id)    REFERENCES rental_contracts(id),
+    CONSTRAINT CK_payments_renewal_months CHECK (renewal_months IS NULL OR renewal_months IN (1, 3, 6, 12))
 );
 GO
 CREATE INDEX IX_payments_user        ON payment_transactions(user_id);
 CREATE INDEX IX_payments_reservation ON payment_transactions(reservation_id);
 CREATE INDEX IX_payments_contract    ON payment_transactions(contract_id);
+CREATE UNIQUE INDEX UX_payments_pending_deposit
+    ON payment_transactions(reservation_id)
+    WHERE payment_type = 'DEPOSIT' AND payment_method = 'VNPAY' AND status = 'PENDING';
+CREATE UNIQUE INDEX UX_payments_pending_renewal
+    ON payment_transactions(contract_id)
+    WHERE payment_type = 'MONTHLY_RENT' AND payment_method = 'VNPAY' AND status = 'PENDING';
 GO
 
 /* ---------- 10. handover_records ---------- */

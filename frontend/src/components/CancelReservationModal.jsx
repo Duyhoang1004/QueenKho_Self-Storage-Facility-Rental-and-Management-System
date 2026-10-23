@@ -80,6 +80,7 @@ export default function CancelReservationModal({
   // 4. Tiền hoàn thực tế
   const refundAmount = preview?.refundAmount ?? totalPaid - penalty;
   const isLate = Number(penalty) > 0;
+  const hasPaid = Number(totalPaid) > 0;
 
   const handleSubmit = async () => {
     if (reason === "Lý do khác" && !otherReason.trim()) {
@@ -195,6 +196,20 @@ export default function CancelReservationModal({
           {loadingPreview ? (
             <div className="p-6 text-center text-xs font-bold text-[#AFAFAF]">
               Đang tính toán chính sách hoàn tiền...
+            </div>
+          ) : !hasPaid ? (
+            <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-4 flex items-start gap-3">
+              <div className="w-9 h-9 shrink-0 rounded-xl bg-[#DDF4FF] text-[#1CB0F6] flex items-center justify-center">
+                <span className="material-symbols-outlined text-[20px]">info</span>
+              </div>
+              <div>
+                <p className="text-sm font-black text-[#4B4B4B]">
+                  Đơn chưa phát sinh thanh toán
+                </p>
+                <p className="mt-1 text-xs font-bold leading-relaxed text-[#777777]">
+                  Bạn có thể hủy đơn ngay. Không có tiền khấu trừ và không phát sinh yêu cầu hoàn tiền.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="bg-[#FFF5F5] border-2 border-[#FFE2E2] rounded-2xl p-4 flex flex-col gap-3">

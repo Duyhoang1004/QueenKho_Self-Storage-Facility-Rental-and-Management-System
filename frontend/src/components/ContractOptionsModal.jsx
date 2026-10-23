@@ -88,7 +88,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   // Tính hạn mới sau gia hạn
   const calculateNewEndDate = (months) => {
     let base = new Date()
-    if (contract?.endDate) {
+    if (!isTerminationPending && contract?.endDate) {
       const [y, m, d] = contract.endDate.split('-').map(Number)
       const endD = new Date(y, m - 1, d)
       if (endD > base) {
@@ -115,7 +115,17 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   }
 
   const currentPricing = getPricing(selectedMonths)
-  const lateFee = contract?.status === 'OVERDUE' ? Number(contract?.lateFeeAmount || 0) : 0
+  const getTerminationGraceFee = () => {
+    if (!isTerminationPending || !contract?.endDate) return 0
+    const end = new Date(`${contract.endDate}T00:00:00`)
+    const now = new Date(`${today}T00:00:00`)
+    const daysPast = Math.floor((now - end) / 86400000)
+    if (daysPast < 2 || daysPast > 5) return 0
+    return Math.round(basePrice / 30) * (daysPast - 1)
+  }
+  const lateFee = contract?.status === 'OVERDUE'
+    ? Number(contract?.lateFeeAmount || 0)
+    : getTerminationGraceFee()
   const totalPayment = currentPricing.total + lateFee
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
@@ -421,15 +431,24 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
                 </div>
               )}
+              {isTerminationPending && lateFee > 0 && (
+                <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-amber-600">schedule</span>
+                    Phí ngày ân hạn đã sử dụng:
+                  </span>
+                  <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
+                </div>
+              )}
               <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
                 <div>
                   <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
                     TỔNG THANH TOÁN
                   </span>
                   <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
-                  {contract?.status === 'OVERDUE' && (
+                  {(contract?.status === 'OVERDUE' || (isTerminationPending && lateFee > 0)) && (
                     <span className="text-[11px] text-amber-600 block mt-1 italic">
-                      * Phí trễ được chốt khi tạo liên kết thanh toán, không đổi nếu quá trình thanh toán kéo dài
+                      * Khoản phí được chốt khi tạo liên kết thanh toán và không đổi trong lần thanh toán này
                     </span>
                   )}
                 </div>

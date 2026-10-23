@@ -15,6 +15,7 @@ function buildUnit(availability, unitTypeId) {
     area: Number(slot.areaSqm),
     dimension: slot.dimensions,
     pricePerMonth: Number(slot.basePriceMonthly),
+    depositMonthMultiplier: Number(facility.depositMonthMultiplier || 1),
     availableCount: slot.availableCount,
     branch: facility.name,
     address: facility.address,
@@ -153,7 +154,7 @@ export default function CreateReservationPage() {
   const baseTotal = unit.pricePerMonth * selectedMonths
   const discountAmount = Math.round(baseTotal * (selectedOption.discount / 100))
   const netRent = baseTotal - discountAmount
-  const deposit = unit.pricePerMonth
+  const deposit = unit.pricePerMonth * unit.depositMonthMultiplier
   const totalPayment = netRent + deposit - voucherApplied.discount
 
   const handleSubmit = async () => {
@@ -543,7 +544,9 @@ export default function CreateReservationPage() {
               )}
 
               <div className="flex justify-between items-center text-xs font-bold pt-1">
-                <span className="text-[#4B4B4B]">Tiền cọc hoàn trả 100%</span>
+                <span className="text-[#4B4B4B]">
+                  Tiền cọc theo chính sách ({unit.depositMonthMultiplier} tháng)
+                </span>
                 <span className="font-black text-[#4B4B4B]">{formatVND(deposit)}</span>
               </div>
 

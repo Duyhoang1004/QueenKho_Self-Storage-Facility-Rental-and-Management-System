@@ -129,11 +129,17 @@ public class FacilityService {
         Facility facility = facilityRepository.findById(facilityId)
             .orElseThrow(() -> new RuntimeException("Không tìm thấy cơ sở"));
 
+        Integer depositMonthMultiplier = jdbcTemplate.query(
+            "SELECT TOP 1 deposit_month_multiplier FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+            rs -> rs.next() ? rs.getInt("deposit_month_multiplier") : 1,
+            facilityId);
+
         // Facility info
         FacilityAvailabilityResponse.FacilityInfo facilityInfo =
             new FacilityAvailabilityResponse.FacilityInfo(
                 facility.getId(), facility.getName(), facility.getCity(),
-                facility.getDistrict(), facility.getAddress(), facility.getHotline()
+                facility.getDistrict(), facility.getAddress(), facility.getHotline(),
+                depositMonthMultiplier != null && depositMonthMultiplier > 0 ? depositMonthMultiplier : 1
             );
 
         // Batch queries

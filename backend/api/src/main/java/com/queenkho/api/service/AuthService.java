@@ -24,6 +24,9 @@ public class AuthService {
     @Autowired
     private FacilityRepository facilityRepository;
 
+    @Autowired
+    private SessionTokenService sessionTokenService;
+
     public LoginResponse login(LoginRequest request) {
         // PR-L3: trim email; thiếu email / mật khẩu → 400
         String email = (request == null || request.getEmail() == null) ? "" : request.getEmail().trim();
@@ -47,7 +50,7 @@ public class AuthService {
             throw new AuthException(HttpStatus.FORBIDDEN, "ACCOUNT_DISABLED", "Tài khoản đã bị vô hiệu hoá");
         }
 
-        String token = java.util.UUID.randomUUID().toString();
+        String token = sessionTokenService.create(user.getId());
 
         // UC-16: trả kèm cơ sở để header Staff/Manager hiển thị tên cơ sở
         String facilityName = user.getFacilityId() == null ? null

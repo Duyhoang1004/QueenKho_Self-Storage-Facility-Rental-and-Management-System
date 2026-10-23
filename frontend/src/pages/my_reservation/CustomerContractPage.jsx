@@ -105,25 +105,29 @@ export default function CustomerContractPage() {
   // Xử lý callback sau khi khách thanh toán gia hạn từ VNPAY quay về
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const responseCode = params.get("vnp_ResponseCode");
+    const responseCode = params.get("vnpResponse") || params.get("vnp_ResponseCode");
     const txnRef = params.get("vnp_TxnRef") || params.get("orderId");
 
     if (responseCode === "00") {
       if (txnRef) {
         getVnpayStatus(txnRef)
-          .then(() => {
-            setToastMessage(
-              "Gia hạn hợp đồng và thanh toán qua VNPAY thành công!",
-            );
-            fetchContract();
+          .then((payment) => {
+            if (payment?.refund_status) {
+              setToastMessage("Giao dịch cũ được VNPAY xác nhận muộn và đang được hoàn tiền; hợp đồng chưa gia hạn.");
+            } else if (payment?.status === "SUCCESS") {
+              setToastMessage("Gia hạn hợp đồng và thanh toán qua VNPAY thành công!");
+              fetchContract();
+            } else if (payment?.status === "FAILED") {
+              setToastMessage("Giao dịch chưa thành công. Vui lòng thực hiện thanh toán lại.");
+            } else {
+              setToastMessage("VNPAY đang xác nhận giao dịch, vui lòng tải lại sau ít phút.");
+            }
           })
           .catch(() => {
-            setToastMessage("Gia hạn hợp đồng thành công!");
-            fetchContract();
+            setToastMessage("Chưa thể xác nhận trạng thái giao dịch. Vui lòng tải lại sau.");
           });
       } else {
-        setToastMessage("Gia hạn hợp đồng thành công!");
-        fetchContract();
+        setToastMessage("Thiếu mã giao dịch để xác nhận kết quả gia hạn.");
       }
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (responseCode && responseCode !== "00") {

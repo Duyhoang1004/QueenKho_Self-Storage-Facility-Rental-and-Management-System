@@ -86,7 +86,9 @@ CREATE TABLE unit_types (
     base_price_monthly  DECIMAL(12,2)  NOT NULL,
     suggested_capacity  NVARCHAR(150)  NULL,
     dimensions          NVARCHAR(100)  NULL,
-    features            NVARCHAR(500)  NULL
+    features            NVARCHAR(500)  NULL,
+    status              NVARCHAR(20)   NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / INACTIVE (UC-05, PR-M4)
+    CONSTRAINT UQ_unit_types_name UNIQUE (name)                    -- PR-M3
 );
 GO
 

@@ -222,6 +222,11 @@ public class StorageUnitService {
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "UNIT_TYPE_NOT_FOUND", "Không tìm thấy loại kho ID: " + request.getUnitTypeId()));
 
+        // PR-M4: Không cho phép thêm ô kho mới thuộc loại đang INACTIVE
+        if ("INACTIVE".equalsIgnoreCase(unitType.getStatus())) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "UNIT_TYPE_INACTIVE", "Không thể tạo ô kho mới với loại kho đang ở trạng thái Tạm ngưng (INACTIVE)");
+        }
+
         String zone = request.getZone().trim().toUpperCase();
         String room = request.getRoomNumber().trim();
 
@@ -280,6 +285,11 @@ public class StorageUnitService {
 
             UnitType newType = unitTypeRepository.findById(request.getUnitTypeId())
                     .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "UNIT_TYPE_NOT_FOUND", "Không tìm thấy loại kho ID: " + request.getUnitTypeId()));
+
+        // PR-M4: Không cho phép chuyển sang loại kho đang INACTIVE
+        if ("INACTIVE".equalsIgnoreCase(newType.getStatus())) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "UNIT_TYPE_INACTIVE", "Không thể chuyển sang loại kho đang ở trạng thái Tạm ngưng (INACTIVE)");
+        }
             unit.setUnitType(newType);
         }
 

@@ -18,6 +18,17 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, String
 
     List<StorageUnit> findByFacility_Id(Integer facilityId);
 
+    // UC-05: Đếm số ô kho thuộc 1 loại kho trên toàn hệ thống (PR-M4: xóa loại kho)
+    int countByUnitType_Id(Integer unitTypeId);
+
+    // UC-05: Gom nhóm số lượng ô kho theo loại kho toàn hệ thống
+    @Query("SELECT su.unitType.id, COUNT(su) FROM StorageUnit su GROUP BY su.unitType.id")
+    List<Object[]> countAllGroupedByUnitTypeSystemWide();
+
+    // UC-05: Gom nhóm theo (loại kho, trạng thái ô kho) toàn hệ thống
+    @Query("SELECT su.unitType.id, su.status, COUNT(su) FROM StorageUnit su GROUP BY su.unitType.id, su.status")
+    List<Object[]> countStatusGroupedByUnitTypeSystemWide();
+
     @Query("SELECT su.unitType.id, COUNT(su) FROM StorageUnit su " +
            "WHERE su.facility.id = :facilityId AND su.status = :status " +
            "GROUP BY su.unitType.id")

@@ -44,6 +44,7 @@ import AdminUsersPage from './pages/admin/AdminUsersPage';
 // Import BOM Pages (UC-04, UC-05, UC-07, UC-29)
 import BomLayout from './layouts/BomLayout';
 import BomFacilitiesPage from './pages/bom/BomFacilitiesPage';
+import BomUnitTypesPage from './pages/bom/BomUnitTypesPage';
 import BomComingSoonPage from './pages/bom/BomComingSoonPage';
 import BomRevenuePage from './pages/bom/BomRevenuePage';
 
@@ -107,7 +108,7 @@ export default function App() {
       <Route element={<BomLayout />}>
         <Route path="/bom" element={<BomFacilitiesPage />} />
         <Route path="/bom/facilities" element={<BomFacilitiesPage />} />
-        <Route path="/bom/unit-types" element={<BomComingSoonPage title="Loại kho & Giá niêm yết" uc="UC-05" icon="view_in_ar" />} />
+        <Route path="/bom/unit-types" element={<BomUnitTypesPage />} />
         <Route path="/bom/policies" element={<BomComingSoonPage title="Chính sách thuê" uc="UC-07" icon="policy" />} />
         <Route path="/bom/revenue" element={<BomRevenuePage />} />
       </Route>

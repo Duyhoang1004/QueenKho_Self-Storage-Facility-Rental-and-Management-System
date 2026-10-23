@@ -79,6 +79,7 @@ public class FacilityService {
 
         // Bước 2: Lấy danh sách unit types phù hợp bộ lọc
         List<UnitType> unitTypes = unitTypeRepository.findAll().stream()
+            .filter(ut -> "ACTIVE".equalsIgnoreCase(ut.getStatus())) // PR-M4: INACTIVE ẩn khỏi tìm kiếm
             .filter(ut -> unitTypeId == null || ut.getId().equals(unitTypeId))
             .filter(ut -> minPrice == null || ut.getBasePriceMonthly().compareTo(minPrice) >= 0)
             .filter(ut -> maxPrice == null || ut.getBasePriceMonthly().compareTo(maxPrice) <= 0)
@@ -148,6 +149,7 @@ public class FacilityService {
 
         List<UnitType> allTypes = unitTypeRepository.findAll();
         for (UnitType ut : allTypes) {
+            if ("INACTIVE".equalsIgnoreCase(ut.getStatus())) continue; // PR-M4: INACTIVE ẩn khỏi đặt chỗ
             long total = totalMap.getOrDefault(ut.getId(), 0L);
             if (total == 0) continue; // Unit type không có ở cơ sở này
 

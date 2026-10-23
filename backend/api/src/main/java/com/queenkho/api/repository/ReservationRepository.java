@@ -44,4 +44,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
 
     // UC-08 / PR-A5: khách còn đơn đang xử lý không
     boolean existsByCustomer_IdAndStatusIn(Integer customerId, List<String> statuses);
+
+    // UC-05: Đếm tổng số đơn đặt chỗ theo loại kho (PR-M4: xóa loại kho)
+    int countByUnitType_Id(Integer unitTypeId);
+
+    // UC-05: Đếm tổng đơn đặt chỗ theo từng loại kho toàn hệ thống
+    @Query("SELECT r.unitType.id, COUNT(r) FROM Reservation r GROUP BY r.unitType.id")
+    List<Object[]> countAllGroupedByUnitTypeSystemWide();
 }

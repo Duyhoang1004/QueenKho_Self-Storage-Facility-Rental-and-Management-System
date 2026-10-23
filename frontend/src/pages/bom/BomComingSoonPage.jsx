@@ -1,5 +1,11 @@
+import BomRentalPoliciesPage from './BomRentalPoliciesPage';
+
 // Trang placeholder cho các chức năng BOM theo phong cách Stitch
 export default function BomComingSoonPage({ title, uc, icon }) {
+  if (uc === 'UC-07') {
+    return <BomRentalPoliciesPage />;
+  }
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
       <div>

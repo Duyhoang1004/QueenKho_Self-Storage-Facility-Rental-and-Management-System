@@ -9,7 +9,7 @@ const managerMenuItems = [
   { path: '/manager/overdue', icon: 'event_busy', label: 'Hợp đồng quá hạn' },
   { path: '/manager/refunds', icon: 'payments', label: 'Hoàn tiền' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
-  { path: '/manager/staff', icon: 'badge', label: 'Phân công nhân viên' },
+  { path: '/manager/staff', icon: 'badge', label: 'Quản lý nhân viên' },
   { path: '/manager/customers', icon: 'history_edu', label: 'Khách hàng & Hợp đồng' },
   { path: '/manager/reports', icon: 'bar_chart', label: 'Báo cáo cơ sở' },
 ];

@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,6 +33,13 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
 
     // UC-16: lấy task đang mở của 1 hợp đồng để hủy (khách gia hạn)
     List<StaffTask> findByContractIdAndTaskTypeAndStatusIn(Integer contractId, String taskType, List<String> statuses);
+
+    // UC-26 / PR-S3: lấy các task đang mở theo supportRequestId
+    List<StaffTask> findBySupportRequestIdAndStatusIn(Integer supportRequestId, Collection<String> statuses);
+
+    // UC-26: lấy các task gắn với danh sách supportRequestId để hiển thị trạng thái nhân viên phụ trách
+    @Query("SELECT t FROM StaffTask t LEFT JOIN FETCH t.staff WHERE t.supportRequestId IN :supportRequestIds ORDER BY t.id DESC")
+    List<StaffTask> findBySupportRequestIdInWithStaff(@Param("supportRequestIds") Collection<Integer> supportRequestIds);
 
     // UC-16: job quá hạn đổi status thành OVERDUE
     @Modifying
@@ -87,6 +95,15 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     int completeCheckOut(@Param("taskId") Integer taskId,
                          @Param("staffId") Integer staffId,
                          @Param("now") LocalDateTime now);
+
+    // UC-27 / PR-S5: đóng task SUPPORT — 1 câu UPDATE có điều kiện (chỉ khi IN_PROGRESS, đúng staff, chưa quá hạn)
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now " +
+            "WHERE t.id = :taskId AND t.taskType = 'SUPPORT' AND t.status = 'IN_PROGRESS' " +
+            "AND t.staff.id = :staffId AND t.dueAt > :now")
+    int completeSupport(@Param("taskId") Integer taskId,
+                        @Param("staffId") Integer staffId,
+                        @Param("now") LocalDateTime now);
 
     // UC-08 / PR-A2, PR-A3, PR-06: Staff có đang giữ task chưa xong không (IN_PROGRESS hoặc OVERDUE đã nhận)
     boolean existsByStaff_IdAndStatusIn(Integer staffId, List<String> statuses);

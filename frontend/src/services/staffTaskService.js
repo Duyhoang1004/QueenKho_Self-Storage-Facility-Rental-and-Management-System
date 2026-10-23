@@ -43,6 +43,25 @@ export async function checkOutStaffTask(taskId, staffId, payload) {
   return res.data
 }
 
+// UC-27 / PR-S5: Staff hoàn tất xử lý yêu cầu hỗ trợ (SUPPORT)
+export async function resolveSupportTask(taskId, staffId, resolutionNote) {
+  const body = typeof resolutionNote === 'string' ? { resolutionNote } : (resolutionNote || {})
+  const res = await api.post(`/staff-tasks/${taskId}/resolve-support`, body, { params: { staffId } })
+  return res.data
+}
+
+// UC-27 / PR-S6: Staff cấp lại mã PIN 6 số cho ticket LOCK_ISSUE
+export async function resetSupportContractPin(taskId, staffId) {
+  const res = await api.post(`/staff-tasks/${taskId}/reset-pin`, null, { params: { staffId } })
+  return res.data
+}
+
+// UC-27 / PR-S4: Facility Manager gia hạn task SUPPORT đã quá hạn (giữ người nhận)
+export async function extendSupportTask(taskId, managerId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/extend-support`, payload, { params: { managerId } })
+  return res.data
+}
+
 // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
 export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)
@@ -69,4 +88,3 @@ export async function uploadImageFile(file) {
   })
   return res.data // { url: '...', fileName: '...' }
 }
-

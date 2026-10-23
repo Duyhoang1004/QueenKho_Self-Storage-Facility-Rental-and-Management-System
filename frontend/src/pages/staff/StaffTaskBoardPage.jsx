@@ -5,10 +5,15 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import ContactReportModal from '../../components/ContactReportModal';
 import { claimStaffTask } from '../../services/staffTaskService';
 
-const TYPE_LABEL = { CHECK_IN: 'check-in', CHECK_OUT: 'check-out' };
+const TYPE_LABEL = {
+  CHECK_IN: 'check-in',
+  CHECK_OUT: 'check-out',
+  SUPPORT: 'hỗ trợ khách hàng',
+};
 
 // UC-16: Bảng công việc tại cơ sở (trang chính của nhân viên)
 // UC-17: Nhân viên bấm "Nhận việc" trên thẻ OPEN
+// UC-27: Nhân viên xử lý yêu cầu hỗ trợ (SUPPORT)
 export default function StaffTaskBoardPage() {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}');
 
@@ -33,11 +38,11 @@ export default function StaffTaskBoardPage() {
       });
   };
 
-  // UC-18 & UC-23: mọi thẻ có "Xem chi tiết"; task check-in / check-out mình đang giữ thì nút chính là "Lập biên bản" / "Nghiệm thu trả kho"
+  // UC-18, UC-23, UC-27: mọi thẻ có "Xem chi tiết"; task mình đang giữ thì nút chính theo đúng loại việc
   const renderActions = task => {
-    const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT')
-      && task.status === 'IN_PROGRESS'
-      && task.staffId === user.userId;
+    const isMyInProgress = task.status === 'IN_PROGRESS' && task.staffId === user.userId;
+    const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT') && isMyInProgress;
+    const canResolveSupport = task.taskType === 'SUPPORT' && isMyInProgress;
     const isOverdue = task.status === 'OVERDUE' || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) < new Date());
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -58,6 +63,11 @@ export default function StaffTaskBoardPage() {
               {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
             </span>
             {task.taskType === 'CHECK_OUT' ? 'Nghiệm thu trả kho' : 'Lập biên bản'}
+          </Link>
+        ) : canResolveSupport ? (
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
+            <span className="material-symbols-outlined text-[18px]">support_agent</span>
+            Xử lý hỗ trợ
           </Link>
         ) : (
           <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5 flex items-center">
@@ -80,7 +90,7 @@ export default function StaffTaskBoardPage() {
       <div className="flex flex-col gap-1 pb-4 mb-6 border-b-2 border-[#E5E5E5]">
         <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">Bảng công việc</h1>
         <p className="text-xs font-bold text-[#AFAFAF] uppercase tracking-wider">
-          Việc check-in / check-out cần xử lý tại {user.facilityName || 'cơ sở'} · hạn chót 21:00 ngày hẹn.
+          Việc check-in / check-out / hỗ trợ khách hàng tại {user.facilityName || 'cơ sở'} · hạn chót 21:00 ngày hẹn.
         </p>
       </div>
 

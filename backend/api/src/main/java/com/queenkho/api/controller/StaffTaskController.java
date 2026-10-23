@@ -2,6 +2,8 @@ package com.queenkho.api.controller;
 
 import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.ExtendSupportTaskRequest;
+import com.queenkho.api.dto.ResolveSupportTaskRequest;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.service.StaffTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,9 +65,8 @@ public class StaffTaskController {
         }
     }
 
-    // UC-18 / UC-23: chi tiết task (kèm biên bản & sự cố nếu đã hoàn thành)
+    // UC-18 / UC-23 / UC-27: chi tiết task (kèm biên bản, sự cố hoặc ticket hỗ trợ)
     // GET /api/v1/staff-tasks/12?userId=5
-    // {id:\\d+}: chỉ khớp khi id là số → "/pin-suggestion" không bị hiểu nhầm thành id
     @GetMapping("/{id:\\d+}")
     public ResponseEntity<?> getDetail(@PathVariable Integer id, @RequestParam(required = false) Integer userId) {
         try {
@@ -96,6 +97,44 @@ public class StaffTaskController {
                                       @RequestBody(required = false) CheckOutRequest request) {
         try {
             return ResponseEntity.ok(staffTaskService.checkOut(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-27 / PR-S5: Staff hoàn tất xử lý yêu cầu hỗ trợ (SUPPORT)
+    // POST /api/v1/staff-tasks/12/resolve-support?staffId=5   body: { "resolutionNote": "..." }
+    @PostMapping("/{id}/resolve-support")
+    public ResponseEntity<?> resolveSupport(@PathVariable Integer id,
+                                            @RequestParam(required = false) Integer staffId,
+                                            @RequestBody(required = false) ResolveSupportTaskRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.resolveSupportTask(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-27 / PR-S6: Staff cấp lại mã PIN 6 số cho ticket LOCK_ISSUE
+    // POST /api/v1/staff-tasks/12/reset-pin?staffId=5
+    @PostMapping("/{id}/reset-pin")
+    public ResponseEntity<?> resetPin(@PathVariable Integer id,
+                                      @RequestParam(required = false) Integer staffId) {
+        try {
+            return ResponseEntity.ok(staffTaskService.resetSupportContractPin(id, staffId));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // UC-27 / PR-S4: Facility Manager gia hạn task SUPPORT đã quá hạn (giữ người nhận)
+    // POST /api/v1/staff-tasks/12/extend-support?managerId=3   body: { "newDueDate": "2026-10-25", "reason": "..." }
+    @PostMapping("/{id}/extend-support")
+    public ResponseEntity<?> extendSupport(@PathVariable Integer id,
+                                           @RequestParam(required = false) Integer managerId,
+                                           @RequestBody(required = false) ExtendSupportTaskRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.extendSupportTask(id, managerId, request));
         } catch (StaffTaskException e) {
             return toError(e);
         }

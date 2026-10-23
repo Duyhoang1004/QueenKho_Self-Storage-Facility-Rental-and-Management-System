@@ -17,7 +17,7 @@ public class StaffTaskResponse {
     private Integer facilityId;
     private String taskType;             // CHECK_IN, CHECK_OUT, SUPPORT, REFUND
     private String status;               // OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
-    private LocalDateTime dueAt;         // Hạn chót hoàn thành (Deadline 24h)
+    private LocalDateTime dueAt;         // Hạn chót hoàn thành (Deadline 21:00 / 24h)
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;     // Thời điểm nhân viên nhận việc
     private LocalDateTime completedAt;   // Thời điểm hoàn thành
@@ -28,7 +28,7 @@ public class StaffTaskResponse {
     private Integer staffId;
     private String staffName;
 
-    // 3. Thông tin Hợp đồng liên quan (nếu là task CHECK_IN / CHECK_OUT)
+    // 3. Thông tin Hợp đồng liên quan (nếu là task CHECK_IN / CHECK_OUT / SUPPORT)
     private Integer contractId;
     private String contractCode;
     private String contractStatus;
@@ -38,4 +38,13 @@ public class StaffTaskResponse {
     private String customerPhone;
     private String storageUnitId;
     private String unitTypeName;
+
+    // 5. Thông tin Ticket Hỗ trợ (UC-26/27: khi taskType = SUPPORT)
+    private Integer supportRequestId;
+    private String ticketCode;
+    private String issueType;
+    private boolean urgent;
+    private String ticketStatus;
+    private String ticketDescription;
+    private String resolutionNote;
 }

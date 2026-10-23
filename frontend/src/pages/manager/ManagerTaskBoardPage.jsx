@@ -2,11 +2,29 @@ import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
-import { unassignStaffTask, completeRefundTask } from '../../services/staffTaskService'
+import { unassignStaffTask, completeRefundTask, extendSupportTask } from '../../services/staffTaskService'
+
+function todayIsoDate() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function tomorrowIsoDate() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 // UC-16: Manager theo dõi bảng công việc của cơ sở & quản lý task hoàn cọc trực tiếp
 // UC-17: Manager gỡ nhân viên khỏi task đang xử lý → task về "Chờ nhận" cho người khác nhận
 // UC-25: Manager theo dõi và xử lý các task hoàn cọc (REFUND) của cơ sở mình
+// UC-27 / PR-S4: Manager gia hạn task SUPPORT đã quá hạn (giữ nguyên người nhận)
 export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
 
@@ -15,7 +33,13 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
 
   // State gỡ nhân viên
   const [confirmTask, setConfirmTask] = useState(null)
-  
+
+  // State gia hạn task SUPPORT quá hạn (PR-S4)
+  const [extendTarget, setExtendTarget] = useState(null)
+  const [extendDueDate, setExtendDueDate] = useState(tomorrowIsoDate())
+  const [extendReason, setExtendReason] = useState('')
+  const [extendError, setExtendError] = useState('')
+
   // State duyệt hoàn tiền cọc (PR-O12, PR-O15)
   const [refundTask, setRefundTask] = useState(null)
   const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
@@ -41,6 +65,49 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         setConfirmTask(null)
         setReloadKey(k => k + 1)
       })
+  }
+
+  const openExtendSupportModal = (task) => {
+    setExtendTarget(task)
+    setExtendDueDate(tomorrowIsoDate())
+    setExtendReason('')
+    setExtendError('')
+  }
+
+  const handleExtendSupportSubmit = () => {
+    if (!extendTarget) return
+    if (!extendDueDate) {
+      setExtendError('Vui lòng chọn ngày hạn mới.')
+      return
+    }
+    const trimmedReason = extendReason.trim()
+    if (!trimmedReason) {
+      setExtendError('Bắt buộc nhập lý do gia hạn task hỗ trợ (PR-S4).')
+      return
+    }
+    if (trimmedReason.length > 500) {
+      setExtendError('Lý do gia hạn tối đa 500 ký tự.')
+      return
+    }
+
+    setSubmitting(true)
+    setExtendError('')
+    extendSupportTask(extendTarget.id, user.userId, {
+      newDueDate: extendDueDate,
+      reason: trimmedReason,
+    })
+      .then(updated => {
+        setToast({
+          type: 'success',
+          message: `Đã gia hạn task hỗ trợ #${updated.id} (${updated.ticketCode || ''}) thành công! Trạng thái: ${updated.status === 'IN_PROGRESS' ? 'Đang xử lý (giữ người nhận)' : 'Chờ nhận'}.`,
+        })
+        setExtendTarget(null)
+        setReloadKey(k => k + 1)
+      })
+      .catch(err => {
+        setExtendError(err.response?.data?.message || 'Không gia hạn được task hỗ trợ, vui lòng thử lại.')
+      })
+      .finally(() => setSubmitting(false))
   }
 
   const openRefundModal = (task) => {
@@ -122,6 +189,27 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
 
+    // PR-S4: Task SUPPORT quá hạn -> FM được bấm "Gia hạn xử lý"
+    const isTaskOverdue = task.status === 'OVERDUE'
+      || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) <= new Date())
+    if (task.taskType === 'SUPPORT' && isTaskOverdue) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Xem chi tiết
+          </Link>
+          <button
+            onClick={() => openExtendSupportModal(task)}
+            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">more_time</span>
+            Gia hạn xử lý
+          </button>
+        </div>
+      )
+    }
+
     if (task.status === 'IN_PROGRESS') {
       return (
         <div className="flex items-center gap-2">
@@ -166,7 +254,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <p className="text-xs font-bold text-[#AFAFAF] mt-1 uppercase tracking-wider">
               {viewScope === 'MINE'
                 ? `Các nhiệm vụ được phân công cho Quản lý (ID: ${user.userId}) tại ${user.facilityName || 'cơ sở của bạn'}.`
-                : `Theo dõi check-in / check-out / hoàn cọc tại ${user.facilityName || 'cơ sở của bạn'}.`}
+                : `Theo dõi check-in / check-out / hỗ trợ khách hàng tại ${user.facilityName || 'cơ sở của bạn'}.`}
             </p>
           </div>
 
@@ -230,6 +318,76 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         onConfirm={handleUnassign}
         onCancel={() => setConfirmTask(null)}
       />
+
+      {/* Modal Gia hạn task SUPPORT quá hạn (PR-S4) */}
+      {extendTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#DDF4FF] border-2 border-[#84D8FF] flex items-center justify-center text-[#1CB0F6]">
+                <span className="material-symbols-outlined text-[24px]">more_time</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-[#4B4B4B]">Gia hạn task hỗ trợ (PR-S4)</h3>
+                <p className="text-xs font-bold text-[#AFAFAF]">
+                  Task #{extendTarget.id} · {extendTarget.ticketCode || 'Hỗ trợ KH'} · Giữ nguyên người nhận ({extendTarget.staffName || 'Chưa có'})
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                Ngày hạn mới (hạn lúc 21:00) <span className="text-[#FF4B4B]">*</span>
+              </label>
+              <input
+                type="date"
+                min={todayIsoDate()}
+                value={extendDueDate}
+                onChange={e => { setExtendDueDate(e.target.value); setExtendError('') }}
+                className="duo-input w-full text-xs"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                Lý do gia hạn <span className="text-[#FF4B4B]">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={extendReason}
+                onChange={e => { setExtendReason(e.target.value); setExtendError('') }}
+                placeholder="Nhập lý do gia hạn (VD: Cần chờ kỹ thuật viên khóa đến thay linh kiện vào sáng mai)..."
+                className="duo-input w-full text-xs resize-none"
+              />
+            </div>
+
+            {extendError && (
+              <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{extendError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#E5E5E5]">
+              <button
+                onClick={() => setExtendTarget(null)}
+                disabled={submitting}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleExtendSupportSubmit}
+                disabled={submitting}
+                className="duo-btn-blue px-5 py-2.5 text-xs gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                {submitting ? 'Đang lưu...' : 'Xác nhận gia hạn'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal xác nhận hoàn tiền (PR-O12, PR-O15) */}
       {refundTask && (

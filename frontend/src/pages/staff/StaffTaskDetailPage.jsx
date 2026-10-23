@@ -5,20 +5,48 @@ import {
   checkInStaffTask,
   checkOutStaffTask,
   completeRefundTask,
+  extendSupportTask,
   getStaffTaskDetail,
+  resetSupportContractPin,
+  resolveSupportTask,
   suggestAccessPin,
 } from '../../services/staffTaskService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
 // UC-24: Ghi nhận sự cố hư hỏng & khấu trừ cọc kèm ảnh bằng chứng (Record Damage Case)
+// UC-27: Xử lý yêu cầu hỗ trợ của khách hàng (Process Support Requests)
 
 const TYPE_META = {
-  CHECK_IN:    { label: 'Check-in',    icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
-  REFUND:      { label: 'Hoàn tiền',   icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
-  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
+  CHECK_IN:    { label: 'Check-in',    icon: 'login',         cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',        cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  REFUND:      { label: 'Hoàn tiền',   icon: 'payments',      cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  SUPPORT:     { label: 'Hỗ trợ KH',   icon: 'support_agent', cls: 'bg-[#FFF0D6] text-[#D97706] border-[#F59E0B]' },
+  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',         cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
 };
+
+const SUPPORT_ISSUE_LABEL = {
+  LOCK_ISSUE: 'Sự cố khóa / Mã PIN (Khẩn)',
+  SECURITY: 'An ninh / Đột nhập (Khẩn)',
+  FACILITY_DAMAGE: 'Hư hỏng hạ tầng ô kho',
+  CLEANING: 'Vệ sinh ô kho / Hành lang',
+  OTHER: 'Yêu cầu hỗ trợ khác',
+};
+
+const SUPPORT_TICKET_STATUS_META = {
+  OPEN:        { label: 'Chờ xử lý',          cls: 'bg-[#FFF5E6] text-[#E58800] border border-[#FF9600]' },
+  IN_PROGRESS: { label: 'Đang xử lý',         cls: 'bg-[#DDF4FF] text-[#1899D6] border border-[#84D8FF]' },
+  RESOLVED:    { label: 'Chờ khách xác nhận', cls: 'bg-[#D7FFB8] text-[#58A700] border border-[#58CC02]' },
+  CLOSED:      { label: 'Đã đóng',            cls: 'bg-[#F7F7F7] text-[#777777] border border-[#E5E5E5]' },
+};
+
+const SUPPORT_RESOLUTION_PRESETS = [
+  'Đã kiểm tra SmartLock tại hiện trường, thay pin khóa và hướng dẫn khách mở cửa thành công.',
+  'Đã cấp lại mã PIN 6 số mới cho khách hàng và kiểm tra đóng/mở khóa ổn định.',
+  'Đã kiểm tra hệ thống an ninh và camera khu vực ô kho, xác nhận tài sản an toàn.',
+  'Đã xử lý vệ sinh sạch sẽ khu vực hành lang và trước cửa ô kho theo phản ánh.',
+  'Đã khắc phục sự cố kỹ thuật tại ô kho và thông báo kết quả cho khách hàng.',
+];
 
 const STATUS_META = {
   OPEN:        { label: 'Chờ nhận',   cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
@@ -159,8 +187,17 @@ function blockedReason(task, userId) {
     if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
     return null;
   }
+  if (task.taskType === 'SUPPORT') {
+    if (task.status === 'COMPLETED') return null;
+    if (task.status === 'CANCELLED') return 'Yêu cầu hỗ trợ đã bị huỷ hoặc đã đóng.';
+    if (task.status === 'OPEN') return 'Task hỗ trợ chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
+    if (task.status === 'OVERDUE') return 'Task hỗ trợ đã quá hạn (PR-S4). Cần Quản lý cơ sở gia hạn trước khi nhân viên có thể hoàn tất.';
+    if (task.staffId !== userId) return `Task hỗ trợ đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
+    if (new Date(task.dueAt) <= new Date()) return 'Task hỗ trợ đã quá hạn 21:00. Cần Quản lý cơ sở gia hạn (PR-S4).';
+    return null;
+  }
   if (task.taskType !== 'CHECK_IN' && task.taskType !== 'CHECK_OUT') {
-    return 'Trang này chỉ hỗ trợ lập biên bản cho task check-in, nghiệm thu check-out hoặc hoàn tiền.';
+    return 'Trang này chỉ hỗ trợ lập biên bản cho task check-in, nghiệm thu check-out, hỗ trợ KH hoặc hoàn tiền.';
   }
   switch (task.status) {
     case 'OPEN': return 'Task chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
@@ -250,6 +287,18 @@ export default function StaffTaskDetailPage() {
   const [evidenceImageUrl, setEvidenceImageUrl] = useState('');
   const [refundNotes, setRefundNotes] = useState('');
   const [copiedField, setCopiedField] = useState(null);
+
+  // State cho Support (UC-27)
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [confirmSupportOpen, setConfirmSupportOpen] = useState(false);
+  const [pinResetting, setPinResetting] = useState(false);
+  const [extendDueDate, setExtendDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [extendReason, setExtendReason] = useState('');
+  const [extendingSupport, setExtendingSupport] = useState(false);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmRefundOpen, setConfirmRefundOpen] = useState(false);
@@ -604,6 +653,83 @@ export default function StaffTaskDetailPage() {
     });
   };
 
+  // ================== LOGIC HỖ TRỢ KHÁCH HÀNG (UC-27) ==================
+  const isSupport = task?.taskType === 'SUPPORT';
+  const canSubmitSupport =
+    resolutionNote.trim().length >= 1 && resolutionNote.trim().length <= NOTES_MAX && !submitting;
+
+  const handleResolveSupportSubmit = () => {
+    setSubmitting(true);
+    resolveSupportTask(task.id, userId, { resolutionNote: resolutionNote.trim() })
+      .then(data => {
+        setTask(data);
+        setJustCompleted(true);
+        setToast({
+          type: 'success',
+          message: `Đã xử lý xong yêu cầu hỗ trợ ${data.ticketCode || ''}. Trạng thái phiếu chuyển sang Chờ khách xác nhận (RESOLVED).`,
+        });
+      })
+      .catch(err => {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || 'Không thể hoàn tất xử lý yêu cầu hỗ trợ.',
+        });
+        loadTask();
+      })
+      .finally(() => {
+        setSubmitting(false);
+        setConfirmSupportOpen(false);
+      });
+  };
+
+  const handleResetPinForLockIssue = () => {
+    setPinResetting(true);
+    resetSupportContractPin(task.id, userId)
+      .then(data => {
+        setTask(data);
+        if (!resolutionNote.trim()) {
+          setResolutionNote(
+            `Đã cấp lại mã PIN SmartLock 6 số mới (${data.accessPinCode}) cho khách hàng và kiểm tra khoá hoạt động ổn định.`
+          );
+        }
+        setToast({
+          type: 'success',
+          message: `Cấp lại mã PIN thành công! Mã PIN 6 số mới của hợp đồng ${data.contractCode} là: ${data.accessPinCode}.`,
+        });
+      })
+      .catch(err => {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || 'Không thể cấp lại mã PIN cho hợp đồng này.',
+        });
+      })
+      .finally(() => setPinResetting(false));
+  };
+
+  const handleExtendSupportSubmit = () => {
+    if (!extendDueDate || !extendReason.trim()) return;
+    setExtendingSupport(true);
+    extendSupportTask(task.id, userId, {
+      newDueDate: extendDueDate,
+      reason: extendReason.trim(),
+    })
+      .then(data => {
+        setTask(data);
+        setExtendReason('');
+        setToast({
+          type: 'success',
+          message: `Đã gia hạn task hỗ trợ #${data.id} đến 21:00 ngày ${formatDate(extendDueDate)}.`,
+        });
+      })
+      .catch(err => {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || 'Không thể gia hạn task hỗ trợ.',
+        });
+      })
+      .finally(() => setExtendingSupport(false));
+  };
+
   if (loading) {
     return (
       <div className="max-w-[1240px] mx-auto px-8 py-8">
@@ -690,6 +816,14 @@ export default function StaffTaskDetailPage() {
               <InfoRow label="Trạng thái" value={CONTRACT_STATUS_LABEL[task.contractStatus] || task.contractStatus} />
               <InfoRow label="Ngày bắt đầu" value={formatDate(task.contractStartDate)} />
               <InfoRow label="Ngày kết thúc" value={formatDate(task.contractEndDate)} />
+              {isSupport && (
+                <InfoRow
+                  label="Mã PIN SmartLock hiện tại"
+                  value={task.accessPinCode || 'Chưa cấp'}
+                  mono
+                  highlight="text-[#D97706]"
+                />
+              )}
               <InfoRow
                 label="Tiền cọc hợp đồng"
                 value={formatCurrency(task.depositHeldAmount)}
@@ -1106,6 +1240,271 @@ export default function StaffTaskDetailPage() {
                     <span className="material-symbols-outlined text-[20px]">payments</span>
                     Xác nhận đã hoàn tiền ({effectiveRefundAmount > 0 ? formatCurrency(effectiveRefundAmount) : (parsedRefund?.refundAmount || '')})
                   </button>
+                </div>
+              )}
+            </div>
+          ) : isSupport ? (
+            /* ================== MÀN HÌNH XỬ LÝ YÊU CẦU HỖ TRỢ (SUPPORT - UC-27) ================== */
+            <div className="duo-card p-6 flex flex-col gap-5">
+              {/* Khung thông tin phiếu hỗ trợ của khách hàng */}
+              <div className="rounded-2xl border-2 border-[#F59E0B] bg-[#FFFBEB] p-5 flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#FDE68A] pb-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black uppercase text-[#B45309] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[18px]">confirmation_number</span>
+                      Phiếu hỗ trợ #{task.ticketCode || task.supportRequestId || '—'}
+                    </span>
+                    {task.urgent && (
+                      <span className="px-2 py-0.5 rounded-lg bg-[#FF4B4B] text-white text-[10px] font-black uppercase flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px]">priority_high</span>
+                        KHẨN CẤP (PR-34)
+                      </span>
+                    )}
+                  </div>
+                  {task.ticketStatus && (
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black ${
+                      SUPPORT_TICKET_STATUS_META[task.ticketStatus]?.cls || 'bg-white text-[#4B4B4B] border border-[#E5E5E5]'
+                    }`}>
+                      {SUPPORT_TICKET_STATUS_META[task.ticketStatus]?.label || task.ticketStatus}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div className="flex justify-between sm:justify-start sm:gap-2">
+                    <span className="font-bold text-[#92400E]">Phân loại sự cố:</span>
+                    <span className="font-black text-[#4B4B4B]">
+                      {SUPPORT_ISSUE_LABEL[task.issueType] || task.issueType || 'Hỗ trợ khách hàng'}
+                    </span>
+                  </div>
+                  {task.ticketCreatedAt && (
+                    <div className="flex justify-between sm:justify-end sm:gap-2">
+                      <span className="font-bold text-[#92400E]">Thời điểm gửi:</span>
+                      <span className="font-black text-[#4B4B4B]">{formatDateTime(task.ticketCreatedAt)}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-white p-3.5 border border-[#FDE68A] text-xs">
+                  <span className="text-[11px] font-black uppercase text-[#B45309] block mb-1">
+                    Nội dung phản ánh từ khách hàng:
+                  </span>
+                  <p className="font-bold text-[#4B4B4B] whitespace-pre-line leading-relaxed">
+                    {task.ticketDescription || task.note || 'Khách hàng yêu cầu kiểm tra và hỗ trợ tại ô kho.'}
+                  </p>
+                </div>
+
+                {task.resolutionNote && (
+                  <div className="rounded-xl bg-[#D7FFB8]/60 p-3.5 border border-[#58CC02] text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] font-black uppercase text-[#58A700] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                        Kết quả xử lý đã phản hồi cho khách (PR-S5):
+                      </span>
+                      {task.ticketResolvedAt && (
+                        <span className="text-[10px] font-bold text-[#58A700]">
+                          {formatDateTime(task.ticketResolvedAt)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-bold text-[#2B5300] whitespace-pre-line leading-relaxed">
+                      {task.resolutionNote}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {task.status === 'COMPLETED' ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
+                    <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
+                    <div>
+                      <p className="text-sm font-black text-[#58A700]">Đã hoàn tất xử lý yêu cầu hỗ trợ!</p>
+                      <p className="text-xs font-bold text-[#58A700]">
+                        Phiếu hỗ trợ đã chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Nếu sau 3 ngày khách không phản hồi, hệ thống tự động đóng phiếu (PR-52).
+                      </p>
+                    </div>
+                  </div>
+
+                  {task.issueType === 'LOCK_ISSUE' && task.accessPinCode && (
+                    <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
+                  )}
+
+                  <Link
+                    to={isManager ? '/manager/tasks' : '/staff'}
+                    className="duo-btn-gray px-5 py-2.5 text-xs self-end"
+                  >
+                    Về bảng công việc
+                  </Link>
+                </div>
+              ) : task.status === 'OVERDUE' && isManager ? (
+                /* Quản lý cơ sở gia hạn task SUPPORT quá hạn (PR-S4) */
+                <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-4">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[#E58800] text-[26px]">update</span>
+                    <div>
+                      <h3 className="text-sm font-black uppercase text-[#E58800]">
+                        Gia hạn xử lý task hỗ trợ quá hạn (PR-S4)
+                      </h3>
+                      <p className="text-xs font-bold text-[#777777] mt-0.5">
+                        Task hỗ trợ đã quá hạn 21:00 nên nhân viên bị khóa thao tác hoàn tất. Quản lý cơ sở chọn hạn mới bên dưới để mở lại cho nhân viên xử lý tiếp.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Ngày hạn mới (21:00) *</span>
+                      <input
+                        type="date"
+                        min={new Date().toISOString().slice(0, 10)}
+                        value={extendDueDate}
+                        onChange={e => setExtendDueDate(e.target.value)}
+                        className="duo-input text-xs font-bold bg-white"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Lý do gia hạn *</span>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={extendReason}
+                        onChange={e => setExtendReason(e.target.value)}
+                        placeholder="VD: Chờ kỹ thuật kiểm tra khoá vào sáng mai..."
+                        className="duo-input text-xs bg-white"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Link to="/manager/tasks" className="duo-btn-gray px-4 py-2.5 text-xs">
+                      Về bảng công việc
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={extendingSupport || !extendDueDate || !extendReason.trim()}
+                      onClick={handleExtendSupportSubmit}
+                      className="duo-btn-blue px-5 py-2.5 text-xs gap-1.5 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                      {extendingSupport ? 'Đang gia hạn...' : 'Xác nhận gia hạn task hỗ trợ'}
+                    </button>
+                  </div>
+                </div>
+              ) : reason ? (
+                <div className="rounded-2xl border-2 border-[#E5E5E5] bg-[#FAFAFA] p-6 flex flex-col items-center justify-center gap-3 text-center py-10">
+                  <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
+                  <p className="text-sm font-black text-[#4B4B4B]">Chưa thể hoàn tất xử lý hỗ trợ</p>
+                  <p className="text-xs font-bold text-[#777777] max-w-[400px]">{reason}</p>
+                  <Link
+                    to={isManager ? '/manager/tasks' : '/staff'}
+                    className="duo-btn-gray px-4 py-2 text-xs mt-1"
+                  >
+                    Về bảng công việc
+                  </Link>
+                </div>
+              ) : (
+                /* Nhân viên đang giữ task IN_PROGRESS xử lý yêu cầu hỗ trợ */
+                <div className="flex flex-col gap-5">
+                  {/* Công cụ Cấp lại mã PIN 6 số cho sự cố LOCK_ISSUE (PR-S6 & PR-Q5) */}
+                  {task.issueType === 'LOCK_ISSUE' && (
+                    <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[18px]">dialpad</span>
+                            Công cụ cấp lại mã PIN 6 số (PR-S6)
+                          </h3>
+                          <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
+                            Dành riêng cho sự cố khóa / quên mã PIN. Hệ thống sinh mã PIN 6 số mới duy nhất theo BR-73.
+                          </p>
+                        </div>
+                        <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase text-[#0284C7]">PIN hiện tại:</span>
+                          <span className="font-mono text-base font-black tracking-widest text-[#0F172A]">
+                            {task.accessPinCode || '------'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {task.contractStatus === 'OVERDUE' ? (
+                        <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3.5 py-2.5 flex items-center gap-2 text-xs font-bold text-[#FF4B4B]">
+                          <span className="material-symbols-outlined text-[18px]">block</span>
+                          Hợp đồng đang QUÁ HẠN THANH TOÁN (OVERDUE) — Không được cấp lại mã PIN theo quy tắc PR-Q5 &amp; PR-S6. Vui lòng hướng dẫn khách thanh toán cước trước.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <span className="text-[11px] font-bold text-[#0369A1]">
+                            * Khi bấm cấp lại, mã PIN cũ sẽ bị vô hiệu hóa ngay lập tức và ghi nhật ký [PIN_RESET].
+                          </span>
+                          <button
+                            type="button"
+                            disabled={pinResetting}
+                            onClick={handleResetPinForLockIssue}
+                            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">autorenew</span>
+                            {pinResetting ? 'Đang cấp PIN mới...' : 'Cấp lại mã PIN (6 số)'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Form nhập kết quả xử lý (PR-S5) */}
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <h3 className="text-base font-black text-[#4B4B4B]">
+                        Báo cáo kết quả xử lý hỗ trợ (PR-S5)
+                      </h3>
+                      <p className="text-xs font-bold text-[#AFAFAF]">
+                        Nhập nội dung đã kiểm tra / khắc phục tại hiện trường (1–1000 ký tự) để gửi phản hồi cho khách hàng xác nhận.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-black uppercase text-[#AFAFAF] mr-1">Mẫu phản hồi nhanh:</span>
+                      {SUPPORT_RESOLUTION_PRESETS.map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setResolutionNote(preset)}
+                          className="px-2.5 py-1 rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] hover:border-[#1CB0F6] text-[11px] font-bold text-[#4B4B4B] cursor-pointer transition-colors text-left"
+                        >
+                          + Mẫu #{idx + 1}: {preset.slice(0, 42)}...
+                        </button>
+                      ))}
+                    </div>
+
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">
+                        Nội dung kết quả xử lý (Bắt buộc) *
+                      </span>
+                      <textarea
+                        rows={4}
+                        maxLength={NOTES_MAX}
+                        value={resolutionNote}
+                        onChange={e => setResolutionNote(e.target.value)}
+                        placeholder="Mô tả rõ nguyên nhân và biện pháp đã xử lý cho khách hàng..."
+                        className="duo-input resize-none text-xs"
+                      />
+                      <span className={`text-[11px] font-bold self-end ${
+                        resolutionNote.length > NOTES_MAX ? 'text-[#FF4B4B]' : 'text-[#AFAFAF]'
+                      }`}>
+                        {resolutionNote.length}/{NOTES_MAX} ký tự
+                      </span>
+                    </label>
+
+                    <button
+                      type="button"
+                      disabled={!canSubmitSupport}
+                      onClick={() => setConfirmSupportOpen(true)}
+                      className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">task_alt</span>
+                      Xác nhận hoàn tất xử lý &amp; Gửi phản hồi cho khách
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1920,6 +2319,19 @@ export default function StaffTaskDetailPage() {
         submitting={submitting}
         onConfirm={handleSubmitRefund}
         onCancel={() => setConfirmRefundOpen(false)}
+      />
+
+      {/* Dialog xác nhận hoàn tất xử lý Hỗ trợ KH (UC-27) */}
+      <TaskConfirmDialog
+        open={confirmSupportOpen}
+        icon="support_agent"
+        tone="green"
+        title="Xác nhận đã xử lý xong yêu cầu hỗ trợ?"
+        message={`Task hỗ trợ #${task.id} sẽ chuyển sang HOÀN THÀNH và phiếu #${task.ticketCode || ''} sẽ chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Khách hàng sẽ nhận được phản hồi: "${resolutionNote.trim()}".`}
+        confirmLabel="Xác nhận hoàn tất"
+        submitting={submitting}
+        onConfirm={handleResolveSupportSubmit}
+        onCancel={() => setConfirmSupportOpen(false)}
       />
 
       <TaskToast toast={toast} onClose={closeToast} />

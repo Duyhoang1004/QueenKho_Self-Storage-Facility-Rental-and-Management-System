@@ -292,6 +292,11 @@ public class ReservationService {
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new IllegalArgumentException("Loại kho không tồn tại"));
 
+        // PR-M4: INACTIVE ẩn khỏi tìm kiếm & đặt chỗ
+        if ("INACTIVE".equalsIgnoreCase(unitType.getStatus())) {
+            throw new IllegalArgumentException("Loại kho này hiện đang tạm ngưng nhận đặt chỗ mới");
+        }
+
         // Sinh ma don ngau nhien
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 

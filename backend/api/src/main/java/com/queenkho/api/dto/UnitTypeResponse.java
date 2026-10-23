@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Getter
 @Setter
+@Builder
 public class UnitTypeResponse {
     private Integer id;
     private String name;
@@ -16,4 +17,18 @@ public class UnitTypeResponse {
     private String suggestedCapacity;
     private String dimensions;
     private String features;
+    private String status;
+
+    public UnitTypeResponse(Integer id, String name, BigDecimal areaSqm, BigDecimal volumeCbm,
+                            BigDecimal basePriceMonthly, String suggestedCapacity, String dimensions, String features) {
+        this.id = id;
+        this.name = name;
+        this.areaSqm = areaSqm;
+        this.volumeCbm = volumeCbm;
+        this.basePriceMonthly = basePriceMonthly;
+        this.suggestedCapacity = suggestedCapacity;
+        this.dimensions = dimensions;
+        this.features = features;
+        this.status = "ACTIVE";
+    }
 }

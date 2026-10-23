@@ -14,9 +14,6 @@ export default function BomFacilitiesPage() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  // Chế độ xem danh sách: 'card' (lưới thẻ thoáng mắt) hoặc 'table' (bảng danh sách)
-  const [viewMode, setViewMode] = useState('card');
-
   // Filters
   const [keyword, setKeyword] = useState('');
   const [selectedCity, setSelectedCity] = useState('ALL');
@@ -28,6 +25,7 @@ export default function BomFacilitiesPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [expandedFacilityStats, setExpandedFacilityStats] = useState({});
 
   // Forms
   const [createForm, setCreateForm] = useState({
@@ -85,7 +83,8 @@ export default function BomFacilitiesPage() {
   }, []);
 
   useEffect(() => {
-    fetchFacilities();
+    const timeoutId = window.setTimeout(fetchFacilities, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [fetchFacilities]);
 
   // Flash message helper
@@ -97,6 +96,13 @@ export default function BomFacilitiesPage() {
   const showError = (msg) => {
     setErrorMsg(msg);
     setTimeout(() => setErrorMsg(null), 6000);
+  };
+
+  const toggleFacilityStats = (facilityId) => {
+    setExpandedFacilityStats((current) => ({
+      ...current,
+      [facilityId]: !current[facilityId],
+    }));
   };
 
   // Helper tính số ô thực tế còn trống (Tổng ô - Đang thuê - Đang bảo trì - Chờ nhận)
@@ -392,34 +398,6 @@ export default function BomFacilitiesPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* View Mode Toggle: Cards / Table */}
-          <div className="flex items-center bg-white p-1 rounded-2xl border-2 border-[#E5E5E5]">
-            <button
-              onClick={() => setViewMode('card')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === 'card'
-                  ? 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF] shadow-xs'
-                  : 'text-[#777777] hover:text-[#4B4B4B] border-2 border-transparent'
-              }`}
-              title="Xem dạng thẻ gọn gàng"
-            >
-              <span className="material-symbols-outlined text-[16px]">grid_view</span>
-              <span>Lưới thẻ</span>
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === 'table'
-                  ? 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF] shadow-xs'
-                  : 'text-[#777777] hover:text-[#4B4B4B] border-2 border-transparent'
-              }`}
-              title="Xem dạng bảng chi tiết"
-            >
-              <span className="material-symbols-outlined text-[16px]">view_list</span>
-              <span>Bảng</span>
-            </button>
-          </div>
-
           {/* Add Facility Button */}
           <button
             onClick={handleOpenCreate}
@@ -685,292 +663,115 @@ export default function BomFacilitiesPage() {
             <p className="text-sm font-black text-[#777777]">Không tìm thấy cơ sở nào phù hợp</p>
             <p className="text-xs font-bold text-[#AFAFAF]">Hãy thử đổi từ khoá hoặc điều kiện lọc</p>
           </div>
-        ) : viewMode === 'card' ? (
-          /* ========================================================
-             DẠNG LƯỚI THẺ (Clean Grid Cards - Đỡ rối mắt)
-             ======================================================== */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {facilities.map((f) => {
               const avail = getFacilityAvailable(f);
+              const statsExpanded = Boolean(expandedFacilityStats[f.id]);
 
               return (
-                <div
+                <article
                   key={f.id}
                   onClick={() => handleOpenDetail(f)}
-                  className="duo-card p-5 bg-white flex flex-col justify-between hover:border-[#84D8FF] hover:shadow-md transition-all cursor-pointer group"
+                  className={`duo-card group cursor-pointer bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-[#84D8FF] hover:shadow-md ${
+                    f.status === 'ACTIVE' ? '' : 'bg-[#FFFAFA]'
+                  }`}
                 >
-                  <div className="space-y-3.5">
-                    {/* Header Thẻ: Mã code + Trạng thái */}
-                    <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-1 rounded-xl bg-[#EBF7FF] border-2 border-[#84D8FF] text-[#1CB0F6] font-black text-xs tracking-wider">
-                        {f.code}
-                      </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="rounded-xl border-2 border-[#84D8FF] bg-[#EBF7FF] px-2.5 py-1 text-xs font-black tracking-wider text-[#1CB0F6]">
+                      {f.code}
+                    </span>
+                    <span className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-xs font-black ${
+                      f.status === 'ACTIVE'
+                        ? 'border-[#B4E885] bg-[#EAF7DD] text-[#58A700]'
+                        : 'border-[#FFC1C1] bg-[#FFF0F0] text-[#FF4B4B]'
+                    }`}>
+                      <span className={`h-2 w-2 rounded-full ${f.status === 'ACTIVE' ? 'bg-[#58CC02]' : 'bg-[#FF4B4B]'}`} />
+                      {f.status === 'ACTIVE' ? 'Hoạt động' : 'Tạm ngưng'}
+                    </span>
+                  </div>
 
-                      {f.status === 'ACTIVE' ? (
-                        <span className="duo-badge bg-[#EAF7DD] border-2 border-[#B4E885] text-[#58CC02]">
-                          Hoạt động
-                        </span>
-                      ) : (
-                        <span className="duo-badge bg-[#FFF0F0] border-2 border-[#FFC1C1] text-[#FF4B4B] font-black">
-                          Tạm ngừng
-                        </span>
-                      )}
-                    </div>
+                  <h3 className="mt-3 text-base font-black leading-6 text-[#4B4B4B] transition-colors group-hover:text-[#1CB0F6]">
+                    {f.name}
+                  </h3>
 
-                    {/* Tên cơ sở & Địa chỉ ngắn + Tổng số ô */}
-                    <div>
-                      <h3 className="text-base font-black text-[#4B4B4B] group-hover:text-[#1CB0F6] transition-colors leading-snug">
-                        {f.name}
-                      </h3>
-                      <div className="flex items-center justify-between text-xs font-bold text-[#777777] mt-1.5">
-                        <p className="flex items-center gap-1 line-clamp-1">
-                          <span className="material-symbols-outlined text-[15px] text-[#AFAFAF] shrink-0">
-                            location_on
-                          </span>
-                          <span>{f.district}, {f.city}</span>
-                        </p>
-                        <span className="shrink-0 px-2.5 py-0.5 rounded-lg bg-[#F0F0F0] text-[#4B4B4B] font-black text-[11px]">
-                          {f.totalUnits} ô kho
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Khối 3 trạng thái ô kho cốt lõi: Đang thuê, Chờ nhận, Còn trống (gọn gàng, nhỏ nhắn hơn) */}
-                    <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl bg-[#F7F7F7] border border-[#EBEBEB] text-center">
-                      <div className="py-1.5 px-1 rounded-lg bg-white border border-[#E5E5E5] flex flex-col justify-center">
-                        <span className="text-[10px] font-black text-[#1CB0F6] uppercase tracking-wider block leading-tight">
-                          Đang thuê
-                        </span>
-                        <span className="text-lg font-black text-[#1CB0F6] leading-none my-0.5">
-                          {f.occupiedUnits}
-                        </span>
-                        <span className="text-[9px] font-bold text-[#777777] block leading-tight">
-                          {f.activeContractsCount} hợp đồng
-                        </span>
-                      </div>
-
-                      <div className="py-1.5 px-1 rounded-lg bg-white border border-[#E5E5E5] flex flex-col justify-center">
-                        <span className="text-[10px] font-black text-[#FF9600] uppercase tracking-wider block leading-tight">
-                          Chờ nhận
-                        </span>
-                        <span className="text-lg font-black text-[#FF9600] leading-none my-0.5">
-                          {f.pendingReservationsCount}
-                        </span>
-                        <span className="text-[9px] font-bold text-[#777777] block leading-tight">
-                          ô chờ nhận
-                        </span>
-                      </div>
-
-                      <div className="py-1.5 px-1 rounded-lg bg-white border border-[#E5E5E5] flex flex-col justify-center">
-                        <span className="text-[10px] font-black text-[#58CC02] uppercase tracking-wider block leading-tight">
-                          Còn trống
-                        </span>
-                        <span className="text-lg font-black text-[#58CC02] leading-none my-0.5">
-                          {avail}
-                        </span>
-                        <span className="text-[9px] font-bold text-[#777777] block leading-tight">
-                          ô sẵn sàng
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Mini visual indicator bar */}
-                    <div className="w-full h-2 bg-[#E5E5E5] rounded-full overflow-hidden flex">
-                      <div
-                        className="h-full bg-[#1CB0F6] transition-all duration-300"
-                        style={{
-                          width: `${f.totalUnits > 0 ? (f.occupiedUnits / f.totalUnits) * 100 : 0}%`,
-                        }}
-                        title={`Đang thuê: ${f.occupiedUnits}`}
-                      ></div>
-                      <div
-                        className="h-full bg-[#FF9600] transition-all duration-300"
-                        style={{
-                          width: `${
-                            f.totalUnits > 0
-                              ? (Math.min(f.pendingReservationsCount, Math.max(0, f.totalUnits - f.occupiedUnits)) /
-                                  f.totalUnits) *
-                                100
-                              : 0
-                          }%`,
-                        }}
-                        title={`Chờ nhận: ${f.pendingReservationsCount}`}
-                      ></div>
-                      <div
-                        className="h-full bg-[#58CC02] transition-all duration-300"
-                        style={{
-                          width: `${f.totalUnits > 0 ? (avail / f.totalUnits) * 100 : 0}%`,
-                        }}
-                        title={`Còn trống: ${avail}`}
-                      ></div>
+                  <div className="mt-2 space-y-1.5 text-xs font-bold text-[#777777]">
+                    <p className="flex items-start gap-1.5">
+                      <span className="material-symbols-outlined mt-0.5 text-[16px] text-[#AFAFAF]">location_on</span>
+                      <span className="line-clamp-1">{f.address}, {f.district}, {f.city}</span>
+                    </p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="flex min-w-0 items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-[#9333EA]">badge</span>
+                        <span className="truncate">{f.managerName || 'Chưa phân công FM'}</span>
+                      </p>
+                      <p className="flex shrink-0 items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-[#58CC02]">call</span>
+                        <span>{f.hotline || 'Chưa có hotline'}</span>
+                      </p>
                     </div>
                   </div>
 
-                  {/* Nút Xem chi tiết */}
-                  <div className="pt-3 mt-3 border-t-2 border-[#F0F0F0] flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#777777] flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[15px] text-[#AFAFAF]">call</span>
-                      <span>{f.hotline || 'Chưa có hotline'}</span>
-                    </span>
+                  <div className="mt-3" onClick={(event) => event.stopPropagation()}>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenDetail(f);
-                      }}
-                      className="duo-btn-blue py-1.5 px-3.5 text-xs flex items-center gap-1"
+                      type="button"
+                      onClick={() => toggleFacilityStats(f.id)}
+                      aria-expanded={statsExpanded}
+                      className={`flex w-full items-center justify-between rounded-xl border-2 px-3 py-2 text-xs font-black transition-colors ${
+                        statsExpanded
+                          ? 'border-[#84D8FF] bg-[#DDF4FF] text-[#1CB0F6]'
+                          : 'border-[#E5E5E5] bg-[#F7F7F7] text-[#777777] hover:border-[#84D8FF] hover:text-[#1CB0F6]'
+                      }`}
                     >
-                      <span>Xem chi tiết</span>
-                      <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[17px]">bar_chart</span>
+                        Tình trạng ô kho
+                      </span>
+                      <span className="material-symbols-outlined text-[20px]">
+                        {statsExpanded ? 'expand_less' : 'expand_more'}
+                      </span>
+                    </button>
+
+                    {statsExpanded && (
+                      <div className="mt-2 grid grid-cols-3 gap-2 rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-2 text-center">
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <span className="block text-lg font-black leading-none text-[#1CB0F6]">{f.occupiedUnits || 0}</span>
+                          <span className="mt-1 block text-[10px] font-bold text-[#777777]">Đang thuê</span>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <span className="block text-lg font-black leading-none text-[#FF9600]">{f.pendingReservationsCount || 0}</span>
+                          <span className="mt-1 block text-[10px] font-bold text-[#777777]">Chờ nhận</span>
+                        </div>
+                        <div className="rounded-xl bg-white px-2 py-2">
+                          <span className="block text-lg font-black leading-none text-[#58A700]">{avail}</span>
+                          <span className="mt-1 block text-[10px] font-bold text-[#777777]">Còn trống</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t-2 border-[#F0F0F0] pt-3" onClick={(event) => event.stopPropagation()}>
+                    <button onClick={() => handleOpenDetail(f)} className="duo-btn-blue flex items-center gap-1 px-2.5 py-1.5 text-xs">
+                      <span className="material-symbols-outlined text-[16px]">visibility</span>
+                      Chi tiết
+                    </button>
+                    <button onClick={() => handleOpenEdit(f)} className="duo-btn-white flex items-center gap-1 px-2.5 py-1.5 text-xs text-[#1CB0F6]">
+                      <span className="material-symbols-outlined text-[16px]">edit</span>
+                      Sửa
+                    </button>
+                    <button
+                      onClick={() => handleOpenStatusModal(f)}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 text-xs ${
+                        f.status === 'ACTIVE' ? 'duo-btn-gray text-[#FF4B4B]' : 'duo-btn-green'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">{f.status === 'ACTIVE' ? 'pause_circle' : 'play_circle'}</span>
+                      {f.status === 'ACTIVE' ? 'Tạm ngưng' : 'Kích hoạt'}
                     </button>
                   </div>
-                </div>
+                </article>
               );
             })}
-          </div>
-        ) : (
-          /* ========================================================
-             DẠNG BẢNG CHI TIẾT
-             ======================================================== */
-          <div className="duo-card overflow-hidden bg-white shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#777777] font-black uppercase tracking-wider text-[11px]">
-                    <th className="py-2.5 px-2 text-center w-12">Mã</th>
-                    <th className="py-2.5 px-2.5">Tên cơ sở</th>
-                    <th className="py-2.5 px-2">Khu vực</th>
-                    <th className="py-2.5 px-2">Hotline</th>
-                    <th className="py-2.5 px-1.5 text-center">Tổng ô</th>
-                    <th className="py-2.5 px-1.5 text-center text-[#1CB0F6]">
-                      <span className="inline-flex items-center gap-1 justify-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#1CB0F6]"></span>
-                        <span>Đang thuê</span>
-                      </span>
-                    </th>
-                    <th className="py-2.5 px-1.5 text-center text-[#FF9600]">
-                      <span className="inline-flex items-center gap-1 justify-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600]"></span>
-                        <span>Chờ nhận</span>
-                      </span>
-                    </th>
-                    <th className="py-2.5 px-1.5 text-center text-[#58CC02]">
-                      <span className="inline-flex items-center gap-1 justify-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#58CC02]"></span>
-                        <span>Còn trống</span>
-                      </span>
-                    </th>
-                    <th className="py-2.5 px-2 text-center">Trạng thái</th>
-                    <th className="py-2.5 px-2.5 text-right">Hành động</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y-2 divide-[#F0F0F0] font-bold text-[#4B4B4B]">
-                  {facilities.map((f) => {
-                    const avail = getFacilityAvailable(f);
-
-                    return (
-                      <tr
-                        key={f.id}
-                        onClick={() => handleOpenDetail(f)}
-                        className="hover:bg-[#F9FCFF] transition-colors cursor-pointer group"
-                      >
-                        <td className="py-2.5 px-2 text-center">
-                          <span className="px-2 py-0.5 rounded-lg bg-[#EBF7FF] border border-[#84D8FF] text-[#1CB0F6] font-black text-xs inline-block">
-                            {f.code}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2.5 font-black text-[#4B4B4B] text-xs group-hover:text-[#1CB0F6] transition-colors">
-                          {f.name}
-                        </td>
-                        <td className="py-2.5 px-2 text-[#777777] text-xs">
-                          {f.district}, {f.city}
-                        </td>
-                        <td className="py-2.5 px-2 text-[#777777] text-xs font-semibold">
-                          {f.hotline || '—'}
-                        </td>
-                        <td className="py-2.5 px-1.5 text-center">
-                          <span className="text-xs font-black text-[#4B4B4B]">{f.totalUnits}</span>
-                        </td>
-                        <td className="py-2.5 px-1.5 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <span className="text-xs font-black text-[#1CB0F6] leading-none">
-                              {f.occupiedUnits}
-                            </span>
-                            <span className="text-[9px] font-bold text-[#777777] mt-0.5">
-                              ({f.activeContractsCount} HĐ)
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-1.5 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <span className="text-xs font-black text-[#FF9600] leading-none">
-                              {f.pendingReservationsCount}
-                            </span>
-                            <span className="text-[9px] font-bold text-[#AFAFAF] mt-0.5">
-                              chờ nhận
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-1.5 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <span className="text-xs font-black text-[#58CC02] leading-none">
-                              {avail}
-                            </span>
-                            <span className="text-[9px] font-bold text-[#AFAFAF] mt-0.5">
-                              sẵn sàng
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-2 text-center">
-                          {f.status === 'ACTIVE' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#EAF7DD] border border-[#B4E885] text-[#58CC02] text-[11px] font-black">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#58CC02]"></span>
-                              <span>Hoạt động</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#FFF0F0] border border-[#FFC1C1] text-[#FF4B4B] text-[11px] font-black">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF4B4B]"></span>
-                              <span>Tạm ngừng</span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={() => handleOpenDetail(f)}
-                              className="duo-btn-blue py-1 px-2 rounded-lg text-[11px] flex items-center gap-1"
-                              title="Xem chi tiết"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">visibility</span>
-                              <span>Chi tiết</span>
-                            </button>
-                            <button
-                              onClick={() => handleOpenEdit(f)}
-                              className="duo-btn-white p-1 rounded-lg"
-                              title="Sửa thông tin"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">edit</span>
-                            </button>
-                            <button
-                              onClick={() => handleOpenStatusModal(f)}
-                              className={`p-1 rounded-lg ${
-                                f.status === 'ACTIVE'
-                                  ? 'duo-btn-gray text-[#FF4B4B] hover:text-[#EA2B2B]'
-                                  : 'duo-btn-green'
-                              }`}
-                              title={f.status === 'ACTIVE' ? 'Tạm ngừng hoạt động' : 'Kích hoạt hoạt động'}
-                            >
-                              <span className="material-symbols-outlined text-[14px]">
-                                {f.status === 'ACTIVE' ? 'pause_circle' : 'play_circle'}
-                              </span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           </div>
         )}
       </div>

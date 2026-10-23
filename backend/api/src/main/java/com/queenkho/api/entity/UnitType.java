@@ -10,12 +10,13 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @Getter
 @Setter
+@Builder
 public class UnitType {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, unique = true, length = 100)
     private String name;
 
     @Column(name = "area_sqm", nullable = false, precision = 8, scale = 2)
@@ -35,4 +36,8 @@ public class UnitType {
 
     @Column(length = 500)
     private String features;
+
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private String status = "ACTIVE"; // ACTIVE / INACTIVE (UC-05, PR-M4)
 }

@@ -230,6 +230,7 @@ public class ContractService {
 
         // Hủy task CHECK_OUT đang mở trong staff_tasks
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
+        staffTaskService.closeOpenSupportTicketsAndTasks(contract.getId());
 
         // Ghi activity log
         String logDesc = "Khách hàng hủy yêu cầu trả kho cho HĐ " + contract.getContractCode() + ". Hợp đồng trở lại trạng thái " + newStatus;
@@ -666,6 +667,7 @@ public class ContractService {
 
         // 4. Hủy task CHECK_OUT đang mở nếu có (UC-16)
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
+        staffTaskService.closeOpenSupportTicketsAndTasks(contract.getId());
 
         // 5. Ghi 1 giao dịch payment_transactions loại LATE_FEE, phương thức DEPOSIT_OFFSET, trạng thái SUCCESS
         String feeTxnCode = "LATE-OFF-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000);

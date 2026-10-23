@@ -2,9 +2,13 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.CompleteRefundRequest;
 import com.queenkho.api.dto.ContactReportRequest;
 import com.queenkho.api.dto.DamageCaseResponse;
+import com.queenkho.api.dto.ExtendSupportTaskRequest;
 import com.queenkho.api.dto.HandoverRecordResponse;
+import com.queenkho.api.dto.RefundCalculationResult;
+import com.queenkho.api.dto.ResolveSupportTaskRequest;
 import com.queenkho.api.dto.StaffTaskDetailResponse;
 import com.queenkho.api.dto.StaffTaskResponse;
 import com.queenkho.api.entity.DamageCase;
@@ -12,6 +16,7 @@ import com.queenkho.api.entity.HandoverRecord;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StaffTask;
 import com.queenkho.api.entity.StorageUnit;
+import com.queenkho.api.entity.SupportRequest;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.DamageCaseRepository;
@@ -21,9 +26,8 @@ import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.ReservationRepository;
 import com.queenkho.api.repository.StaffTaskRepository;
 import com.queenkho.api.repository.StorageUnitRepository;
+import com.queenkho.api.repository.SupportRequestRepository;
 import com.queenkho.api.repository.UserRepository;
-import com.queenkho.api.dto.CompleteRefundRequest;
-import com.queenkho.api.dto.RefundCalculationResult;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,11 +45,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.Period;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class StaffTaskService {
@@ -64,6 +73,8 @@ public class StaffTaskService {
     private static final int PIN_MAX_ATTEMPTS = 20;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String IMG_DELIMITER = "\n|||\n";
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
     @Autowired
     private StaffTaskRepository staffTaskRepository;
@@ -88,6 +99,12 @@ public class StaffTaskService {
 
     @Autowired
     private ReservationRepository reservationRepository;
+
+    @Autowired
+    private SupportRequestRepository supportRequestRepository;
+
+    @Autowired
+    private ActivityLogService activityLogService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -143,6 +160,20 @@ public class StaffTaskService {
         staffTaskRepository.saveAll(tasks);
     }
 
+    // PR-S8: Hợp đồng TERMINATED / LIQUIDATED -> đóng mọi ticket hỗ trợ còn mở và hủy task SUPPORT đang mở
+    @Transactional
+    public void closeOpenSupportTicketsAndTasks(Integer contractId) {
+        if (contractId == null) return;
+        try {
+            jdbcTemplate.update(
+                    "UPDATE support_requests SET status = 'CLOSED', closed_at = SYSDATETIME() " +
+                            "WHERE contract_id = ? AND status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED')",
+                    contractId);
+            cancelOpenTasks(contractId, "SUPPORT");
+        } catch (Exception ignored) {
+        }
+    }
+
     private void createTask(RentalContract contract, String taskType, LocalDate appointmentDate, String note) {
         // Chặn trùng: hợp đồng đã có task cùng loại đang mở thì thôi
         if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(contract.getId(), taskType, OPEN_STATUSES)) {
@@ -190,20 +221,57 @@ public class StaffTaskService {
                 throw new IllegalArgumentException("Trạng thái không hợp lệ: " + status);
             }
         }
-        return staffTaskRepository.findBoard(facilityId, normalizedStatus)
-                .stream()
-                .map(this::toResponse)
+        List<StaffTask> tasks = staffTaskRepository.findBoard(facilityId, normalizedStatus);
+        if (tasks.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Integer> supportIds = tasks.stream()
+                .map(StaffTask::getSupportRequestId)
+                .filter(Objects::nonNull)
+                .distinct()
                 .toList();
+
+        Map<Integer, SupportRequest> supportMap = new HashMap<>();
+        if (!supportIds.isEmpty()) {
+            for (SupportRequest sr : supportRequestRepository.findByIdInWithDetails(supportIds)) {
+                supportMap.put(sr.getId(), sr);
+            }
+        }
+
+        List<StaffTaskResponse> responses = new ArrayList<>();
+        for (StaffTask task : tasks) {
+            SupportRequest sr = task.getSupportRequestId() != null ? supportMap.get(task.getSupportRequestId()) : null;
+            responses.add(toResponse(task, sr));
+        }
+
+        // PR-34: Task SUPPORT khẩn (LOCK_ISSUE, SECURITY) đang mở nổi lên đầu bảng, sau đó sắp theo dueAt ASC
+        responses.sort(Comparator
+                .comparing((StaffTaskResponse r) -> {
+                    boolean active = OPEN_STATUSES.contains(r.getStatus());
+                    return !(active && r.isUrgent());
+                })
+                .thenComparing(StaffTaskResponse::getDueAt, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        return responses;
+    }
+
+    private StaffTaskResponse toResponse(StaffTask task) {
+        SupportRequest sr = null;
+        if (task.getSupportRequestId() != null) {
+            sr = supportRequestRepository.findDetailById(task.getSupportRequestId()).orElse(null);
+        }
+        return toResponse(task, sr);
     }
 
     // Entity → DTO. Không trả thẳng entity ra API vì:
     // (1) quan hệ LAZY sẽ lỗi khi Jackson serialize, (2) lộ field không cần thiết
     // (password của User...)
-    private StaffTaskResponse toResponse(StaffTask task) {
-        RentalContract contract = task.getContract();
+    private StaffTaskResponse toResponse(StaffTask task, SupportRequest sr) {
+        RentalContract contract = task.getContract() != null ? task.getContract() : (sr != null ? sr.getContract() : null);
         User staff = task.getStaff();
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
-        User customer = contract != null ? contract.getCustomer() : null;
+        User customer = contract != null ? contract.getCustomer() : (sr != null ? sr.getCustomer() : null);
 
         String customerName = customer != null ? customer.getFullName() : null;
         String customerPhone = customer != null ? customer.getPhone() : null;
@@ -249,6 +317,10 @@ public class StaffTaskService {
             taskNote = buildEnrichedRefundNote(contract, taskNote, task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now());
         }
 
+        boolean urgent = sr != null
+                ? SupportRequestService.isUrgentIssue(sr.getIssueType())
+                : ("SUPPORT".equals(task.getTaskType()) && taskNote != null && taskNote.contains("[KHẨN]"));
+
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .facilityId(task.getFacilityId())
@@ -269,6 +341,13 @@ public class StaffTaskService {
                 .customerPhone(customerPhone)
                 .storageUnitId(unit != null ? unit.getId() : null)
                 .unitTypeName(unitTypeName)
+                .supportRequestId(task.getSupportRequestId())
+                .ticketCode(sr != null ? sr.getTicketCode() : null)
+                .issueType(sr != null ? sr.getIssueType() : null)
+                .urgent(urgent)
+                .ticketStatus(sr != null ? sr.getStatus() : null)
+                .ticketDescription(sr != null ? sr.getDescription() : null)
+                .resolutionNote(sr != null ? sr.getResolutionNote() : null)
                 .build();
     }
 
@@ -300,6 +379,25 @@ public class StaffTaskService {
             // UPDATE không ăn dòng nào → đọc lại để báo đúng lý do
             throw explainClaimFailure(taskId, userId);
         }
+
+        // PR-34: Nếu là task SUPPORT thì ticket đi theo task (OPEN -> IN_PROGRESS)
+        if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
+            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
+                if ("OPEN".equals(sr.getStatus())) {
+                    sr.setStatus("IN_PROGRESS");
+                    supportRequestRepository.save(sr);
+                }
+            });
+        }
+
+        // PR-A9: Ghi log nhận việc
+        activityLogService.log(
+                user.getId(),
+                "[TASK_CLAIM] Nhân viên " + user.getFullName() + " nhận việc task #" + task.getId() + " (" + task.getTaskType() + ")",
+                "facility_tasks",
+                String.valueOf(task.getId())
+        );
+
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
 
@@ -308,6 +406,7 @@ public class StaffTaskService {
     public StaffTaskResponse unassignTask(Integer taskId, Integer managerId) {
         User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được gỡ người nhận");
         StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
+        String prevStaffName = task.getStaff() != null ? task.getStaff().getFullName() : "nhân viên";
 
         int updated = staffTaskRepository.unassign(task.getId());
         if (updated == 0) {
@@ -322,6 +421,25 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_UNASSIGNABLE",
                     "Task đã đóng, không thể gỡ người nhận");
         }
+
+        // PR-34: Nếu là task SUPPORT thì ticket quay lại OPEN khi bị gỡ người nhận
+        if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
+            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
+                if ("IN_PROGRESS".equals(sr.getStatus())) {
+                    sr.setStatus("OPEN");
+                    supportRequestRepository.save(sr);
+                }
+            });
+        }
+
+        // PR-A9: Ghi log gỡ người nhận
+        activityLogService.log(
+                manager.getId(),
+                "[TASK_UNASSIGN] Quản lý " + manager.getFullName() + " gỡ " + prevStaffName + " khỏi task #" + task.getId() + " (" + task.getTaskType() + ")",
+                "facility_tasks",
+                String.valueOf(task.getId())
+        );
+
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
 
@@ -398,9 +516,15 @@ public class StaffTaskService {
     // (có thể bị người khác lấy mất giữa chừng)
     @Transactional(readOnly = true)
     public String suggestPin() {
+        return suggestPinExcluding(null);
+    }
+
+    private String suggestPinExcluding(String currentPin) {
         for (int i = 0; i < PIN_MAX_ATTEMPTS; i++) {
-            // %06d: đệm số 0 bên trái → luôn đủ 6 ký tự (vd 42 → "000042")
             String pin = String.format("%06d", RANDOM.nextInt(1_000_000));
+            if (currentPin != null && currentPin.equals(pin)) {
+                continue;
+            }
             if (!rentalContractRepository.existsByAccessPinCodeAndStatusIn(pin, LIVE_CONTRACT_STATUSES)) {
                 return pin;
             }
@@ -474,23 +598,18 @@ public class StaffTaskService {
         contract.setRfidCardCode(rfid);
         rentalContractRepository.save(contract);
 
-        // 7. Ghi log (cột action ở QueenKho.sql chỉ 100 ký tự → giữ ngắn). Lỗi log
-        // không làm hỏng check-in
+        // 7. Ghi log. Lỗi log không làm hỏng check-in
         try {
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                             "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
                     staffId,
-                    "Check-in HĐ " + contract.getContractCode() + ", ô " + contract.getStorageUnit().getId(),
+                    "[CHECK_IN] Check-in HĐ " + contract.getContractCode() + ", ô " + contract.getStorageUnit().getId(),
                     String.valueOf(contract.getId()));
         } catch (Exception e) {
             // bỏ qua lỗi ghi log
         }
 
-        // created_at của biên bản do DB tự điền (insertable = false) nên entity trong
-        // cache Hibernate vẫn đang null.
-        // flush: đẩy INSERT/UPDATE xuống DB; clear: bỏ cache → lần đọc dưới lấy bản mới
-        // từ DB
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
@@ -500,8 +619,6 @@ public class StaffTaskService {
         if (request == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu nội dung biên bản");
         }
-        // Boolean.TRUE.equals: null cũng tính là chưa tick (tránh NullPointerException
-        // khi unboxing)
         boolean allChecked = Boolean.TRUE.equals(request.getIdentityVerified())
                 && Boolean.TRUE.equals(request.getUnitEmpty())
                 && Boolean.TRUE.equals(request.getUnitClean())
@@ -525,7 +642,7 @@ public class StaffTaskService {
         }
     }
 
-        // UPDATE không ăn dòng nào → đọc lại task để báo đúng lý do
+    // UPDATE không ăn dòng nào → đọc lại task để báo đúng lý do
     private StaffTaskException explainCheckInFailure(Integer taskId, Integer staffId) {
         StaffTask current = staffTaskRepository.findDetailById(taskId).orElseThrow();
         String status = current.getStatus();
@@ -549,6 +666,257 @@ public class StaffTaskService {
         }
         return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
                 "Bạn cần nhận việc trước khi lập biên bản");
+    }
+
+    // ================== UC-27: XỬ LÝ YÊU CẦU HỖ TRỢ (STAFF & FM) ==================
+
+    /**
+     * UC-27 / PR-S5: Nhân viên hoàn tất xử lý task SUPPORT.
+     * Chỉ Staff đang giữ task IN_PROGRESS, chưa quá hạn, bắt buộc nhập kết quả xử lý (1-1000 ký tự).
+     * 1 transaction: task COMPLETED; ticket RESOLVED + resolution_note + resolved_at; log.
+     */
+    @Transactional
+    public StaffTaskDetailResponse resolveSupportTask(Integer taskId, Integer staffId, ResolveSupportTaskRequest request) {
+        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được xử lý yêu cầu hỗ trợ");
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Task này không phải task hỗ trợ khách hàng (SUPPORT)");
+        }
+
+        String resolutionNote = (request != null && request.getResolutionNote() != null)
+                ? request.getResolutionNote().trim()
+                : "";
+        if (resolutionNote.isEmpty()) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Bắt buộc nhập kết quả xử lý sự cố (PR-S5)");
+        }
+        if (resolutionNote.length() > 1000) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Kết quả xử lý tối đa 1000 ký tự (PR-S5)");
+        }
+
+        Integer supportRequestId = task.getSupportRequestId();
+        String oldNote = task.getNote() != null ? task.getNote() : "";
+
+        LocalDateTime now = LocalDateTime.now();
+        if (staffTaskRepository.completeSupport(taskId, staffId, now) == 0) {
+            throw explainSupportFailure(taskId, staffId);
+        }
+
+        // Cập nhật note của task
+        StaffTask updatedTask = staffTaskRepository.findById(taskId).orElseThrow();
+        String appendedNote = oldNote + " | [Kết quả xử lý: " + resolutionNote + "]";
+        if (appendedNote.length() > 1000) {
+            appendedNote = appendedNote.substring(0, 997) + "...";
+        }
+        updatedTask.setNote(appendedNote);
+        staffTaskRepository.save(updatedTask);
+
+        // Cập nhật ticket sang RESOLVED
+        String ticketCode = "#" + supportRequestId;
+        if (supportRequestId != null) {
+            SupportRequest sr = supportRequestRepository.findById(supportRequestId)
+                    .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND",
+                            "Không tìm thấy ticket hỗ trợ liên kết"));
+            sr.setStatus("RESOLVED");
+            sr.setResolutionNote(resolutionNote);
+            sr.setResolvedAt(now);
+            supportRequestRepository.save(sr);
+            ticketCode = sr.getTicketCode();
+        }
+
+        activityLogService.log(
+                staff.getId(),
+                "[SUPPORT_RESOLVE] Nhân viên " + staff.getFullName() + " hoàn tất xử lý ticket " + ticketCode + ": " + resolutionNote,
+                "support_requests",
+                String.valueOf(supportRequestId != null ? supportRequestId : taskId)
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * UC-27 / PR-S6, BR-73, PR-Q5: Cấp lại mã PIN 6 số cho ticket LOCK_ISSUE.
+     * Chặn nếu hợp đồng đang OVERDUE (PR-Q5).
+     */
+    @Transactional
+    public StaffTaskDetailResponse resetSupportContractPin(Integer taskId, Integer staffId) {
+        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được cấp lại mã PIN hỗ trợ");
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Chỉ task hỗ trợ (SUPPORT) mới có chức năng cấp lại PIN");
+        }
+        if (!"IN_PROGRESS".equals(task.getStatus())
+                || task.getStaff() == null
+                || !task.getStaff().getId().equals(staffId)
+                || (task.getDueAt() != null && !task.getDueAt().isAfter(LocalDateTime.now()))) {
+            throw explainSupportFailure(taskId, staffId);
+        }
+
+        SupportRequest sr = task.getSupportRequestId() != null
+                ? supportRequestRepository.findDetailById(task.getSupportRequestId()).orElse(null)
+                : null;
+        if (sr == null || !"LOCK_ISSUE".equalsIgnoreCase(sr.getIssueType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "INVALID_ISSUE_TYPE",
+                    "Chỉ yêu cầu hỗ trợ thuộc loại Sự cố khóa (LOCK_ISSUE) mới được cấp lại mã PIN (PR-S6)");
+        }
+
+        RentalContract contract = task.getContract() != null ? task.getContract() : sr.getContract();
+        if (contract == null) {
+            throw new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND",
+                    "Không tìm thấy hợp đồng gắn với yêu cầu hỗ trợ này");
+        }
+
+        // PR-Q5 & PR-S6: Hợp đồng OVERDUE không cấp lại mã PIN
+        if ("OVERDUE".equalsIgnoreCase(contract.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_OVERDUE",
+                    "Hợp đồng đang quá hạn thanh toán (OVERDUE), mã PIN đang bị khóa nên không thể cấp lại (PR-Q5, PR-S6)");
+        }
+        if (!LIVE_CONTRACT_STATUSES.contains(contract.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
+                    "Hợp đồng không còn hiệu lực để cấp lại mã PIN");
+        }
+
+        String newPin = suggestPinExcluding(contract.getAccessPinCode());
+        contract.setAccessPinCode(newPin);
+        rentalContractRepository.save(contract);
+
+        String stamp = LocalDateTime.now().format(TS_FMT);
+        String updatedNote = (task.getNote() != null ? task.getNote() : "") + " | [Đã cấp lại PIN mới lúc " + stamp + "]";
+        if (updatedNote.length() > 1000) {
+            updatedNote = updatedNote.substring(0, 997) + "...";
+        }
+        task.setNote(updatedNote);
+        staffTaskRepository.save(task);
+
+        activityLogService.log(
+                staff.getId(),
+                "[PIN_RESET] Nhân viên " + staff.getFullName() + " cấp lại mã PIN mới cho HĐ " + contract.getContractCode()
+                        + " (Ticket " + sr.getTicketCode() + ")",
+                "rental_contracts",
+                String.valueOf(contract.getId())
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * UC-27 / PR-S4: Task SUPPORT OVERDUE -> FM gia hạn (hạn mới + lý do) -> OPEN / IN_PROGRESS (giữ người nhận).
+     */
+    @Transactional
+    public StaffTaskDetailResponse extendSupportTask(Integer taskId, Integer managerId, ExtendSupportTaskRequest request) {
+        User manager = findUserWithRole(managerId, "FACILITY_MANAGER",
+                "Chỉ Quản lý cơ sở (FM) mới có quyền gia hạn task hỗ trợ quá hạn (PR-S4)");
+        StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
+
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Chỉ task hỗ trợ (SUPPORT) mới áp dụng chức năng gia hạn này (PR-S4)");
+        }
+
+        boolean isOverdue = "OVERDUE".equals(task.getStatus())
+                || (OPEN_STATUSES.contains(task.getStatus()) && task.getDueAt() != null && !task.getDueAt().isAfter(LocalDateTime.now()));
+        if (!isOverdue) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_OVERDUE",
+                    "Chỉ task hỗ trợ đã quá hạn (OVERDUE) mới cần gia hạn");
+        }
+
+        if (request == null || request.getNewDueDate() == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Vui lòng chọn ngày hạn mới cho task hỗ trợ (PR-S4)");
+        }
+        if (request.getNewDueDate().isBefore(LocalDate.now())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Ngày hạn mới phải từ hôm nay trở đi");
+        }
+
+        String reason = request.getReason() != null ? request.getReason().trim() : "";
+        if (reason.isEmpty()) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Bắt buộc nhập lý do gia hạn task hỗ trợ (PR-S4)");
+        }
+        if (reason.length() > 500) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Lý do gia hạn tối đa 500 ký tự");
+        }
+
+        LocalDateTime newDueAt = request.getNewDueDate().atTime(CLOSING_TIME);
+        if (!newDueAt.isAfter(LocalDateTime.now())) {
+            newDueAt = LocalDate.now().plusDays(1).atTime(CLOSING_TIME);
+        }
+
+        // PR-S4: Giữ nguyên người nhận (nếu đã có staff nhận -> IN_PROGRESS, chưa ai nhận -> OPEN)
+        String restoredStatus = task.getStaff() == null ? "OPEN" : "IN_PROGRESS";
+        task.setDueAt(newDueAt);
+        task.setStatus(restoredStatus);
+
+        String formattedDue = newDueAt.toLocalDate().format(DATE_FMT);
+        String extNote = (task.getNote() != null ? task.getNote() : "")
+                + " | [FM gia hạn đến 21:00 " + formattedDue + " - Lý do: " + reason + "]";
+        if (extNote.length() > 1000) {
+            extNote = extNote.substring(0, 997) + "...";
+        }
+        task.setNote(extNote);
+        staffTaskRepository.save(task);
+
+        String ticketCode = "#" + task.getSupportRequestId();
+        if (task.getSupportRequestId() != null) {
+            SupportRequest sr = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            if (sr != null) {
+                ticketCode = sr.getTicketCode();
+                if ("OPEN".equals(sr.getStatus()) || "IN_PROGRESS".equals(sr.getStatus())) {
+                    sr.setStatus(restoredStatus);
+                    supportRequestRepository.save(sr);
+                }
+            }
+        }
+
+        activityLogService.log(
+                manager.getId(),
+                "[SUPPORT_EXTEND] Quản lý " + manager.getFullName() + " gia hạn task SUPPORT #" + task.getId()
+                        + " (Ticket " + ticketCode + ") đến 21:00 " + formattedDue + ": " + reason,
+                "facility_tasks",
+                String.valueOf(task.getId())
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    private StaffTaskException explainSupportFailure(Integer taskId, Integer staffId) {
+        StaffTask current = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        String status = current.getStatus();
+        if ("COMPLETED".equals(status)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_COMPLETED",
+                    "Yêu cầu hỗ trợ này đã được xử lý xong trước đó");
+        }
+        if ("OVERDUE".equals(status)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Task hỗ trợ đã quá hạn 21:00. Nhân viên không thể làm tiếp — vui lòng báo Quản lý cơ sở (FM) gia hạn (PR-S4)");
+        }
+        if ("IN_PROGRESS".equals(status)) {
+            if (current.getStaff() == null || !current.getStaff().getId().equals(staffId)) {
+                return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_YOURS",
+                        "Task hỗ trợ này đang do nhân viên khác phụ trách");
+            }
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Task hỗ trợ đã quá hạn 21:00. Vui lòng báo Quản lý cơ sở (FM) gia hạn (PR-S4)");
+        }
+        if ("CANCELLED".equals(status)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
+                    "Task hỗ trợ đã bị hủy (khách hủy ticket hoặc hợp đồng đã kết thúc)");
+        }
+        return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
+                "Bạn cần bấm \"Nhận việc\" trước khi xử lý yêu cầu hỗ trợ");
     }
 
     // ================== UC-23 & UC-24: NGHIỆM THU TRẢ KHO & GHI NHẬN SỰ CỐ ==================
@@ -666,13 +1034,7 @@ public class StaffTaskService {
         }
 
         // Đóng các ticket hỗ trợ còn mở của hợp đồng này (PR-S8)
-        try {
-            jdbcTemplate.update(
-                    "UPDATE support_requests SET status = 'CLOSED' WHERE contract_id = ? AND status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED')",
-                    contract.getId());
-            cancelOpenTasks(contract.getId(), "SUPPORT");
-        } catch (Exception ignored) {
-        }
+        closeOpenSupportTicketsAndTasks(contract.getId());
 
         // 8. Quyết toán hoàn tiền trả kho theo bộ Business Rules mới (PR-O2, PR-O11, PR-O14, PR-Q3)
         RefundCalculationResult calc = calculateCheckoutRefund(contract, now.toLocalDate(), totalDamageCost);
@@ -925,10 +1287,15 @@ public class StaffTaskService {
     }
 
     private StaffTaskDetailResponse toDetailResponse(StaffTask task) {
-        RentalContract contract = task.getContract();
+        SupportRequest sr = null;
+        if (task.getSupportRequestId() != null) {
+            sr = supportRequestRepository.findDetailById(task.getSupportRequestId()).orElse(null);
+        }
+
+        RentalContract contract = task.getContract() != null ? task.getContract() : (sr != null ? sr.getContract() : null);
         User staff = task.getStaff();
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
-        User customer = contract != null ? contract.getCustomer() : null;
+        User customer = contract != null ? contract.getCustomer() : (sr != null ? sr.getCustomer() : null);
 
         String customerName = customer != null ? customer.getFullName() : null;
         String customerPhone = customer != null ? customer.getPhone() : null;
@@ -982,7 +1349,8 @@ public class StaffTaskService {
 
         // Chỉ task đã hoàn thành mới có biên bản
         HandoverRecordResponse handover = null;
-        if (contract != null && "COMPLETED".equals(task.getStatus())) {
+        if (contract != null && "COMPLETED".equals(task.getStatus())
+                && ("CHECK_IN".equals(task.getTaskType()) || "CHECK_OUT".equals(task.getTaskType()))) {
             handover = handoverRecordRepository
                     .findFirstByContractIdAndRecordTypeOrderByIdDesc(contract.getId(), task.getTaskType())
                     .map(this::toHandoverResponse)
@@ -1056,6 +1424,10 @@ public class StaffTaskService {
             }
         }
 
+        boolean urgent = sr != null
+                ? SupportRequestService.isUrgentIssue(sr.getIssueType())
+                : ("SUPPORT".equals(task.getTaskType()) && taskNote != null && taskNote.contains("[KHẨN]"));
+
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .facilityId(task.getFacilityId())
@@ -1078,14 +1450,14 @@ public class StaffTaskService {
                 .depositHeldAmount(depositHeld)
                 .accessPinCode(contract != null ? contract.getAccessPinCode() : null)
                 .rfidCardCode(contract != null ? contract.getRfidCardCode() : null)
-                .customerName(customer != null ? customer.getFullName() : null)
-                .customerPhone(customer != null ? customer.getPhone() : null)
-                .customerEmail(customer != null ? customer.getEmail() : null)
+                .customerName(customerName)
+                .customerPhone(customerPhone)
+                .customerEmail(customerEmail)
                 .customerCccd(customer != null ? customer.getCccd() : null)
                 .storageUnitId(unit != null ? unit.getId() : null)
                 .storageUnitStatus(unit != null ? unit.getStatus() : null)
-                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getName() : null)
-                .facilityName(unit != null && unit.getFacility() != null ? unit.getFacility().getName() : null)
+                .unitTypeName(unitTypeName)
+                .facilityName(facName)
                 .handoverRecord(handover)
                 .damageCases(damageResponses)
                 .totalDamageCost(totalDamageCost)
@@ -1101,6 +1473,16 @@ public class StaffTaskService {
                 .cycleMonths(cycleMonths)
                 .baseMonthlyPrice(baseMonthlyPrice)
                 .refundBreakdownNote(refundBreakdownNote)
+                .supportRequestId(task.getSupportRequestId())
+                .ticketCode(sr != null ? sr.getTicketCode() : null)
+                .issueType(sr != null ? sr.getIssueType() : null)
+                .urgent(urgent)
+                .ticketStatus(sr != null ? sr.getStatus() : null)
+                .ticketDescription(sr != null ? sr.getDescription() : null)
+                .resolutionNote(sr != null ? sr.getResolutionNote() : null)
+                .ticketCreatedAt(sr != null ? sr.getCreatedAt() : null)
+                .ticketResolvedAt(sr != null ? sr.getResolvedAt() : null)
+                .ticketClosedAt(sr != null ? sr.getClosedAt() : null)
                 .build();
     }
 
@@ -1278,7 +1660,7 @@ public class StaffTaskService {
 
         // Ghi activity log (PR-A8, PR-A9)
         try {
-            String logAction = "Quản lý " + manager.getFullName() + " xác nhận hoàn tất hoàn tiền task #" + task.getId()
+            String logAction = "[REFUND] Quản lý " + manager.getFullName() + " xác nhận hoàn tất hoàn tiền task #" + task.getId()
                     + " (Phương thức: " + ("CASH".equals(method) ? "Tiền mặt" : "Chuyển khoản " + ftCode) + ")";
             if (logAction.length() > 500) logAction = logAction.substring(0, 497) + "...";
             jdbcTemplate.update(
@@ -1312,7 +1694,6 @@ public class StaffTaskService {
             totalDamageCost = BigDecimal.ZERO;
         }
 
-        // Lấy đơn giá niêm yết 1 tháng lúc ký
         BigDecimal baseMonthlyPrice = BigDecimal.ZERO;
         if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null
                 && contract.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
@@ -1322,7 +1703,6 @@ public class StaffTaskService {
             baseMonthlyPrice = contract.getReservation().getUnitType().getBasePriceMonthly();
         }
 
-        // Nếu hợp đồng đã TERMINATED và trigger SQL đã set deposit_held_amount = 0 thì lấy cọc gốc từ reservation hoặc baseMonthlyPrice
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         if (depositHeld.compareTo(BigDecimal.ZERO) <= 0) {
             if (contract.getReservation() != null && contract.getReservation().getDepositAmount() != null
@@ -1340,7 +1720,6 @@ public class StaffTaskService {
         LocalDate endDate = contract.getEndDate() != null ? contract.getEndDate() : startDate.plusMonths(1);
         LocalDate actualDate = actualCheckoutDate != null ? actualCheckoutDate : LocalDate.now();
 
-        // Số tháng của kỳ thuê (1, 3, 6, 12): lấy max giữa chênh lệch startDate->endDate, duration_months của reservation và billing_cycle_months
         int monthsFromDates = 1;
         if (endDate.isAfter(startDate)) {
             Period totalP = Period.between(startDate, endDate);
@@ -1352,7 +1731,6 @@ public class StaffTaskService {
                 ? contract.getBillingCycleMonths() : 1;
         int cycleMonths = Math.max(monthsFromDates, Math.max(resMonths, billMonths));
 
-        // Tính tiền thuê kỳ hiện tại theo bảng giá D-08 (dùng làm fallback nếu chưa có giao dịch)
         BigDecimal discountRate = BigDecimal.ZERO;
         if (cycleMonths >= 12) discountRate = new BigDecimal("0.15");
         else if (cycleMonths >= 6) discountRate = new BigDecimal("0.10");
@@ -1361,7 +1739,6 @@ public class StaffTaskService {
         BigDecimal nominalRent = baseMonthlyPrice.multiply(BigDecimal.valueOf(cycleMonths));
         BigDecimal rentPaid = nominalRent.subtract(nominalRent.multiply(discountRate)).setScale(0, RoundingMode.HALF_UP);
 
-        // Ưu tiên lấy đúng số tiền thuê thực tế khách đã thanh toán từ payment_transactions (đã trừ chiết khấu / voucher)
         try {
             BigDecimal latestMonthlyRent = jdbcTemplate.queryForObject(
                     "SELECT COALESCE((SELECT TOP 1 amount FROM payment_transactions WHERE contract_id = ? AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC), 0)",
@@ -1396,11 +1773,10 @@ public class StaffTaskService {
                 }
                 usedMonths = Math.max(1, m);
             } else {
-                usedMonths = 1; // Tối thiểu tính 1 tháng sử dụng khi đã nhận bàn giao kho
+                usedMonths = 1;
             }
-            breakFee = baseMonthlyPrice; // Phí phá vỡ hợp đồng = 1 tháng giá niêm yết lúc ký
+            breakFee = baseMonthlyPrice;
 
-            // Công thức PR-O2: Hoàn tiền thuê = tiền thuê đã trả - (số tháng đã dùng * đơn giá gốc không ưu đãi) - phí phá HĐ
             BigDecimal usedCost = baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths));
             BigDecimal refundable = rentPaid.subtract(usedCost).subtract(breakFee);
             earlyRentRefund = refundable.max(BigDecimal.ZERO);
@@ -1415,26 +1791,22 @@ public class StaffTaskService {
         if (overdueOrGrace) {
             daysPast = ChronoUnit.DAYS.between(endDate, actualDate);
             if (daysPast == 1) {
-                // Ngày end_date + 1: Miễn phí (PR-O14)
                 graceFee = BigDecimal.ZERO;
             } else if (daysPast >= 2 && daysPast <= 5) {
-                // Ngày +2 -> +5: tính tiền thuê theo ngày = giá niêm yết lúc ký / 30 mỗi ngày
                 BigDecimal dailyRate = baseMonthlyPrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
                 graceFee = dailyRate.multiply(BigDecimal.valueOf(daysPast - 1));
             } else {
-                // Qua +5 ngày (lỡ ân hạn): chuyển sang phí trễ PR-Q3 (10%/ngày, trần 50% tiền cọc)
                 long billableDays = Math.min(daysPast, 5);
                 BigDecimal percent = new BigDecimal("0.10").multiply(BigDecimal.valueOf(billableDays));
                 lateFee = depositHeld.multiply(percent).setScale(0, RoundingMode.HALF_UP);
             }
         }
 
-        // 3. Quyết toán hoàn cọc (PR-O11): Hoàn cọc = cọc đang giữ - phí sự cố - phí ân hạn/trễ hạn (>= 0)
+        // 3. Quyết toán hoàn cọc (PR-O11)
         BigDecimal totalDepositDeductions = totalDamageCost.add(graceFee).add(lateFee);
         BigDecimal depositRefund = depositHeld.subtract(totalDepositDeductions).max(BigDecimal.ZERO);
         BigDecimal excessDebt = totalDepositDeductions.subtract(depositHeld).max(BigDecimal.ZERO);
 
-        // Gộp hoàn tiền thuê trả sớm và hoàn cọc vào tổng hoàn
         BigDecimal totalRefund = depositRefund.add(earlyRentRefund);
         if (excessDebt.compareTo(BigDecimal.ZERO) > 0) {
             if (earlyRentRefund.compareTo(excessDebt) >= 0) {
@@ -1446,7 +1818,6 @@ public class StaffTaskService {
             }
         }
 
-        // Tạo mô tả chi tiết bảng tính (tương thích cả refundParser.js lẫn hiển thị chi tiết)
         NumberFormat vndFmt = NumberFormat.getInstance(new Locale("vi", "VN"));
         StringBuilder desc = new StringBuilder();
         desc.append("Hoàn tiền trả kho | HĐ: ").append(contract.getContractCode())
@@ -1516,7 +1887,6 @@ public class StaffTaskService {
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, dmg);
             StringBuilder enriched = new StringBuilder(calc.getBreakdownDescription());
             if (rawNote != null && !rawNote.isBlank()) {
-                // Giữ lại thông tin STK ngân hàng / tiền mặt và xác nhận hoàn tiền từ note cũ
                 String[] parts = rawNote.split("\\|");
                 for (String part : parts) {
                     String p = part.trim();

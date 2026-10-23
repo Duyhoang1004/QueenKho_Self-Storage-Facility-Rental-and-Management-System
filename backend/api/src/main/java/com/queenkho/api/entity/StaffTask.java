@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+
 @Entity
 @Getter
 @Setter
@@ -15,12 +16,15 @@ public class StaffTask {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @Column(name="facility_id", nullable = false)
+    @Column(name = "facility_id", nullable = false)
     private Integer facilityId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "contract_id")
     private RentalContract contract;
+
+    @Column(name = "support_request_id")
+    private Integer supportRequestId;
 
     @Column(name = "task_type", nullable = false)
     private String taskType;
@@ -49,7 +53,4 @@ public class StaffTask {
 
     @Column(name = "evidence_image_url", length = 1000)
     private String evidenceImageUrl;
-
-
-
 }

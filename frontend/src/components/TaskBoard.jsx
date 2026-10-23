@@ -3,24 +3,33 @@ import { getStaffTasks } from '../services/staffTaskService'
 import { parseRefundNote } from '../utils/refundParser'
 
 // UC-16: Bảng công việc tại cơ sở — dùng chung cho trang Staff và trang Manager.
-// renderActions(task) (tuỳ chọn): trang cha truyền vào để gắn nút thao tác cho từng thẻ (UC-17, UC-18...)
+// renderActions(task) (tuỳ chọn): trang cha truyền vào để gắn nút thao tác cho từng thẻ (UC-17, UC-18, UC-27...)
 // currentStaffId (tuỳ chọn, UC-17): có thì hiện bộ lọc "Việc của tôi" + badge "Của bạn" trên thẻ mình đã nhận
 
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 
 const TYPE_META = {
-  CHECK_IN:    { label: 'Check-in',    icon: 'login',    cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
-  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',   cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
-  REFUND:      { label: 'Hoàn tiền',   icon: 'payments', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
-  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
+  CHECK_IN:    { label: 'Check-in',    icon: 'login',         cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  CHECK_OUT:   { label: 'Check-out',   icon: 'logout',        cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
+  SUPPORT:     { label: 'Hỗ trợ KH',   icon: 'support_agent', cls: 'bg-[#F3E8FF] text-[#A560E8] border-[#CE82FF]' },
+  REFUND:      { label: 'Hoàn tiền',   icon: 'payments',      cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]' },
+  MAINTENANCE: { label: 'Bảo trì kho', icon: 'build',         cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' },
+}
+
+const SUPPORT_ISSUE_LABEL = {
+  LOCK_ISSUE: 'Sự cố khóa / Mã PIN',
+  SECURITY: 'An ninh / Cảnh báo khẩn',
+  FACILITY_DAMAGE: 'Hư hỏng cơ sở vật chất',
+  CLEANING: 'Vệ sinh kho bãi',
+  OTHER: 'Yêu cầu hỗ trợ khác',
 }
 
 const STATUS_META = {
-  OPEN:        { label: 'Chờ nhận',  cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
-  IN_PROGRESS: { label: 'Đang xử lý', cls: 'bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]' },
-  OVERDUE:     { label: 'Quá hạn',   cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
-  COMPLETED:   { label: 'Hoàn thành', cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]' },
-  CANCELLED:   { label: 'Đã huỷ',    cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
+  OPEN:        { label: 'Chờ nhận',    cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
+  IN_PROGRESS: { label: 'Đang xử lý',  cls: 'bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]' },
+  OVERDUE:     { label: 'Quá hạn',     cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
+  COMPLETED:   { label: 'Hoàn thành',  cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]' },
+  CANCELLED:   { label: 'Đã huỷ',      cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
 }
 
 const TABS = [
@@ -102,7 +111,6 @@ export default function TaskBoard({
     }
   }, [initialTypeFilter])
 
-  // Chỉ setState trong callback của promise (không set đồng bộ trong effect)
   const fetchTasks = useCallback(() => {
     if (!facilityId) return Promise.resolve()
     return getStaffTasks(facilityId)
@@ -149,7 +157,7 @@ export default function TaskBoard({
       doneToday: pool.filter(t => t.status === 'COMPLETED' && t.completedAt
         && new Date(t.completedAt).toDateString() === today).length,
     }
-  }, [scopedTasks, isRefundMode])
+  }, [tasks, isRefundMode])
 
   const tabCounts = useMemo(() => {
     const counts = {}
@@ -165,7 +173,7 @@ export default function TaskBoard({
   const visibleTasks = useMemo(() => {
     const currentTab = activeTabs.find(t => t.key === tab) || activeTabs[0]
     const keyword = search.trim().toLowerCase()
-    return scopedTasks
+    const filtered = scopedTasks
       .filter(t => isRefundMode ? t.taskType === 'REFUND' : t.taskType !== 'REFUND')
       .filter(t => currentTab.statuses?.includes(t.status))
       .filter(t => {
@@ -175,10 +183,24 @@ export default function TaskBoard({
       .filter(t => !mineOnly || t.staffId === currentStaffId)
       .filter(t => !keyword
         || t.contractCode?.toLowerCase().includes(keyword)
+        || t.ticketCode?.toLowerCase().includes(keyword)
         || t.customerName?.toLowerCase().includes(keyword)
         || t.customerPhone?.includes(keyword)
         || t.storageUnitId?.toLowerCase().includes(keyword)
-        || t.note?.toLowerCase().includes(keyword))
+        || t.note?.toLowerCase().includes(keyword)
+        || t.ticketDescription?.toLowerCase().includes(keyword))
+
+    // PR-34: Task SUPPORT khẩn (LOCK_ISSUE, SECURITY) còn mở nổi lên đầu bảng
+    return [...filtered].sort((a, b) => {
+      const aActiveUrgent = Boolean(a.urgent) && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(a.status)
+      const bActiveUrgent = Boolean(b.urgent) && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(b.status)
+      if (aActiveUrgent !== bActiveUrgent) {
+        return aActiveUrgent ? -1 : 1
+      }
+      const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER
+      const bDue = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER
+      return aDue - bDue
+    })
   }, [scopedTasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId])
 
   return (
@@ -231,23 +253,25 @@ export default function TaskBoard({
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">search</span>
             <input
               type="text"
-              placeholder={isRefundMode ? "Tìm theo mã đơn, tên / SĐT khách, số tiền..." : "Tìm theo mã hợp đồng, tên / SĐT khách, mã ô kho..."}
+              placeholder={isRefundMode ? "Tìm theo mã đơn, tên / SĐT khách, số tiền..." : "Tìm theo mã hợp đồng, mã ticket (SR-...), tên / SĐT khách, mã ô kho..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="duo-input w-full pl-11 text-xs"
             />
           </div>
-          <select
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value)}
-            className="duo-input text-xs md:w-48 cursor-pointer"
-          >
-            <option value="ALL">Tất cả loại việc</option>
-            <option value="CHECK_IN">Check-in</option>
-            <option value="CHECK_OUT">Check-out</option>
-            <option value="REFUND">Hoàn tiền / Cọc</option>
-            <option value="MAINTENANCE">Bảo trì kho</option>
-          </select>
+          {!isRefundMode && (
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              className="duo-input text-xs md:w-52 cursor-pointer"
+            >
+              <option value="ALL">Tất cả loại việc</option>
+              <option value="CHECK_IN">Check-in</option>
+              <option value="CHECK_OUT">Check-out</option>
+              <option value="SUPPORT">Hỗ trợ khách hàng</option>
+              <option value="MAINTENANCE">Bảo trì kho</option>
+            </select>
+          )}
           {currentStaffId && (
             <label
               className={`px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black uppercase flex items-center justify-center gap-1.5 cursor-pointer select-none ${
@@ -291,6 +315,7 @@ export default function TaskBoard({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {visibleTasks.map(task => {
             const isRefund = task.taskType === 'REFUND'
+            const isSupport = task.taskType === 'SUPPORT'
             const parsed = isRefund ? parseRefundNote(task.note) : null
             const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
             const status = isRefund && task.status === 'OPEN'
@@ -302,12 +327,20 @@ export default function TaskBoard({
 
             const customerName = task.customerName || parsed?.customerName || '—'
             const customerPhone = task.customerPhone || parsed?.customerPhone || ''
-            const codeLabel = task.contractCode ? `HĐ ${task.contractCode}` : (parsed?.orderCode ? `Đơn ${parsed.orderCode}` : 'Hủy đơn')
+            const codeLabel = isSupport && task.ticketCode
+              ? `${task.ticketCode}${task.contractCode ? ` · HĐ ${task.contractCode}` : ''}`
+              : (task.contractCode ? `HĐ ${task.contractCode}` : (parsed?.orderCode ? `Đơn ${parsed.orderCode}` : 'Hủy đơn'))
 
             return (
               <div
                 key={task.id}
-                className={`duo-card p-5 flex flex-col gap-3.5 ${task.status === 'OVERDUE' ? 'border-[#FF4B4B]' : isMine ? 'border-[#CE82FF]' : ''}`}
+                className={`duo-card p-5 flex flex-col gap-3.5 ${
+                  task.status === 'OVERDUE' || (task.urgent && ['OPEN', 'IN_PROGRESS'].includes(task.status))
+                    ? 'border-[#FF4B4B]'
+                    : isMine
+                    ? 'border-[#CE82FF]'
+                    : ''
+                }`}
               >
                 {/* Dòng đầu: loại việc + trạng thái */}
                 <div className="flex items-start justify-between gap-3">
@@ -316,7 +349,15 @@ export default function TaskBoard({
                       <span className="material-symbols-outlined text-[22px]">{type.icon}</span>
                     </div>
                     <div>
-                      <p className="text-sm font-black text-[#4B4B4B] uppercase tracking-wide">{type.label}</p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-sm font-black text-[#4B4B4B] uppercase tracking-wide">{type.label}</p>
+                        {task.urgent && (
+                          <span className="px-2 py-0.5 rounded-lg bg-[#FF4B4B] text-white text-[10px] font-black uppercase flex items-center gap-0.5">
+                            <span className="material-symbols-outlined text-[12px]">priority_high</span>
+                            KHẨN
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] font-bold text-[#AFAFAF]">
                         Task #{task.id} · <span className="font-mono text-[#1CB0F6]">{codeLabel}</span>
                       </p>
@@ -346,7 +387,11 @@ export default function TaskBoard({
                     <span className="font-black text-[#4B4B4B] font-mono">
                       {task.storageUnitId || (isRefund ? 'Đơn đặt chỗ hủy' : '—')}
                     </span>
-                    <span className="font-bold text-[#777777]">{task.unitTypeName || ''}</span>
+                    <span className="font-bold text-[#777777]">
+                      {isSupport && task.issueType
+                        ? SUPPORT_ISSUE_LABEL[task.issueType] || task.issueType
+                        : (task.unitTypeName || '')}
+                    </span>
                   </div>
                 </div>
 
@@ -402,6 +447,11 @@ export default function TaskBoard({
                   <p className="text-[11px] font-bold text-[#4B4B4B] leading-relaxed line-clamp-2">
                     <span className="font-black text-[#AFAFAF] uppercase mr-1">Lý do:</span>
                     {parsed?.reason || 'Khách yêu cầu hủy đơn / hoàn tiền'}
+                  </p>
+                ) : isSupport && task.ticketDescription ? (
+                  <p className="text-[11px] font-bold text-[#4B4B4B] leading-relaxed line-clamp-2">
+                    <span className="font-black text-[#AFAFAF] uppercase mr-1">Sự cố:</span>
+                    {task.ticketDescription}
                   </p>
                 ) : task.note ? (
                   <p className="text-[11px] font-bold text-[#777777] leading-relaxed line-clamp-2">

@@ -784,6 +784,17 @@ export default function CustomerContractPage() {
                 </span>
               )}
             </div>
+
+            {['ACTIVE', 'OVERDUE', 'TERMINATION_PENDING'].includes(contract.status) && (
+              <button
+                type="button"
+                onClick={() => navigate(`/ho-tro?contractId=${contract.id}&create=1`)}
+                className="duo-btn-gray w-full py-2.5 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">support_agent</span>
+                Gửi yêu cầu hỗ trợ / Báo sự cố khóa
+              </button>
+            )}
           </div>
         </div>
       </div>

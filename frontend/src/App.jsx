@@ -17,6 +17,9 @@ import MyReservationsPage from './pages/my_reservation/MyReservationsPage';
 import PendingReservationsPage from './pages/my_reservation/PendingReservationsPage';
 import CustomerContractPage from './pages/my_reservation/CustomerContractPage';
 
+// Import cho chức năng Gửi yêu cầu hỗ trợ (UC-26)
+import CustomerSupportPage from './pages/support/CustomerSupportPage';
+
 // Import Manager Pages
 import ManagerLayout from './layouts/ManagerLayout';
 import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
@@ -26,7 +29,7 @@ import ContractDetailPage from './pages/manager/ContractDetailPage';
 import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
 import OverdueContractsPage from './pages/manager/OverdueContractsPage';
 
-// Import Staff Pages (UC-16, UC-17, UC-18)
+// Import Staff Pages (UC-16, UC-17, UC-18, UC-27)
 import StaffLayout from './layouts/StaffLayout';
 import StaffTaskBoardPage from './pages/staff/StaffTaskBoardPage';
 import StaffTaskDetailPage from './pages/staff/StaffTaskDetailPage';
@@ -65,10 +68,10 @@ export default function App() {
         {/* UC-12: Quản lý kho của tôi */}
         <Route path="/kho-cua-toi" element={<MyReservationsPage />} />
         <Route path="/kho-cua-toi/hop-dong/:reservationId" element={<CustomerContractPage />} />
-      </Route>
 
-      {/* ========== UC-13: FM Pending Reservations (tạm standalone) ========== */}
-      
+        {/* UC-26: Gửi yêu cầu hỗ trợ */}
+        <Route path="/ho-tro" element={<CustomerSupportPage />} />
+      </Route>
 
       {/* ========== Manager Portal ========== */}
       <Route element={<ManagerLayout />}>
@@ -84,7 +87,7 @@ export default function App() {
         <Route path="/manager/refunds/:id" element={<StaffTaskDetailPage />} />
       </Route>
 
-      {/* ========== Staff Portal (UC-16) ========== */}
+      {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}
       <Route element={<StaffLayout />}>
         <Route path="/staff" element={<StaffTaskBoardPage />} />
         <Route path="/staff/tasks/:id" element={<StaffTaskDetailPage />} />

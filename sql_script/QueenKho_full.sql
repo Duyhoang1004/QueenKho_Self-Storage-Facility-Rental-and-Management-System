@@ -229,6 +229,9 @@ CREATE TABLE support_requests (
     issue_type      NVARCHAR(50) NOT NULL,
     description     NVARCHAR(MAX) NULL,
     status          NVARCHAR(30) NOT NULL DEFAULT 'OPEN',  -- OPEN / IN_PROGRESS / RESOLVED / CLOSED
+    resolution_note NVARCHAR(1000) NULL,
+    resolved_at     DATETIME2 NULL,
+    closed_at       DATETIME2 NULL,
     created_at      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_support_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
     CONSTRAINT FK_support_customer FOREIGN KEY (customer_id) REFERENCES users(id)

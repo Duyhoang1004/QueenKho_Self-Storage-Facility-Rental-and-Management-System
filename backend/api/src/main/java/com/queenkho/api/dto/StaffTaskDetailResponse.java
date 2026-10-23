@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
-// UC-18, UC-23, UC-24: chi tiết 1 task (trang /staff/tasks/:id).
+// UC-18, UC-23, UC-24, UC-27: chi tiết 1 task (trang /staff/tasks/:id).
 // Tách riêng với StaffTaskResponse để API bảng công việc không phải mang thêm PIN, biên bản, sự cố...
 @Getter
 @Builder
@@ -70,4 +70,16 @@ public class StaffTaskDetailResponse {
     private Integer cycleMonths;
     private BigDecimal baseMonthlyPrice;
     private String refundBreakdownNote;
+
+    // UC-26 & UC-27: Thông tin Ticket Hỗ trợ (khi taskType = SUPPORT)
+    private Integer supportRequestId;
+    private String ticketCode;
+    private String issueType;
+    private boolean urgent;
+    private String ticketStatus;
+    private String ticketDescription;
+    private String resolutionNote;
+    private LocalDateTime ticketCreatedAt;
+    private LocalDateTime ticketResolvedAt;
+    private LocalDateTime ticketClosedAt;
 }

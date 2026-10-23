@@ -28,6 +28,7 @@ import CustomerContractsPage from './pages/manager/CustomerContractsPage';
 import ContractDetailPage from './pages/manager/ContractDetailPage';
 import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
 import OverdueContractsPage from './pages/manager/OverdueContractsPage';
+import ManagerStaffPage from './pages/manager/ManagerStaffPage';
 
 // Import Staff Pages (UC-16, UC-17, UC-18, UC-27)
 import StaffLayout from './layouts/StaffLayout';
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="/manager/tasks/:id" element={<StaffTaskDetailPage />} />
         <Route path="/manager/refunds" element={<ManagerTaskBoardPage key="refunds" initialTypeFilter="REFUND" />} />
         <Route path="/manager/refunds/:id" element={<StaffTaskDetailPage />} />
+        <Route path="/manager/staff" element={<ManagerStaffPage />} />
       </Route>
 
       {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}

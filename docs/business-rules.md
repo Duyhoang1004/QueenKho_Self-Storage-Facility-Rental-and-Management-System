@@ -35,7 +35,8 @@
 | | UC-23 Nghiệm thu trả kho · UC-24 Sự cố hư hỏng · UC-27 Xử lý hỗ trợ | ⬜ |
 | **Facility Manager** | UC-13 Đơn chờ gán ô · UC-14 Gán ô + sinh hợp đồng · EX-03 No-Show / dời lịch · UC-16/17 Xem bảng việc, gỡ người nhận · Xem khách hàng & hợp đồng | ✅ |
 | | UC-06 Ô kho · UC-30 Dashboard | 🟡 giao diện giả |
-| | UC-25 Hoàn cọc · UC-28 Hợp đồng quá hạn · UC-32 Nhân viên | ⬜ |
+| | UC-32 Quản lý nhân viên | ✅ |
+| | UC-25 Hoàn cọc · UC-28 Hợp đồng quá hạn | ⬜ |
 | **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu | ⬜ (portal `/bom` đã có) |
 | **Admin** | UC-03 Vai trò · UC-08 Tài khoản | ✅ |
 | | UC-31 Nhật ký · Dashboard `/admin` | ⬜ (portal `/admin` đã có — #56) |
@@ -418,7 +419,8 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-M10 | **Không làm âm số suất** (BR-11): bảo trì, xoá, đổi loại ô đều bị chặn nếu làm suất < 0 → 409 `SLOT_IN_USE`. |
 | PR-M11 | Nhãn "Quá hạn" trên lưới suy ra từ hợp đồng `OVERDUE` của ô. Bỏ toàn bộ số giả trên trang hiện tại. |
 
-### UC-32 Quản lý nhân viên (FM) ⬜
+### UC-32 Quản lý nhân viên (FM) ✅
+**Đang chạy** (`FacilityStaffService`, `FacilityStaffController`, `ManagerStaffPage.jsx`)
 | Mã | Rule |
 |---|---|
 | PR-22 | (D-03) FM tạo `STAFF` cho **cơ sở mình** (BE tự gán, không cho chọn); Admin tạo cho cơ sở bất kỳ (UC-08). |

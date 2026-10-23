@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -48,10 +49,29 @@ public class VnpayService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Map<String, Object> createReservation(Integer id, String ip) {
+    @Transactional
+    public Map<String, Object> createReservation(Integer id, Integer actorUserId, String ip) {
         var r = payments.findReservation(id);
         if (r == null || !"PENDING".equals(r.get("status"))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Đơn đặt chỗ không hợp lệ");
+        }
+        if (!Objects.equals(actorUserId, ((Number) r.get("customer_id")).intValue())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền thanh toán đơn này");
+        }
+
+        // Khóa giao dịch trước rồi mới khóa đơn, cùng thứ tự với IPN để tránh deadlock.
+        payments.failPendingReservationPayments(id);
+        r = payments.findReservation(id, true);
+        if (r == null || !"PENDING".equals(r.get("status"))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Đơn vừa được thanh toán hoặc không còn hiệu lực");
+        }
+
+        LocalDateTime createdAt = ((java.sql.Timestamp) r.get("created_at")).toLocalDateTime();
+        LocalDateTime holdExpiresAt = createdAt.plusMinutes(15);
+        if (!LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")).isBefore(holdExpiresAt)) {
+            payments.failPendingReservationPayments(id);
+            jdbcTemplate.update("UPDATE reservations SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING'", id);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Đơn đã hết 15 phút giữ chỗ");
         }
         
         BigDecimal price = (BigDecimal) r.get("base_price_monthly");
@@ -61,18 +81,23 @@ public class VnpayService {
         BigDecimal rent = price.multiply(BigDecimal.valueOf(m));
         BigDecimal discountAmount = rent.multiply(BigDecimal.valueOf(discountPercent))
                                         .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
-        BigDecimal netAmount = rent.subtract(discountAmount).add(price).subtract(BigDecimal.valueOf(100000));
+        BigDecimal depositAmount = (BigDecimal) r.get("deposit_amount");
+        // Voucher được giữ nguyên theo yêu cầu hiện tại; cọc luôn lấy từ snapshot của đơn (PR-M6).
+        BigDecimal netAmount = rent.subtract(discountAmount).add(depositAmount).subtract(BigDecimal.valueOf(100000));
         
-        return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, price, ip);
+        return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, depositAmount, ip, holdExpiresAt);
     }
     
     @Transactional
-    public Map<String, Object> createRenewal(Integer id, Integer m, String ip) {
+    public Map<String, Object> createRenewal(Integer id, Integer m, Integer actorUserId, String ip) {
         if (id == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng");
         }
         var c = contracts.findDetailById(id)
                          .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
+        if (c.getCustomer() == null || !Objects.equals(actorUserId, c.getCustomer().getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền gia hạn hợp đồng này");
+        }
 
         // PR-R1: Chỉ nhận số tháng 1, 3, 6, 12; giá trị khác trả 400 INVALID_INPUT
         if (m == null || (m != 1 && m != 3 && m != 6 && m != 12)) {
@@ -82,6 +107,19 @@ public class VnpayService {
 
         // PR-R1: Chỉ cho gia hạn khi hợp đồng ACTIVE, TERMINATION_PENDING hoặc OVERDUE. Trạng thái khác trả 409 CONTRACT_NOT_RENEWABLE
         String status = c.getStatus() != null ? c.getStatus().toUpperCase() : "";
+        if (!status.matches("ACTIVE|TERMINATION_PENDING|OVERDUE")) {
+            throw new com.queenkho.api.exception.ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_RENEWABLE",
+                    "Hợp đồng đang ở trạng thái " + c.getStatus() + ", không thể gia hạn.");
+        }
+
+        // Khóa giao dịch trước rồi khóa hợp đồng, cùng thứ tự với IPN.
+        payments.failPendingRenewalPayments(id);
+        jdbcTemplate.queryForObject(
+                "SELECT id FROM rental_contracts WITH (UPDLOCK, ROWLOCK) WHERE id = ?",
+                Integer.class, id);
+        c = contracts.findDetailById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hợp đồng"));
+        status = c.getStatus() != null ? c.getStatus().toUpperCase() : "";
         if (!status.matches("ACTIVE|TERMINATION_PENDING|OVERDUE")) {
             throw new com.queenkho.api.exception.ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_RENEWABLE",
                     "Hợp đồng đang ở trạng thái " + c.getStatus() + ", không thể gia hạn.");
@@ -104,6 +142,12 @@ public class VnpayService {
             if (lateFeeResult != null && lateFeeResult.getLateFeeAmount() != null) {
                 lateFeeAmount = lateFeeResult.getLateFeeAmount().setScale(0, RoundingMode.HALF_UP);
             }
+        } else if ("TERMINATION_PENDING".equals(status) && c.getEndDate() != null) {
+            long daysPast = ChronoUnit.DAYS.between(c.getEndDate(), LocalDate.now(LateFeeService.VIETNAM_ZONE));
+            if (daysPast >= 2 && daysPast <= 5) {
+                BigDecimal dailyRate = basePrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
+                lateFeeAmount = dailyRate.multiply(BigDecimal.valueOf(daysPast - 1));
+            }
         }
 
         BigDecimal totalAmount = rentAmount.add(lateFeeAmount).setScale(0, RoundingMode.HALF_UP);
@@ -111,25 +155,24 @@ public class VnpayService {
         // PR-Q6: Trong MỘT @Transactional, tạo sẵn 2 dòng PENDING trong payment_transactions:
         // (a) dòng chính loại MONTHLY_RENT, số tiền = tiền thuê các tháng gia hạn;
         // (b) dòng phụ loại LATE_FEE, số tiền = phí trễ chốt cứng (nếu phí trễ > 0).
-        String prefix = "QKR" + String.format("%02d", m);
-        String ref = prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+        String ref = "QKR" + UUID.randomUUID().toString().replace("-", "").substring(0, 22).toUpperCase();
 
         Integer customerId = c.getCustomer() != null ? c.getCustomer().getId() : null;
         Integer reservationId = c.getReservation() != null ? c.getReservation().getId() : null;
 
-        // Tạo dòng chính MONTHLY_RENT
-        payments.createPending(ref, customerId, reservationId, id, "MONTHLY_RENT", rentAmount);
+        // PR-R5: link mới thay link cũ; tại mọi thời điểm chỉ có một giao dịch gia hạn PENDING.
+        payments.createPending(ref, customerId, reservationId, id, "MONTHLY_RENT", rentAmount, m);
 
         // Tạo dòng phụ LATE_FEE nếu phí trễ > 0
         if (lateFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
             String lateFeeRef = "LF" + ref;
-            payments.createPending(lateFeeRef, customerId, reservationId, id, "LATE_FEE", lateFeeAmount);
+            payments.createPending(lateFeeRef, customerId, reservationId, id, "LATE_FEE", lateFeeAmount, m);
         }
 
         // vnp_TxnRef chỉ giữ mã của dòng chính (để khớp với callback URL hiện có). Tiền gửi sang VNPAY vnp_Amount là TỔNG (tiền thuê + phí trễ chốt cứng)
         return Map.of(
             "orderId", ref, 
-            "payUrl", payUrl(ref, "RENEWAL", totalAmount, ip), 
+            "payUrl", payUrl(ref, "RENEWAL", totalAmount, ip, null),
             "amount", totalAmount, 
             "depositAmount", BigDecimal.ZERO,
             "rentAmount", rentAmount,
@@ -137,7 +180,8 @@ public class VnpayService {
         );
     }
     
-    private Map<String, Object> create(String kind, Integer rId, Integer cId, Integer m, Object uId, BigDecimal amount, BigDecimal deposit, String ip) {
+    private Map<String, Object> create(String kind, Integer rId, Integer cId, Integer m, Object uId,
+                                       BigDecimal amount, BigDecimal deposit, String ip, LocalDateTime expiresAt) {
         amount = amount.setScale(0, RoundingMode.HALF_UP);
         String prefix = "DEPOSIT".equals(kind) ? "QKD" : "QKR" + String.format("%02d", m);
         String ref = prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
@@ -146,13 +190,13 @@ public class VnpayService {
         
         return Map.of(
             "orderId", ref, 
-            "payUrl", payUrl(ref, kind, amount, ip), 
+            "payUrl", payUrl(ref, kind, amount, ip, expiresAt),
             "amount", amount, 
             "depositAmount", deposit
         );
     }
     
-    private String payUrl(String ref, String kind, BigDecimal amt, String ip) {
+    private String payUrl(String ref, String kind, BigDecimal amt, String ip, LocalDateTime maximumExpiry) {
         var p = new TreeMap<String, String>();
         p.put("vnp_Version", "2.1.0"); 
         p.put("vnp_Command", "pay"); 
@@ -168,7 +212,9 @@ public class VnpayService {
         
         var now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
         p.put("vnp_CreateDate", now.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))); 
-        p.put("vnp_ExpireDate", now.plusMinutes(10).format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
+        LocalDateTime expiry = now.plusMinutes(10);
+        if (maximumExpiry != null && maximumExpiry.isBefore(expiry)) expiry = maximumExpiry;
+        p.put("vnp_ExpireDate", expiry.format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")));
         
         String query = p.entrySet().stream()
                         .map(e -> encode(e.getKey()) + "=" + encode(e.getValue()))
@@ -180,6 +226,7 @@ public class VnpayService {
         verify(params); 
         String ref = params.getOrDefault("vnp_TxnRef", "");
         var p = payments.findPayment(ref, false);
+        if (p == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy giao dịch");
         
         String path = "DEPOSIT".equals(p.get("payment_type")) ? "/booking/confirmation" : "/kho-cua-toi/hop-dong/" + p.get("reservation_id");
         return frontendUrl + path + "?orderId=" + encode(ref) + "&vnpResponse=" + encode(params.getOrDefault("vnp_ResponseCode", ""));
@@ -208,29 +255,55 @@ public class VnpayService {
         
         if (db == null) return Map.of("RspCode", "01", "Message", "Not found");
         if (!same(p, db)) return Map.of("RspCode", "04", "Message", "Invalid amount");
-        if (!"PENDING".equals(db.get("status"))) return Map.of("RspCode", "02", "Message", "Already confirmed");
-        
-        if (!"00".equals(p.get("vnp_ResponseCode")) || !"00".equals(p.get("vnp_TransactionStatus"))) { 
-            payments.updatePayment(ref, "FAILED"); 
-            var lateFeeDb = payments.findPayment("LF" + ref, true);
-            if (lateFeeDb != null) {
-                payments.updatePayment("LF" + ref, "FAILED");
+        String currentStatus = String.valueOf(db.get("status"));
+        boolean vnpaySuccess = "00".equals(p.get("vnp_ResponseCode"))
+                && "00".equals(p.get("vnp_TransactionStatus"));
+
+        if (!vnpaySuccess) {
+            if ("PENDING".equals(currentStatus)) {
+                updatePaymentGroup(ref, "FAILED");
+                logPayment(db, "[VNPAY] Giao dịch " + ref + " thất bại; đơn vẫn giữ chỗ để thanh toán lại");
+                return Map.of("RspCode", "00", "Message", "Success");
             }
-            if ("DEPOSIT".equals(db.get("payment_type")) && db.get("reservation_id") != null) {
-                payments.updateReservationToCancelled(((Number) db.get("reservation_id")).intValue());
-            }
-            return Map.of("RspCode", "00", "Message", "Success"); 
+            return Map.of("RspCode", "02", "Message", "Already confirmed");
         }
-        
+
+        if ("SUCCESS".equals(currentStatus)) {
+            return Map.of("RspCode", "02", "Message", "Already confirmed");
+        }
+
+        // PR-B6 / PR-R5: giao dịch cũ đã FAILED nhưng VNPAY báo thành công muộn.
+        // Ghi nhận tiền đã thu và chuyển toàn bộ sang quy trình hoàn tiền, không áp dụng đơn/gia hạn lần nữa.
+        if ("FAILED".equals(currentStatus)) {
+            updatePaymentGroup(ref, "SUCCESS");
+            createLatePaymentRefund(ref, db, "IPN thành công về sau khi link đã hết hiệu lực hoặc đã được thay thế");
+            return Map.of("RspCode", "00", "Message", "Success");
+        }
+
+        if (!"PENDING".equals(currentStatus)) {
+            return Map.of("RspCode", "02", "Message", "Already confirmed");
+        }
+
+        if ("DEPOSIT".equals(db.get("payment_type")) && isReservationExpired(db)) {
+            Integer reservationId = ((Number) db.get("reservation_id")).intValue();
+            jdbcTemplate.update(
+                    "UPDATE reservations SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING'",
+                    reservationId);
+            updatePaymentGroup(ref, "SUCCESS");
+            createLatePaymentRefund(ref, db, "IPN thành công sau 15 phút giữ chỗ");
+            return Map.of("RspCode", "00", "Message", "Success");
+        }
+
         String err = "DEPOSIT".equals(db.get("payment_type")) ? settleDeposit(ref, db) : settleRenewal(ref, db);
-        
-        if (err != null) return Map.of("RspCode", "02", "Message", err);
-        
-        payments.updatePayment(ref, "SUCCESS");
-        var lateFeeDb = payments.findPayment("LF" + ref, true);
-        if (lateFeeDb != null) {
-            payments.updatePayment("LF" + ref, "SUCCESS");
+
+        if (err != null) {
+            updatePaymentGroup(ref, "SUCCESS");
+            createLatePaymentRefund(ref, db, err);
+            return Map.of("RspCode", "00", "Message", "Success");
         }
+
+        updatePaymentGroup(ref, "SUCCESS");
+        logPayment(db, "[VNPAY] Thanh toán " + ref + " thành công");
         return Map.of("RspCode", "00", "Message", "Success");
     }
     
@@ -239,7 +312,7 @@ public class VnpayService {
         var r = payments.findReservation(id);
         
         if (r != null && "PENDING".equals(r.get("status"))) { 
-            payments.updateReservationToDepositPaid(id, (BigDecimal) r.get("base_price_monthly")); 
+            payments.updateReservationToDepositPaid(id, (BigDecimal) r.get("deposit_amount"));
             return null; 
         }
         return "Invalid status";
@@ -249,8 +322,17 @@ public class VnpayService {
         var c = contracts.findDetailById(((Number) p.get("contract_id")).intValue()).orElse(null);
         if (c == null) return "Không tìm thấy hợp đồng";
         
-        LocalDate currentEnd = c.getEndDate() == null || c.getEndDate().isBefore(LocalDate.now()) ? LocalDate.now() : c.getEndDate();
-        int monthsToRenew = Integer.parseInt(ref.substring(3, 5));
+        String previousStatus = c.getStatus() != null ? c.getStatus().toUpperCase() : "";
+        LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
+        LocalDate currentEnd = "TERMINATION_PENDING".equals(previousStatus)
+                ? today
+                : (c.getEndDate() == null || c.getEndDate().isBefore(today) ? today : c.getEndDate());
+        Object monthsValue = p.get("renewal_months");
+        if (!(monthsValue instanceof Number)) return "Giao dịch gia hạn thiếu số tháng";
+        int monthsToRenew = ((Number) monthsValue).intValue();
+        if (monthsToRenew != 1 && monthsToRenew != 3 && monthsToRenew != 6 && monthsToRenew != 12) {
+            return "Số tháng gia hạn không hợp lệ";
+        }
         c.setEndDate(currentEnd.plusMonths(monthsToRenew));
         
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
@@ -260,6 +342,16 @@ public class VnpayService {
             if (c.getReservation() != null) {
                 c.getReservation().setStatus("UNIT_ASSIGNED");
                 reservations.save(c.getReservation()); 
+            }
+            if ("TERMINATION_PENDING".equals(previousStatus)) {
+                jdbcTemplate.update(
+                        "UPDATE facility_tasks SET status = 'CANCELLED' " +
+                        "WHERE contract_id = ? AND task_type = 'REFUND' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
+                        c.getId());
+                jdbcTemplate.update(
+                        "UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL " +
+                        "WHERE contract_id = ? AND payment_type = 'REFUND' AND status = 'PENDING'",
+                        c.getId());
             }
         }
         
@@ -292,6 +384,101 @@ public class VnpayService {
         }
 
         return null;
+    }
+
+    private boolean isReservationExpired(Map<String, Object> payment) {
+        if (payment.get("reservation_id") == null) return true;
+        var reservation = payments.findReservation(((Number) payment.get("reservation_id")).intValue(), true);
+        if (reservation == null || !"PENDING".equals(reservation.get("status"))) return true;
+        Object value = reservation.get("created_at");
+        LocalDateTime createdAt = value instanceof java.sql.Timestamp timestamp
+                ? timestamp.toLocalDateTime()
+                : (LocalDateTime) value;
+        return !LocalDateTime.now(LateFeeService.VIETNAM_ZONE).isBefore(createdAt.plusMinutes(15));
+    }
+
+    private void updatePaymentGroup(String ref, String status) {
+        payments.updatePayment(ref, status);
+        var lateFeeDb = payments.findPayment("LF" + ref, true);
+        if (lateFeeDb != null) payments.updatePayment("LF" + ref, status);
+    }
+
+    private BigDecimal paymentGroupAmount(String ref, Map<String, Object> payment) {
+        BigDecimal total = (BigDecimal) payment.get("amount");
+        var lateFeeDb = payments.findPayment("LF" + ref, false);
+        if (lateFeeDb != null && lateFeeDb.get("amount") != null) {
+            total = total.add((BigDecimal) lateFeeDb.get("amount"));
+        }
+        return total.setScale(0, RoundingMode.HALF_UP);
+    }
+
+    private void createLatePaymentRefund(String originalRef, Map<String, Object> payment, String reason) {
+        String refundRef = "REF-LATE-" + originalRef;
+        BigDecimal amount = paymentGroupAmount(originalRef, payment);
+        Integer userId = ((Number) payment.get("user_id")).intValue();
+        Integer reservationId = payment.get("reservation_id") == null
+                ? null : ((Number) payment.get("reservation_id")).intValue();
+        Integer contractId = payment.get("contract_id") == null
+                ? null : ((Number) payment.get("contract_id")).intValue();
+
+        Integer existingRefund = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM payment_transactions WHERE transaction_code = ?",
+                Integer.class, refundRef);
+        if (existingRefund != null && existingRefund > 0) return;
+        jdbcTemplate.update(
+                "INSERT INTO payment_transactions " +
+                "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', ?, 'PENDING', NULL)",
+                refundRef, userId, reservationId, contractId, amount);
+
+        Integer facilityId = null;
+        if (reservationId != null) {
+            facilityId = jdbcTemplate.queryForObject(
+                    "SELECT facility_id FROM reservations WHERE id = ?", Integer.class, reservationId);
+        } else if (contractId != null) {
+            facilityId = jdbcTemplate.queryForObject(
+                    "SELECT su.facility_id FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
+                    Integer.class, contractId);
+        }
+        if (facilityId == null) throw new IllegalStateException("Không xác định được cơ sở để tạo task hoàn tiền");
+
+        List<Integer> managers = jdbcTemplate.query(
+                "SELECT TOP 1 u.id FROM users u JOIN roles r ON r.id = u.role_id " +
+                "WHERE u.facility_id = ? AND r.name = 'FACILITY_MANAGER' AND u.status = 'ACTIVE' ORDER BY u.id",
+                (rs, rowNum) -> rs.getInt(1), facilityId);
+        Integer managerId = managers.isEmpty() ? null : managers.get(0);
+        LocalDateTime dueAt = LocalDateTime.now(LateFeeService.VIETNAM_ZONE).plusHours(24);
+        if (dueAt.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) dueAt = dueAt.plusDays(1);
+
+        String note = String.format(
+                "[HOÀN TIỀN VNPAY VỀ MUỘN] Mã gốc: %s | Số tiền: %s VND | Lý do: %s",
+                originalRef, amount.toPlainString(), reason);
+        jdbcTemplate.update(
+                "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
+                "VALUES (?, 'REFUND', ?, ?, 'OPEN', ?, ?, SYSDATETIME())",
+                facilityId, contractId, managerId, dueAt, note);
+
+        if (reservationId != null && "DEPOSIT".equals(payment.get("payment_type"))) {
+            jdbcTemplate.update(
+                    "UPDATE reservations SET status = 'REFUND_PENDING' " +
+                    "WHERE id = ? AND status IN ('PENDING', 'EXPIRED', 'CANCELLED')",
+                    reservationId);
+        }
+        logPayment(payment, "[VNPAY] Đã tạo yêu cầu hoàn " + amount.toPlainString() + "đ cho giao dịch về muộn " + originalRef);
+    }
+
+    private void logPayment(Map<String, Object> payment, String action) {
+        try {
+            Integer userId = ((Number) payment.get("user_id")).intValue();
+            Object targetId = payment.get("contract_id") != null ? payment.get("contract_id") : payment.get("reservation_id");
+            String target = payment.get("contract_id") != null ? "rental_contracts" : "reservations";
+            jdbcTemplate.update(
+                    "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                    "VALUES (?, ?, ?, ?, SYSDATETIME())",
+                    userId, action.length() > 500 ? action.substring(0, 500) : action, target, String.valueOf(targetId));
+        } catch (Exception e) {
+            System.err.println("[VNPAY] Không ghi được activity log: " + e.getMessage());
+        }
     }
     
     private void verify(Map<String, String> p) {
@@ -343,7 +530,12 @@ public class VnpayService {
         } 
     }
     
-    public Map<String, Object> status(String ref) { 
+    public Map<String, Object> status(String ref, Integer actorUserId) {
+        var payment = payments.findPayment(ref, false);
+        if (payment == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy giao dịch");
+        if (!Objects.equals(actorUserId, ((Number) payment.get("user_id")).intValue())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền xem giao dịch này");
+        }
         return payments.paymentStatus(ref); 
     }
 }

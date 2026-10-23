@@ -29,11 +29,13 @@ export default function ReservationConfirmationPage() {
   const depositAmount = paymentContext.deposit || reservation.depositAmount || 0
   const storage = paymentContext.storage || {}
   const reservationCode = reservation.reservationCode || 'RES-000000'
-  const branch = storage.branch || '—'
-  const address = storage.address || '—'
-  const unitName = storage.name || '—'
-  const area = storage.area ?? '—'
-  const dimension = storage.dimension || '—'
+  const branch = storage.branch || reservation.facilityName || '—'
+  const address = storage.address || reservation.facilityAddress || '—'
+  const unitName = storage.name || reservation.unitTypeName || '—'
+  const area = storage.area ?? reservation.areaSqm ?? '—'
+  const dimension = storage.dimension || reservation.dimensions || '—'
+  const customerName = customerInfo.fullName || reservation.customerName || 'Khách hàng'
+  const customerPhone = customerInfo.phone || reservation.customerPhone || '---'
 
   const now = new Date()
   const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} ngày ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`
@@ -61,7 +63,7 @@ export default function ReservationConfirmationPage() {
           const result = await getVnpayStatus(orderId)
           if (!active) return
           if (result.status === 'SUCCESS') {
-            setFinalStatus('DEPOSIT_PAID')
+            setFinalStatus(result.refund_status || result.reservation_status === 'REFUND_PENDING' ? 'REFUND_PENDING' : 'DEPOSIT_PAID')
             clearInterval(intervalId)
           
           } else if (result.status === 'FAILED') {
@@ -87,17 +89,21 @@ export default function ReservationConfirmationPage() {
       {/* Step indicator */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          <div className={`w-8 h-8 rounded-2xl border-b-2 flex items-center justify-center text-white text-xs font-black ${finalStatus === 'FAILED' ? 'bg-[#FF4B4B] border-[#EA2B2B]' : 'bg-[#58CC02] border-[#58A700]'}`}>
+          <div className={`w-8 h-8 rounded-2xl border-b-2 flex items-center justify-center text-white text-xs font-black ${finalStatus === 'FAILED' ? 'bg-[#FF9600] border-[#E58800]' : finalStatus === 'REFUND_PENDING' ? 'bg-[#FF9600] border-[#E58800]' : 'bg-[#58CC02] border-[#58A700]'}`}>
             3
           </div>
           <span className="text-base font-black text-[#4B4B4B]">Biên Nhận Xác Nhận Đặt Chỗ</span>
         </div>
         {finalStatus === 'FAILED' ? (
-          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
-            <span className="material-symbols-outlined text-[16px]">cancel</span>
-            Đã Hủy Giao Dịch
+          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
+            <span className="material-symbols-outlined text-[16px]">schedule</span>
+            Chờ thanh toán lại
           </span>
-        
+        ) : finalStatus === 'REFUND_PENDING' ? (
+          <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
+            <span className="material-symbols-outlined text-[16px]">currency_exchange</span>
+            Đang xử lý hoàn tiền
+          </span>
         ) : (
           <span className="px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider flex items-center gap-1 bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]">
             <span className="material-symbols-outlined text-[16px]">check_circle</span>
@@ -109,11 +115,11 @@ export default function ReservationConfirmationPage() {
       <div className="duo-card overflow-hidden">
 
         {finalStatus === 'FAILED' ? (
-          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFDFDF]">
-            <div className="w-20 h-20 rounded-3xl bg-[#FF4B4B] border-b-4 border-[#EA2B2B] flex items-center justify-center text-white text-4xl mb-4">
-              <span className="material-symbols-outlined text-[40px]">close</span>
+          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFF4E5]">
+            <div className="w-20 h-20 rounded-3xl bg-[#FF9600] border-b-4 border-[#E58800] flex items-center justify-center text-white text-4xl mb-4">
+              <span className="material-symbols-outlined text-[40px]">payments</span>
             </div>
-            <p className="text-xs font-black text-[#FF4B4B] uppercase tracking-wider mb-1">
+            <p className="text-xs font-black text-[#E58800] uppercase tracking-wider mb-1">
               THANH TOÁN THẤT BẠI HOẶC ĐÃ HỦY
             </p>
             <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] text-center">
@@ -122,13 +128,25 @@ export default function ReservationConfirmationPage() {
             <p className="text-xs font-bold text-[#AFAFAF] mt-2 text-center">
               Đơn đặt chỗ{' '}
               <span className="font-black text-[#4B4B4B]">#{reservationCode}</span>{' '}
-              đã bị hủy. Vui lòng đặt lại hoặc liên hệ hỗ trợ.
+              vẫn được giữ tối đa 15 phút. Bạn có thể mở danh sách đơn để thanh toán lại.
             </p>
-            <button onClick={() => navigate('/tim-va-dat-kho')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
-              TÌM KHO MỚI
+            <button onClick={() => navigate('/kho-cua-toi')} className="duo-btn-green mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
+              ĐẾN ĐƠN CỦA TÔI
             </button>
           </div>
-        
+        ) : finalStatus === 'REFUND_PENDING' ? (
+          <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FFF4E5]">
+            <div className="w-20 h-20 rounded-3xl bg-[#FF9600] border-b-4 border-[#E58800] flex items-center justify-center text-white mb-4">
+              <span className="material-symbols-outlined text-[40px]">currency_exchange</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-[#4B4B4B] text-center">ĐÃ NHẬN TIỀN SAU KHI HẾT GIỮ CHỖ</h1>
+            <p className="text-xs font-bold text-[#777777] mt-3 text-center max-w-lg">
+              Giao dịch đã được ghi nhận nhưng đơn không còn giữ suất. Hệ thống đã tự tạo yêu cầu hoàn toàn bộ số tiền cho Quản lý cơ sở xử lý.
+            </p>
+            <button onClick={() => navigate('/kho-cua-toi')} className="duo-btn-white mt-6 px-8 py-3 text-xs tracking-wider shadow-sm">
+              THEO DÕI TRẠNG THÁI HOÀN TIỀN
+            </button>
+          </div>
         ) : (
           <>
             <div className="flex flex-col items-center py-8 px-6 border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
@@ -213,8 +231,8 @@ export default function ReservationConfirmationPage() {
 
                 <div>
                   <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Khách hàng</p>
-                  <p className="text-sm font-black text-[#4B4B4B]">{customerInfo.fullName || 'Khách hàng'}</p>
-                  <p className="text-xs font-bold text-[#AFAFAF]">{customerInfo.phone || '---'}</p>
+                  <p className="text-sm font-black text-[#4B4B4B]">{customerName}</p>
+                  <p className="text-xs font-bold text-[#AFAFAF]">{customerPhone}</p>
                 </div>
 
                 <div>

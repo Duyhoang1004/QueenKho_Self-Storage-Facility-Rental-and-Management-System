@@ -150,8 +150,13 @@ public class ReservationService {
                     return new MyReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
+                            r.getCustomer().getFullName(),
+                            r.getCustomer().getPhone(),
                             r.getFacility().getName(),
+                            r.getFacility().getAddress(),
                             r.getUnitType().getName(),
+                            r.getUnitType().getAreaSqm(),
+                            r.getUnitType().getDimensions(),
                             r.getStorageUnitId(),
                             r.getStartDate(),
                             r.getDurationMonths(),
@@ -295,9 +300,14 @@ public class ReservationService {
         // Sinh ma don ngau nhien
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 
-        // Tiền đặt cọc = 1 tháng giá thuê của loại kho (khớp với cách tính của cổng
-        // thanh toán VNPAY)
-        BigDecimal depositAmount = unitType.getBasePriceMonthly();
+        // PR-M6: chốt tiền cọc theo chính sách hiện hành của cơ sở ngay lúc tạo đơn.
+        // VNPAY về sau chỉ đọc reservations.deposit_amount, không tính lại theo chính sách mới.
+        Integer depositMultiplier = jdbcTemplate.query(
+                "SELECT TOP 1 deposit_month_multiplier FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+                rs -> rs.next() ? rs.getInt("deposit_month_multiplier") : 1,
+                facility.getId());
+        int safeMultiplier = depositMultiplier != null && depositMultiplier > 0 ? depositMultiplier : 1;
+        BigDecimal depositAmount = unitType.getBasePriceMonthly().multiply(BigDecimal.valueOf(safeMultiplier));
 
         // Khoi tao va luu don dat cho
         Reservation reservation = new Reservation();
@@ -312,6 +322,7 @@ public class ReservationService {
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
         reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());
+        reservation.setExpectedAppointmentTime(request.getStartDate().atTime(9, 0));
         reservation.setCreatedAt(LocalDateTime.now());
 
         Reservation saved = reservationRepository.save(reservation);
@@ -449,8 +460,11 @@ public class ReservationService {
         // Tiền cọc gốc (dùng để tính phạt nếu hủy trễ)
         BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
 
-        // Fallback nếu test data chưa có trong payment_transactions
-        if (totalPaid.compareTo(BigDecimal.ZERO) == 0) {
+        // Chỉ fallback cho dữ liệu cũ đã ở trạng thái ĐÃ CỌC nhưng chưa có
+        // payment_transactions. Đơn PENDING chưa thanh toán tuyệt đối không được
+        // lấy tiền cọc dự kiến làm tiền đã đóng.
+        if (totalPaid.compareTo(BigDecimal.ZERO) == 0
+                && "DEPOSIT_PAID".equals(reservation.getStatus())) {
             totalPaid = reservation.getTotalDepositPaid() != null
                     && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
                             ? reservation.getTotalDepositPaid()
@@ -460,8 +474,13 @@ public class ReservationService {
         BigDecimal penalty;
         BigDecimal refund;
 
+        // Chưa thu tiền thì không phạt và không phát sinh hoàn tiền.
+        if (totalPaid.compareTo(BigDecimal.ZERO) <= 0) {
+            penalty = BigDecimal.ZERO;
+            refund = BigDecimal.ZERO;
         // 2. TÍNH TOÁN HOÀN TIỀN DỰA TRÊN MỐC 24H
-        if (LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
+        } else if (appointmentTime != null
+                && LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
             // TH1: HỦY SỚM (Trước 24h) -> Hoàn 100% TOÀN BỘ TIỀN ĐÃ ĐÓNG (Cọc + Tiền thuê)
             penalty = BigDecimal.ZERO;
             refund = totalPaid;

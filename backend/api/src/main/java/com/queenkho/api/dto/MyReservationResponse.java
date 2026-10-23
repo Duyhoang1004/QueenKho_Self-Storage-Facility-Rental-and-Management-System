@@ -11,8 +11,13 @@ import java.time.LocalDateTime;
 public class MyReservationResponse {
     private Integer id;
     private String reservationCode;
+    private String customerName;
+    private String customerPhone;
     private String facilityName;
+    private String facilityAddress;
     private String unitTypeName;
+    private BigDecimal areaSqm;
+    private String dimensions;
     private String storageUnitId;   // null cho tới khi FM gán ô kho (UC-14)
     private LocalDate startDate;
     private Integer durationMonths;

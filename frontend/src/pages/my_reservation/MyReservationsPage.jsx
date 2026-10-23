@@ -3,10 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
+import { createVnpayPayment } from "../../services/vnpayService";
 
 const STATUS_META = {
   PENDING: {
-    label: "Chờ thanh toán cọc",
+    label: "Chờ thanh toán",
     className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
   },
   DEPOSIT_PAID: {
@@ -107,6 +108,7 @@ export default function MyReservationsPage() {
   );
   const [filter, setFilter] = useState("ALL");
   const [reloadKey, setReloadKey] = useState(0);
+  const [retryingId, setRetryingId] = useState(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -176,6 +178,43 @@ export default function MyReservationsPage() {
     setSelectedResToCancel(null);
     setReloadKey((k) => k + 1);
     alert("Đã hủy đơn đặt chỗ thành công.");
+  };
+
+  const handleRetryPayment = async (reservation) => {
+    try {
+      setRetryingId(reservation.id);
+      const paymentData = await createVnpayPayment(reservation.id);
+      let sessionUser = {};
+      try {
+        sessionUser = JSON.parse(sessionStorage.getItem("user") || "{}");
+      } catch {
+        sessionUser = {};
+      }
+      sessionStorage.setItem("queenkhoPaymentContext", JSON.stringify({
+        reservation,
+        customerInfo: {
+          fullName: reservation.customerName || sessionUser.fullName || "",
+          phone: reservation.customerPhone || sessionUser.phone || "",
+          email: sessionUser.email || "",
+        },
+        selectedMonths: reservation.durationMonths,
+        startDate: reservation.startDate,
+        totalPayment: Number(paymentData.amount || 0),
+        deposit: Number(paymentData.depositAmount || reservation.depositAmount || 0),
+        storage: {
+          branch: reservation.facilityName,
+          address: reservation.facilityAddress,
+          name: reservation.unitTypeName,
+          area: Number(reservation.areaSqm || 0),
+          dimension: reservation.dimensions,
+        },
+      }));
+      window.location.assign(paymentData.payUrl);
+    } catch (err) {
+      alert(err.response?.data?.message || "Không thể tạo lại liên kết thanh toán VNPAY.");
+      setRetryingId(null);
+      setReloadKey((k) => k + 1);
+    }
   };
 
   const countBy = (statuses) =>
@@ -379,8 +418,20 @@ export default function MyReservationsPage() {
           )}
 
         {!loading && !error && visibleReservations.length > 0 && (
-          <div className="overflow-x-auto bg-white custom-scrollbar pb-2">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
+          <div className="max-w-full overflow-x-auto bg-white custom-scrollbar pb-2">
+            <table className="w-full min-w-[1080px] table-fixed text-left border-collapse">
+              <colgroup>
+                <col className="w-[112px]" />
+                <col className="w-[105px]" />
+                <col className="w-[125px]" />
+                <col className="w-[82px]" />
+                <col className="w-[100px]" />
+                <col className="w-[68px]" />
+                <col className="w-[175px]" />
+                <col className="w-[92px]" />
+                <col className="w-[190px]" />
+                <col className="w-[158px]" />
+              </colgroup>
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
                   <th className="px-3 py-3 whitespace-nowrap">Mã đơn</th>
@@ -479,8 +530,7 @@ export default function MyReservationsPage() {
                           const deposit = Number(r.depositAmount || 0);
                           const months = actualMonths;
                           // Nếu có tiền thật từ payment_transactions (> 0) thì ưu tiên dùng, ngược lại fallback tính tạm
-                          const hasRealPayment =
-                            r.totalPaid && Number(r.totalPaid) > 0;
+                          const hasRealPayment = Number(r.totalPaid || 0) > 0;
                           const finalAmount = hasRealPayment
                             ? Number(r.totalPaid)
                             : deposit + deposit * months;
@@ -494,9 +544,13 @@ export default function MyReservationsPage() {
                                 {formatVND(finalAmount)}
                               </span>
                               <span className="text-[10px] font-bold text-[#AFAFAF]">
-                                Cọc {formatVND(deposit)} + {months}T thuê{" "}
-                                {isDiscounted ? "(Đã áp ưu đãi)" : ""}
+                                Cọc {formatVND(deposit)} + {months}T thuê
                               </span>
+                              {isDiscounted && (
+                                <span className="mt-0.5 text-[9px] font-bold text-[#777777]">
+                                  (Đã áp ưu đãi)
+                                </span>
+                              )}
                             </div>
                           );
                         })()}
@@ -535,14 +589,14 @@ export default function MyReservationsPage() {
                       </td>
 
                       {/* Cột 10: Thao tác (Đứng đúng cột Thao tác ngoài cùng bên phải) */}
-                      <td className="px-3 py-3 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="px-3 py-3 text-center align-middle">
+                        <div className={`flex items-center justify-center whitespace-nowrap ${r.status === "PENDING" ? "flex-col gap-2" : "gap-1.5"}`}>
                           {(Boolean(r.contractId) || Boolean(r.storageUnitId) || ["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status)) && (
                             <button
                               onClick={() =>
                                 navigate(`/kho-cua-toi/hop-dong/${r.id}`)
                               }
-                              className="duo-btn-blue px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                              className="duo-btn-blue w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-[14px]">
                                 description
@@ -551,18 +605,34 @@ export default function MyReservationsPage() {
                             </button>
                           )}
                           {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
+                            <>
+                            {r.status === "PENDING" && (
+                              <button
+                                onClick={() => handleRetryPayment(r)}
+                                disabled={retryingId === r.id}
+                                className="duo-btn-green w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap disabled:opacity-60"
+                              >
+                                {retryingId === r.id && (
+                                  <span className="material-symbols-outlined text-[14px]">
+                                    progress_activity
+                                  </span>
+                                )}
+                                {retryingId === r.id ? "ĐANG TẠO" : "THANH TOÁN"}
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setSelectedResToCancel(r);
                                 setIsCancelModalOpen(true);
                               }}
-                              className="duo-btn-red px-2.5 py-1 text-[10px] gap-1 shadow-sm"
+                              className="duo-btn-red w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-[14px]">
                                 cancel
                               </span>
                               HỦY ĐƠN
                             </button>
+                            </>
                           )}
                         </div>
                       </td>

@@ -24,6 +24,7 @@ public class FacilityAvailabilityResponse {
         private String district;
         private String address;
         private String hotline;
+        private Integer depositMonthMultiplier;
     }
 
     @NoArgsConstructor

@@ -221,16 +221,19 @@ public class BomRevenueService {
     // ─────────────────────────────────────────────────────────────
 
     public List<UnitTypeRevenueResponse> getByUnitType(Integer facilityId) {
-        String facFilter = (facilityId != null) ? " AND su.facility_id = " + facilityId : "";
+        String facFilter = (facilityId != null)
+                ? " AND COALESCE(su.facility_id, res.facility_id) = " + facilityId
+                : "";
 
         String sql =
                 "SELECT ut.id AS tid, ut.name AS tname,"
                 + " COALESCE(("
                 + "   SELECT SUM(p.amount)"
                 + "   FROM payment_transactions p"
-                + "   JOIN rental_contracts rc ON rc.id = p.contract_id"
-                + "   JOIN storage_units su ON su.id = rc.storage_unit_id"
-                + "   WHERE su.unit_type_id = ut.id"
+                + "   LEFT JOIN rental_contracts rc ON rc.id = p.contract_id"
+                + "   LEFT JOIN storage_units su ON su.id = rc.storage_unit_id"
+                + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
+                + "   WHERE COALESCE(su.unit_type_id, res.unit_type_id) = ut.id"
                 + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT')"
                 +       facFilter
                 + " ), 0) AS revenue,"
@@ -238,7 +241,7 @@ public class BomRevenueService {
                 + "  FROM rental_contracts rc"
                 + "  JOIN storage_units su ON su.id = rc.storage_unit_id"
                 + "  WHERE su.unit_type_id = ut.id AND rc.status IN ('ACTIVE','OVERDUE')"
-                +       facFilter
+                +       (facilityId != null ? " AND su.facility_id = " + facilityId : "")
                 + " ) AS totalRented"
                 + " FROM unit_types ut"
                 + " ORDER BY revenue DESC";
@@ -390,26 +393,27 @@ public class BomRevenueService {
                         + " AND rc.end_date IS NOT NULL AND YEAR(rc.end_date) = ? AND MONTH(rc.end_date) = ?",
                         currentYear, currentMonth);
 
-        // 6. Tỷ lệ tái ký (gia hạn / tổng kết thúc): Dựa vào activity_logs ghi nhận RENEW
-        double retentionRate = 0.0;
-        if (terminatedContracts > 0) {
-            int renewedContracts = facilityId != null
-                    ? queryCountInt(
-                            "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
-                            + " JOIN rental_contracts rc ON rc.id = TRY_CAST(al.target_id AS INT)"
-                            + " JOIN storage_units su ON su.id = rc.storage_unit_id"
-                            + " WHERE su.facility_id = ? AND al.target_entity = 'rental_contracts'"
-                            + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
-                            + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
-                            facilityId, currentYear, currentMonth)
-                    : queryCountInt(
-                            "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
-                            + " WHERE al.target_entity = 'rental_contracts'"
-                            + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
-                            + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
-                            currentYear, currentMonth);
-            retentionRate = round1(renewedContracts * 100.0 / terminatedContracts);
-        }
+        // 6. Tỷ lệ tái ký (gia hạn / (gia hạn + kết thúc)): Dựa vào activity_logs ghi nhận RENEW
+        int renewedContracts = facilityId != null
+                ? queryCountInt(
+                        "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
+                        + " JOIN rental_contracts rc ON rc.id = TRY_CAST(al.target_id AS INT)"
+                        + " JOIN storage_units su ON su.id = rc.storage_unit_id"
+                        + " WHERE su.facility_id = ? AND al.target_entity = 'rental_contracts'"
+                        + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
+                        + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
+                        facilityId, currentYear, currentMonth)
+                : queryCountInt(
+                        "SELECT COUNT(DISTINCT al.target_id) FROM activity_logs al"
+                        + " WHERE al.target_entity = 'rental_contracts'"
+                        + " AND (al.action LIKE '[RENEW]%' OR al.action LIKE N'%Gia hạn%')"
+                        + " AND YEAR(al.created_at) = ? AND MONTH(al.created_at) = ?",
+                        currentYear, currentMonth);
+
+        long totalDecisions = (long) renewedContracts + terminatedContracts;
+        double retentionRate = totalDecisions > 0
+                ? round1(renewedContracts * 100.0 / totalDecisions)
+                : 0.0;
 
         return OccupancyReportResponse.builder()
                 .totalUnits(totalUnits)

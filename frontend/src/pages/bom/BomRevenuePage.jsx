@@ -523,9 +523,9 @@ export default function BomRevenuePage() {
             <div className="mt-4 pt-3 flex items-center justify-between text-xs font-bold border-t-2 border-[#E5E5E5]">
               <div className="flex items-center gap-1 text-[#58A700] font-black">
                 <span className="material-symbols-outlined text-[16px]">trending_up</span>
-                <span>+{overview?.growthRate || 14.8}% so kỳ trước</span>
+                <span>+{overview?.growthRate ?? 0}% so kỳ trước</span>
               </div>
-              <span className="text-[#AFAFAF]">{overview?.rentalCount || 194} hợp đồng</span>
+              <span className="text-[#AFAFAF]">{overview?.rentalCount ?? 0} hợp đồng</span>
             </div>
           </div>
 
@@ -568,7 +568,7 @@ export default function BomRevenuePage() {
               </div>
             </div>
             <div className="mt-4 pt-3 flex items-center justify-between text-xs font-bold border-t-2 border-[#E5E5E5]">
-              <span className="text-[#FF4B4B] font-black">{overview?.refundCount || 16} yêu cầu hoàn cọc</span>
+              <span className="text-[#FF4B4B] font-black">{overview?.refundCount ?? 0} yêu cầu hoàn cọc</span>
               <span className="text-[#AFAFAF]">Có mã FT đối soát</span>
             </div>
           </div>
@@ -590,7 +590,7 @@ export default function BomRevenuePage() {
               </div>
             </div>
             <div className="mt-4 pt-3 flex items-center justify-between text-xs font-bold border-t-2 border-[#E5E5E5]">
-              <span className="text-[#1899D6] font-black">Bảo chứng cho 420 ô</span>
+              <span className="text-[#1899D6] font-black">Bảo chứng cho {occupancy?.occupiedUnits ?? 0} ô</span>
               <span className="text-[#AFAFAF]">Hoàn khi trả kho</span>
             </div>
           </div>
@@ -619,14 +619,14 @@ export default function BomRevenuePage() {
             <div className="flex flex-col sm:items-end">
               <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Tỷ lệ lấp đầy toàn hệ thống</span>
               <span className="text-xl font-black text-[#1CB0F6]">
-                {occupancy?.occupancyRate || 88.4}% <span className="text-xs text-[#AFAFAF]">({occupancy?.occupiedUnits || 420} / {((occupancy?.totalUnits || 487) - (occupancy?.maintenanceUnits || 12))} ô)</span>
+                {occupancy?.occupancyRate ?? 0}% <span className="text-xs text-[#AFAFAF]">({occupancy?.occupiedUnits ?? 0} / {Math.max(0, (occupancy?.totalUnits ?? 0) - (occupancy?.maintenanceUnits ?? 0))} ô)</span>
               </span>
             </div>
             <div className="h-8 w-0.5 bg-[#E5E5E5] hidden sm:block"></div>
             <div className="flex flex-col sm:items-end">
               <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Tăng trưởng dòng tiền</span>
               <span className="text-xl font-black text-[#58CC02]">
-                +{overview?.growthRate || 14.8}%
+                +{overview?.growthRate ?? 0}%
               </span>
             </div>
           </div>
@@ -722,17 +722,17 @@ export default function BomRevenuePage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="duo-card p-4 bg-white flex flex-col justify-between">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Hợp đồng mới ký</span>
-                <span className="text-2xl font-black text-[#58CC02] mt-1">+{occupancy?.newContracts || 42} <span className="text-xs text-[#AFAFAF]">HĐ</span></span>
-                <span className="text-[10px] font-bold text-[#58A700] mt-1">+18.5% so tháng trước</span>
+                <span className="text-2xl font-black text-[#58CC02] mt-1">+{occupancy?.newContracts ?? 0} <span className="text-xs text-[#AFAFAF]">HĐ</span></span>
+                <span className="text-[10px] font-bold text-[#58A700] mt-1">Tháng hiện tại</span>
               </div>
               <div className="duo-card p-4 bg-white flex flex-col justify-between">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Hợp đồng kết thúc</span>
-                <span className="text-2xl font-black text-[#FF4B4B] mt-1">-{occupancy?.terminatedContracts || 18} <span className="text-xs text-[#AFAFAF]">HĐ</span></span>
+                <span className="text-2xl font-black text-[#FF4B4B] mt-1">-{occupancy?.terminatedContracts ?? 0} <span className="text-xs text-[#AFAFAF]">HĐ</span></span>
                 <span className="text-[10px] font-bold text-[#AFAFAF] mt-1">Đã thanh lý & trả kho</span>
               </div>
               <div className="duo-card p-4 bg-white flex flex-col justify-between">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Tỷ lệ gia hạn</span>
-                <span className="text-2xl font-black text-[#1CB0F6] mt-1">{occupancy?.retentionRate || 78.5}%</span>
+                <span className="text-2xl font-black text-[#1CB0F6] mt-1">{occupancy?.retentionRate ?? 0}%</span>
                 <span className="text-[10px] font-bold text-[#1899D6] mt-1">Khách tiếp tục thuê</span>
               </div>
             </div>

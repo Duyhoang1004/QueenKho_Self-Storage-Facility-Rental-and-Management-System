@@ -14,4 +14,6 @@ public class CancelPreviewResponse {
     private BigDecimal penaltyAmount;
     private BigDecimal refundAmount;
     private LocalDateTime appointmentTime;
+    private Integer cancelFreeHours;
+    private Integer cancelFeePercent;
 }

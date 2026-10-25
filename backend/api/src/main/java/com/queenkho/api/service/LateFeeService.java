@@ -2,15 +2,15 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.LateFeeCalculationResult;
 import com.queenkho.api.entity.RentalContract;
+import com.queenkho.api.entity.RentalPolicy;
+import com.queenkho.api.repository.RentalPolicyRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.Map;
 
 /**
  * =========================================================================
@@ -40,7 +40,7 @@ public class LateFeeService {
     public static final int DEFAULT_LIQUIDATION_DAYS = 30;                 // Mặc định 30 ngày nếu policy không có
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private RentalPolicyRepository rentalPolicyRepository;
 
     /**
      * Tính toán phí phạt trễ hạn tính đến ngày hiện tại
@@ -64,16 +64,16 @@ public class LateFeeService {
             asOfDate = LocalDate.now(VIETNAM_ZONE);
         }
 
-        // 1. Lấy số ngày thanh lý từ rental_policy (chỉ đọc liquidation_days đã có trong schema)
+        // PR-M5: phí trễ và ngày thanh lý theo phiên bản gắn với hợp đồng.
         int liquidationDays = DEFAULT_LIQUIDATION_DAYS;
+        BigDecimal ratePerDay = RATE_PER_DAY;
+        BigDecimal maxPercent = MAX_PERCENT;
         if (contract.getRentalPolicyId() != null) {
-            java.util.List<Integer> daysList = jdbcTemplate.query(
-                    "SELECT liquidation_days FROM rental_policy WHERE id = ?",
-                    (rs, rowNum) -> rs.getInt("liquidation_days"),
-                    contract.getRentalPolicyId()
-            );
-            if (!daysList.isEmpty() && daysList.get(0) > 0) {
-                liquidationDays = daysList.get(0);
+            RentalPolicy policy = rentalPolicyRepository.findById(contract.getRentalPolicyId()).orElse(null);
+            if (policy != null) {
+                liquidationDays = policy.getLiquidationDays();
+                ratePerDay = BigDecimal.valueOf(policy.getLateFeePercentPerDay(), 2);
+                maxPercent = BigDecimal.valueOf(policy.getLateFeeMaxPercent(), 2);
             }
         }
 
@@ -87,15 +87,15 @@ public class LateFeeService {
             return LateFeeCalculationResult.builder()
                     .overdueDays(0)
                     .lateFeeAmount(BigDecimal.ZERO)
-                    .maxLateFeeAmount(depositHeld.multiply(MAX_PERCENT).setScale(0, RoundingMode.HALF_UP))
+                    .maxLateFeeAmount(depositHeld.multiply(maxPercent).setScale(0, RoundingMode.HALF_UP))
                     .isMaxLateFeeReached(false)
                     .isPinLocked(false)
                     .canLiquidate(false)
                     .liquidationDaysThreshold(liquidationDays)
                     .depositHeldAmount(depositHeld)
                     .estimatedDepositRefund(depositHeld)
-                    .ratePerDay(RATE_PER_DAY)
-                    .maxPercent(MAX_PERCENT)
+                    .ratePerDay(ratePerDay)
+                    .maxPercent(maxPercent)
                     .build();
         }
 
@@ -104,14 +104,13 @@ public class LateFeeService {
         long overdueDays = ChronoUnit.DAYS.between(endDate, asOfDate);
 
         // 3. Tính phí trễ hạn (PR-Q3):
-        // Phí trễ = cọc đang giữ × min(số ngày quá hạn, 5) × RATE_PER_DAY, trần MAX_PERCENT
-        long billableDays = Math.min(overdueDays, 5);
+        // Phí trễ = cọc đang giữ × số ngày quá hạn × tỷ lệ/ngày, giới hạn bởi mức trần.
         BigDecimal calculatedFee = depositHeld
-                .multiply(RATE_PER_DAY)
-                .multiply(BigDecimal.valueOf(billableDays))
+                .multiply(ratePerDay)
+                .multiply(BigDecimal.valueOf(overdueDays))
                 .setScale(0, RoundingMode.HALF_UP);
 
-        BigDecimal maxFee = depositHeld.multiply(MAX_PERCENT).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal maxFee = depositHeld.multiply(maxPercent).setScale(0, RoundingMode.HALF_UP);
         BigDecimal lateFeeAmount = calculatedFee.min(maxFee).min(depositHeld);
 
         boolean isMaxReached = lateFeeAmount.compareTo(maxFee) >= 0;
@@ -119,8 +118,8 @@ public class LateFeeService {
         // PR-Q5: OVERDUE thì PIN bị khóa ở mức hiển thị
         boolean isPinLocked = "OVERDUE".equalsIgnoreCase(contract.getStatus());
 
-        // PR-Q8: Đủ điều kiện thanh lý khi trạng thái là OVERDUE và số ngày quá hạn >= liquidationDays (mặc định 30 ngày)
-        boolean canLiquidate = "OVERDUE".equalsIgnoreCase(contract.getStatus()) && overdueDays >= liquidationDays;
+        // PR-Q8: FM chỉ được thanh lý khi đã quá mốc liquidationDays.
+        boolean canLiquidate = "OVERDUE".equalsIgnoreCase(contract.getStatus()) && overdueDays > liquidationDays;
 
         BigDecimal estimatedRefund = depositHeld.subtract(lateFeeAmount).max(BigDecimal.ZERO);
 
@@ -134,8 +133,8 @@ public class LateFeeService {
                 .liquidationDaysThreshold(liquidationDays)
                 .depositHeldAmount(depositHeld)
                 .estimatedDepositRefund(estimatedRefund)
-                .ratePerDay(RATE_PER_DAY)
-                .maxPercent(MAX_PERCENT)
+                .ratePerDay(ratePerDay)
+                .maxPercent(maxPercent)
                 .build();
     }
 }

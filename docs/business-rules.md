@@ -242,7 +242,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-40 | FM thấy đơn `DEPOSIT_PAID`, chưa có ô, **thuộc cơ sở mình**, cũ nhất trước. Chưa gán cơ sở → lỗi. |
 | BR-41 | Gợi ý ô `AVAILABLE` cùng cơ sở, **cùng loại**. ⚠️ Hiện nếu hết sẽ gợi ý ô **khác loại** → bỏ (L-11, D-02). |
 | BR-42 | Gán ô khi đơn `DEPOSIT_PAID` và ô `AVAILABLE` — **phải đúng loại & đúng cơ sở của đơn** (L-11). 1 transaction: ô `OCCUPIED`; đơn `UNIT_ASSIGNED`; hợp đồng `HD-xxxxxx` `PENDING_CHECK_IN`; sinh task `CHECK_IN`. |
-| BR-43 | Hợp đồng: start = ngày bắt đầu đơn; end = start + số tháng; `deposit_held_amount` = cọc; gắn **chính sách mới nhất của cơ sở**. |
+| BR-43 | Hợp đồng: start = ngày bắt đầu đơn; end = start + số tháng; `deposit_held_amount` = cọc; gắn **chính sách đang hiệu lực của cơ sở**. |
 
 ### EX-03 Khách không đến nhận kho (No-Show) & dời lịch ✅
 **Đang chạy** (`ReservationService.handleNoShow / rescheduleReservation`, `NoShowModal.jsx`, `RescheduleModal.jsx`)
@@ -396,8 +396,8 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ### UC-07 Chính sách thuê (BOM) ⬜
 | Mã | Rule |
 |---|---|
-| PR-13 | Mỗi cơ sở 1 chính sách **hiệu lực** = bản mới nhất. **Sửa = tạo phiên bản mới**, không ghi đè; hợp đồng giữ `rental_policy_id` lúc ký. Màn hình xem được lịch sử phiên bản. |
-| PR-14 | Trường & miền giá trị: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–100; % trần phí trễ 0–100 (≥ % mỗi ngày); số ngày thanh lý ≥ 1. |
+| PR-13 | Mỗi cơ sở có đúng 1 chính sách **đang hiệu lực**. Tạo/sửa sẽ phát hành phiên bản mới và áp dụng bản đó; BOM có thể chọn lại chính phiên bản cũ làm bản hiệu lực mà không tạo bản sao. Không ghi đè nội dung; hợp đồng giữ `rental_policy_id` lúc ký. Màn hình xem được lịch sử phiên bản. |
+| PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50. Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 30 ngày**; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký. |
 | PR-15 | Code đọc chính sách thay cho số viết cứng (cọc, phí huỷ, phí trễ, thanh lý). (sửa L-03) |
 | PR-M5 | Huỷ đơn → chính sách hiện hành lúc huỷ; phí trễ / thanh lý → chính sách gắn hợp đồng. Chỉ BOM sửa, FM chỉ xem. |
 | PR-M6 | BOM được chỉnh `deposit_month_multiplier` (xem UC-10). |

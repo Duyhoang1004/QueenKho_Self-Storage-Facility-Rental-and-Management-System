@@ -30,7 +30,7 @@ public class LateFeeCalculationResult {
     /** Mã PIN SmartLock có bị khóa hay không (PR-Q5: hiển thị khóa khi OVERDUE) */
     private boolean isPinLocked;
 
-    /** Đã đủ điều kiện để FM bấm Thanh lý kho hay chưa (quá hạn >= 30 ngày) */
+    /** Đã đủ điều kiện để FM bấm Thanh lý kho hay chưa (quá mốc ngày trong chính sách) */
     private boolean canLiquidate;
 
     /** Ngưỡng số ngày quá hạn để kích hoạt thanh lý (mặc định 30 ngày từ chính sách) */

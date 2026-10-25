@@ -126,13 +126,8 @@ BEGIN
 END
 
 -- 4.3. Tài khoản SYSTEM (PR-A8, Scheduler background jobs, không cho đăng nhập)
-IF @adminRole IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE email = 'system@queenkho.com')
-BEGIN
-    INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
-    VALUES (N'Hệ Thống QueenKho', 'system@queenkho.com', '!DISABLED_SYSTEM_ACCOUNT!_NO_LOGIN_ALLOWED', '0000000000', @adminRole, NULL, 'DISABLED');
-    PRINT N'   [+] Đã tạo tài khoản job: system@queenkho.com (DISABLED)';
-END
-
+-- UC-31: chỉ dùng DUY NHẤT system@queenkho.local (= ActivityLogService.SYSTEM_EMAIL).
+-- Tài khoản cũ system@queenkho.com được gộp vào ở mục 9.
 IF @adminRole IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users WHERE email = 'system@queenkho.local')
 BEGIN
     INSERT INTO users (full_name, email, password_hash, phone, role_id, facility_id, status)
@@ -334,6 +329,29 @@ BEGIN
         ALTER TABLE activity_logs ALTER COLUMN action NVARCHAR(500) NOT NULL;
         PRINT N'   [+] Đã mở rộng cột activity_logs.action lên NVARCHAR(500).';
     END
+END
+
+-- UC-31: màn nhật ký luôn sắp xếp / lọc theo thời gian → index created_at
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_activitylogs_created_at' AND object_id = OBJECT_ID('activity_logs'))
+BEGIN
+    CREATE INDEX IX_activitylogs_created_at ON activity_logs(created_at DESC);
+    PRINT N'   [+] Đã tạo index IX_activitylogs_created_at.';
+END
+
+-- UC-31 / PR-A8: gộp tài khoản job cũ system@queenkho.com vào system@queenkho.local
+DECLARE @oldSystemId INT = (SELECT id FROM users WHERE email = 'system@queenkho.com');
+DECLARE @systemId    INT = (SELECT id FROM users WHERE email = 'system@queenkho.local');
+IF @oldSystemId IS NOT NULL AND @systemId IS NOT NULL
+BEGIN
+    UPDATE activity_logs SET user_id = @systemId WHERE user_id = @oldSystemId;
+    BEGIN TRY
+        DELETE FROM users WHERE id = @oldSystemId;
+        PRINT N'   [+] Đã gộp system@queenkho.com vào system@queenkho.local và xoá tài khoản cũ.';
+    END TRY
+    BEGIN CATCH
+        -- Còn bảng khác tham chiếu → giữ lại (đang DISABLED, không đăng nhập được)
+        PRINT N'   [!] Đã chuyển log nhưng không xoá được system@queenkho.com: ' + ERROR_MESSAGE();
+    END CATCH
 END
 
 PRINT N'==> [9/10] Đã kiểm tra bảng activity_logs.';

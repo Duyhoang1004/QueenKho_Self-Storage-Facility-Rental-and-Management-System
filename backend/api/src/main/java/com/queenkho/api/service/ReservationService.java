@@ -727,6 +727,10 @@ public class ReservationService {
     // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show Handling)
     @Transactional
     public void handleNoShow(Integer reservationId, com.queenkho.api.dto.NoShowRequest request) {
+        // UC-31 / PR-A8 (L-21): log phải ghi đúng người thao tác (FM) → bắt buộc có staffId
+        if (request == null || request.getStaffId() == null) {
+            throw new IllegalArgumentException("Thiếu người thao tác (staffId)");
+        }
         // tim don dat cho trong db
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
@@ -859,14 +863,11 @@ public class ReservationService {
             logAction = logAction.substring(0, 497) + "...";
         }
 
-        Integer operatorId = (request != null && request.getStaffId() != null)
-                ? request.getStaffId()
-                : reservation.getCustomer().getId();
-
+        // UC-31 / PR-A8: người thao tác là FM (đã kiểm tra staffId ở đầu hàm), không phải khách
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
-                operatorId,
+                request.getStaffId(),
                 logAction,
                 reservation.getId());
     }
@@ -877,6 +878,10 @@ public class ReservationService {
             com.queenkho.api.dto.RescheduleReservationRequest request) {
         if (request == null || request.getNewStartDate() == null) {
             throw new IllegalArgumentException("Vui lòng chọn ngày nhận kho mới");
+        }
+        // UC-31 / PR-A8 (L-21): log phải ghi đúng người thao tác (FM gọi điện cho khách rồi dời lịch)
+        if (request.getManagerId() == null) {
+            throw new IllegalArgumentException("Thiếu người thao tác (managerId)");
         }
         if (request.getNewStartDate().isBefore(LocalDate.now())) {
             throw new IllegalArgumentException("Ngày nhận kho mới không được ở trong quá khứ");
@@ -901,7 +906,7 @@ public class ReservationService {
             staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", request.getNewStartDate());
         });
         // ghi log
-        String logAction = "Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()
+        String logAction = "[RESCHEDULE] Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()
                 + " từ " + oldDate + " sang " + request.getNewStartDate()
                 + (request.getReason() != null ? " (Lý do: " + request.getReason() + ")" : "");
         if (logAction.length() > 500)
@@ -909,7 +914,7 @@ public class ReservationService {
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
-                reservation.getCustomer().getId(),
+                request.getManagerId(),
                 logAction,
                 reservation.getId());
     }

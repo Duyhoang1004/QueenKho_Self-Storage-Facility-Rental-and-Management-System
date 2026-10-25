@@ -38,8 +38,7 @@
 | | UC-32 Quản lý nhân viên | ✅ |
 | | UC-25 Hoàn cọc · UC-28 Hợp đồng quá hạn | ⬜ |
 | **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu | ⬜ (portal `/bom` đã có) |
-| **Admin** | UC-03 Vai trò · UC-08 Tài khoản | ✅ |
-| | UC-31 Nhật ký · Dashboard `/admin` | ⬜ (portal `/admin` đã có — #56) |
+| **Admin** | UC-03 Vai trò · UC-08 Tài khoản · UC-31 Nhật ký · Dashboard `/admin` | ✅ |
 | **Chung** | UC-01 Đăng nhập | ✅ |
 | **Hệ thống** | EX-01 Hết hạn giữ chỗ · EX-02 Thanh toán lỗi · job task quá hạn | ✅ |
 
@@ -460,7 +459,8 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | BR-95 | Admin không tự đổi role mình (409 `CANNOT_CHANGE_OWN_ROLE`), không tự khoá (409 `CANNOT_LOCK_SELF`). Mở lại FM khi cơ sở đã có FM `ACTIVE` khác → 409 `FACILITY_HAS_MANAGER`. FM `ACTIVE` bị đổi role / chuyển cơ sở cũng trả cảnh báo PR-A4. |
 | BR-96 | `LOCKED` = tạm khoá, `DISABLED` = nghỉ việc / ngừng hẳn; cả hai mở lại được, bắt buộc **lý do** ≤ 255 (chỉ lưu trong log). Log `[USER_CREATE]` / `[USER_UPDATE]` / `[USER_LOCK]` / `[USER_DISABLE]` / `[USER_UNLOCK]` / `[USER_RESET_PASSWORD]`, `target_entity = 'users'`; không ghi mật khẩu; không đổi gì → không log. |
 
-### UC-31 Nhật ký hoạt động (Admin) 🟡 (bảng đã có, chưa có màn)
+### UC-31 Nhật ký hoạt động (Admin) ✅
+**Đang chạy** (`AdminActivityLogService`, `AdminDashboardService`, `AdminLogsPage.jsx`, `AdminDashboardPage.jsx`)
 | Mã | Rule |
 |---|---|
 | PR-07 | Chỉ **xem**, không sửa / xoá. |
@@ -468,6 +468,10 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-A9 | **Bắt buộc log**: đăng ký; tạo đơn; thanh toán thành công / thất bại; hết hạn giữ chỗ; huỷ đơn; gán ô; báo cáo liên hệ khách (`[CONTACT]`, PR-X3); No-Show; dời lịch; nhận việc; gỡ người nhận; check-in; yêu cầu / huỷ trả kho; nghiệm thu; sự cố; gia hạn; chuyển quá hạn; thanh lý; hoàn tiền; ticket hỗ trợ; cấp lại PIN; mọi CRUD của BOM / FM / Admin. **Không** log đăng nhập. UC đã xong phải bổ sung: tạo đơn, thanh toán, hết hạn, gán ô, nhận việc, gỡ người nhận. |
 | PR-A10 | Nội dung tiếng Việt, mở đầu **mã nghiệp vụ** (`[CHECK_IN] …`), ≤ 500 ký tự. Lỗi ghi log không làm hỏng nghiệp vụ. |
 | PR-A11 | Admin xem toàn hệ thống; lọc người thao tác, role, đối tượng, mã đối tượng, khoảng ngày. *(làm sau: FM xem log cơ sở mình)* |
+| BR-97 | Màn `/admin/logs`: chỉ `ADMIN` `ACTIVE` (403 `FORBIDDEN_ROLE`). Lọc: người thao tác (tên/email, hoặc bấm tên trong bảng → đúng 1 người), role người thao tác, đối tượng (`target_entity`, dropdown lấy từ dữ liệu), mã đối tượng (khớp chính xác), nội dung (gõ được `[CHECK_IN]`), từ ngày – đến ngày (trọn ngày; từ > đến → 400). 20 dòng/trang, mới nhất trước. Bộ lọc nằm trên URL. Không xuất file. |
+| BR-98 | Mỗi dòng: thời gian, người thao tác (tên, email, role; tài khoản `system` hiện "Hệ thống · Tự động"), **mã nghiệp vụ** tách từ `[MÃ]` (log cũ chưa có mã → "—"), nội dung, đối tượng + mã. Bấm mã đối tượng → lọc mọi log của đối tượng đó. |
+| BR-99 | Chỉ dùng **1 tài khoản job** `system@queenkho.local`; `system@queenkho.com` cũ được migration gộp vào (chuyển log rồi xoá). Dời lịch bắt buộc `managerId`, No-Show bắt buộc `staffId` → log ghi đúng FM (sửa L-21). |
+| BR-100 | Dashboard `/admin`: tổng / hoạt động / khoá / vô hiệu (không tính `system`), số theo role, cơ sở `ACTIVE` chưa có FM `ACTIVE` (PR-A4), số log hôm nay, 10 log mới nhất. Mỗi ô số dẫn tới màn đã lọc sẵn. |
 
 ### UC-26 Gửi yêu cầu hỗ trợ (Customer) ⬜
 | Mã | Rule |
@@ -516,7 +520,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | L-09 | 🟡 | Ngày bắt đầu: BE cho hôm nay, FE từ ngày mai; ngày hẹn trả kho không kiểm tra ở BE. | `createReservation`, `requestCheckout` | PR-B4, PR-O1 |
 | L-10 | 🟡 | API No-Show không kiểm tra ngày bắt đầu đã qua. | `handleNoShow` | PR-X2 |
 | L-19 | 🟡 | Trang hợp đồng đọc `vnp_ResponseCode` nhưng BE trả `vnpResponse` → không báo kết quả gia hạn. | `CustomerContractPage.jsx` | PR-R8 |
-| L-21 | 🟡 | Log dời lịch (và No-Show khi thiếu `staffId`) ghi `user_id` là khách thay vì FM. | `ReservationService` | PR-A8 |
+| ~~L-21~~ | ✅ | ~~Log dời lịch (và No-Show khi thiếu `staffId`) ghi `user_id` là khách thay vì FM.~~ Đã sửa ở UC-31. | `ReservationService` | PR-A8 |
 | L-22 | 🟡 | FE gửi `customerId: sessionUser.userId ?? 1` → mất phiên thì đặt hộ user 1. | `CreateReservationPage.jsx` | PR-B3 |
 | L-12 | 🟡 | Comment trạng thái trong SQL chưa khớp code (`TERMINATION_PENDING`, `COMPLETED` của reservation; `RESERVED` không dùng). | `QueenKho_full.sql` | Mục 5 |
 
@@ -536,7 +540,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | `support_requests` | + `resolution_note` NVARCHAR(1000) NULL, `resolved_at` DATETIME2 NULL, `closed_at` DATETIME2 NULL | PR-S10 | UC-26/27 |
 | `damage_cases` 🆕 | `id`, `contract_id` FK, `staff_id` FK, `description` NVARCHAR(1000), `cost` DECIMAL(12,2) ≥ 0, `created_at` | PR-O8 | UC-24 |
 | `payment_transactions` | `payment_type` thêm `DAMAGE_FEE`; `payment_method` thêm `DEPOSIT_OFFSET`; + cột lưu **số tháng gia hạn** (vd `months` INT NULL) | PR-O9, PR-M8, PR-R2 | UC-24, UC-29, UC-21 |
-| `users` | Seed thêm 1 tài khoản `system` (role `ADMIN`, `DISABLED` để không đăng nhập được) cho log của job | PR-A8 | UC-31 |
+| ~~`users`~~ | ✅ Tài khoản `system@queenkho.local` (role `ADMIN`, `DISABLED`) dùng cho log của job; UC-31 gộp tài khoản trùng `system@queenkho.com` và thêm index `IX_activitylogs_created_at`. | PR-A8 | UC-31 |
 | `handover_records` | + `is_prohibited_goods_committed` BIT NOT NULL DEFAULT 0 | PR-C7 | UC-18 |
 | Comment trạng thái | `reservations`: thêm `TERMINATION_PENDING`, `REFUNDED` (code #57 đang dùng), dùng `EXPIRED`; `storage_units`: bỏ `RESERVED` | L-12, PR-B7, PR-M9 | ai sửa SQL trước |
 | ~~`staff_tasks`~~ | ✅ Đã đổi tên thành `facility_tasks`, thêm loại `REFUND` / `MAINTENANCE`, cột `evidence_image_url` (#55). Các chỗ khác trong tài liệu nhắc "bảng task" đều là `facility_tasks`. | PR-O12 | đã xong |

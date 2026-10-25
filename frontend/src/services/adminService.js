@@ -46,3 +46,22 @@ export async function resetUserPassword(userId, newPassword, actorUserId) {
   const response = await api.put(`/admin/users/${userId}/password`, { newPassword }, { params: { actorUserId } })
   return response.data
 }
+
+// UC-31: nhật ký hoạt động — params { userId, actor, role, targetEntity, targetId, keyword, from, to, page, size }
+// (from / to dạng YYYY-MM-DD) → trả { content, page, size, totalElements, totalPages }
+export async function getActivityLogs(params, actorUserId) {
+  const response = await api.get('/admin/activity-logs', { params: { ...params, actorUserId } })
+  return response.data
+}
+
+// UC-31: các loại đối tượng có trong log ["users", "reservations", ...]
+export async function getActivityLogTargetEntities(actorUserId) {
+  const response = await api.get('/admin/activity-logs/target-entities', { params: { actorUserId } })
+  return response.data
+}
+
+// UC-31: số liệu trang tổng quan /admin
+export async function getAdminDashboard(actorUserId) {
+  const response = await api.get('/admin/dashboard', { params: { actorUserId } })
+  return response.data
+}

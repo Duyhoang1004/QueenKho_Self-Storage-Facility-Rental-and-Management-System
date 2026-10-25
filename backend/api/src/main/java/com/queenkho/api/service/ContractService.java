@@ -274,8 +274,9 @@ public class ContractService {
         Integer systemUserId = null;
         try {
             List<Integer> ids = jdbcTemplate.query(
-                    "SELECT id FROM users WHERE email = 'system@queenkho.com'",
-                    (rs, rowNum) -> rs.getInt("id")
+                    "SELECT id FROM users WHERE email = ?",
+                    (rs, rowNum) -> rs.getInt("id"),
+                    ActivityLogService.SYSTEM_EMAIL // UC-31: dùng chung 1 tài khoản system
             );
             if (!ids.isEmpty()) {
                 systemUserId = ids.get(0);
@@ -285,7 +286,7 @@ public class ContractService {
         }
 
         if (systemUserId == null) {
-            System.err.println("[QueenKho Overdue Job] ⚠️ CẢNH BÁO: Không tìm thấy tài khoản 'system@queenkho.com' trong cơ sở dữ liệu. Bỏ qua ghi activity_logs để không ném lỗi.");
+            System.err.println("[QueenKho Overdue Job] ⚠️ CẢNH BÁO: Không tìm thấy tài khoản '" + ActivityLogService.SYSTEM_EMAIL + "' trong cơ sở dữ liệu. Bỏ qua ghi activity_logs để không ném lỗi.");
         }
 
         // =========================================================================

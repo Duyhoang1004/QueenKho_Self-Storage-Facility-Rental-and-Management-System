@@ -516,3 +516,59 @@
 # 409 CANNOT_CHANGE_OWN_ROLE      : tu doi role minh
 # 409 CUSTOMER_HAS_ACTIVE_RENTAL  : khach con don PENDING/DEPOSIT_PAID/UNIT_ASSIGNED
 #                                   hoac hop dong PENDING_CHECK_IN/ACTIVE/OVERDUE/TERMINATION_PENDING
+
+# ==============================================================================
+# UC-31: NHAT KY HOAT DONG & TONG QUAN ADMIN (Admin Activity Logs / Dashboard)
+# ==============================================================================
+# Endpoint 1: GET /api/v1/admin/activity-logs?actorUserId={adminId}&userId=&actor=&role=&targetEntity=
+#                 &targetId=&keyword=&from=YYYY-MM-DD&to=YYYY-MM-DD&page=0&size=20   (danh sach + loc)
+# Endpoint 2: GET /api/v1/admin/activity-logs/target-entities?actorUserId={adminId}    (dropdown doi tuong)
+# Endpoint 3: GET /api/v1/admin/dashboard?actorUserId={adminId}                        (trang /admin)
+# ==============================================================================
+#
+# Quy tac (PR-07, PR-A8, PR-A10, PR-A11):
+#   - CHI DOC: khong co API sua / xoa log
+#   - Ca 3 API yeu cau actorUserId la ADMIN dang ACTIVE
+#   - Sap xep createdAt DESC, id DESC; size toi da 100 (sai -> 20)
+#   - userId: dung 1 nguoi (bam ten trong bang); actor: tim trong ho ten / email nguoi thao tac
+#   - role: role cua nguoi thao tac; targetEntity / targetId: khop chinh xac (targetId la chuoi)
+#   - keyword: tim trong noi dung log, ky tu [ ] % _ duoc hieu theo nghia den (go "[CHECK_IN]" duoc)
+#   - from / to loc theo NGAY, lay tron ngay "to"; from > to -> 400
+#   - actionCode tach tu "[MA] noi dung" (log cu chua co ma -> actionCode = null, content = nguyen van)
+#   - systemAccount = true khi log do job ghi (system@queenkho.local) -> FE hien "He thong / Tu dong"
+#   - Dashboard: so lieu KHONG tinh tai khoan system; facilitiesWithoutManager = co so ACTIVE chua co FM ACTIVE (PR-A4)
+#
+# --- RESPONSE THANH CONG ---
+# Endpoint 1 - HTTP 200:
+# {
+#   "content": [
+#     { "id": 17, "createdAt": "2026-10-20T07:52:12.190343",
+#       "userId": 31, "userFullName": "Quản trị viên", "userEmail": "admin@queenkho.com", "userRole": "ADMIN",
+#       "systemAccount": false, "actionCode": "USER_LOCK",
+#       "content": "Khoá tài khoản fmquan7@gmail.com (ACTIVE → LOCKED). Lý do: ...",
+#       "targetEntity": "users", "targetId": "11" }
+#   ],
+#   "page": 0, "size": 20, "totalElements": 18, "totalPages": 1
+# }
+# Endpoint 2 - HTTP 200:  [ "roles", "users" ]
+# Endpoint 3 - HTTP 200:
+# {
+#   "totalUsers": 33, "activeUsers": 33, "lockedUsers": 0, "disabledUsers": 0,
+#   "roles": [ { "role": "CUSTOMER", "total": 5, "active": 5 }, ... ],      // du 5 role theo id
+#   "facilitiesWithoutManager": [ { "id": 4, "code": "GV", "name": "QueenKho Gò Vấp" } ],
+#   "logsToday": 2,
+#   "recentLogs": [ ...10 phan tu giong content cua Endpoint 1... ]
+# }
+#
+# --- RESPONSE LOI ---  { "error": "CODE", "message": "..." }
+# 400 INVALID_INPUT   : thieu actorUserId; from > to
+# 400 (Spring)        : from / to sai dinh dang YYYY-MM-DD
+# 403 FORBIDDEN_ROLE  : nguoi thao tac khong phai ADMIN dang ACTIVE
+#
+# --- THAY DOI API CU (PR-A8 / L-21: log ghi dung nguoi thao tac) ---
+# PUT  /api/v1/reservations/{id}/reschedule : body them "managerId" (BAT BUOC, id FM dang thao tac)
+#        { "newStartDate": "2026-12-01", "reason": "...", "managerId": 6 }
+#        thieu -> 400 { "error": "INVALID_INPUT", "message": "Thiếu người thao tác (managerId)" }
+#        log doi thanh "[RESCHEDULE] ..." voi user_id = managerId (truoc day la id khach)
+# POST /api/v1/reservations/{id}/no-show    : "staffId" tro thanh BAT BUOC
+#        thieu -> 400 { "error": "INVALID_ACTION", "message": "Thiếu người thao tác (staffId)" }

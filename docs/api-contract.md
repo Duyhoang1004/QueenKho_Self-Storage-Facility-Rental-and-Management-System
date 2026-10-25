@@ -572,3 +572,17 @@
 #        log doi thanh "[RESCHEDULE] ..." voi user_id = managerId (truoc day la id khach)
 # POST /api/v1/reservations/{id}/no-show    : "staffId" tro thanh BAT BUOC
 #        thieu -> 400 { "error": "INVALID_ACTION", "message": "Thiếu người thao tác (staffId)" }
+
+## UC-07: Chính sách thuê kho
+
+Chạy `sql_script/Update_rental_policy_uc07.sql` trên database hiện có trước khi khởi động backend mới. Script này tự tạo chính sách v1 mặc định cho cơ sở nào còn thiếu; chạy lại không ghi đè chính sách hiện có. Database tạo mới dùng `QueenKho_full.sql`.
+
+Mọi request dưới đây dùng `Authorization: Bearer <accessToken>` từ đăng nhập. BOM đang ACTIVE được xem và tạo phiên bản; FM đang ACTIVE chỉ được xem chính sách của cơ sở mình.
+
+- `GET /api/v1/rental-policies`: phiên bản hiện hành của mỗi cơ sở (BOM).
+- `GET /api/v1/rental-policies/facilities/{facilityId}`: phiên bản hiện hành (BOM hoặc FM cùng cơ sở).
+- `GET /api/v1/rental-policies/facilities/{facilityId}/history`: tất cả phiên bản, mới nhất trước (BOM hoặc FM cùng cơ sở).
+- `POST /api/v1/rental-policies/facilities/{facilityId}`: tạo phiên bản mới (BOM), HTTP 201.
+- `POST /api/v1/rental-policies/facilities/{facilityId}/activate/{policyId}`: chọn đúng phiên bản đã có làm bản đang áp dụng (BOM), không tạo bản mới, HTTP 200.
+
+Body tạo phiên bản: `{ "depositMonthMultiplier": 1, "cancelFeePercent": 50, "cancelFreeHours": 24, "lateFeePercentPerDay": 10 }`. Các trường là số nguyên; phí trễ mỗi ngày từ 0–50%. Phiên bản mới có trần phí trễ cố định 50% tiền cọc và mốc xét thanh lý cố định 30 ngày. Response thêm `id`, `facilityId`, `version`, `active`, `lateFeeMaxPercent`, `liquidationDays`, `createdAt`, `createdBy`. Chính sách đã phát hành không có API ghi đè/xoá vì hợp đồng cũ giữ `rental_policy_id` đã ký. Chạy `sql_script/Update_rental_policy_uc07.sql` để thêm `is_active` và ràng buộc mỗi cơ sở chỉ có một bản đang áp dụng.

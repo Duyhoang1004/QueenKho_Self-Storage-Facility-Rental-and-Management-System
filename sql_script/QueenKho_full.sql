@@ -116,15 +116,26 @@ CREATE TABLE rental_policy (
     facility_id                 INT NOT NULL,
     policy_name                 NVARCHAR(150) NOT NULL,
     deposit_month_multiplier    INT NOT NULL DEFAULT 1,
-    cancel_fee_percent          INT NOT NULL DEFAULT 0,
-    cancel_free_hours           INT NOT NULL DEFAULT 0,
-    lock_account_days           INT NOT NULL DEFAULT 0,
-    late_fee_per_day            DECIMAL(12,2) NOT NULL DEFAULT 0,
-    liquidation_days            INT NOT NULL DEFAULT 0,
+    cancel_fee_percent          INT NOT NULL DEFAULT 50,
+    cancel_free_hours           INT NOT NULL DEFAULT 24,
+    late_fee_percent_per_day    INT NOT NULL DEFAULT 10,
+    late_fee_max_percent        INT NOT NULL DEFAULT 50,
+    liquidation_days            INT NOT NULL DEFAULT 30,
+    version                     INT NOT NULL DEFAULT 1,
+    is_active                   BIT NOT NULL DEFAULT 0,
+    created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    created_by_user_id          INT NULL,
+    CONSTRAINT UQ_rentalpolicy_facility_version UNIQUE (facility_id, version),
+    CONSTRAINT CK_rentalpolicy_values CHECK (deposit_month_multiplier BETWEEN 1 AND 3 AND cancel_fee_percent BETWEEN 0 AND 100 AND cancel_free_hours >= 0 AND late_fee_percent_per_day BETWEEN 0 AND 100 AND late_fee_max_percent BETWEEN late_fee_percent_per_day AND 100 AND liquidation_days >= 1),
+    CONSTRAINT FK_rentalpolicy_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     CONSTRAINT FK_rentalpolicy_facility FOREIGN KEY (facility_id) REFERENCES facilities(id)
 );
 GO
 CREATE INDEX IX_rentalpolicy_facility ON rental_policy(facility_id);
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+CREATE UNIQUE INDEX UX_rentalpolicy_active_facility ON rental_policy(facility_id) WHERE is_active = 1;
 GO
 
 /* ---------- 7. reservations ---------- */
@@ -360,15 +371,15 @@ INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, sugg
 SET IDENTITY_INSERT unit_types OFF;
 GO
 
-/* ---------- rental_policy: mỗi cơ sở 1 chính sách (id = facility_id) ---------- */
+/* ---------- rental_policy: phiên bản đầu tiên cho mỗi cơ sở ---------- */
 SET IDENTITY_INSERT rental_policy ON;
-INSERT INTO rental_policy (id, facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_per_day, lock_account_days, liquidation_days) VALUES
-    (1, 1, N'Chính sách Kho Tân Bình - Tiêu chuẩn',   1, 50, 24, 50000, 5, 30),
-    (2, 2, N'Chính sách Kho Bình Thạnh - Tiêu chuẩn', 1, 50, 24, 50000, 5, 30),
-    (3, 3, N'Chính sách Kho Thủ Đức - Tiêu chuẩn',    1, 50, 24, 50000, 5, 30),
-    (4, 4, N'Chính sách Kho Gò Vấp - Tiêu chuẩn',     1, 50, 24, 50000, 5, 30),
-    (5, 5, N'Chính sách Kho Cầu Giấy - Tiêu chuẩn',   1, 50, 24, 50000, 5, 30),
-    (6, 6, N'Chính sách Kho Quận 7 - Tiêu chuẩn',     1, 50, 24, 50000, 5, 30);
+INSERT INTO rental_policy (id, facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_percent_per_day, late_fee_max_percent, liquidation_days, is_active) VALUES
+    (1, 1, N'Chính sách Kho Tân Bình - Tiêu chuẩn',   1, 50, 24, 10, 50, 30, 1),
+    (2, 2, N'Chính sách Kho Bình Thạnh - Tiêu chuẩn', 1, 50, 24, 10, 50, 30, 1),
+    (3, 3, N'Chính sách Kho Thủ Đức - Tiêu chuẩn',    1, 50, 24, 10, 50, 30, 1),
+    (4, 4, N'Chính sách Kho Gò Vấp - Tiêu chuẩn',     1, 50, 24, 10, 50, 30, 1),
+    (5, 5, N'Chính sách Kho Cầu Giấy - Tiêu chuẩn',   1, 50, 24, 10, 50, 30, 1),
+    (6, 6, N'Chính sách Kho Quận 7 - Tiêu chuẩn',     1, 50, 24, 10, 50, 30, 1);
 SET IDENTITY_INSERT rental_policy OFF;
 GO
 

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getBomFacilities } from '../../services/facilityService';
 import {
-  FALLBACK_POLICY_FACILITIES,
   createRentalPolicyVersion,
   getRentalPolicies,
   getRentalPolicyHistory,
-  restoreRentalPolicyVersion,
+  activateRentalPolicyVersion,
+  rentalPolicyError,
 } from '../../services/rentalPolicyService';
 
 const EMPTY_FORM = {
@@ -13,17 +13,7 @@ const EMPTY_FORM = {
   cancelFeePercent: '20',
   cancelFreeHours: '24',
   lateFeePercentPerDay: '10',
-  lateFeeMaxPercent: '50',
-  liquidationDays: '30',
 };
-
-function getCurrentUser() {
-  try {
-    return JSON.parse(sessionStorage.getItem('user') || '{}');
-  } catch {
-    return {};
-  }
-}
 
 function formatDate(value) {
   if (!value) return '—';
@@ -43,20 +33,25 @@ function normalizeFacilities(response) {
   return [];
 }
 
-function getLatestPolicies(items) {
-  const latest = new Map();
+function getCurrentPolicies(items) {
+  const currentPolicies = new Map();
   items.forEach((item) => {
-    const current = latest.get(String(item.facilityId));
-    if (!current || Number(item.version) > Number(current.version)) {
-      latest.set(String(item.facilityId), item);
-    }
+    // API cũ chỉ trả về bản hiện hành và chưa có trường active.
+    if (item.active !== false) currentPolicies.set(String(item.facilityId), item);
   });
-  return latest;
+  return currentPolicies;
 }
 
 function validatePolicy(form) {
   const errors = {};
   const number = (key) => Number(form[key]);
+
+  for (const key of Object.keys(form)) {
+    if (form[key] === '' || !Number.isInteger(number(key))) {
+      errors[key] = 'Vui lòng nhập số nguyên hợp lệ.';
+    }
+  }
+  if (Object.keys(errors).length) return errors;
 
   if (!form.depositMonthMultiplier || number('depositMonthMultiplier') < 1 || number('depositMonthMultiplier') > 3) {
     errors.depositMonthMultiplier = 'Tiền cọc phải từ 1 đến 3 tháng.';
@@ -67,16 +62,8 @@ function validatePolicy(form) {
   if (form.cancelFreeHours === '' || number('cancelFreeHours') < 0) {
     errors.cancelFreeHours = 'Số giờ miễn phí không được âm.';
   }
-  if (form.lateFeePercentPerDay === '' || number('lateFeePercentPerDay') < 0 || number('lateFeePercentPerDay') > 100) {
-    errors.lateFeePercentPerDay = 'Phí trễ hạn phải từ 0% đến 100%.';
-  }
-  if (form.lateFeeMaxPercent === '' || number('lateFeeMaxPercent') < 0 || number('lateFeeMaxPercent') > 100) {
-    errors.lateFeeMaxPercent = 'Mức trần phải từ 0% đến 100%.';
-  } else if (number('lateFeeMaxPercent') < number('lateFeePercentPerDay')) {
-    errors.lateFeeMaxPercent = 'Mức trần phải lớn hơn hoặc bằng phí mỗi ngày.';
-  }
-  if (!form.liquidationDays || number('liquidationDays') < 1) {
-    errors.liquidationDays = 'Thời hạn thanh lý tối thiểu là 1 ngày.';
+  if (form.lateFeePercentPerDay === '' || number('lateFeePercentPerDay') < 0 || number('lateFeePercentPerDay') > 50) {
+    errors.lateFeePercentPerDay = 'Phí trễ hạn phải từ 0% đến 50% mỗi ngày.';
   }
   return errors;
 }
@@ -210,9 +197,10 @@ function ModalShell({ icon, title, subtitle, onClose, children, wide = false }) 
 }
 
 function NumberField({ label, name, value, onChange, error, min, max, suffix, step = '1', hint }) {
+  const hintId = `${name}-hint`;
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#777777]">{label}</span>
+      <span className="mb-1.5 block text-sm font-bold text-[#4B4B4B]">{label}</span>
       <div className="relative">
         <input
           type="number"
@@ -222,11 +210,13 @@ function NumberField({ label, name, value, onChange, error, min, max, suffix, st
           min={min}
           max={max}
           step={step}
-          className={`duo-input w-full pr-16 text-sm ${error ? 'border-[#FF4B4B] bg-[#FFF5F5]' : ''}`}
+          aria-invalid={Boolean(error)}
+          aria-describedby={hintId}
+          className={`duo-input w-full pr-20 text-base [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${error ? 'border-[#FF4B4B] bg-[#FFF5F5]' : ''}`}
         />
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#AFAFAF]">{suffix}</span>
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#777777]">{suffix}</span>
       </div>
-      <p className={`mt-1 min-h-4 text-[11px] font-medium ${error ? 'text-[#FF4B4B]' : 'text-[#AFAFAF]'}`}>{error || hint}</p>
+      <p id={hintId} className={`mt-1 min-h-5 text-xs font-medium ${error ? 'text-[#E53935]' : 'text-[#777777]'}`}>{error || hint}</p>
     </label>
   );
 }
@@ -237,11 +227,10 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
     cancelFeePercent: String(policy.cancelFeePercent),
     cancelFreeHours: String(policy.cancelFreeHours),
     lateFeePercentPerDay: String(policy.lateFeePercentPerDay),
-    lateFeeMaxPercent: String(policy.lateFeeMaxPercent),
-    liquidationDays: String(policy.liquidationDays),
   } : EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -259,9 +248,11 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
 
     setSaving(true);
     try {
-      const user = getCurrentUser();
-      await createRentalPolicyVersion(facility.id, form, user.fullName);
+      setSubmitError('');
+      await createRentalPolicyVersion(facility.id, form);
       onSaved(policy ? `Đã tạo phiên bản mới cho ${facility.name}.` : `Đã thiết lập chính sách cho ${facility.name}.`);
+    } catch (error) {
+      setSubmitError(rentalPolicyError(error));
     } finally {
       setSaving(false);
     }
@@ -280,21 +271,20 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
           <div className="mb-5 flex gap-3 rounded-2xl border-2 border-[#FFD58A] bg-[#FFF8E9] p-4 text-[#946000]">
             <span className="material-symbols-outlined shrink-0">history</span>
             <div>
-              <p className="text-sm font-semibold">Thay đổi sẽ tạo phiên bản {Number(policy.version) + 1}</p>
-              <p className="mt-0.5 text-xs font-medium">Phiên bản {policy.version} vẫn được giữ để đối chiếu với các hợp đồng đã ký.</p>
+              <p className="text-sm font-semibold">Thay đổi sẽ tạo phiên bản mới</p>
+              <p className="mt-0.5 text-sm">Phiên bản {policy.version} vẫn được giữ cho các hợp đồng đã ký.</p>
             </div>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-x-4 gap-y-2 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-3 md:grid-cols-2">
           <NumberField label="Tiền cọc" name="depositMonthMultiplier" value={form.depositMonthMultiplier} onChange={handleChange} error={errors.depositMonthMultiplier} min="1" max="3" suffix="tháng" hint="Từ 1 đến 3 tháng tiền thuê" />
           <NumberField label="Phí hủy đặt chỗ" name="cancelFeePercent" value={form.cancelFeePercent} onChange={handleChange} error={errors.cancelFeePercent} min="0" max="100" suffix="%" hint="Tỷ lệ khấu trừ khi hủy" />
-          <NumberField label="Thời gian hủy miễn phí" name="cancelFreeHours" value={form.cancelFreeHours} onChange={handleChange} error={errors.cancelFreeHours} min="0" suffix="giờ" hint="Tính từ lúc đặt chỗ" />
-          <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="100" suffix="%/ngày" hint="Tính trên khoản quá hạn" />
-          <NumberField label="Mức trần phí trễ hạn" name="lateFeeMaxPercent" value={form.lateFeeMaxPercent} onChange={handleChange} error={errors.lateFeeMaxPercent} min="0" max="100" suffix="%" hint="Không nhỏ hơn phí trễ mỗi ngày" />
-          <NumberField label="Thời hạn trước thanh lý" name="liquidationDays" value={form.liquidationDays} onChange={handleChange} error={errors.liquidationDays} min="1" suffix="ngày" hint="Tối thiểu 1 ngày" />
+          <NumberField label="Thời gian hủy miễn phí" name="cancelFreeHours" value={form.cancelFreeHours} onChange={handleChange} error={errors.cancelFreeHours} min="0" suffix="giờ" hint="Tính trước giờ hẹn nhận kho" />
+          <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="50" suffix="%/ngày" hint="Tính trên cọc đang giữ; tối đa 50% cọc" />
         </div>
 
+        {submitError && <p role="alert" className="mt-3 text-sm text-[#FF4B4B]">{submitError}</p>}
         <div className="mt-5 flex flex-col-reverse gap-3 border-t-2 border-[#E5E5E5] pt-5 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} disabled={saving} className="duo-btn-gray px-5 py-2.5 text-xs disabled:opacity-50">Hủy</button>
           <button type="submit" disabled={saving} className="duo-btn-green gap-2 px-5 py-2.5 text-xs disabled:cursor-not-allowed disabled:opacity-50">
@@ -307,28 +297,32 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
   );
 }
 
-function HistoryModal({ facility, history, onClose, onRestore }) {
+function HistoryModal({ facility, history, currentPolicyId, onClose, onActivate, activatingId }) {
   return (
     <ModalShell icon="history" title="Lịch sử chính sách" subtitle={`${facility.code ? `${facility.code} · ` : ''}${facility.name}`} onClose={onClose} wide>
       <div className="overflow-y-auto p-6">
+        <p className="mb-4 rounded-xl border border-[#B4E885] bg-[#F6FFF0] px-4 py-3 text-sm text-[#4B4B4B]">
+          Chọn một phiên bản cũ để áp dụng lại đúng phiên bản đó. Thông số của bản này sẽ dùng cho các nghiệp vụ mới; hợp đồng đã ký vẫn giữ chính sách đã gắn.
+        </p>
         <div className="space-y-3">
-          {history.map((item, index) => (
-            <article key={item.id} className={`rounded-2xl border-2 p-4 ${index === 0 ? 'border-[#B4E885] bg-[#F6FFF0]' : 'border-[#E5E5E5] bg-white'}`}>
+          {history.map((item) => {
+            const isActive = item.active ?? item.id === currentPolicyId;
+            return <article key={item.id} className={`rounded-2xl border-2 p-4 ${isActive ? 'border-[#B4E885] bg-[#F6FFF0]' : 'border-[#E5E5E5] bg-white'}`}>
               <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-3">
-                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold ${index === 0 ? 'bg-[#58CC02] text-white' : 'bg-[#F7F7F7] text-[#777777]'}`}>v{item.version}</span>
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold ${isActive ? 'bg-[#58CC02] text-white' : 'bg-[#F7F7F7] text-[#777777]'}`}>v{item.version}</span>
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-black text-[#4B4B4B]">Phiên bản {item.version}</p>
-                      {index === 0 && <span className="duo-badge border border-[#B4E885] bg-[#EAF7DD] px-2 py-0.5 text-[10px] text-[#58A700]">Đang áp dụng</span>}
+                      {isActive && <span className="duo-badge border border-[#B4E885] bg-[#EAF7DD] px-2 py-0.5 text-[10px] text-[#58A700]">Đang áp dụng</span>}
                     </div>
                     <p className="text-xs font-medium text-[#AFAFAF]">{formatDate(item.createdAt)} · {item.createdBy}</p>
                   </div>
                 </div>
-                {index > 0 && (
-                  <button type="button" onClick={() => onRestore(item)} className="duo-btn-white gap-1 px-3 py-2 text-[11px]">
-                    <span className="material-symbols-outlined text-[17px]">restore</span>
-                    Dùng lại phiên bản này
+                {!isActive && (
+                  <button type="button" onClick={() => onActivate(item)} disabled={activatingId !== null} className="duo-btn-white gap-1 px-3 py-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-50">
+                    <span className="material-symbols-outlined text-[17px]">check_circle</span>
+                    {activatingId === item.id ? 'Đang áp dụng...' : 'Áp dụng phiên bản này'}
                   </button>
                 )}
               </div>
@@ -340,8 +334,8 @@ function HistoryModal({ facility, history, onClose, onRestore }) {
                 <span>Trần phí: <strong className="text-[#4B4B4B]">{item.lateFeeMaxPercent}%</strong></span>
                 <span>Thanh lý: <strong className="text-[#4B4B4B]">{item.liquidationDays} ngày</strong></span>
               </div>
-            </article>
-          ))}
+            </article>;
+          })}
         </div>
       </div>
     </ModalShell>
@@ -358,22 +352,24 @@ export default function BomRentalPoliciesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState([]);
+  const [activatingId, setActivatingId] = useState(null);
   const [notice, setNotice] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    let loadedFacilities;
     try {
-      loadedFacilities = normalizeFacilities(await getBomFacilities());
-      if (!loadedFacilities.length) loadedFacilities = FALLBACK_POLICY_FACILITIES;
-    } catch {
-      loadedFacilities = FALLBACK_POLICY_FACILITIES;
+      const loadedFacilities = normalizeFacilities(await getBomFacilities());
+      const loadedPolicies = await getRentalPolicies();
+      setFacilities(loadedFacilities);
+      setPolicies(loadedPolicies);
+      setSelectedFacilityId((current) => current || String(loadedFacilities[0]?.id || ''));
+      setLoadError('');
+    } catch (error) {
+      setLoadError(rentalPolicyError(error));
+    } finally {
+      setLoading(false);
     }
-    const loadedPolicies = await getRentalPolicies(loadedFacilities);
-    setFacilities(loadedFacilities);
-    setPolicies(loadedPolicies);
-    setSelectedFacilityId((current) => current || String(loadedFacilities[0]?.id || ''));
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -381,13 +377,13 @@ export default function BomRentalPoliciesPage() {
     return () => window.clearTimeout(timeoutId);
   }, [loadData]);
 
-  const latestPolicies = useMemo(() => getLatestPolicies(policies), [policies]);
+  const currentPolicies = useMemo(() => getCurrentPolicies(policies), [policies]);
   const selectedFacility = useMemo(
     () => facilities.find((item) => String(item.id) === String(selectedFacilityId)) || facilities[0] || null,
     [facilities, selectedFacilityId]
   );
-  const selectedPolicy = selectedFacility ? latestPolicies.get(String(selectedFacility.id)) : null;
-  const configuredCount = facilities.filter((item) => latestPolicies.has(String(item.id))).length;
+  const selectedPolicy = selectedFacility ? currentPolicies.get(String(selectedFacility.id)) : null;
+  const configuredCount = facilities.filter((item) => currentPolicies.has(String(item.id))).length;
 
   const openForm = (facility) => {
     setActiveFacility(facility);
@@ -395,25 +391,45 @@ export default function BomRentalPoliciesPage() {
   };
 
   const openHistory = async (facility) => {
-    setActiveFacility(facility);
-    setHistory(await getRentalPolicyHistory(facility.id));
-    setHistoryOpen(true);
+    try {
+      setHistory(await getRentalPolicyHistory(facility.id));
+      setActiveFacility(facility);
+      setHistoryOpen(true);
+      setLoadError('');
+    } catch (error) {
+      setLoadError(rentalPolicyError(error));
+    }
   };
 
   const handleSaved = async (message) => {
     setFormOpen(false);
     setNotice(message);
     window.setTimeout(() => setNotice(''), 4000);
-    setPolicies(await getRentalPolicies(facilities));
+    try {
+      setPolicies(await getRentalPolicies());
+    } catch (error) {
+      setLoadError(rentalPolicyError(error));
+    }
   };
 
-  const handleRestore = async (policy) => {
-    const user = getCurrentUser();
-    await restoreRentalPolicyVersion(policy, user.fullName);
-    setHistory(await getRentalPolicyHistory(policy.facilityId));
-    setPolicies(await getRentalPolicies(facilities));
-    setNotice(`Đã khôi phục nội dung phiên bản ${policy.version} thành một phiên bản mới.`);
-    window.setTimeout(() => setNotice(''), 4000);
+  const handleActivate = async (policy) => {
+    setActivatingId(policy.id);
+    try {
+      await activateRentalPolicyVersion(policy);
+      const [nextHistory, nextPolicies] = await Promise.all([
+        getRentalPolicyHistory(policy.facilityId),
+        getRentalPolicies(),
+      ]);
+      setHistory(nextHistory);
+      setPolicies(nextPolicies);
+      setNotice(`Phiên bản ${policy.version} đang được áp dụng tại ${activeFacility?.name || 'cơ sở'}.`);
+      setLoadError('');
+      window.setTimeout(() => setNotice(''), 4000);
+    } catch (error) {
+      setLoadError(rentalPolicyError(error));
+    } finally {
+      setActivatingId(null);
+    }
   };
 
   const toggleSection = (name) => {
@@ -446,6 +462,7 @@ export default function BomRentalPoliciesPage() {
           <button type="button" onClick={() => setNotice('')}><span className="material-symbols-outlined">close</span></button>
         </div>
       )}
+      {loadError && <div role="alert" className="duo-card border-[#FFC1C1] bg-[#FFF0F0] p-4 text-sm text-[#FF4B4B]">{loadError} <button type="button" onClick={loadData} className="ml-2 underline">Thử lại</button></div>}
 
       {loading ? (
         <div className="space-y-3">
@@ -473,7 +490,7 @@ export default function BomRentalPoliciesPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <SummaryCard icon="verified_user" label="Trạng thái đồng bộ" value={`${configuredCount}/${facilities.length} cơ sở có chính sách`} badge={configuredCount === facilities.length ? '100% khớp' : 'Cần kiểm tra'} tone="green" />
               <SummaryCard icon="description" label="Phiên bản đang dùng" value={selectedPolicy ? `Phiên bản ${selectedPolicy.version}` : 'Chưa thiết lập'} badge={selectedPolicy ? 'Hiệu lực' : undefined} tone="blue" />
-              <SummaryCard icon="notifications_active" label="Cảnh báo quy định" value={selectedPolicy ? 'Không có vi phạm' : 'Thiếu chính sách'} badge={selectedPolicy ? 'An toàn' : 'Kiểm tra'} tone="orange" />
+              <SummaryCard icon="notifications_active" label="Cảnh báo thiết lập" value={selectedPolicy ? 'Đã có chính sách' : 'Thiếu chính sách'} badge={selectedPolicy ? 'Đã thiết lập' : 'Kiểm tra'} tone="orange" />
             </div>
           </section>
 
@@ -574,14 +591,14 @@ export default function BomRentalPoliciesPage() {
 
       <div className="duo-card flex items-start gap-3 bg-white p-4 text-xs font-medium text-[#777777]">
         <span className="material-symbols-outlined text-[#1CB0F6]">info</span>
-        <p>Chính sách đã phát hành không bị ghi đè hoặc xóa. Mỗi lần chỉnh sửa hay khôi phục đều tạo một phiên bản mới; hợp đồng cũ tiếp tục dùng đúng phiên bản đã gắn khi ký.</p>
+        <p>Chỉnh sửa sẽ tạo phiên bản mới. BOM có thể áp dụng lại đúng một phiên bản cũ mà không tạo bản sao; hợp đồng đã ký tiếp tục dùng phiên bản đã gắn.</p>
       </div>
 
       {formOpen && activeFacility && (
-        <PolicyFormModal facility={activeFacility} policy={latestPolicies.get(String(activeFacility.id))} onClose={() => setFormOpen(false)} onSaved={handleSaved} />
+        <PolicyFormModal facility={activeFacility} policy={currentPolicies.get(String(activeFacility.id))} onClose={() => setFormOpen(false)} onSaved={handleSaved} />
       )}
       {historyOpen && activeFacility && (
-        <HistoryModal facility={activeFacility} history={history} onClose={() => setHistoryOpen(false)} onRestore={handleRestore} />
+        <HistoryModal facility={activeFacility} history={history} currentPolicyId={currentPolicies.get(String(activeFacility.id))?.id} onClose={() => setHistoryOpen(false)} onActivate={handleActivate} activatingId={activatingId} />
       )}
     </div>
   );

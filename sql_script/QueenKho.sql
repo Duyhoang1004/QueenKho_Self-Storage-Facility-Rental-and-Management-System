@@ -93,15 +93,26 @@ CREATE TABLE rental_policy (
     facility_id                 INT NOT NULL,
     policy_name                 NVARCHAR(150) NOT NULL,
     deposit_month_multiplier    INT NOT NULL DEFAULT 1,
-    cancel_fee_percent          INT NOT NULL DEFAULT 0,
-    cancel_free_hours           INT NOT NULL DEFAULT 0,
-    lock_account_days           INT NOT NULL DEFAULT 0,
-    late_fee_per_day            DECIMAL(12,2) NOT NULL DEFAULT 0,
-    liquidation_days            INT NOT NULL DEFAULT 0,
+    cancel_fee_percent          INT NOT NULL DEFAULT 50,
+    cancel_free_hours           INT NOT NULL DEFAULT 24,
+    late_fee_percent_per_day    INT NOT NULL DEFAULT 10,
+    late_fee_max_percent        INT NOT NULL DEFAULT 50,
+    liquidation_days            INT NOT NULL DEFAULT 30,
+    version                     INT NOT NULL DEFAULT 1,
+    is_active                   BIT NOT NULL DEFAULT 0,
+    created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    created_by_user_id          INT NULL,
+    CONSTRAINT UQ_rentalpolicy_facility_version UNIQUE (facility_id, version),
+    CONSTRAINT CK_rentalpolicy_values CHECK (deposit_month_multiplier BETWEEN 1 AND 3 AND cancel_fee_percent BETWEEN 0 AND 100 AND cancel_free_hours >= 0 AND late_fee_percent_per_day BETWEEN 0 AND 100 AND late_fee_max_percent BETWEEN late_fee_percent_per_day AND 100 AND liquidation_days >= 1),
+    CONSTRAINT FK_rentalpolicy_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     CONSTRAINT FK_rentalpolicy_facility FOREIGN KEY (facility_id) REFERENCES facilities(id)
 );
 GO
 CREATE INDEX IX_rentalpolicy_facility ON rental_policy(facility_id);
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
+CREATE UNIQUE INDEX UX_rentalpolicy_active_facility ON rental_policy(facility_id) WHERE is_active = 1;
 GO
 
 /* ---------- 7. reservations ---------- */

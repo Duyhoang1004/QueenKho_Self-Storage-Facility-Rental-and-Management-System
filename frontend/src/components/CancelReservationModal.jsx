@@ -228,7 +228,7 @@ export default function CancelReservationModal({
 
                 {/* 2. Tiền cọc kho quy định */}
                 <div className="flex justify-between items-center text-[#777777]">
-                  <span>Tiền cọc giữ kho (quy chuẩn 1 tháng):</span>
+                  <span>Tiền cọc giữ kho:</span>
                   <span className="font-bold">{formatVND(depositAmount)}</span>
                 </div>
 
@@ -238,8 +238,8 @@ export default function CancelReservationModal({
                     <span>Khấu trừ tiền cọc:</span>
                     <span className="text-[10px] font-bold text-[#AFAFAF]">
                       {isLate
-                        ? "(50% tiền cọc do hủy sát giờ < 24h)"
-                        : "(0% - Hủy sớm trước 24h)"}
+                        ? `(${preview?.cancelFeePercent}% tiền cọc do hủy trong ${preview?.cancelFreeHours} giờ)`
+                        : `(0% - Hủy trước ${preview?.cancelFreeHours} giờ)`}
                     </span>
                   </span>
                   <span className="font-black">
@@ -262,8 +262,8 @@ export default function CancelReservationModal({
 
               <p className="text-[10px] text-[#AFAFAF] italic leading-tight">
                 {isLate
-                  ? "* Lưu ý: Hủy trong vòng 24h trước giờ hẹn nhận kho sẽ khấu trừ 50% tiền cọc. Toàn bộ tiền thuê các tháng vẫn được hoàn trả 100%."
-                  : "* Quý khách hủy hợp lệ trước 24h: Toàn bộ 100% tiền cọc và tiền thuê các tháng sẽ được hoàn trả đầy đủ."}
+                  ? `* Hủy trong ${preview?.cancelFreeHours} giờ trước giờ hẹn nhận kho sẽ khấu trừ ${preview?.cancelFeePercent}% tiền cọc. Tiền thuê đã trả được hoàn theo chính sách.`
+                  : `* Hủy trước ${preview?.cancelFreeHours} giờ: hoàn toàn bộ số tiền đã thanh toán.`}
               </p>
             </div>
           )}

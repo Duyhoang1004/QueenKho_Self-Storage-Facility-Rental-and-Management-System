@@ -308,7 +308,7 @@ public class ReservationService {
         // PR-M6: chốt tiền cọc theo chính sách hiện hành của cơ sở ngay lúc tạo đơn.
         // VNPAY về sau chỉ đọc reservations.deposit_amount, không tính lại theo chính sách mới.
         Integer depositMultiplier = jdbcTemplate.query(
-                "SELECT TOP 1 deposit_month_multiplier FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+                "SELECT deposit_month_multiplier FROM rental_policy WHERE facility_id = ? AND is_active = 1",
                 rs -> rs.next() ? rs.getInt("deposit_month_multiplier") : 1,
                 facility.getId());
         int safeMultiplier = depositMultiplier != null && depositMultiplier > 0 ? depositMultiplier : 1;
@@ -413,11 +413,11 @@ public class ReservationService {
         Integer activePolicyId;
         try {
             activePolicyId = jdbcTemplate.queryForObject(
-                    "SELECT TOP 1 id FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+                    "SELECT id FROM rental_policy WHERE facility_id = ? AND is_active = 1",
                     Integer.class,
                     facilityId);
         } catch (Exception e) {
-            activePolicyId = 1; // Fallback an toàn nếu cơ sở chưa kịp tạo chính sách
+            throw new IllegalStateException("Cơ sở chưa có chính sách thuê đang áp dụng", e);
         }
 
         contract.setRentalPolicyId(activePolicyId);
@@ -476,6 +476,10 @@ public class ReservationService {
                             : deposit;
         }
 
+        int[] cancelRules = jdbcTemplate.query(
+                "SELECT cancel_free_hours, cancel_fee_percent FROM rental_policy WHERE facility_id = ? AND is_active = 1",
+                rs -> rs.next() ? new int[]{rs.getInt("cancel_free_hours"), rs.getInt("cancel_fee_percent")} : new int[]{24, 50},
+                reservation.getFacility().getId());
         BigDecimal penalty;
         BigDecimal refund;
 
@@ -483,20 +487,20 @@ public class ReservationService {
         if (totalPaid.compareTo(BigDecimal.ZERO) <= 0) {
             penalty = BigDecimal.ZERO;
             refund = BigDecimal.ZERO;
-        // 2. TÍNH TOÁN HOÀN TIỀN DỰA TRÊN MỐC 24H
+        // PR-M5: đơn chưa gắn hợp đồng nên đọc chính sách hiện hành lúc hủy.
         } else if (appointmentTime != null
-                && LocalDateTime.now().plusHours(24).isBefore(appointmentTime)) {
-            // TH1: HỦY SỚM (Trước 24h) -> Hoàn 100% TOÀN BỘ TIỀN ĐÃ ĐÓNG (Cọc + Tiền thuê)
+                && LocalDateTime.now().plusHours(cancelRules[0]).isBefore(appointmentTime)) {
+            // Hủy trước mốc miễn phí: hoàn toàn bộ tiền đã đóng.
             penalty = BigDecimal.ZERO;
             refund = totalPaid;
         } else {
-            // TH2: HỦY TRỄ (Trong vòng 24h) -> Chỉ phạt 50% TIỀN CỌC, tiền thuê hoàn lại
-            // 100%
-            penalty = deposit.multiply(new BigDecimal("0.5"));
+            // Phí hủy áp dụng trên cọc và không vượt tiền đã đóng.
+            penalty = deposit.multiply(BigDecimal.valueOf(cancelRules[1]))
+                    .divide(BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP).min(totalPaid);
             refund = totalPaid.compareTo(penalty) >= 0 ? totalPaid.subtract(penalty) : BigDecimal.ZERO;
         }
 
-        return new CancelPreviewResponse(totalPaid, penalty, refund, appointmentTime);
+        return new CancelPreviewResponse(totalPaid, penalty, refund, appointmentTime, cancelRules[0], cancelRules[1]);
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -524,15 +528,16 @@ public class ReservationService {
         boolean wasDepositPaid = "DEPOSIT_PAID".equals(reservation.getStatus())
                 || (actualDepositOrTotalPaid != null && actualDepositOrTotalPaid.compareTo(BigDecimal.ZERO) > 0);
 
+        // Tính trước khi đổi trạng thái để dữ liệu cũ DEPOSIT_PAID vẫn được nhận diện đúng.
+        CancelPreviewResponse preview = wasDepositPaid ? previewCancel(reservationId) : null;
+
         // 3. Cập nhật trạng thái đơn: nếu đã cọc -> REFUND_PENDING (Chờ hoàn tiền), nếu chưa cọc -> CANCELLED (Đã hủy)
         reservation.setStatus(wasDepositPaid ? "REFUND_PENDING" : "CANCELLED");
         reservationRepository.save(reservation);
 
         // 4. Nếu khách đã đóng cọc -> Tạo giao dịch REFUND & Đẩy Task hoàn cọc sang
         // staff_tasks
-        CancelPreviewResponse preview = null;
         if (wasDepositPaid) {
-            preview = previewCancel(reservationId);
             java.math.BigDecimal refundAmount = preview.getRefundAmount();
 
             // 4.1. Tạo bản ghi giao dịch trong payment_transactions
@@ -562,8 +567,8 @@ public class ReservationService {
                             : "");
 
             String penaltyNote = preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
-                    ? " (Đã trừ phạt trễ 50% cọc: " + preview.getPenaltyAmount().toPlainString() + " VND)"
-                    : " (Hoàn 100% - Hủy trước 24h)";
+                    ? " (Đã trừ phí hủy: " + preview.getPenaltyAmount().toPlainString() + " VND)"
+                    : " (Hoàn toàn bộ theo chính sách)";
 
             if (hasBankInfo) {
                 refundTaskNote = String.format(

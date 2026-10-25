@@ -130,7 +130,7 @@ public class FacilityService {
             .orElseThrow(() -> new RuntimeException("Không tìm thấy cơ sở"));
 
         Integer depositMonthMultiplier = jdbcTemplate.query(
-            "SELECT TOP 1 deposit_month_multiplier FROM rental_policy WHERE facility_id = ? ORDER BY id DESC",
+            "SELECT deposit_month_multiplier FROM rental_policy WHERE facility_id = ? AND is_active = 1",
             rs -> rs.next() ? rs.getInt("deposit_month_multiplier") : 1,
             facilityId);
 
@@ -251,17 +251,13 @@ public class FacilityService {
 
         facility = facilityRepository.save(facility);
 
-        // PR-10: Tự tạo chính sách thuê mặc định cho cơ sở mới
-        try {
-            String policyName = "Chính sách " + facility.getName() + " - Tiêu chuẩn";
-            jdbcTemplate.update(
-                "INSERT INTO rental_policy (facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_per_day, lock_account_days, liquidation_days) " +
-                "VALUES (?, ?, 1, 50, 24, 50000, 5, 30)",
-                facility.getId(), policyName
-            );
-        } catch (Exception e) {
-            System.err.println("Warning: Could not create default rental policy: " + e.getMessage());
-        }
+        // PR-10: Cơ sở và chính sách đầu tiên phải được tạo trong cùng transaction.
+        String defaultPolicyName = "Chính sách " + facility.getName();
+        jdbcTemplate.update(
+            "INSERT INTO rental_policy (facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_percent_per_day, late_fee_max_percent, liquidation_days, version, is_active, created_by_user_id) " +
+            "VALUES (?, ?, 1, 50, 24, 10, 50, 30, 1, 1, ?)",
+            facility.getId(), defaultPolicyName.substring(0, Math.min(150, defaultPolicyName.length())), actorUserId
+        );
 
         // PR-91 / PR-A9: Ghi activity_logs
         recordActivityLog(actorUserId, "Tạo cơ sở mới: " + facility.getName() + " (Mã: " + cleanCode + ")", facility.getId());

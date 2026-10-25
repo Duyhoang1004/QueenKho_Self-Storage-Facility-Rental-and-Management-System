@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -17,6 +19,10 @@ public interface FacilityRepository extends JpaRepository<Facility, Integer> {
     boolean existsByCode(String code);
 
     Optional<Facility> findByCode(String code);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT f FROM Facility f WHERE f.id = :id")
+    Optional<Facility> findByIdForPolicyUpdate(@Param("id") Integer id);
 
     List<Facility> findAllByOrderByIdAsc();
 

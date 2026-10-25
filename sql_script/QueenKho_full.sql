@@ -319,6 +319,8 @@ CREATE TABLE activity_logs (
 );
 GO
 CREATE INDEX IX_activitylogs_user ON activity_logs(user_id);
+-- UC-31: màn nhật ký sắp xếp / lọc theo thời gian
+CREATE INDEX IX_activitylogs_created_at ON activity_logs(created_at DESC);
 GO
 
 /* ============================================================

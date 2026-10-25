@@ -20,9 +20,12 @@ export default function RescheduleModal({ isOpen, reservation, onClose, onSucces
     setLoading(true)
     setError('')
     try {
+      // UC-31 / PR-A8: gửi id FM đang đăng nhập để log ghi đúng người thao tác
+      const managerId = JSON.parse(sessionStorage.getItem('user') || '{}').userId ?? null
       await rescheduleReservation(reservation.id, {
         newStartDate,
         reason: reason || null,
+        managerId,
       })
       onSuccess(reservation.reservationCode, newStartDate)
       handleClose()

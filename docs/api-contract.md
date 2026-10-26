@@ -660,3 +660,16 @@ DB đang có dữ liệu: chạy `sql_script/Update_hoan_thien_flow.sql` (thêm 
 ### Log mới (PR-A9)
 
 `[RESERVATION_CREATE]` (khách tạo đơn) · `[UNIT_ASSIGN]` (FM gán ô) · `[TASK_ASSIGN]` · `[FEE_WAIVE]` · `[DEBT_PAID]`.
+
+## Demo — Giả lập tua thời gian (nút "⚡ Giả lập")
+
+Bật / tắt: `queenkho.simulation.enabled` trong `application.yaml` (mặc định bật; tắt bằng biến môi trường `SIMULATION_ENABLED=false`). Khi tắt mọi API dưới đây (trừ `/status`) trả `404 SIMULATION_DISABLED`, FE ẩn toàn bộ nút. Mỗi lần giả lập ghi log `[SIMULATION] <người bấm> giả lập: ...`.
+
+| API | Vai trò | Làm gì | Lỗi |
+|---|---|---|---|
+| `GET /api/v1/dev/simulation/status` | đã đăng nhập | `{ "enabled": true }` | |
+| `POST /api/v1/dev/simulation/tasks/{taskId}/arrive-today` | STAFF, FM (cùng cơ sở) | Task CHECK_IN + HĐ PENDING_CHECK_IN: ngày hẹn / ngày bắt đầu HĐ = hôm nay, ngày kết thúc = hôm nay + số tháng, task hạn 21:00 (sau 21h → 21:00 ngày mai), task quá hạn được mở lại | `409 SIMULATION_NOT_APPLICABLE`, `403 FORBIDDEN_FACILITY` |
+| `POST /api/v1/dev/simulation/reservations/{id}/expire-hold` | CUSTOMER (đơn của mình), FM | Đơn PENDING: lùi giờ tạo 16 phút rồi chạy ngay job huỷ giữ chỗ → `{ "status": "EXPIRED" }` | `409`, `403 FORBIDDEN_OWNER` |
+| `POST /api/v1/dev/simulation/reservations/{id}/trigger-noshow` | FM | Đơn UNIT_ASSIGNED chưa check-in: giờ hẹn lùi 49h, task CHECK_IN quá hạn, ghi 2 log `[CONTACT][FAILED]` cách nhau 25h → đơn hiện ở tab No-Show và đủ điều kiện | `409`, `403` |
+| `POST /api/v1/dev/simulation/contracts/{id}/make-overdue?days=3` | FM | HĐ ACTIVE / OVERDUE: hết hạn `days` ngày trước (start = end − số tháng), OVERDUE, tắt miễn phí trễ, huỷ link gia hạn đang chờ. `days=31` để vượt mốc thanh lý 30 ngày | `400 INVALID_INPUT` (days ngoài 1–90), `409`, `403` |
+| `POST /api/v1/dev/simulation/support-requests/{id}/auto-close` | CUSTOMER (ticket của mình), FM | Ticket RESOLVED: lùi thời điểm xử lý 4 ngày rồi chạy ngay job tự đóng → `{ "status": "CLOSED" }` | `409`, `403` |

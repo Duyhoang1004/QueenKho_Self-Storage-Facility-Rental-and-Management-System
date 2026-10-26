@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getContractDetail } from '../../services/contractService'
+import SimulationButton from '../../components/SimulationButton'
+import { simulateOverdue } from '../../services/simulationService'
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -52,12 +54,14 @@ export default function ContractDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const [reloadTick, setReloadTick] = useState(0)
+
   useEffect(() => {
     getContractDetail(id)
       .then(setContract)
       .catch(() => setError('Không tìm thấy hợp đồng hoặc đã xảy ra lỗi.'))
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, reloadTick])
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -124,6 +128,24 @@ export default function ContractDetailPage() {
           </span>
         </div>
       </div>
+
+      {/* Demo: tua thời gian để thấy phí trễ (3 ngày) và nút thanh lý (31 ngày) — ẩn khi backend tắt giả lập */}
+      {['ACTIVE', 'OVERDUE'].includes(contract.status) && (
+        <div className="flex flex-wrap items-start gap-3 mb-6">
+          <SimulationButton
+            label="Quá hạn 3 ngày"
+            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách. Dùng để demo nút Miễn phí trễ."
+            onRun={() => simulateOverdue(contract.contractId, 3)}
+            onDone={() => setReloadTick((t) => t + 1)}
+          />
+          <SimulationButton
+            label="Quá hạn 31 ngày (thanh lý)"
+            description="Cho hợp đồng hết hạn 31 ngày trước: vượt mốc 30 ngày, nút Thanh lý ở màn Hợp đồng quá hạn được bật."
+            onRun={() => simulateOverdue(contract.contractId, 31)}
+            onDone={() => setReloadTick((t) => t + 1)}
+          />
+        </div>
+      )}
 
       {/* Cảnh báo quá hạn cho Quản lý theo Business Rule */}
       {contract.status === 'OVERDUE' && (

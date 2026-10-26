@@ -8,6 +8,8 @@ import {
   refundRemainingDeposit,
   waiveLateFee,
 } from '../../services/contractService'
+import SimulationButton from '../../components/SimulationButton'
+import { simulateOverdue } from '../../services/simulationService'
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -410,6 +412,16 @@ export default function OverdueContractsPage() {
                               <span>Thanh lý</span>
                               <span className="text-[9px] font-normal lowercase">({daysLeft}d)</span>
                             </button>
+                          )}
+
+                          {/* Demo: tua tới mốc 31 ngày để bật nút Thanh lý */}
+                          {!c.canLiquidate && (
+                            <SimulationButton
+                              label="31 ngày"
+                              description={`Cho HĐ #${c.contractCode} quá hạn 31 ngày để vượt mốc thanh lý 30 ngày.`}
+                              onRun={() => simulateOverdue(c.contractId, 31)}
+                              onDone={() => fetchContracts()}
+                            />
                           )}
                         </div>
                       </td>

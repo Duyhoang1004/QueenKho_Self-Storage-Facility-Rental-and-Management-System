@@ -53,4 +53,9 @@ public class CustomerContractResponse {
     private Boolean canLiquidate;                    // Đủ điều kiện thanh lý (quá hạn >= 30 ngày)
     private Integer liquidationDaysThreshold;        // Ngưỡng số ngày thanh lý (mặc định 30)
     private BigDecimal estimatedOverdueDepositRefund; // Cọc ước tính sau trừ phí trễ (= max(0, cọc - phí trễ))
+
+    // === Flow 4 / 6 ===
+    private Integer facilityId;                      // để FE lấy bảng giá / ưu đãi gia hạn của cơ sở
+    private Boolean lateFeeWaived;                   // FM đã miễn phí trễ cho đợt quá hạn này
+    private String lateFeeWaiverNote;
 }

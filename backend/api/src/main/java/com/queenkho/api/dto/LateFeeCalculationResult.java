@@ -47,5 +47,8 @@ public class LateFeeCalculationResult {
 
     /** Tỷ lệ trần tối đa (mặc định 0.50 tức 50%) */
     private BigDecimal maxPercent;
+
+    /** Flow 6: FM đã miễn phí trễ cho đợt quá hạn này → lateFeeAmount = 0 */
+    private boolean lateFeeWaived;
 }
 

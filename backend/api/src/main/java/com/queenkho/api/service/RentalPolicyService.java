@@ -61,7 +61,10 @@ public class RentalPolicyService {
         return new RentalPolicyResponse(p.getId(), p.getFacility().getId(), p.getVersion(), p.isActive(),
             p.getDepositMonthMultiplier(), p.getCancelFeePercent(), p.getCancelFreeHours(),
             p.getLateFeePercentPerDay(), p.getLateFeeMaxPercent(), p.getLiquidationDays(),
-            p.getCreatedAt(), p.getCreatedBy() == null ? "Hệ thống" : p.getCreatedBy().getFullName());
+            p.getCreatedAt(), p.getCreatedBy() == null ? "Hệ thống" : p.getCreatedBy().getFullName(),
+            p.getBookingDiscount3m(), p.getBookingDiscount6m(), p.getBookingDiscount12m(),
+            p.getRenewalDiscount3m(), p.getRenewalDiscount6m(), p.getRenewalDiscount12m(),
+            p.isAllowLateFeeWaiver());
     }
 
     @Transactional(readOnly = true)
@@ -95,10 +98,11 @@ public class RentalPolicyService {
             new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy cơ sở"));
         int nextVersion = policies.findFirstByFacility_IdOrderByVersionDesc(facilityId)
             .map(p -> p.getVersion() + 1).orElse(1);
-        policies.findByFacility_IdAndActiveTrue(facilityId).ifPresent(current -> {
+        RentalPolicy current = policies.findByFacility_IdAndActiveTrue(facilityId).orElse(null);
+        if (current != null) {
             current.setActive(false);
             policies.saveAndFlush(current);
-        });
+        }
         RentalPolicy policy = new RentalPolicy();
         policy.setFacility(facility);
         String policyName = "Chính sách " + facility.getName();
@@ -111,12 +115,28 @@ public class RentalPolicyService {
         policy.setLateFeePercentPerDay(request.lateFeePercentPerDay());
         policy.setLateFeeMaxPercent(LATE_FEE_CAP_PERCENT);
         policy.setLiquidationDays(LIQUIDATION_DAYS);
+        // Flow 4: ưu đãi theo gói + quyền miễn phí trễ — không gửi thì kế thừa bản đang hiệu lực
+        policy.setBookingDiscount3m(pick(request.bookingDiscount3m(), current == null ? null : current.getBookingDiscount3m(), 5));
+        policy.setBookingDiscount6m(pick(request.bookingDiscount6m(), current == null ? null : current.getBookingDiscount6m(), 10));
+        policy.setBookingDiscount12m(pick(request.bookingDiscount12m(), current == null ? null : current.getBookingDiscount12m(), 15));
+        policy.setRenewalDiscount3m(pick(request.renewalDiscount3m(), current == null ? null : current.getRenewalDiscount3m(), 0));
+        policy.setRenewalDiscount6m(pick(request.renewalDiscount6m(), current == null ? null : current.getRenewalDiscount6m(), 5));
+        policy.setRenewalDiscount12m(pick(request.renewalDiscount12m(), current == null ? null : current.getRenewalDiscount12m(), 10));
+        policy.setAllowLateFeeWaiver(request.allowLateFeeWaiver() != null ? request.allowLateFeeWaiver()
+            : current == null || current.isAllowLateFeeWaiver());
         policy.setCreatedBy(user);
         policies.saveAndFlush(policy);
         entityManager.refresh(policy);
         logs.log(user.getId(), "[RENTAL_POLICY_CREATE] Cơ sở " + facilityId + ", phiên bản " + nextVersion,
             "rental_policy", String.valueOf(policy.getId()));
         return response(policy);
+    }
+
+    private static Integer pick(Integer requested, Integer inherited, int fallback) {
+        if (requested != null) {
+            return requested;
+        }
+        return inherited != null ? inherited : fallback;
     }
 
     @Transactional

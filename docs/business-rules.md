@@ -54,7 +54,7 @@
 ### 1.1 Rule chung
 | Mã | Rule |
 |---|---|
-| PR-90 | Mọi API lấy người thao tác từ **token**, không nhận `customerId`/`managerId`/`staffId` qua query. Khách chỉ xem/thao tác **đơn & hợp đồng của mình**; FM/Staff chỉ dữ liệu **cơ sở mình**. *(nợ kỹ thuật, làm sau)* |
+| PR-90 | Mọi API lấy người thao tác từ **token**, không nhận `customerId`/`managerId`/`staffId` qua query. Khách chỉ xem/thao tác **đơn & hợp đồng của mình**; FM/Staff chỉ dữ liệu **cơ sở mình**. ✅ *Đã làm 26/10/2026: `AccessControlFilter` + `AccessPolicy` + `OwnershipGuard` (xem mục 7).* |
 | PR-91 | Mọi thay đổi trạng thái nằm trong 1 `@Transactional` và ghi `activity_logs` (chi tiết: PR-A9). |
 | PR-92 | Tiền VND, làm tròn đến đồng; giờ `Asia/Ho_Chi_Minh`. Tách 2 khung giờ: **Giờ quầy (Staff Desk Hours) đóng lúc 21:00** — là hạn của mọi task (check-in, nghiệm thu, hỗ trợ); **Giờ ra vào kho (Customer Access) 24/7** — khách có hợp đồng `ACTIVE` / `TERMINATION_PENDING` tự ra vào bằng PIN / RFID bất kể giờ nào (`OVERDUE` bị khoá PIN — PR-Q5). |
 | PR-93 | Hạn xử lý tiền hoàn: **24h, không tính Chủ Nhật** (`ReservationService.calculateRefundDeadline`). |
@@ -500,14 +500,14 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Mức | Mô tả | Chỗ | Sửa theo |
 |---|---|---|---|---|
 | L-02 | 🔴 | `POST /contracts/{id}/renew` ghi giao dịch `SUCCESS` không thu tiền, không kiểm tra trạng thái hợp đồng. | `ContractService.renewContract` | PR-R6 |
-| L-13 | 🔴 | Tạo đơn không kiểm tra số suất → 2 khách cùng đặt suất cuối đều thành công. | `ReservationService.createReservation` | PR-B1 |
+| ~~L-13~~ | ✅ | ~~Tạo đơn không kiểm tra số suất → 2 khách cùng đặt suất cuối đều thành công.~~ Đã sửa 26/10: khoá dòng cơ sở + đếm suất, hết → `409 NO_AVAILABILITY`. | `ReservationService.createReservation` | PR-B1 |
 | L-15 | 🔴 | Job huỷ đơn tính 10 phút từ lúc tạo đơn, link VNPAY sống 10 phút từ lúc tạo link → IPN thành công về sau khi đơn đã huỷ: **tiền đã trừ, đơn mất**, giao dịch kẹt `PENDING`. | `ReservationCleanupService`, `VnpayService.settleDeposit` | PR-B6 |
 | L-03 | 🟠 | Phí huỷ (24h / 50%) và cọc (1 tháng) viết cứng, không đọc `rental_policy`. | `ReservationService` | PR-15, PR-M6 |
 | L-04 | 🟠 | Voucher: BE luôn trừ 100.000đ; FE có 3 mã không khớp BE. | `VnpayService.createReservation`, `CreateReservationPage.jsx`, `RegisterPage.jsx` | PR-B9 |
 | L-06 | 🟠 | No-Show không hoàn tiền thuê, không có "miễn phạt". | `handleNoShow`, `NoShowModal.jsx` | PR-X1 |
-| L-11 | 🟠 | Gợi ý & cho gán ô **khác loại** khi hết ô cùng loại. | `getAvailableUnitsForReservation`, `assignStorageUnit` | BR-41, BR-42 |
+| ~~L-11~~ | ✅ | ~~Gợi ý & cho gán ô **khác loại** khi hết ô cùng loại.~~ Đã sửa 26/10: chỉ gợi ý / gán ô đúng cơ sở + loại, chiếm ô bằng UPDATE có điều kiện. | `getAvailableUnitsForReservation`, `assignStorageUnit` | BR-41, BR-42 |
 | L-14 | 🟠 | Form đặt chỗ bắt nhập SĐT, CCCD, địa chỉ nhưng **không gửi lên BE**. | `CreateReservationPage.jsx` | PR-B5 |
-| L-17 | 🟠 | Check-in được **trước** ngày hẹn. | `StaffTaskRepository.completeCheckIn` | PR-C1 |
+| ~~L-17~~ | ✅ | ~~Check-in được **trước** ngày hẹn.~~ Đã sửa 26/10: `409 CHECK_IN_TOO_EARLY`. | `StaffTaskService.checkIn` | PR-C1 |
 | L-18 | 🟠 | Form trả kho không gửi thông tin ngân hàng dù BE nhận được và FE hứa "hoàn vào tài khoản". | `ContractOptionsModal.jsx` | PR-O3 |
 | L-20 | 🟠 | Số tháng gia hạn không kiểm tra ở BE; số tháng bị cắt từ mã giao dịch (≥ 100 là hỏng). | `VnpayService.createRenewal / settleRenewal` | PR-R2 |
 | L-23 | 🟠 | FE hiện nút gia hạn / trả kho cho mọi trạng thái trừ `PENDING_CHECK_IN` (kể cả `TERMINATED`). | `CustomerContractPage.jsx` | PR-R1 |
@@ -521,7 +521,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | L-10 | 🟡 | API No-Show không kiểm tra ngày bắt đầu đã qua. | `handleNoShow` | PR-X2 |
 | L-19 | 🟡 | Trang hợp đồng đọc `vnp_ResponseCode` nhưng BE trả `vnpResponse` → không báo kết quả gia hạn. | `CustomerContractPage.jsx` | PR-R8 |
 | ~~L-21~~ | ✅ | ~~Log dời lịch (và No-Show khi thiếu `staffId`) ghi `user_id` là khách thay vì FM.~~ Đã sửa ở UC-31. | `ReservationService` | PR-A8 |
-| L-22 | 🟡 | FE gửi `customerId: sessionUser.userId ?? 1` → mất phiên thì đặt hộ user 1. | `CreateReservationPage.jsx` | PR-B3 |
+| ~~L-22~~ | ✅ | ~~FE gửi `customerId: sessionUser.userId ?? 1` → mất phiên thì đặt hộ user 1.~~ Đã sửa 26/10 (PR-90): backend lấy khách từ token, bỏ qua `customerId` gửi lên. | `ReservationController` | PR-B3 |
 | L-12 | 🟡 | Comment trạng thái trong SQL chưa khớp code (`TERMINATION_PENDING`, `COMPLETED` của reservation; `RESERVED` không dùng). | `QueenKho_full.sql` | Mục 5 |
 
 *(Đã đóng: L-01 — #55 nới ràng buộc bảng task, cho phép task `REFUND`; L-05 — hai bảng ưu đãi khác nhau là cố ý, D-08. L-16 gộp vào PR-B2.)*
@@ -591,3 +591,15 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 6 | No-Show: ≥ 2 lần liên hệ cách 24h, sau 48h mới được bấm | ✅ Nhận; đếm theo log `[CONTACT]` | D-07, PR-X3 |
 
 Đồng thời cập nhật tài liệu theo code mới trên `main`: `facility_tasks` + task `REFUND` do FM xử lý (#55, #57), báo cáo liên hệ No-Show (#52), trạng thái đơn `REFUNDED`.
+
+### 26/10/2026 — Hoàn thiện 5 flow Must-have
+| Hạng mục | Rule / quyết định | Chỗ trong code |
+|---|---|---|
+| **PR-90 đã làm**: mọi API lấy người thao tác từ token; khách chỉ thấy dữ liệu của mình, Staff/FM chỉ cơ sở được gán | Bảng quyền duy nhất `AccessPolicy` (18 nhóm chức năng); filter ghi đè `customerId/staffId/managerId/actorUserId/facilityId` theo token; `OwnershipGuard` kiểm tra bản ghi theo id. Ma trận ở `/admin/roles` đọc thẳng từ bảng này | `security/*`, `/admin/roles/access-matrix` |
+| FM **giao việc** cho nhân viên (Flow 5) | Task `CHECK_IN / CHECK_OUT / SUPPORT / MAINTENANCE` chưa quá hạn; chỉ Staff ACTIVE cùng cơ sở; giao lại = đổi người. REFUND vẫn là việc của FM. Log `[TASK_ASSIGN]` | `StaffTaskService.assignTask` |
+| **UC-20** Thanh toán của khách (PR-50) | Xem mọi giao dịch + trả nợ phí sự cố (`DAMAGE_FEE` VNPAY PENDING) qua VNPAY; huỷ trên VNPAY → nợ vẫn PENDING; trả xong hết bị chặn đặt kho (PR-Q12) | `CustomerPaymentService`, `VnpayService.createDebtPayment`, `/thanh-toan` |
+| **D-08 → BOM chỉnh được ưu đãi gói** (PR-15) | `rental_policy.booking_discount_3m/6m/12m`, `renewal_discount_3m/6m/12m` (0–50%). Đặt mới **chốt %** vào `reservations.rent_discount_percent` (như cọc — PR-M6); gia hạn theo bản đang hiệu lực. Mọi chỗ tính tiền dùng chung `PricingService` | `PricingService`, `/facilities/{id}/pricing`, `/contracts/{id}/renewal-quote` |
+| **Miễn phí trễ** (Flow 4 / 6) | BOM bật/tắt `allow_late_fee_waiver` theo cơ sở; FM miễn cho HĐ `OVERDUE` của cơ sở mình, lý do 5–400 ký tự, log `[FEE_WAIVE]`. Chỉ áp dụng đợt quá hạn hiện tại (gia hạn xong / đợt quá hạn mới → tắt). Thanh lý vẫn trừ phí trễ theo D-09 | `ContractService.waiveLateFee`, `LateFeeService` |
+| **Báo cáo cơ sở** cho FM (`/manager/reports`) | Dùng chung API doanh thu của BOM, `facilityId` bị khoá về cơ sở FM; xuất CSV | `ManagerReportsPage.jsx` |
+| **Lịch sử đăng nhập** (Admin) | Bảng `login_history`: đăng nhập thành công / thất bại (kèm lý do) / đăng xuất, IP, trình duyệt; lỗi ghi lịch sử không chặn đăng nhập | `LoginHistoryService`, `/admin/login-history` |
+| Sửa lỗi | L-11, L-13, L-17, L-22 (mục 4); BUG-06 (hoàn tất 1 task hoàn tiền làm SUCCESS mọi REFUND của cơ sở); BUG-07 (No-Show thiếu giao dịch REFUND); I12 (huỷ trả kho đóng nhầm ticket hỗ trợ); log thiếu khi tạo đơn / gán ô (PR-A9) | xem `docs/bug-log.md` |

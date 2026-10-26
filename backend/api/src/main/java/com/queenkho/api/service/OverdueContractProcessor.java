@@ -29,7 +29,9 @@ public class OverdueContractProcessor {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean processActiveContract(Integer contractId, String contractCode, LocalDate endDate, Integer systemUserId, LocalDate today) {
         int rows = jdbcTemplate.update(
-                "UPDATE rental_contracts SET status = 'OVERDUE' WHERE id = ? AND status = 'ACTIVE'",
+                // Đợt quá hạn mới → miễn phí trễ của đợt trước (nếu có) không còn hiệu lực
+                "UPDATE rental_contracts SET status = 'OVERDUE', late_fee_waived = 0, late_fee_waiver_note = NULL " +
+                        "WHERE id = ? AND status = 'ACTIVE'",
                 contractId
         );
         if (rows > 0) {
@@ -48,7 +50,8 @@ public class OverdueContractProcessor {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean processTerminationPendingContract(Integer contractId, String contractCode, Integer systemUserId, LocalDate today) {
         int rows = jdbcTemplate.update(
-                "UPDATE rental_contracts SET status = 'OVERDUE' WHERE id = ? AND status = 'TERMINATION_PENDING'",
+                "UPDATE rental_contracts SET status = 'OVERDUE', late_fee_waived = 0, late_fee_waiver_note = NULL " +
+                        "WHERE id = ? AND status = 'TERMINATION_PENDING'",
                 contractId
         );
         if (rows > 0) {

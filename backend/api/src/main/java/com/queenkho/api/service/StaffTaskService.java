@@ -443,6 +443,72 @@ public class StaffTaskService {
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
 
+    // Flow 5: loại task FM được giao cho nhân viên (REFUND là việc của chính FM)
+    private static final List<String> ASSIGNABLE_TASK_TYPES = List.of("CHECK_IN", "CHECK_OUT", "SUPPORT", "MAINTENANCE");
+
+    // Flow 5: Facility Manager giao task cho 1 nhân viên ACTIVE cùng cơ sở.
+    // Task OPEN → IN_PROGRESS với người được giao; task IN_PROGRESS → đổi sang người mới.
+    @Transactional
+    public StaffTaskResponse assignTask(Integer taskId, Integer managerId, Integer staffId) {
+        User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được giao việc");
+        StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
+        if (!ASSIGNABLE_TASK_TYPES.contains(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_ASSIGNABLE",
+                    "Task hoàn tiền do quản lý tự xử lý, không giao cho nhân viên");
+        }
+        if (staffId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Vui lòng chọn nhân viên nhận việc");
+        }
+        User staff = userRepository.findById(staffId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy nhân viên"));
+        if (!"STAFF".equals(staff.getRole().getName())
+                || !Objects.equals(staff.getFacilityId(), manager.getFacilityId())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_STAFF",
+                    "Chỉ giao được cho nhân viên thuộc cơ sở của bạn");
+        }
+        if (!"ACTIVE".equals(staff.getStatus())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "STAFF_INACTIVE",
+                    "Nhân viên " + staff.getFullName() + " đang bị khoá, không giao việc được");
+        }
+        if (task.getStaff() != null && staffId.equals(task.getStaff().getId())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_ASSIGNED",
+                    "Task đang do " + staff.getFullName() + " phụ trách");
+        }
+        String previousStaffName = task.getStaff() != null ? task.getStaff().getFullName() : null;
+
+        if (staffTaskRepository.assign(task.getId(), staff, LocalDateTime.now()) == 0) {
+            StaffTask current = staffTaskRepository.findById(taskId).orElseThrow();
+            if ("OVERDUE".equals(current.getStatus())
+                    || (List.of("OPEN", "IN_PROGRESS").contains(current.getStatus())
+                    && !current.getDueAt().isAfter(LocalDateTime.now()))) {
+                throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                        "Task đã quá hạn, hãy gia hạn / dời lịch trước khi giao việc");
+            }
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_ASSIGNABLE", "Task đã đóng hoặc đã bị huỷ");
+        }
+
+        // PR-34: ticket hỗ trợ đi theo task (OPEN → IN_PROGRESS)
+        if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
+            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
+                if ("OPEN".equals(sr.getStatus())) {
+                    sr.setStatus("IN_PROGRESS");
+                    supportRequestRepository.save(sr);
+                }
+            });
+        }
+
+        activityLogService.log(
+                manager.getId(),
+                "[TASK_ASSIGN] " + manager.getFullName() + " giao task #" + task.getId()
+                        + " (" + task.getTaskType() + ") cho " + staff.getFullName()
+                        + (previousStaffName != null ? " (thay " + previousStaffName + ")" : ""),
+                "facility_tasks",
+                String.valueOf(task.getId())
+        );
+
+        return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
+    }
+
     private User findUserWithRole(Integer userId, String role, String forbiddenMessage) {
         if (userId == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
@@ -546,6 +612,18 @@ public class StaffTaskService {
 
         // 1. Kiểm tra nội dung biên bản trước khi đụng vào DB
         validateCheckInRequest(request);
+
+        // PR-C1 (sửa L-17): không bàn giao trước ngày khách hẹn nhận kho — hợp đồng tính tiền từ ngày đó
+        LocalDate appointmentDate = task.getContract().getStartDate();
+        if (task.getContract().getReservation() != null
+                && task.getContract().getReservation().getExpectedAppointmentTime() != null) {
+            appointmentDate = task.getContract().getReservation().getExpectedAppointmentTime().toLocalDate();
+        }
+        if (appointmentDate != null && LocalDate.now().isBefore(appointmentDate)) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY",
+                    "Khách hẹn nhận kho ngày " + appointmentDate.format(DATE_FMT)
+                            + ", chưa được check-in trước ngày hẹn");
+        }
         String pin = request.getAccessPinCode().trim();
         String rfid = request.getRfidCardCode().trim();
         String notes = request.getNotes() == null || request.getNotes().isBlank() ? null : request.getNotes().trim();
@@ -1640,23 +1718,9 @@ public class StaffTaskService {
         task.setNote(fullNote);
         staffTaskRepository.save(task);
 
-        // Cập nhật trạng thái payment_transactions sang SUCCESS nếu có giao dịch REFUND đang chờ
-        try {
-            if (task.getContract() != null) {
-                jdbcTemplate.update(
-                        "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
-                                "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND contract_id = ?",
-                        method, task.getContract().getId());
-            } else {
-                jdbcTemplate.update(
-                        "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
-                                "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND reservation_id IN (" +
-                                "  SELECT id FROM reservations WHERE facility_id = ?" +
-                                ")",
-                        method, manager.getFacilityId());
-            }
-        } catch (Exception ignored) {
-        }
+        // Chỉ chuyển SUCCESS đúng giao dịch REFUND của task này (BUG-06 / K08: trước đây task không gắn HĐ
+        // update MỌI REFUND PENDING của cả cơ sở → đơn khác chưa được hoàn cũng thành "đã hoàn")
+        markRefundTransactionsSucceeded(task, method);
 
         // Ghi activity log (PR-A8, PR-A9)
         try {
@@ -1675,6 +1739,40 @@ public class StaffTaskService {
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
+    }
+
+    private static final java.util.regex.Pattern REFUND_ORIGINAL_REF = java.util.regex.Pattern.compile("Mã gốc:\\s*([A-Za-z0-9_-]+)");
+    private static final java.util.regex.Pattern REFUND_RESERVATION_CODE = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)");
+
+    // Xác định giao dịch REFUND của 1 task theo thứ tự chắc chắn nhất:
+    //  1. Task hoàn tiền VNPAY về muộn: note có "Mã gốc: <ref>" → giao dịch REF-LATE-<ref>
+    //  2. Task gắn hợp đồng (trả kho, No-Show, thanh lý): REFUND PENDING của hợp đồng đó
+    //  3. Task huỷ đơn (không có hợp đồng): note có "Đơn: RES-xxx" → REFUND PENDING của đúng đơn đó
+    int markRefundTransactionsSucceeded(StaffTask task, String method) {
+        String note = task.getNote() != null ? task.getNote() : "";
+        java.util.regex.Matcher lateRef = REFUND_ORIGINAL_REF.matcher(note);
+        if (lateRef.find()) {
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code = ?",
+                    method, "REF-LATE-" + lateRef.group(1));
+        }
+        if (task.getContract() != null) {
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND contract_id = ? " +
+                            "AND transaction_code NOT LIKE 'REF-LATE-%'",
+                    method, task.getContract().getId());
+        }
+        java.util.regex.Matcher reservationCode = REFUND_RESERVATION_CODE.matcher(note);
+        if (reservationCode.find()) {
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code NOT LIKE 'REF-LATE-%' " +
+                            "AND reservation_id = (SELECT id FROM reservations WHERE reservation_code = ?)",
+                    method, reservationCode.group(1));
+        }
+        return 0;
     }
 
     // Overload cho backward compatibility
@@ -1731,13 +1829,11 @@ public class StaffTaskService {
                 ? contract.getBillingCycleMonths() : 1;
         int cycleMonths = Math.max(monthsFromDates, Math.max(resMonths, billMonths));
 
-        BigDecimal discountRate = BigDecimal.ZERO;
-        if (cycleMonths >= 12) discountRate = new BigDecimal("0.15");
-        else if (cycleMonths >= 6) discountRate = new BigDecimal("0.10");
-        else if (cycleMonths >= 3) discountRate = new BigDecimal("0.05");
-
-        BigDecimal nominalRent = baseMonthlyPrice.multiply(BigDecimal.valueOf(cycleMonths));
-        BigDecimal rentPaid = nominalRent.subtract(nominalRent.multiply(discountRate)).setScale(0, RoundingMode.HALF_UP);
+        // Flow 4: % ưu đãi đã chốt trên đơn lúc đặt (BOM đổi chính sách sau đó không làm sai tiền hoàn)
+        Integer snapshotDiscount = contract.getReservation() != null ? contract.getReservation().getRentDiscountPercent() : null;
+        int discountPercent = snapshotDiscount != null ? snapshotDiscount
+                : (cycleMonths >= 12 ? 15 : cycleMonths >= 6 ? 10 : cycleMonths >= 3 ? 5 : 0);
+        BigDecimal rentPaid = PricingService.discountedRent(baseMonthlyPrice, cycleMonths, discountPercent);
 
         try {
             BigDecimal latestMonthlyRent = jdbcTemplate.queryForObject(

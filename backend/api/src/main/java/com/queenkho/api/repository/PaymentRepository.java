@@ -24,7 +24,7 @@ public class PaymentRepository {
         try {
             return jdbcTemplate.queryForMap(
                     "SELECT r.id, r.reservation_code, r.customer_id, r.facility_id, r.deposit_amount, " +
-                    "r.duration_months, r.status, r.created_at, ut.base_price_monthly " +
+                    "r.duration_months, r.status, r.created_at, r.rent_discount_percent, ut.base_price_monthly " +
                     "FROM reservations r " + (lock ? "WITH (UPDLOCK, ROWLOCK) " : "") +
                     "JOIN unit_types ut ON ut.id = r.unit_type_id WHERE r.id = ?",
                     reservationId);
@@ -71,7 +71,7 @@ public class PaymentRepository {
             return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, r.status AS reservation_status, " +
                     "(SELECT TOP 1 rp.status FROM payment_transactions rp " +
                     " WHERE rp.transaction_code = CONCAT('REF-LATE-', p.transaction_code)) AS refund_status " +
-                    "FROM payment_transactions p JOIN reservations r ON r.id = p.reservation_id " +
+                    "FROM payment_transactions p LEFT JOIN reservations r ON r.id = p.reservation_id " +
                     "WHERE p.transaction_code = ? AND p.payment_method = 'VNPAY'", ref);
         } catch (EmptyResultDataAccessException e) {
             return null;

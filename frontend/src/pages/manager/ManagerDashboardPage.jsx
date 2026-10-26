@@ -94,8 +94,8 @@ export default function ManagerDashboardPage() {
                 Bảng Điều Khiển {facility?.name || 'Cơ Sở'}
               </h1>
 
-              {/* Selector chuyển cơ sở cho Admin / Quản lý nhiều chi nhánh */}
-              {facilities.length > 1 && (
+              {/* Selector chuyển cơ sở — FM chỉ xem cơ sở được gán (PR-90, backend trả 403 nếu chọn cơ sở khác) */}
+              {facilities.length > 1 && currentUser?.role !== 'FACILITY_MANAGER' && (
                 <select
                   value={selectedFacilityId}
                   onChange={(e) => setSelectedFacilityId(Number(e.target.value))}

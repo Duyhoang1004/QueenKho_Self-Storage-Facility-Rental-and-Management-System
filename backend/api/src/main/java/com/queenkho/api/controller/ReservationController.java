@@ -3,6 +3,10 @@ package com.queenkho.api.controller;
 import com.queenkho.api.dto.CreateReservationRequest;
 import com.queenkho.api.dto.CreateReservationResponse;
 import com.queenkho.api.dto.MyReservationResponse;
+import com.queenkho.api.dto.NoShowRequest;
+import com.queenkho.api.dto.RescheduleReservationRequest;
+import com.queenkho.api.security.CurrentUserProvider;
+import com.queenkho.api.security.OwnershipGuard;
 import com.queenkho.api.service.ReservationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -17,9 +21,17 @@ public class ReservationController {
     @Autowired
     private ReservationService reservationService;
 
+    // PR-90: người thao tác lấy từ token; đơn theo id phải thuộc khách / cơ sở của người gọi
+    @Autowired
+    private CurrentUserProvider currentUser;
+
+    @Autowired
+    private OwnershipGuard ownershipGuard;
+
     // UC-10: Tao don dat cho kho bai
     @PostMapping
     public ResponseEntity<?> createReservation(@RequestBody CreateReservationRequest request) {
+        request.setCustomerId(currentUser.require().id());
         try {
             CreateReservationResponse response = reservationService.createReservation(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -66,6 +78,7 @@ public class ReservationController {
     // UC-14: Lấy danh sách kho trống
     @GetMapping("/{reservationId}/available-units")
     public ResponseEntity<?> getAvailableUnits(@PathVariable Integer reservationId) {
+        ownershipGuard.checkReservation(reservationId);
         try {
             return ResponseEntity.ok(reservationService.getAvailableUnitsForReservation(reservationId));
         } catch (IllegalArgumentException e) {
@@ -76,8 +89,9 @@ public class ReservationController {
     // UC-14: Gán kho và tạo hợp đồng
     @PostMapping("/{reservationId}/assign")
     public ResponseEntity<?> assignStorageUnit(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.AssignUnitRequest request) {
+        ownershipGuard.checkReservation(reservationId);
         try {
-            reservationService.assignStorageUnit(reservationId, request);
+            reservationService.assignStorageUnit(reservationId, request, currentUser.require().id());
             return ResponseEntity.ok(Map.of("message", "Gán kho và tạo hợp đồng thành công"));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
@@ -86,6 +100,7 @@ public class ReservationController {
     // UC-15: Preview Cancel và Cancel Request
         @GetMapping("/{reservationId}/cancel-preview")
     public ResponseEntity<?> previewCancel(@PathVariable Integer reservationId) {
+        ownershipGuard.checkReservation(reservationId);
         try {
             return ResponseEntity.ok(reservationService.previewCancel(reservationId));
         } catch (Exception e) {
@@ -95,6 +110,7 @@ public class ReservationController {
 
     @PostMapping("/{reservationId}/cancel")
     public ResponseEntity<?> cancelReservation(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.CancelReservationRequest request) {
+        ownershipGuard.checkReservation(reservationId);
         try {
             reservationService.cancelReservation(reservationId, request);
             return ResponseEntity.ok(java.util.Map.of("message", "Hủy đơn đặt chỗ thành công"));
@@ -108,7 +124,12 @@ public class ReservationController {
     @PostMapping("/{reservationId}/no-show")
     public ResponseEntity<?> handleNoShow(
             @PathVariable Integer reservationId,
-            @RequestBody(required = false) com.queenkho.api.dto.NoShowRequest request) {
+            @RequestBody(required = false) NoShowRequest request) {
+        ownershipGuard.checkReservation(reservationId);
+        if (request == null) {
+            request = new NoShowRequest();
+        }
+        request.setStaffId(currentUser.require().id());
         try {
             reservationService.handleNoShow(reservationId, request);
             return ResponseEntity.ok(Map.of("message", "Đã xử lý No-Show, hủy đơn và giải phóng ô kho thành công"));
@@ -125,7 +146,11 @@ public class ReservationController {
     @PutMapping("/{reservationId}/reschedule")
     public ResponseEntity<?> rescheduleReservation(
             @PathVariable Integer reservationId,
-            @RequestBody com.queenkho.api.dto.RescheduleReservationRequest request) {
+            @RequestBody RescheduleReservationRequest request) {
+        ownershipGuard.checkReservation(reservationId);
+        if (request != null) {
+            request.setManagerId(currentUser.require().id());
+        }
         try {
             reservationService.rescheduleReservation(reservationId, request);
             return ResponseEntity.ok(Map.of("message", "Đã cập nhật ngày hẹn nhận kho mới thành công"));

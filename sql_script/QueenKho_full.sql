@@ -121,12 +121,20 @@ CREATE TABLE rental_policy (
     late_fee_percent_per_day    INT NOT NULL DEFAULT 10,
     late_fee_max_percent        INT NOT NULL DEFAULT 50,
     liquidation_days            INT NOT NULL DEFAULT 30,
+    booking_discount_3m         INT NOT NULL DEFAULT 5,    -- % ưu đãi gói đặt mới 3/6/12 tháng (Flow 4)
+    booking_discount_6m         INT NOT NULL DEFAULT 10,
+    booking_discount_12m        INT NOT NULL DEFAULT 15,
+    renewal_discount_3m         INT NOT NULL DEFAULT 0,    -- % ưu đãi gói gia hạn 3/6/12 tháng
+    renewal_discount_6m         INT NOT NULL DEFAULT 5,
+    renewal_discount_12m        INT NOT NULL DEFAULT 10,
+    allow_late_fee_waiver       BIT NOT NULL DEFAULT 1,    -- FM được miễn phí trễ cho khách
     version                     INT NOT NULL DEFAULT 1,
     is_active                   BIT NOT NULL DEFAULT 0,
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     created_by_user_id          INT NULL,
     CONSTRAINT UQ_rentalpolicy_facility_version UNIQUE (facility_id, version),
     CONSTRAINT CK_rentalpolicy_values CHECK (deposit_month_multiplier BETWEEN 1 AND 3 AND cancel_fee_percent BETWEEN 0 AND 100 AND cancel_free_hours >= 0 AND late_fee_percent_per_day BETWEEN 0 AND 100 AND late_fee_max_percent BETWEEN late_fee_percent_per_day AND 100 AND liquidation_days >= 1),
+    CONSTRAINT CK_rentalpolicy_discounts CHECK (booking_discount_3m BETWEEN 0 AND 50 AND booking_discount_6m BETWEEN 0 AND 50 AND booking_discount_12m BETWEEN 0 AND 50 AND renewal_discount_3m BETWEEN 0 AND 50 AND renewal_discount_6m BETWEEN 0 AND 50 AND renewal_discount_12m BETWEEN 0 AND 50),
     CONSTRAINT FK_rentalpolicy_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     CONSTRAINT FK_rentalpolicy_facility FOREIGN KEY (facility_id) REFERENCES facilities(id)
 );
@@ -153,6 +161,7 @@ CREATE TABLE reservations (
     total_deposit_paid          DECIMAL(12,2) NOT NULL DEFAULT 0,
     expected_appointment_time   DATETIME2 NULL,
     start_date                  DATE NULL,
+    rent_discount_percent       INT NULL,            -- % ưu đãi tiền thuê chốt lúc tạo đơn (giống deposit_amount)
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),
@@ -181,6 +190,8 @@ CREATE TABLE rental_contracts (
     deposit_held_amount     DECIMAL(12,2) NOT NULL DEFAULT 0,
     access_pin_code         NVARCHAR(20) NULL,
     rfid_card_code          NVARCHAR(50) NULL,
+    late_fee_waived         BIT NOT NULL DEFAULT 0,       -- FM miễn phí trễ cho đợt quá hạn hiện tại
+    late_fee_waiver_note    NVARCHAR(500) NULL,
     CONSTRAINT FK_contracts_reservation FOREIGN KEY (reservation_id)   REFERENCES reservations(id),
     CONSTRAINT FK_contracts_customer    FOREIGN KEY (customer_id)      REFERENCES users(id),
     CONSTRAINT FK_contracts_storageunit FOREIGN KEY (storage_unit_id)  REFERENCES storage_units(id),
@@ -332,6 +343,24 @@ GO
 CREATE INDEX IX_activitylogs_user ON activity_logs(user_id);
 -- UC-31: màn nhật ký sắp xếp / lọc theo thời gian
 CREATE INDEX IX_activitylogs_created_at ON activity_logs(created_at DESC);
+GO
+
+/* ---------- 14. login_history (Admin: lịch sử đăng nhập) ---------- */
+CREATE TABLE login_history (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    user_id         INT NULL,                 -- NULL khi gõ email không tồn tại
+    email           NVARCHAR(255) NOT NULL,
+    event_type      NVARCHAR(20)  NOT NULL,   -- LOGIN_SUCCESS / LOGIN_FAILED / LOGOUT
+    failure_reason  NVARCHAR(50)  NULL,       -- INVALID_CREDENTIALS / ACCOUNT_LOCKED / ACCOUNT_DISABLED
+    ip_address      NVARCHAR(64)  NULL,
+    user_agent      NVARCHAR(300) NULL,
+    created_at      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_loginhistory_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT CK_loginhistory_event CHECK (event_type IN ('LOGIN_SUCCESS', 'LOGIN_FAILED', 'LOGOUT'))
+);
+GO
+CREATE INDEX IX_loginhistory_created_at ON login_history(created_at DESC);
+CREATE INDEX IX_loginhistory_user ON login_history(user_id);
 GO
 
 /* ============================================================

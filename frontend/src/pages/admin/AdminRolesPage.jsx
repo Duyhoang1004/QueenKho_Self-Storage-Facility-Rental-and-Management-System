@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getRoles, updateRoleDescription } from '../../services/adminService'
+import { getAccessMatrix, getRoles, updateRoleDescription } from '../../services/adminService'
 import { TaskToast } from '../../components/TaskActionFeedback'
 import { ADMIN_ROLE_MATRIX, ROLE_ORDER, ROLE_STYLES, getRoleLabel } from '../../utils/roles'
 
@@ -129,13 +129,37 @@ function MatrixCell({ value }) {
   return <span className="text-[#E5E5E5] font-black">—</span>
 }
 
+// PR-90: ma trận lấy thẳng từ bảng quyền backend đang áp dụng (AccessPolicy).
+// Ô có chữ = phạm vi dữ liệu của vai trò đó; API lỗi thì rơi về ma trận tĩnh trong utils/roles.
 function PermissionMatrix() {
+  const [rows, setRows] = useState(null)
+  const [fromBackend, setFromBackend] = useState(false)
+
+  useEffect(() => {
+    getAccessMatrix()
+      .then((groups) => {
+        setRows(groups.map((g) => ({ key: g.code, screens: g.name, description: g.description, access: g.roleScopes || {} })))
+        setFromBackend(true)
+      })
+      .catch(() => setRows(ADMIN_ROLE_MATRIX.map((row) => ({ key: row.screens, ...row }))))
+  }, [])
+
+  if (!rows) {
+    return <div className="duo-card h-[220px] animate-pulse bg-[#F7F7F7]" />
+  }
+
   return (
     <div className="duo-card overflow-x-auto">
+      {fromBackend && (
+        <div className="flex items-center gap-2 px-5 pt-4 text-xs font-bold text-[#58A700]">
+          <span className="material-symbols-outlined text-[18px]">verified_user</span>
+          Đồng bộ với bảng phân quyền backend đang áp dụng cho mọi API ({rows.length} nhóm chức năng)
+        </div>
+      )}
       <table className="w-full min-w-[760px] text-sm">
         <thead>
           <tr className="border-b-2 border-[#E5E5E5]">
-            <th className="text-left px-5 py-3 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Nhóm màn hình</th>
+            <th className="text-left px-5 py-3 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Nhóm chức năng</th>
             {ROLE_ORDER.map((role) => (
               <th key={role} className="px-3 py-3 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] text-center w-[130px]">
                 {getRoleLabel(role)}
@@ -144,9 +168,12 @@ function PermissionMatrix() {
           </tr>
         </thead>
         <tbody>
-          {ADMIN_ROLE_MATRIX.map((row) => (
-            <tr key={row.screens} className="border-b-2 border-[#F7F7F7] last:border-b-0">
-              <td className="px-5 py-3 font-bold text-[#4B4B4B]">{row.screens}</td>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-b-2 border-[#F7F7F7] last:border-b-0">
+              <td className="px-5 py-3">
+                <div className="font-bold text-[#4B4B4B]">{row.screens}</div>
+                {row.description && <div className="text-[11px] font-bold text-[#AFAFAF] mt-0.5">{row.description}</div>}
+              </td>
               {ROLE_ORDER.map((role) => (
                 <td key={role} className="px-3 py-3 text-center align-middle">
                   <MatrixCell value={row.access[role]} />
@@ -224,7 +251,9 @@ export default function AdminRolesPage() {
       <section className="flex flex-col gap-3">
         <div>
           <h2 className="text-lg font-black text-[#4B4B4B]">Ma trận quyền theo vai trò</h2>
-          <p className="text-xs font-bold text-[#AFAFAF] mt-0.5">Chỉ đọc — phân quyền cố định theo vai trò.</p>
+          <p className="text-xs font-bold text-[#AFAFAF] mt-0.5">
+            Quyền gắn với vai trò; phạm vi dữ liệu theo cơ sở được gán ở màn Người dùng. Gọi API ngoài quyền → 403.
+          </p>
         </div>
         <PermissionMatrix />
       </section>

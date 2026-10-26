@@ -20,6 +20,9 @@ import CustomerContractPage from './pages/my_reservation/CustomerContractPage';
 // Import cho chức năng Gửi yêu cầu hỗ trợ (UC-26)
 import CustomerSupportPage from './pages/support/CustomerSupportPage';
 
+// UC-20: Thanh toán của khách (lịch sử giao dịch + trả khoản nợ)
+import CustomerPaymentsPage from './pages/payment/CustomerPaymentsPage';
+
 // Import Manager Pages
 import ManagerLayout from './layouts/ManagerLayout';
 import ManagerDashboardPage from './pages/manager/ManagerDashboardPage';
@@ -29,6 +32,7 @@ import ContractDetailPage from './pages/manager/ContractDetailPage';
 import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
 import OverdueContractsPage from './pages/manager/OverdueContractsPage';
 import ManagerStaffPage from './pages/manager/ManagerStaffPage';
+import ManagerReportsPage from './pages/manager/ManagerReportsPage';
 
 // Import Staff Pages (UC-16, UC-17, UC-18, UC-27)
 import StaffLayout from './layouts/StaffLayout';
@@ -41,12 +45,13 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminRolesPage from './pages/admin/AdminRolesPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminLogsPage from './pages/admin/AdminLogsPage';
+import AdminLoginHistoryPage from './pages/admin/AdminLoginHistoryPage';
 
 // Import BOM Pages (UC-04, UC-05, UC-07, UC-29)
 import BomLayout from './layouts/BomLayout';
 import BomFacilitiesPage from './pages/bom/BomFacilitiesPage';
 import BomUnitTypesPage from './pages/bom/BomUnitTypesPage';
-import BomComingSoonPage from './pages/bom/BomComingSoonPage';
+import BomRentalPoliciesPage from './pages/bom/BomRentalPoliciesPage';
 import BomRevenuePage from './pages/bom/BomRevenuePage';
 
 
@@ -74,6 +79,9 @@ export default function App() {
 
         {/* UC-26: Gửi yêu cầu hỗ trợ */}
         <Route path="/ho-tro" element={<CustomerSupportPage />} />
+
+        {/* UC-20: Thanh toán (lịch sử giao dịch, khoản cần trả) */}
+        <Route path="/thanh-toan" element={<CustomerPaymentsPage />} />
       </Route>
 
       {/* ========== Manager Portal ========== */}
@@ -89,6 +97,7 @@ export default function App() {
         <Route path="/manager/refunds" element={<ManagerTaskBoardPage key="refunds" initialTypeFilter="REFUND" />} />
         <Route path="/manager/refunds/:id" element={<StaffTaskDetailPage />} />
         <Route path="/manager/staff" element={<ManagerStaffPage />} />
+        <Route path="/manager/reports" element={<ManagerReportsPage />} />
       </Route>
 
       {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}
@@ -103,6 +112,7 @@ export default function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/roles" element={<AdminRolesPage />} />
         <Route path="/admin/logs" element={<AdminLogsPage />} />
+        <Route path="/admin/login-history" element={<AdminLoginHistoryPage />} />
       </Route>
 
       {/* ========== BOM Portal (UC-04, UC-05, UC-07, UC-29) ========== */}
@@ -110,7 +120,7 @@ export default function App() {
         <Route path="/bom" element={<BomFacilitiesPage />} />
         <Route path="/bom/facilities" element={<BomFacilitiesPage />} />
         <Route path="/bom/unit-types" element={<BomUnitTypesPage />} />
-        <Route path="/bom/policies" element={<BomComingSoonPage title="Chính sách thuê" uc="UC-07" icon="policy" />} />
+        <Route path="/bom/policies" element={<BomRentalPoliciesPage />} />
         <Route path="/bom/revenue" element={<BomRevenuePage />} />
       </Route>
     </Routes>

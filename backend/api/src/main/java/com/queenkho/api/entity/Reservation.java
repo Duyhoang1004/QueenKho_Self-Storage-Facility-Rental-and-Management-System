@@ -55,4 +55,9 @@ public class Reservation {
     
     @Column(name = "expected_appointment_time")
     private java.time.LocalDateTime expectedAppointmentTime;
+
+    // Flow 4: % ưu đãi tiền thuê chốt theo chính sách lúc tạo đơn (giống deposit_amount — PR-M6).
+    // NULL ở đơn rất cũ → PricingService tính lại theo bảng mặc định.
+    @Column(name = "rent_discount_percent")
+    private Integer rentDiscountPercent;
 }

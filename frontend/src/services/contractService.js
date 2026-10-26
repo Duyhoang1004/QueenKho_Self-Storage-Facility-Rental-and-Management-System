@@ -18,6 +18,19 @@ export async function getContractByReservation(reservationId) {
   return res.data
 }
 
+// Flow 6: báo giá gia hạn 1/3/6/12 tháng (đúng số VNPAY sẽ thu)
+// trả [{ months, discountPercent, subtotal, discountAmount, rentAmount, lateFeeAmount, lateFeeWaived, totalAmount }]
+export async function getRenewalQuote(contractId) {
+  const res = await api.get(`/contracts/${contractId}/renewal-quote`)
+  return res.data
+}
+
+// Flow 6: FM miễn phí trễ cho hợp đồng quá hạn (lý do bắt buộc 5–400 ký tự)
+export async function waiveLateFee(contractId, reason) {
+  const res = await api.post(`/contracts/${contractId}/waive-late-fee`, { reason })
+  return res.data
+}
+
 // Lấy chi tiết 1 hợp đồng theo id
 export async function getContractDetail(contractId) {
   const res = await api.get(`/contracts/${contractId}`)

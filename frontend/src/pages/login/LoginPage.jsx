@@ -27,6 +27,11 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirectParam = searchParams.get('redirect')
+  const sessionNotice = searchParams.get('locked')
+    ? 'Tài khoản của bạn vừa bị khoá hoặc vô hiệu hoá. Vui lòng liên hệ quản trị viên.'
+    : searchParams.get('expired')
+      ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'
+      : ''
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -144,6 +149,14 @@ export default function LoginPage() {
               Nhập email và mật khẩu để tiếp tục quản lý kho của bạn!
             </p>
           </div>
+
+          {/* PR-90: bị đưa về đây vì token hết hạn / tài khoản bị khoá giữa phiên */}
+          {sessionNotice && (
+            <div className="mt-6 flex items-start gap-2 rounded-2xl border-2 border-[#FFC800] bg-[#FFF8DB] px-4 py-3 text-sm font-bold text-[#B38F00]">
+              <span className="material-symbols-outlined text-[20px]">info</span>
+              <span>{sessionNotice}</span>
+            </div>
+          )}
 
           <form className="mt-8 space-y-4" onSubmit={handleSubmit} noValidate>
             <div>

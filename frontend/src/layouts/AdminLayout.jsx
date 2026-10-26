@@ -8,6 +8,7 @@ const adminMenuItems = [
   { path: '/admin/users', icon: 'manage_accounts', label: 'Người dùng' },
   { path: '/admin/roles', icon: 'admin_panel_settings', label: 'Vai trò & phân quyền' },
   { path: '/admin/logs', icon: 'history', label: 'Nhật ký hoạt động' },
+  { path: '/admin/login-history', icon: 'login', label: 'Lịch sử đăng nhập' },
 ];
 
 export default function AdminLayout() {

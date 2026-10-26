@@ -2,6 +2,10 @@ import api from './api';
 
 const base = '/rental-policies';
 
+function optionalNumber(value) {
+  return value === undefined || value === null || value === '' ? null : Number(value);
+}
+
 export async function getRentalPolicies() {
   const response = await api.get(base);
   return response.data;
@@ -18,8 +22,14 @@ export async function createRentalPolicyVersion(facilityId, values) {
     cancelFeePercent: Number(values.cancelFeePercent),
     cancelFreeHours: Number(values.cancelFreeHours),
     lateFeePercentPerDay: Number(values.lateFeePercentPerDay),
-    lateFeeMaxPercent: 50,
-    liquidationDays: 30,
+    // Flow 4: ưu đãi theo gói + quyền miễn phí trễ (bỏ trống → backend kế thừa bản đang hiệu lực)
+    bookingDiscount3m: optionalNumber(values.bookingDiscount3m),
+    bookingDiscount6m: optionalNumber(values.bookingDiscount6m),
+    bookingDiscount12m: optionalNumber(values.bookingDiscount12m),
+    renewalDiscount3m: optionalNumber(values.renewalDiscount3m),
+    renewalDiscount6m: optionalNumber(values.renewalDiscount6m),
+    renewalDiscount12m: optionalNumber(values.renewalDiscount12m),
+    allowLateFeeWaiver: values.allowLateFeeWaiver,
   });
   return response.data;
 }

@@ -6,6 +6,7 @@ import {
   getOverdueContactLogs,
   liquidateContract,
   refundRemainingDeposit,
+  waiveLateFee,
 } from '../../services/contractService'
 
 function formatVND(v) {
@@ -65,6 +66,34 @@ export default function OverdueContractsPage() {
 
   // Action Hoàn tiền cọc còn lại
   const [refundSubmittingId, setRefundSubmittingId] = useState(null)
+
+  // Modal 3 (Flow 6): Miễn phí trễ — chỉ khi chính sách cơ sở cho phép (BOM bật)
+  const [waiveTarget, setWaiveTarget] = useState(null)
+  const [waiveReason, setWaiveReason] = useState('')
+  const [waiveSubmitting, setWaiveSubmitting] = useState(false)
+  const [waiveError, setWaiveError] = useState('')
+
+  const handleSubmitWaive = async (e) => {
+    e.preventDefault()
+    const reason = waiveReason.trim()
+    if (reason.length < 5 || reason.length > 400) {
+      setWaiveError('Lý do miễn phí trễ bắt buộc, từ 5 đến 400 ký tự.')
+      return
+    }
+    setWaiveSubmitting(true)
+    setWaiveError('')
+    try {
+      await waiveLateFee(waiveTarget.contractId, reason)
+      setSuccessToast(`Đã miễn phí trễ cho HĐ #${waiveTarget.contractCode}. Khách gia hạn chỉ trả tiền thuê.`)
+      setTimeout(() => setSuccessToast(''), 4000)
+      setWaiveTarget(null)
+      fetchContracts()
+    } catch (err) {
+      setWaiveError(err.response?.data?.message || 'Không miễn được phí trễ, vui lòng thử lại.')
+    } finally {
+      setWaiveSubmitting(false)
+    }
+  }
 
   const fetchContracts = () => {
     if (!managerId) return
@@ -318,8 +347,10 @@ export default function OverdueContractsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#FF4B4B]">
-                        {formatVND(c.lateFeeAmount)}
-                        {c.isMaxLateFeeReached && (
+                        {c.lateFeeWaived ? (
+                          <span className="text-[#58A700]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
+                        ) : formatVND(c.lateFeeAmount)}
+                        {c.isMaxLateFeeReached && !c.lateFeeWaived && (
                           <div className="text-[10px] text-[#FF9600] font-bold">Chạm trần cọc</div>
                         )}
                       </td>
@@ -347,6 +378,17 @@ export default function OverdueContractsPage() {
                             <span className="material-symbols-outlined text-[15px]">call</span>
                             <span>Liên hệ</span>
                           </button>
+
+                          {!c.lateFeeWaived && Number(c.lateFeeAmount) > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => { setWaiveTarget(c); setWaiveReason(''); setWaiveError('') }}
+                              className="px-3 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#c4f59c] font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">volunteer_activism</span>
+                              <span>Miễn phí trễ</span>
+                            </button>
+                          )}
 
                           {c.canLiquidate ? (
                             <button
@@ -690,6 +732,57 @@ export default function OverdueContractsPage() {
                       <span>Xác nhận thanh lý</span>
                     </>
                   )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3 (Flow 6): Miễn phí trễ */}
+      {waiveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700]">
+                <span className="material-symbols-outlined text-[24px]">volunteer_activism</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-[#4B4B4B]">Miễn phí trễ HĐ #{waiveTarget.contractCode}</h3>
+                <p className="text-xs font-bold text-[#AFAFAF]">
+                  {waiveTarget.customerName} · quá hạn {waiveTarget.overdueDays} ngày · phí trễ {formatVND(waiveTarget.lateFeeAmount)}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs font-bold text-[#777777] leading-relaxed">
+              Khách gia hạn sẽ chỉ trả tiền thuê, không thu phí trễ của đợt quá hạn này. Nếu khách không gia hạn và bị thanh lý,
+              phí trễ vẫn được trừ vào cọc theo quy định (D-09). Chỉ dùng được khi chính sách thuê của cơ sở cho phép.
+            </p>
+            <form onSubmit={handleSubmitWaive} className="flex flex-col gap-3">
+              <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                Lý do miễn <span className="text-[#FF4B4B]">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={waiveReason}
+                maxLength={400}
+                onChange={(e) => { setWaiveReason(e.target.value); setWaiveError('') }}
+                placeholder="VD: Khách nằm viện, đã liên hệ và cam kết gia hạn trong hôm nay..."
+                className="duo-input w-full text-xs resize-none"
+              />
+              {waiveError && (
+                <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px]">error</span>
+                  <span>{waiveError}</span>
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#E5E5E5]">
+                <button type="button" onClick={() => setWaiveTarget(null)} disabled={waiveSubmitting} className="duo-btn-gray px-4 py-2.5 text-xs">
+                  Hủy
+                </button>
+                <button type="submit" disabled={waiveSubmitting} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 disabled:opacity-50">
+                  <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                  {waiveSubmitting ? 'Đang lưu...' : 'Xác nhận miễn phí trễ'}
                 </button>
               </div>
             </form>

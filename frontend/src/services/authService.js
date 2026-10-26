@@ -32,7 +32,13 @@ export function getHomePath(role) {
   return HOME_PATH_BY_ROLE[role] || '/'
 }
 
+// Người dùng bấm Đăng xuất: báo backend huỷ token + ghi lịch sử đăng nhập (không chờ, lỗi mạng cũng bỏ qua)
 export function clearSession() {
+  const token = sessionStorage.getItem('accessToken')
+  if (token) {
+    // Gắn token trực tiếp: interceptor chạy bất đồng bộ, lúc đó sessionStorage đã bị xoá ở dòng dưới
+    api.post('/auth/logout', null, { headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+  }
   sessionStorage.removeItem('accessToken')
   sessionStorage.removeItem('user')
 }

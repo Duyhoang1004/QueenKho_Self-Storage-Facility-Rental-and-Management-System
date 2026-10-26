@@ -140,6 +140,37 @@ class RentalPolicyServiceTest {
     }
 
     @Test
+    void newVersionInheritsDiscountsUnlessBomChangesThem() {
+        authorized();
+        Facility facility = new Facility();
+        facility.setId(3);
+        facility.setName("QueenKho Thủ Đức");
+        when(facilities.findByIdForPolicyUpdate(3)).thenReturn(Optional.of(facility));
+        RentalPolicy current = new RentalPolicy();
+        current.setVersion(1);
+        current.setActive(true);
+        current.setBookingDiscount3m(8);
+        current.setRenewalDiscount12m(12);
+        current.setAllowLateFeeWaiver(true);
+        when(policies.findFirstByFacility_IdOrderByVersionDesc(3)).thenReturn(Optional.of(current));
+        when(policies.findByFacility_IdAndActiveTrue(3)).thenReturn(Optional.of(current));
+        when(policies.saveAndFlush(any(RentalPolicy.class))).thenAnswer(invocation -> {
+            RentalPolicy saved = invocation.getArgument(0);
+            if (saved.getId() == null) saved.setId(20);
+            return saved;
+        });
+
+        // BOM chỉ đổi ưu đãi đặt mới 12 tháng và tắt quyền miễn phí trễ
+        var request = new RentalPolicyRequest(1, 50, 24, 10, null, null, 25, null, null, null, false);
+        var result = service.createVersion(3, request, "Bearer valid");
+
+        assertEquals(8, result.bookingDiscount3m());    // kế thừa bản đang hiệu lực
+        assertEquals(25, result.bookingDiscount12m());  // giá trị mới
+        assertEquals(12, result.renewalDiscount12m());  // kế thừa
+        assertFalse(result.allowLateFeeWaiver());
+    }
+
+    @Test
     void rejectsDailyFeeAboveFixedCap() {
         authorized();
         ResponseStatusException error = assertThrows(ResponseStatusException.class,

@@ -5,6 +5,7 @@ import com.queenkho.api.dto.CheckOutRequest;
 import com.queenkho.api.dto.ExtendSupportTaskRequest;
 import com.queenkho.api.dto.ResolveSupportTaskRequest;
 import com.queenkho.api.exception.StaffTaskException;
+import com.queenkho.api.security.CurrentUserProvider;
 import com.queenkho.api.service.StaffTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,10 @@ public class StaffTaskController {
     @Autowired
     private StaffTaskService staffTaskService;
 
+    // PR-90: người thao tác lấy từ token (AccessControlFilter đã ghi đè staffId / managerId / userId)
+    @Autowired
+    private CurrentUserProvider currentUser;
+
     // UC-16: Bảng công việc — dùng chung cho Staff và Facility Manager
     // GET /api/v1/staff-tasks?facilityId=1
     // GET /api/v1/staff-tasks?facilityId=1&status=OPEN
@@ -32,12 +37,23 @@ public class StaffTaskController {
         }
     }
 
-    // UC-17: Staff nhận việc
-    // POST /api/v1/staff-tasks/12/claim?staffId=5
+    // UC-17: Staff nhận việc (FM chỉ nhận được task hoàn tiền)
+    // POST /api/v1/staff-tasks/12/claim
     @PostMapping("/{id}/claim")
-    public ResponseEntity<?> claim(@PathVariable Integer id, @RequestParam(required = false) Integer staffId) {
+    public ResponseEntity<?> claim(@PathVariable Integer id) {
         try {
-            return ResponseEntity.ok(staffTaskService.claimTask(id, staffId));
+            return ResponseEntity.ok(staffTaskService.claimTask(id, currentUser.require().id()));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // Flow 5: Facility Manager giao task cho 1 nhân viên cùng cơ sở (hoặc đổi người đang làm)
+    // POST /api/v1/staff-tasks/12/assign?staffId=13
+    @PostMapping("/{id}/assign")
+    public ResponseEntity<?> assign(@PathVariable Integer id, @RequestParam(required = false) Integer staffId) {
+        try {
+            return ResponseEntity.ok(staffTaskService.assignTask(id, currentUser.require().id(), staffId));
         } catch (StaffTaskException e) {
             return toError(e);
         }
@@ -145,6 +161,9 @@ public class StaffTaskController {
     @PostMapping("/{id}/contact-report")
     public ResponseEntity<?> submitContactReport(@PathVariable Integer id,
                                                  @RequestBody com.queenkho.api.dto.ContactReportRequest request) {
+        if (request != null) {
+            request.setStaffId(currentUser.require().id());
+        }
         try {
             return ResponseEntity.ok(staffTaskService.submitContactReport(id, request));
         } catch (StaffTaskException e) {

@@ -14,7 +14,7 @@ Thay cho `test-flow-dat-cho.md` và `test-scenarios.md` (2 file đó viết từ
 ## 0. Chuẩn bị
 
 ### 0.1 Dữ liệu & chạy app
-1. DB: chạy `sql_script/QueenKho_full.sql` (DB mới) **hoặc** `Migration_Consolidated_Update.sql` + `Update_unit_types_status.sql` + `Update_vnpay_business_rules.sql` (giữ dữ liệu cũ; file VNPAY nếu chạy bằng sqlcmd phải thêm `-I`).
+1. DB: chạy `sql_script/QueenKho_full.sql` (DB mới) **hoặc** `Migration_Consolidated_Update.sql` + `Update_unit_types_status.sql` + `Update_vnpay_business_rules.sql` (giữ dữ liệu cũ). Chạy bằng SSMS thì không sao; chạy bằng `sqlcmd` thì **mọi file đều phải thêm `-I`**. Thiếu `-I`, trigger hoàn tiền bị lưu với `QUOTED_IDENTIFIER OFF`, và mọi thao tác cập nhật task (nhận việc, check-in…) sẽ lỗi 500 `UPDATE failed because … 'QUOTED_IDENTIFIER'`.
 2. Backend `cd backend/api && ./mvnw spring-boot:run` · Frontend `cd frontend && npm run dev`.
 3. `application.yaml` đang để `vnpay.local-return-confirm: true` → khi VNPAY redirect về `/return`, backend tự xác nhận như IPN (vì IPN thật không gọi được về localhost).
 4. ⚠️ Token đăng nhập lưu trong RAM backend → **restart backend là phải đăng nhập lại** (nếu không, gọi VNPAY sẽ bị 401).
@@ -420,6 +420,8 @@ Số liệu mẫu: Mini M, cọc 750.000. Với J01–J03: tua `end_date` của 
 6. L (cần tua `end_date` + restart BE), M, cuối cùng N và O.
 
 ## 6. Lỗi nghi ngờ phát hiện khi đọc code (cần xác nhận bằng ca 🐞)
+
+> **Cập nhật 26/10/2026**: đã sửa #1 (A15 → `409 NO_AVAILABILITY`), #2 (D07 rỗng, D08 → 400), #3 (F16 → `409 CHECK_IN_TOO_EARLY`), #4 (C09, I13 → 403 `FORBIDDEN_OWNER`), #5 (K08), #6 (I12), #9 (đã có `/thanh-toan`, `/manager/reports`), #10 một phần (thêm log tạo đơn, gán ô). #7 (H11): % ưu đãi đặt mới / gia hạn nay do BOM chỉnh trong chính sách. Còn mở: #8 (I05 — cần chốt nghiệp vụ). Quy trình chạy theo flow: [quy-trinh-test-he-thong.md](quy-trinh-test-he-thong.md).
 | # | Ca | Mô tả | Chỗ |
 |---|---|---|---|
 | 1 | A15 | Không đếm suất khi tạo đơn → overbooking (L-13) | `ReservationService.createReservation` |

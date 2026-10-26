@@ -59,6 +59,12 @@ public class ReservationService {
     @Autowired
     private com.queenkho.api.repository.StaffTaskRepository staffTaskRepository;
 
+    @Autowired
+    private PricingService pricingService;
+
+    @Autowired
+    private ActivityLogService activityLogService;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
@@ -301,18 +307,32 @@ public class ReservationService {
         if ("INACTIVE".equalsIgnoreCase(unitType.getStatus())) {
             throw new IllegalArgumentException("Loại kho này hiện đang tạm ngưng nhận đặt chỗ mới");
         }
+        // UC-04: BOM ngừng cơ sở → không nhận đơn mới
+        if (facility.getStatus() != null && !"ACTIVE".equalsIgnoreCase(facility.getStatus())) {
+            throw new IllegalArgumentException("Cơ sở này đang tạm ngưng nhận đặt chỗ mới");
+        }
+
+        // PR-B1 / D-02 (sửa L-13): chỉ tạo đơn khi còn suất đúng loại + cơ sở.
+        // Khoá dòng cơ sở trong transaction → 2 khách đặt cùng lúc phải xếp hàng, người sau thấy đúng số suất còn lại.
+        jdbcTemplate.queryForObject("SELECT id FROM facilities WITH (UPDLOCK, HOLDLOCK) WHERE id = ?",
+                Integer.class, facility.getId());
+        int freeSlots = countFreeSlots(facility.getId(), unitType.getId());
+        if (freeSlots <= 0) {
+            throw new com.queenkho.api.exception.ReservationException(HttpStatus.CONFLICT, "NO_AVAILABILITY",
+                    "Loại kho \"" + unitType.getName() + "\" tại " + facility.getName()
+                            + " vừa hết chỗ trống. Vui lòng chọn loại kho hoặc cơ sở khác.");
+        }
 
         // Sinh ma don ngau nhien
         String reservationCode = "RES-" + (100000 + new Random().nextInt(900000));
 
-        // PR-M6: chốt tiền cọc theo chính sách hiện hành của cơ sở ngay lúc tạo đơn.
-        // VNPAY về sau chỉ đọc reservations.deposit_amount, không tính lại theo chính sách mới.
-        Integer depositMultiplier = jdbcTemplate.query(
-                "SELECT deposit_month_multiplier FROM rental_policy WHERE facility_id = ? AND is_active = 1",
-                rs -> rs.next() ? rs.getInt("deposit_month_multiplier") : 1,
-                facility.getId());
-        int safeMultiplier = depositMultiplier != null && depositMultiplier > 0 ? depositMultiplier : 1;
-        BigDecimal depositAmount = unitType.getBasePriceMonthly().multiply(BigDecimal.valueOf(safeMultiplier));
+        // PR-M6 / Flow 4: chốt tiền cọc và % ưu đãi theo chính sách hiện hành của cơ sở ngay lúc tạo đơn.
+        // VNPAY về sau chỉ đọc 2 con số đã chốt trên đơn, BOM đổi chính sách cũng không ảnh hưởng đơn đang chờ.
+        var policy = pricingService.activePolicy(facility.getId());
+        int depositMultiplier = policy != null && policy.getDepositMonthMultiplier() != null
+                && policy.getDepositMonthMultiplier() > 0 ? policy.getDepositMonthMultiplier() : 1;
+        BigDecimal depositAmount = unitType.getBasePriceMonthly().multiply(BigDecimal.valueOf(depositMultiplier));
+        int rentDiscountPercent = pricingService.bookingDiscountPercent(policy, request.getDurationMonths());
 
         // Khoi tao va luu don dat cho
         Reservation reservation = new Reservation();
@@ -324,6 +344,7 @@ public class ReservationService {
         reservation.setStatus("PENDING");
         reservation.setDurationMonths(request.getDurationMonths());
         reservation.setDepositAmount(depositAmount);
+        reservation.setRentDiscountPercent(rentDiscountPercent);
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
         reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());
@@ -331,6 +352,12 @@ public class ReservationService {
         reservation.setCreatedAt(LocalDateTime.now());
 
         Reservation saved = reservationRepository.save(reservation);
+
+        // PR-A9: log tạo đơn (ActivityLogService tự nuốt lỗi ghi log)
+        activityLogService.log(customer.getId(),
+                "[RESERVATION_CREATE] " + customer.getFullName() + " tạo đơn " + reservationCode
+                        + " (" + unitType.getName() + ", " + facility.getName() + ", " + request.getDurationMonths() + " tháng)",
+                "reservations", String.valueOf(saved.getId()));
 
         // Tra ve ket qua tao don
         return new CreateReservationResponse(
@@ -343,7 +370,19 @@ public class ReservationService {
                 "Tạo đơn đặt chỗ thành công");
     }
 
-    // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán
+    // Số suất còn nhận đơn = ô AVAILABLE đúng loại − đơn đang giữ suất (đơn PENDING còn trong 15 phút + đơn đã cọc chưa gán ô)
+    int countFreeSlots(Integer facilityId, Integer unitTypeId) {
+        Integer free = jdbcTemplate.queryForObject(
+                "SELECT " +
+                        "(SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND unit_type_id = ? AND status = 'AVAILABLE') - " +
+                        "(SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND unit_type_id = ? AND storage_unit_id IS NULL " +
+                        "   AND (status = 'DEPOSIT_PAID' OR (status = 'PENDING' AND created_at > DATEADD(MINUTE, -15, SYSDATETIME()))))",
+                Integer.class, facilityId, unitTypeId, facilityId, unitTypeId);
+        return free != null ? free : 0;
+    }
+
+    // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán.
+    // BR-41 (sửa L-11): CHỈ gợi ý ô cùng cơ sở + cùng loại với đơn; hết ô đúng loại thì trả rỗng (không gợi ý ô khác loại).
     @Transactional(readOnly = true)
     public List<com.queenkho.api.dto.StorageUnitResponse> getAvailableUnitsForReservation(Integer reservationId) {
         Reservation reservation = reservationRepository.findById(reservationId)
@@ -354,9 +393,6 @@ public class ReservationService {
 
         List<com.queenkho.api.entity.StorageUnit> units = storageUnitRepository
                 .findByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, "AVAILABLE");
-        if (units.isEmpty()) {
-            units = storageUnitRepository.findByFacility_IdAndStatus(facilityId, "AVAILABLE");
-        }
 
         return units.stream()
                 .map(su -> new com.queenkho.api.dto.StorageUnitResponse(
@@ -373,6 +409,11 @@ public class ReservationService {
     // UC-14: Quản lý xác nhận gán ô kho thực tế
     @Transactional
     public void assignStorageUnit(Integer reservationId, com.queenkho.api.dto.AssignUnitRequest request) {
+        assignStorageUnit(reservationId, request, null);
+    }
+
+    @Transactional
+    public void assignStorageUnit(Integer reservationId, com.queenkho.api.dto.AssignUnitRequest request, Integer actorUserId) {
         if (request == null || request.getStorageUnitId() == null || request.getStorageUnitId().isBlank()) {
             throw new IllegalArgumentException("Vui lòng chọn ô kho thực tế");
         }
@@ -387,13 +428,28 @@ public class ReservationService {
         com.queenkho.api.entity.StorageUnit storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
                 .orElseThrow(() -> new IllegalArgumentException("Ô kho không tồn tại"));
 
+        // BR-42 (sửa L-11): ô phải đúng cơ sở và đúng loại khách đã đặt & trả tiền
+        if (storageUnit.getFacility() == null
+                || !storageUnit.getFacility().getId().equals(reservation.getFacility().getId())) {
+            throw new IllegalArgumentException("Ô kho không thuộc cơ sở của đơn đặt chỗ");
+        }
+        if (storageUnit.getUnitType() == null
+                || !storageUnit.getUnitType().getId().equals(reservation.getUnitType().getId())) {
+            throw new IllegalArgumentException("Ô kho khác loại khách đã đặt (" + reservation.getUnitType().getName() + ")");
+        }
+
         if (!"AVAILABLE".equalsIgnoreCase(storageUnit.getStatus())) {
             throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
         }
 
-        // Cập nhật ô kho
+        // Chiếm ô bằng 1 câu UPDATE có điều kiện → 2 quản lý gán cùng 1 ô cùng lúc thì người sau bị từ chối (D06)
+        int taken = jdbcTemplate.update(
+                "UPDATE storage_units SET status = 'OCCUPIED' WHERE id = ? AND status = 'AVAILABLE'",
+                storageUnit.getId());
+        if (taken == 0) {
+            throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
+        }
         storageUnit.setStatus("OCCUPIED");
-        storageUnitRepository.save(storageUnit);
 
         // Cập nhật đơn đặt chỗ
         reservation.setStorageUnitId(storageUnit.getId());
@@ -438,6 +494,14 @@ public class ReservationService {
         rentalContractRepository.save(contract);
 
         staffTaskService.createCheckInTask(contract);
+
+        // PR-A9: log gán ô (người thao tác = FM lấy từ token)
+        if (actorUserId != null) {
+            activityLogService.log(actorUserId,
+                    "[UNIT_ASSIGN] Gán ô " + storageUnit.getId() + " cho đơn " + reservation.getReservationCode()
+                            + ", tạo hợp đồng " + contractCode + " (chờ check-in)",
+                    "reservations", String.valueOf(reservation.getId()));
+        }
     }
 
     public CancelPreviewResponse previewCancel(Integer reservationId) {
@@ -822,6 +886,17 @@ public class ReservationService {
                     managerId,
                     deadline,
                     refundTaskNote);
+
+            // BUG-07 / PR-O12: ghi giao dịch REFUND PENDING để sổ cái và báo cáo doanh thu khớp.
+            // FM hoàn tất task → StaffTaskService đổi đúng giao dịch này sang SUCCESS (tìm theo "Đơn: RES-...").
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, reservation_id, user_id, amount, payment_type, payment_method, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'PENDING', NULL)",
+                    "REF-NS-" + reservation.getReservationCode() + "-" + (System.currentTimeMillis() % 100000),
+                    reservation.getId(),
+                    reservation.getCustomer().getId(),
+                    refundAmount);
         }
 
         reservation.setStatus("CANCELLED");

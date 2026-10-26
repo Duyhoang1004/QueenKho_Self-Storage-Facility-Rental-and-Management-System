@@ -40,6 +40,6 @@ README.md là tài liệu cho người; file này là ghi chú cho agent. `Init.
 - Không commit: `*.class`, `target/`, `frontend/dist/`, `node_modules/`, `.idea/`.
 
 ## Nợ kỹ thuật đã biết (chưa xử lý)
-- Security mở hoàn toàn; API nhận `customerId`/`managerId` qua query param thay vì lấy từ token.
+- ~~Security mở hoàn toàn~~ → đã có `security/AccessControlFilter` + bảng quyền `AccessPolicy` (26/10/2026). API mới **phải khai báo luật** trong `AccessPolicy`, nếu không filter trả 403 `API_NOT_DECLARED` (test `AccessPolicyTest` quét mọi controller sẽ fail). Người thao tác lấy qua `CurrentUserProvider`; bản ghi theo id kiểm tra bằng `OwnershipGuard`. Controller cũ vẫn nhận `customerId/managerId/staffId` nhưng giá trị bị filter ghi đè theo token.
 - Chưa có test ngoài `ApiApplicationTests`.
 - File rác trên `main`: `fix_front.js`, `fix_service.js`, `backend/api/HashGen.java|.class`, thư mục `.idea/` đang bị track.

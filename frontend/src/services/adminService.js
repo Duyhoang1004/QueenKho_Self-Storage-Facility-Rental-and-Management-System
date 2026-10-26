@@ -65,3 +65,17 @@ export async function getAdminDashboard(actorUserId) {
   const response = await api.get('/admin/dashboard', { params: { actorUserId } })
   return response.data
 }
+
+// PR-90: ma trận quyền backend đang áp dụng
+// trả [{ code, name, description, roleScopes: { CUSTOMER: 'Của chính mình', ... } }]
+export async function getAccessMatrix() {
+  const response = await api.get('/admin/roles/access-matrix')
+  return response.data
+}
+
+// Lịch sử đăng nhập — params { keyword, eventType, from, to, page, size }
+// trả { content, page, size, totalElements, totalPages }
+export async function getLoginHistory(params) {
+  const response = await api.get('/admin/login-history', { params })
+  return response.data
+}

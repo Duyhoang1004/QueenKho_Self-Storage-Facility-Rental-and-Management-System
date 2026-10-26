@@ -61,4 +61,32 @@ class LateFeePolicyTest {
         assertFalse(service.calculateLateFee(contract, LocalDate.of(2026, 11, 15)).isCanLiquidate());
         assertTrue(service.calculateLateFee(contract, LocalDate.of(2026, 11, 16)).isCanLiquidate());
     }
+
+    @Test
+    void waivedContractPaysNoLateFeeButKeepsOverdueDaysAndPinLock() {
+        RentalPolicyRepository policies = mock(RentalPolicyRepository.class);
+        RentalPolicy signedVersion = new RentalPolicy();
+        signedVersion.setLateFeePercentPerDay(10);
+        signedVersion.setLateFeeMaxPercent(50);
+        signedVersion.setLiquidationDays(30);
+        when(policies.findById(8)).thenReturn(Optional.of(signedVersion));
+        LateFeeService service = new LateFeeService();
+        ReflectionTestUtils.setField(service, "rentalPolicyRepository", policies);
+
+        RentalContract contract = new RentalContract();
+        contract.setRentalPolicyId(8);
+        contract.setDepositHeldAmount(new BigDecimal("750000"));
+        contract.setEndDate(LocalDate.of(2026, 10, 1));
+        contract.setStatus("OVERDUE");
+        contract.setLateFeeWaived(true);
+
+        var result = service.calculateLateFee(contract, LocalDate.of(2026, 10, 4));
+
+        assertEquals(0, result.getLateFeeAmount().compareTo(BigDecimal.ZERO));
+        assertTrue(result.isLateFeeWaived());
+        assertEquals(3, result.getOverdueDays());
+        assertTrue(result.isPinLocked());
+        assertFalse(result.isMaxLateFeeReached());
+        assertEquals(0, result.getEstimatedDepositRefund().compareTo(new BigDecimal("750000")));
+    }
 }

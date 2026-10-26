@@ -3,6 +3,9 @@ package com.queenkho.api.controller;
 import com.queenkho.api.dto.CustomerContractResponse;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.repository.RentalContractRepository;
+import com.queenkho.api.security.CurrentUser;
+import com.queenkho.api.security.CurrentUserProvider;
+import com.queenkho.api.security.OwnershipGuard;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +33,16 @@ public class ContractController {
 
     @Autowired
     private com.queenkho.api.service.LateFeeService lateFeeService;
+
+    // PR-90: người thao tác lấy từ token; hợp đồng theo id phải thuộc khách / cơ sở của người gọi
+    @Autowired
+    private CurrentUserProvider currentUser;
+
+    @Autowired
+    private OwnershipGuard ownershipGuard;
+
+    @Autowired
+    private com.queenkho.api.service.PricingService pricingService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -225,7 +238,10 @@ public class ContractController {
                 isPinLocked,
                 canLiquidate,
                 liquidationDaysThreshold,
-                estimatedOverdueDepositRefund);
+                estimatedOverdueDepositRefund,
+                su.getFacility() != null ? su.getFacility().getId() : null,
+                Boolean.TRUE.equals(rc.getLateFeeWaived()) && "OVERDUE".equalsIgnoreCase(rc.getStatus()),
+                rc.getLateFeeWaiverNote());
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -238,6 +254,10 @@ public class ContractController {
             @RequestParam(required = false) Integer managerId,
             @RequestParam(required = false) Integer customerId,
             @RequestParam(required = false) Integer reservationId) {
+        CurrentUser user = currentUser.require();
+        if (reservationId != null) {
+            ownershipGuard.checkReservation(reservationId);
+        }
         try {
             if (reservationId != null) {
                 return rentalContractRepository.findByReservationId(reservationId)
@@ -245,7 +265,10 @@ public class ContractController {
                         .orElse(ResponseEntity.notFound().build());
             }
             List<RentalContract> contracts;
-            if (facilityId != null) {
+            if (user.hasRole("CUSTOMER")) {
+                // Khách chỉ được xem hợp đồng của chính mình, bỏ qua facilityId / managerId nếu có
+                contracts = rentalContractRepository.findAllByCustomerId(user.id());
+            } else if (facilityId != null) {
                 contracts = rentalContractRepository.findAllByFacilityId(facilityId);
             } else if (managerId != null) {
                 contracts = rentalContractRepository.findAllByManagerId(managerId);
@@ -264,6 +287,7 @@ public class ContractController {
     // GET /api/v1/contracts/{id}
     @GetMapping("/{id}")
     public ResponseEntity<?> getContractDetail(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
         return rentalContractRepository.findDetailById(id)
                 .map(rc -> ResponseEntity.ok((Object) toDto(rc)))
                 .orElse(ResponseEntity.notFound().build());
@@ -274,6 +298,7 @@ public class ContractController {
     @PostMapping("/{id}/request-checkout")
     public ResponseEntity<?> requestCheckout(@PathVariable Integer id,
             @RequestBody com.queenkho.api.dto.RequestCheckoutRequest request) {
+        ownershipGuard.checkContract(id);
         try {
             return ResponseEntity.ok(contractService.requestCheckout(id, request));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -287,6 +312,7 @@ public class ContractController {
     // UC-22: Khách hàng hủy yêu cầu trả kho (hủy chờ trả kho)
     @PostMapping("/{id}/cancel-checkout")
     public ResponseEntity<?> cancelCheckout(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
         try {
             return ResponseEntity.ok(contractService.cancelCheckout(id));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -317,6 +343,9 @@ public class ContractController {
     public ResponseEntity<?> liquidateContract(
             @PathVariable Integer id,
             @RequestBody com.queenkho.api.dto.LiquidateContractRequest request) {
+        if (request != null) {
+            request.setManagerId(currentUser.require().id());
+        }
         return ResponseEntity.ok(contractService.liquidateContract(id, request));
     }
 
@@ -324,9 +353,28 @@ public class ContractController {
     @PostMapping("/{id}/refund-remaining-deposit")
     public ResponseEntity<?> refundRemainingDeposit(
             @PathVariable Integer id,
-            @RequestBody com.queenkho.api.dto.RefundDepositRequest request) {
-        Integer managerId = request != null ? request.getManagerId() : null;
-        return ResponseEntity.ok(contractService.refundRemainingDeposit(id, managerId));
+            @RequestBody(required = false) com.queenkho.api.dto.RefundDepositRequest request) {
+        return ResponseEntity.ok(contractService.refundRemainingDeposit(id, currentUser.require().id()));
+    }
+
+    // Flow 6: báo giá 4 gói gia hạn (1/3/6/12 tháng) — đúng số tiền VNPAY sẽ thu
+    @GetMapping("/{id}/renewal-quote")
+    public ResponseEntity<?> getRenewalQuote(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        return rentalContractRepository.findDetailById(id)
+                .map(rc -> ResponseEntity.ok((Object) com.queenkho.api.service.PricingService.PACKAGES.stream()
+                        .map(months -> pricingService.quoteRenewal(rc, months))
+                        .toList()))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Flow 6: FM miễn phí trễ cho hợp đồng quá hạn (chính sách cơ sở phải cho phép)
+    @PostMapping("/{id}/waive-late-fee")
+    public ResponseEntity<?> waiveLateFee(
+            @PathVariable Integer id,
+            @RequestBody(required = false) Map<String, String> body) {
+        String reason = body != null ? body.get("reason") : null;
+        return ResponseEntity.ok(contractService.waiveLateFee(id, currentUser.require().id(), reason));
     }
 
     // POST /api/v1/contracts/{id}/overdue-contacts
@@ -334,6 +382,9 @@ public class ContractController {
     public ResponseEntity<?> addOverdueContact(
             @PathVariable Integer id,
             @RequestBody com.queenkho.api.dto.CreateOverdueContactRequest request) {
+        if (request != null) {
+            request.setManagerId(currentUser.require().id());
+        }
         contractService.addOverdueContactLog(id, request);
         return ResponseEntity.ok(Map.of("message", "Đã ghi nhận nhật ký liên hệ thành công"));
     }

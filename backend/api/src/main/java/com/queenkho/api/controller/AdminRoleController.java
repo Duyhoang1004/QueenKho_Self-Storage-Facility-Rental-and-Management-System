@@ -18,6 +18,18 @@ public class AdminRoleController {
     @Autowired
     private AdminRoleService adminRoleService;
 
+    @Autowired
+    private com.queenkho.api.security.AccessPolicy accessPolicy;
+
+    // ──────────────────────────────────────────────────────
+    // PR-90: ma trận quyền ĐANG ĐƯỢC BACKEND ÁP DỤNG (đọc thẳng từ AccessPolicy)
+    // GET /api/v1/admin/roles/access-matrix
+    // ──────────────────────────────────────────────────────
+    @GetMapping("/access-matrix")
+    public ResponseEntity<List<com.queenkho.api.security.AccessPolicy.PermissionGroup>> getAccessMatrix() {
+        return ResponseEntity.ok(accessPolicy.groups());
+    }
+
     // ──────────────────────────────────────────────────────
     // UC-03 API 1: Danh sách vai trò + số người dùng
     // GET /api/v1/admin/roles

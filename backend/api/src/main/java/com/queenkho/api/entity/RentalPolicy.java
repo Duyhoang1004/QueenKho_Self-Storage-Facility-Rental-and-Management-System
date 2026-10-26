@@ -40,6 +40,29 @@ public class RentalPolicy {
     @Column(name = "liquidation_days", nullable = false)
     private Integer liquidationDays;
 
+    // Flow 4: % ưu đãi tiền thuê theo gói (gói 1 tháng luôn 0%)
+    @Column(name = "booking_discount_3m", nullable = false)
+    private Integer bookingDiscount3m = 5;
+
+    @Column(name = "booking_discount_6m", nullable = false)
+    private Integer bookingDiscount6m = 10;
+
+    @Column(name = "booking_discount_12m", nullable = false)
+    private Integer bookingDiscount12m = 15;
+
+    @Column(name = "renewal_discount_3m", nullable = false)
+    private Integer renewalDiscount3m = 0;
+
+    @Column(name = "renewal_discount_6m", nullable = false)
+    private Integer renewalDiscount6m = 5;
+
+    @Column(name = "renewal_discount_12m", nullable = false)
+    private Integer renewalDiscount12m = 10;
+
+    // Flow 4/6: FM của cơ sở có được miễn phí trễ cho khách hay không
+    @Column(name = "allow_late_fee_waiver", nullable = false)
+    private boolean allowLateFeeWaiver = true;
+
     @Column(nullable = false)
     private Integer version;
 

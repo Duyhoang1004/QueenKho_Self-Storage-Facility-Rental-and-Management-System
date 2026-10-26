@@ -143,7 +143,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
 
             {!loadingUnits && units.length === 0 && (
               <div className="py-6 text-center text-xs font-bold text-[#AFAFAF] bg-[#F7F7F7] rounded-2xl border-2 border-[#E5E5E5]">
-                Không tìm thấy ô kho nào đang ở trạng thái Trống tại cơ sở này.
+                Cơ sở không còn ô Trống đúng loại khách đã đặt (BR-41: không gán ô khác loại).
+                <br />Hãy mở bảo trì xong / thêm ô mới ở "Quản lý danh mục kho" rồi gán lại.
               </div>
             )}
 

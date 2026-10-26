@@ -44,6 +44,9 @@ public class AdminDashboardService {
     @Autowired
     private AdminGuard adminGuard;
 
+    @Autowired
+    private com.queenkho.api.repository.LoginHistoryRepository loginHistoryRepository;
+
     @Transactional(readOnly = true)
     public AdminDashboardResponse getDashboard(Integer actorUserId) {
         adminGuard.requireActiveAdmin(actorUserId);
@@ -72,8 +75,14 @@ public class AdminDashboardService {
 
         long logsToday = activityLogRepository.countByCreatedAtGreaterThanEqual(LocalDate.now().atStartOfDay());
 
-        return new AdminDashboardResponse(total, active, locked, disabled, roles, withoutManager,
-                logsToday, adminActivityLogService.getRecentLogs(RECENT_LOG_LIMIT));
+        AdminDashboardResponse response = new AdminDashboardResponse(total, active, locked, disabled, roles, withoutManager,
+                logsToday, adminActivityLogService.getRecentLogs(RECENT_LOG_LIMIT), 0, 0);
+        // Lịch sử đăng nhập hôm nay (đăng nhập sai nhiều → dấu hiệu dò mật khẩu)
+        response.setLoginsToday(loginHistoryRepository.countByEventTypeAndCreatedAtGreaterThanEqual(
+                "LOGIN_SUCCESS", LocalDate.now().atStartOfDay()));
+        response.setFailedLoginsToday(loginHistoryRepository.countByEventTypeAndCreatedAtGreaterThanEqual(
+                "LOGIN_FAILED", LocalDate.now().atStartOfDay()));
+        return response;
     }
 
     // Cộng số user theo role / status (null = không lọc theo tiêu chí đó)

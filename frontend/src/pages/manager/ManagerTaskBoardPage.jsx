@@ -1,8 +1,113 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
-import { unassignStaffTask, completeRefundTask, extendSupportTask } from '../../services/staffTaskService'
+import { assignStaffTask, unassignStaffTask, completeRefundTask, extendSupportTask } from '../../services/staffTaskService'
+import { getFacilityStaff } from '../../services/facilityStaffService'
+
+const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
+
+// Flow 5: chọn nhân viên ACTIVE cùng cơ sở để giao task — hiện số việc đang làm để chia việc đều
+function AssignTaskModal({ task, facilityId, onClose, onAssigned }) {
+  const [staffList, setStaffList] = useState(null)
+  const [loadError, setLoadError] = useState('')
+  const [selectedId, setSelectedId] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    getFacilityStaff(facilityId)
+      .then((list) => { if (!cancelled) setStaffList(list || []) })
+      .catch((err) => { if (!cancelled) setLoadError(err.response?.data?.message || 'Không tải được danh sách nhân viên.') })
+    return () => { cancelled = true }
+  }, [facilityId])
+
+  const activeStaff = (staffList || [])
+    .filter((s) => s.status === 'ACTIVE')
+    .sort((a, b) => (a.activeTasksCount || 0) - (b.activeTasksCount || 0))
+
+  const handleAssign = () => {
+    if (!selectedId) {
+      setError('Vui lòng chọn nhân viên nhận việc.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    assignStaffTask(task.id, selectedId)
+      .then((updated) => onAssigned(updated))
+      .catch((err) => {
+        setError(err.response?.data?.message || 'Không giao được việc, vui lòng thử lại.')
+        setSaving(false)
+      })
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+      <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4">
+        <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+          <div className="w-11 h-11 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700]">
+            <span className="material-symbols-outlined text-[24px]">assignment_ind</span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-black text-[#4B4B4B]">Giao việc task #{task.id}</h3>
+            <p className="text-xs font-bold text-[#AFAFAF] truncate">
+              {TASK_TYPE_LABELS[task.taskType] || task.taskType} · {task.customerName || task.contractCode || ''}
+              {task.staffName ? ` · đang do ${task.staffName} làm` : ''}
+            </p>
+          </div>
+        </div>
+
+        {!staffList && !loadError && <div className="h-32 rounded-xl bg-[#F7F7F7] animate-pulse" />}
+        {loadError && <p className="text-xs font-bold text-[#FF4B4B]">{loadError}</p>}
+        {staffList && activeStaff.length === 0 && (
+          <p className="text-xs font-bold text-[#AFAFAF]">Cơ sở chưa có nhân viên đang hoạt động. Tạo nhân viên ở màn Quản lý nhân viên.</p>
+        )}
+
+        <div className="flex flex-col gap-2 max-h-[280px] overflow-y-auto">
+          {activeStaff.map((s) => {
+            const isCurrent = task.staffId === s.id
+            const selected = selectedId === s.id
+            return (
+              <button
+                key={s.id}
+                type="button"
+                disabled={isCurrent}
+                onClick={() => { setSelectedId(s.id); setError('') }}
+                className={`flex items-center justify-between gap-3 rounded-xl border-2 px-3 py-2.5 text-left transition-all ${
+                  selected ? 'border-[#58CC02] bg-[#F1FFE7]' : 'border-[#E5E5E5] hover:bg-[#F7F7F7]'
+                } ${isCurrent ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-[#4B4B4B] truncate">{s.fullName}{isCurrent ? ' (đang phụ trách)' : ''}</p>
+                  <p className="text-[11px] font-bold text-[#AFAFAF] truncate">{s.phone || s.email}</p>
+                </div>
+                <span className={`duo-badge border-2 shrink-0 ${s.activeTasksCount > 0 ? 'bg-[#FFF3B3] border-[#FFC800] text-[#B38F00]' : 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]'}`}>
+                  {s.activeTasksCount || 0} việc đang làm
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {error && (
+          <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px]">error</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-[#E5E5E5]">
+          <button onClick={onClose} disabled={saving} className="duo-btn-gray px-4 py-2.5 text-xs">Hủy</button>
+          <button onClick={handleAssign} disabled={saving || !selectedId} className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 disabled:opacity-50">
+            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+            {saving ? 'Đang giao...' : 'Giao việc'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function todayIsoDate() {
   const d = new Date()
@@ -28,11 +133,14 @@ function tomorrowIsoDate() {
 export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
 
-  // Phân chia góc nhìn: MINE (Nhiệm vụ của Manager) vs ALL (Toàn bộ việc cơ sở)
-  const [viewScope, setViewScope] = useState('MINE')
+  // Phân chia góc nhìn: ALL (Toàn bộ việc cơ sở — để giao việc, Flow 5) vs MINE (việc giao cho chính Manager)
+  const [viewScope, setViewScope] = useState('ALL')
 
   // State gỡ nhân viên
   const [confirmTask, setConfirmTask] = useState(null)
+
+  // Flow 5: State giao việc
+  const [assignTask, setAssignTask] = useState(null)
 
   // State gia hạn task SUPPORT quá hạn (PR-S4)
   const [extendTarget, setExtendTarget] = useState(null)
@@ -210,19 +318,45 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
 
-    if (task.status === 'IN_PROGRESS') {
+    if (task.status === 'IN_PROGRESS' && !isTaskOverdue) {
       return (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
             <span className="material-symbols-outlined text-[18px]">visibility</span>
             Xem chi tiết
           </Link>
+          <button
+            onClick={() => setAssignTask(task)}
+            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">sync_alt</span>
+            Đổi người
+          </button>
           <button
             onClick={() => setConfirmTask(task)}
             className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">person_remove</span>
             Gỡ người nhận
+          </button>
+        </div>
+      )
+    }
+
+    // Flow 5: task chưa ai nhận → Manager chủ động giao cho nhân viên
+    if (task.status === 'OPEN' && !isTaskOverdue) {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">visibility</span>
+            Xem chi tiết
+          </Link>
+          <button
+            onClick={() => setAssignTask(task)}
+            className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">assignment_ind</span>
+            Giao việc
           </button>
         </div>
       )
@@ -318,6 +452,20 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         onConfirm={handleUnassign}
         onCancel={() => setConfirmTask(null)}
       />
+
+      {/* Flow 5: Modal giao việc / đổi người */}
+      {assignTask && (
+        <AssignTaskModal
+          task={assignTask}
+          facilityId={user.facilityId}
+          onClose={() => setAssignTask(null)}
+          onAssigned={(updated) => {
+            setAssignTask(null)
+            setToast({ type: 'success', message: `Đã giao task #${updated.id} cho ${updated.staffName}.` })
+            setReloadKey((k) => k + 1)
+          }}
+        />
+      )}
 
       {/* Modal Gia hạn task SUPPORT quá hạn (PR-S4) */}
       {extendTarget && (

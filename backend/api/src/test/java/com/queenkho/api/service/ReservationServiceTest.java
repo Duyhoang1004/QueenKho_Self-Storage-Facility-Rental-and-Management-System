@@ -24,7 +24,6 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
 
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
@@ -63,8 +62,41 @@ class ReservationServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
 
+    @Mock
+    private PricingService pricingService;
+
+    @Mock
+    private ActivityLogService activityLogService;
+
     @InjectMocks
     private ReservationService reservationService;
+
+    // Còn `free` suất cho cặp cơ sở × loại kho (khoá dòng facilities + đếm ô AVAILABLE − đơn đang giữ suất)
+    private void mockFreeSlots(int free) {
+        when(jdbcTemplate.queryForObject(contains("FROM facilities WITH (UPDLOCK"), eq(Integer.class), any())).thenReturn(1);
+        when(jdbcTemplate.queryForObject(contains("FROM storage_units WHERE facility_id"), eq(Integer.class),
+                any(), any(), any(), any())).thenReturn(free);
+    }
+
+    private CreateReservationRequest validRequest(int months) {
+        CreateReservationRequest request = new CreateReservationRequest();
+        request.setCustomerId(1);
+        request.setFacilityId(1);
+        request.setUnitTypeId(1);
+        request.setDurationMonths(months);
+        request.setStartDate(LocalDate.now().plusDays(2));
+        return request;
+    }
+
+    private void mockCustomerWithoutDebt() {
+        when(userRepository.findById(1)).thenReturn(Optional.of(testCustomer));
+        Map<String, Object> noDebtMap = new HashMap<>();
+        noDebtMap.put("overdue_count", 0);
+        noDebtMap.put("damage_count", 0);
+        when(jdbcTemplate.queryForMap(anyString(), eq(1), eq(1), eq(1))).thenReturn(noDebtMap);
+        when(facilityRepository.findById(1)).thenReturn(Optional.of(testFacility));
+        when(unitTypeRepository.findById(1)).thenReturn(Optional.of(testUnitType));
+    }
 
     private User testCustomer;
     private Facility testFacility;
@@ -80,6 +112,7 @@ class ReservationServiceTest {
         testFacility = new Facility();
         testFacility.setId(1);
         testFacility.setName("QueenKho Tan Binh");
+        testFacility.setStatus("ACTIVE");
 
         testUnitType = new UnitType();
         testUnitType.setId(1);
@@ -108,7 +141,9 @@ class ReservationServiceTest {
         when(facilityRepository.findById(1)).thenReturn(Optional.of(testFacility));
         when(unitTypeRepository.findById(1)).thenReturn(Optional.of(testUnitType));
 
-        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq(1))).thenReturn(1);
+        mockFreeSlots(1);
+        when(pricingService.activePolicy(1)).thenReturn(null); // chưa có chính sách → cọc 1 tháng
+        when(pricingService.bookingDiscountPercent(null, 3)).thenReturn(5);
 
         when(reservationRepository.save(any(Reservation.class))).thenAnswer(invocation -> {
             Reservation saved = invocation.getArgument(0);
@@ -197,6 +232,107 @@ class ReservationServiceTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
                 reservationService.createReservation(request));
         assertEquals("Loại kho này hiện đang tạm ngưng nhận đặt chỗ mới", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("L-13 / PR-B1: Het suat dung loai tai co so -> 409 NO_AVAILABILITY, khong tao don")
+    void testCreateReservation_NoFreeSlot_ThrowsConflict() {
+        mockCustomerWithoutDebt();
+        mockFreeSlots(0);
+
+        ReservationException ex = assertThrows(ReservationException.class, () ->
+                reservationService.createReservation(validRequest(1)));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("NO_AVAILABILITY", ex.getCode());
+        verify(reservationRepository, never()).save(any(Reservation.class));
+    }
+
+    @Test
+    @DisplayName("Flow 4: Chot coc theo he so chinh sach va % uu dai goi vao don luc tao")
+    void testCreateReservation_SnapshotsPolicyDepositAndDiscount() {
+        mockCustomerWithoutDebt();
+        mockFreeSlots(3);
+        com.queenkho.api.entity.RentalPolicy policy = new com.queenkho.api.entity.RentalPolicy();
+        policy.setDepositMonthMultiplier(2);
+        when(pricingService.activePolicy(1)).thenReturn(policy);
+        when(pricingService.bookingDiscountPercent(policy, 6)).thenReturn(12);
+        when(reservationRepository.save(any(Reservation.class))).thenAnswer(invocation -> {
+            Reservation saved = invocation.getArgument(0);
+            saved.setId(101);
+            return saved;
+        });
+
+        reservationService.createReservation(validRequest(6));
+
+        org.mockito.ArgumentCaptor<Reservation> captor = org.mockito.ArgumentCaptor.forClass(Reservation.class);
+        verify(reservationRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("3000000").compareTo(captor.getValue().getDepositAmount())); // 2 × 1.500.000
+        assertEquals(12, captor.getValue().getRentDiscountPercent());
+    }
+
+    @Test
+    @DisplayName("UC-04: Co so dang tam ngung -> khong nhan don moi")
+    void testCreateReservation_FacilityInactive_ThrowsException() {
+        mockCustomerWithoutDebt();
+        testFacility.setStatus("INACTIVE");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                reservationService.createReservation(validRequest(1)));
+        assertEquals("Cơ sở này đang tạm ngưng nhận đặt chỗ mới", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("L-11 / BR-42: Gan o khac loai voi don -> chan, khong chiem o")
+    void testAssignStorageUnit_WrongUnitType_Rejected() {
+        Reservation reservation = new Reservation();
+        reservation.setId(5);
+        reservation.setStatus("DEPOSIT_PAID");
+        reservation.setFacility(testFacility);
+        reservation.setUnitType(testUnitType);
+        when(reservationRepository.findById(5)).thenReturn(Optional.of(reservation));
+
+        UnitType otherType = new UnitType();
+        otherType.setId(2);
+        otherType.setName("Kho Lon");
+        com.queenkho.api.entity.StorageUnit unit = new com.queenkho.api.entity.StorageUnit();
+        unit.setId("KV-TB-A101");
+        unit.setFacility(testFacility);
+        unit.setUnitType(otherType);
+        unit.setStatus("AVAILABLE");
+        when(storageUnitRepository.findById("KV-TB-A101")).thenReturn(Optional.of(unit));
+
+        com.queenkho.api.dto.AssignUnitRequest request = new com.queenkho.api.dto.AssignUnitRequest();
+        request.setStorageUnitId("KV-TB-A101");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                reservationService.assignStorageUnit(5, request, 6));
+        assertTrue(ex.getMessage().startsWith("Ô kho khác loại khách đã đặt"));
+        verify(jdbcTemplate, never()).update(contains("UPDATE storage_units"), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("D06: 2 quan ly gan cung 1 o -> nguoi sau bi tu choi (UPDATE co dieu kien = 0 dong)")
+    void testAssignStorageUnit_UnitTakenConcurrently_Rejected() {
+        Reservation reservation = new Reservation();
+        reservation.setId(6);
+        reservation.setStatus("DEPOSIT_PAID");
+        reservation.setFacility(testFacility);
+        reservation.setUnitType(testUnitType);
+        when(reservationRepository.findById(6)).thenReturn(Optional.of(reservation));
+
+        com.queenkho.api.entity.StorageUnit unit = new com.queenkho.api.entity.StorageUnit();
+        unit.setId("KV-TB-A102");
+        unit.setFacility(testFacility);
+        unit.setUnitType(testUnitType);
+        unit.setStatus("AVAILABLE");
+        when(storageUnitRepository.findById("KV-TB-A102")).thenReturn(Optional.of(unit));
+        when(jdbcTemplate.update(contains("UPDATE storage_units SET status = 'OCCUPIED'"), eq("KV-TB-A102"))).thenReturn(0);
+
+        com.queenkho.api.dto.AssignUnitRequest request = new com.queenkho.api.dto.AssignUnitRequest();
+        request.setStorageUnitId("KV-TB-A102");
+
+        assertThrows(IllegalStateException.class, () -> reservationService.assignStorageUnit(6, request, 6));
+        verify(rentalContractRepository, never()).save(any());
     }
 
     @Test

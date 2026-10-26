@@ -51,6 +51,9 @@ public class ContractService {
     @Autowired
     private com.queenkho.api.repository.StaffTaskRepository staffTaskRepository;
 
+    @Autowired
+    private PricingService pricingService;
+
 
     @Transactional
     public RequestCheckoutResponse requestCheckout(Integer contractId, RequestCheckoutRequest request) {
@@ -228,9 +231,10 @@ public class ContractService {
         } catch (Exception ignored) {
         }
 
-        // Hủy task CHECK_OUT đang mở trong staff_tasks
+        // Hủy task CHECK_OUT đang mở trong staff_tasks.
+        // I12: KHÔNG đóng ticket hỗ trợ ở đây — khách vẫn tiếp tục thuê nên ticket đang mở vẫn phải được xử lý
+        // (PR-S8 chỉ đóng ticket khi hợp đồng TERMINATED / LIQUIDATED).
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
-        staffTaskService.closeOpenSupportTicketsAndTasks(contract.getId());
 
         // Ghi activity log
         String logDesc = "Khách hàng hủy yêu cầu trả kho cho HĐ " + contract.getContractCode() + ". Hợp đồng trở lại trạng thái " + newStatus;
@@ -381,6 +385,8 @@ public class ContractService {
                 "c.deposit_held_amount, " +
                 "c.rental_policy_id, " +
                 "c.status, " +
+                "c.late_fee_waived, " +
+                "c.late_fee_waiver_note, " +
                 "ISNULL(al.contact_count, 0) AS contact_count, " +
                 "al.last_contact_at, " +
                 "al.last_contact_action, " +
@@ -446,6 +452,8 @@ public class ContractService {
             dummyContract.setDepositHeldAmount(depositHeld);
             dummyContract.setRentalPolicyId(policyId);
             dummyContract.setStatus(status);
+            boolean lateFeeWaived = rs.getBoolean("late_fee_waived");
+            dummyContract.setLateFeeWaived(lateFeeWaived);
 
             LateFeeCalculationResult lateCalc = lateFeeService.calculateLateFee(dummyContract);
 
@@ -485,6 +493,8 @@ public class ContractService {
                     .lastContactAt(lastContactAt)
                     .refundRequested(refundRequested)
                     .status(status)
+                    .lateFeeWaived(lateFeeWaived && "OVERDUE".equalsIgnoreCase(status))
+                    .lateFeeWaiverNote(rs.getString("late_fee_waiver_note"))
                     .build();
         }, targetFacilityId, targetStatus);
     }
@@ -635,6 +645,9 @@ public class ContractService {
             throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_OVERDUE", "Hợp đồng không ở trạng thái quá hạn (hiện tại: " + contract.getStatus() + ")");
         }
 
+        // D-09: thanh lý luôn trừ phí trễ theo chính sách. Miễn phí trễ (Flow 6) chỉ để giúp khách gia hạn,
+        // khách không gia hạn mà bị thanh lý thì việc miễn phí trễ hết hiệu lực.
+        contract.setLateFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
         if (!lateFeeCalc.isCanLiquidate()) {
             throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
@@ -696,6 +709,73 @@ public class ContractService {
                 "status", "LIQUIDATED",
                 "lateFeeAmount", lateFee,
                 "remainingDeposit", remainingDeposit
+        );
+    }
+
+    /**
+     * Flow 6 / Flow 4: FM miễn phí trễ cho hợp đồng đang quá hạn (khách có lý do chính đáng).
+     *  - Chỉ khi chính sách đang hiệu lực của cơ sở bật "cho phép miễn phí trễ" (BOM quyết định).
+     *  - Áp dụng cho đợt quá hạn hiện tại: khách gia hạn chỉ trả tiền thuê; gia hạn xong cờ tự tắt.
+     *  - Link gia hạn đang chờ (đã chốt phí trễ cũ) bị huỷ để khách tạo link mới đúng số tiền.
+     */
+    @Transactional
+    public Map<String, Object> waiveLateFee(Integer contractId, Integer managerId, String reason) {
+        User manager = userRepository.findById(managerId)
+                .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản người thao tác"));
+        if (manager.getRole() == null || !"FACILITY_MANAGER".equals(manager.getRole().getName())) {
+            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý cơ sở mới được miễn phí trễ");
+        }
+        String trimmedReason = reason == null ? "" : reason.trim();
+        if (trimmedReason.length() < 5 || trimmedReason.length() > 400) {
+            throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Lý do miễn phí trễ bắt buộc, từ 5 đến 400 ký tự");
+        }
+        RentalContract contract = rentalContractRepository.findDetailById(contractId)
+                .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
+        Integer facilityId = contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null
+                ? contract.getStorageUnit().getFacility().getId() : null;
+        if (manager.getFacilityId() == null || !manager.getFacilityId().equals(facilityId)) {
+            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Hợp đồng không thuộc cơ sở do bạn quản lý");
+        }
+        if (!"OVERDUE".equalsIgnoreCase(contract.getStatus())) {
+            throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_OVERDUE", "Chỉ miễn phí trễ cho hợp đồng đang quá hạn");
+        }
+        if (Boolean.TRUE.equals(contract.getLateFeeWaived())) {
+            throw new ContractException(HttpStatus.CONFLICT, "LATE_FEE_ALREADY_WAIVED", "Hợp đồng đã được miễn phí trễ cho đợt quá hạn này");
+        }
+        var policy = pricingService.activePolicy(facilityId);
+        if (policy != null && !policy.isAllowLateFeeWaiver()) {
+            throw new ContractException(HttpStatus.FORBIDDEN, "WAIVER_NOT_ALLOWED",
+                    "Chính sách thuê hiện hành của cơ sở không cho phép miễn phí trễ (BOM đã tắt)");
+        }
+
+        var before = lateFeeService.calculateLateFee(contract);
+        String note = "[" + java.time.LocalDateTime.now(VIETNAM_ZONE).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
+                + "] " + manager.getFullName() + ": " + trimmedReason;
+        contract.setLateFeeWaived(true);
+        contract.setLateFeeWaiverNote(note.length() > 500 ? note.substring(0, 500) : note);
+        rentalContractRepository.save(contract);
+
+        // Link gia hạn đang chờ đã chốt phí trễ cũ → huỷ để khách tạo link mới không còn phí trễ
+        jdbcTemplate.update(
+                "UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL " +
+                        "WHERE contract_id = ? AND payment_method = 'VNPAY' " +
+                        "AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE') AND status = 'PENDING'",
+                contractId);
+
+        String logAction = "[FEE_WAIVE] " + manager.getFullName() + " miễn phí trễ HĐ " + contract.getContractCode()
+                + " (quá hạn " + before.getOverdueDays() + " ngày, phí trễ " + before.getLateFeeAmount().toPlainString() + "đ): " + trimmedReason;
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
+                manager.getId(),
+                logAction.length() > 500 ? logAction.substring(0, 497) + "..." : logAction,
+                String.valueOf(contract.getId()));
+
+        return Map.of(
+                "message", "Đã miễn phí trễ cho hợp đồng " + contract.getContractCode(),
+                "contractId", contract.getId(),
+                "lateFeeWaived", true,
+                "waivedAmount", before.getLateFeeAmount()
         );
     }
 

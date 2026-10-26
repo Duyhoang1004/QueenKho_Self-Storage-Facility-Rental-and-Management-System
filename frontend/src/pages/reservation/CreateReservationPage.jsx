@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
-import { getFacilityAvailability } from '../../services/facilityService'
+import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 
 function buildUnit(availability, unitTypeId) {
   const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
@@ -23,24 +23,25 @@ function buildUnit(availability, unitTypeId) {
   }
 }
 
+// % ưu đãi ở đây chỉ là giá trị dự phòng — số thật lấy từ chính sách BOM (GET /facilities/{id}/pricing),
+// đúng con số VNPAY sẽ thu (Flow 4)
 const DURATION_OPTIONS = [
-  { months: 1, label: '1 Tháng', sub: 'Tiêu chuẩn', note: 'Giá chuẩn', discount: 0 },
-  { months: 3, label: '3 Tháng', sub: 'Phổ biến nhất', note: 'Tiết kiệm 5%', discount: 5, popular: true },
-  { months: 6, label: '6 Tháng', sub: 'Trung hạn', note: 'Tiết kiệm 10%', discount: 10 },
-  { months: 12, label: '12 Tháng', sub: 'Dài hạn', note: 'Tiết kiệm 15%', discount: 15 },
+  { months: 1, label: '1 Tháng', sub: 'Tiêu chuẩn', discount: 0 },
+  { months: 3, label: '3 Tháng', sub: 'Phổ biến nhất', discount: 5, popular: true },
+  { months: 6, label: '6 Tháng', sub: 'Trung hạn', discount: 10 },
+  { months: 12, label: '12 Tháng', sub: 'Dài hạn', discount: 15 },
 ]
 
+// Ưu đãi đặt kho online — backend luôn trừ đúng 100.000đ (PricingService.WELCOME_VOUCHER)
 const VOUCHER_DISCOUNT = 100000
 
 function formatVND(amount) {
   return amount.toLocaleString('vi-VN') + 'đ'
 }
 
-// Map mã voucher → giá trị giảm
+// Chỉ nhận mã backend thực sự áp dụng, tránh hiện số tiền khác với số VNPAY thu
 const VOUCHER_MAP = {
-  NEWKHO: 100000,
-  WELCOME50: 50000,
-  SAVE200: 200000,
+  NEWKHO: VOUCHER_DISCOUNT,
 }
 
 export default function CreateReservationPage() {
@@ -93,6 +94,17 @@ export default function CreateReservationPage() {
     cccd: '',
     email: sessionUser.email || '',
     address: '',
+  })
+
+  // Flow 4: % ưu đãi từng gói theo chính sách đang hiệu lực của cơ sở
+  const [pricing, setPricing] = useState(null)
+  useEffect(() => {
+    if (!hasParams) return
+    getFacilityPricing(facilityId).then(setPricing).catch(() => setPricing(null))
+  }, [hasParams, facilityId])
+  const durationOptions = DURATION_OPTIONS.map((opt) => {
+    const fromPolicy = pricing?.bookingPackages?.find((p) => p.months === opt.months)
+    return fromPolicy ? { ...opt, discount: fromPolicy.discountPercent } : opt
   })
 
   useEffect(() => {
@@ -150,7 +162,7 @@ export default function CreateReservationPage() {
     )
   }
 
-  const selectedOption = DURATION_OPTIONS.find(o => o.months === selectedMonths)
+  const selectedOption = durationOptions.find(o => o.months === selectedMonths)
   const baseTotal = unit.pricePerMonth * selectedMonths
   const discountAmount = Math.round(baseTotal * (selectedOption.discount / 100))
   const netRent = baseTotal - discountAmount
@@ -318,7 +330,7 @@ export default function CreateReservationPage() {
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-              {DURATION_OPTIONS.map((opt) => (
+              {durationOptions.map((opt) => (
                 <button
                   key={opt.months}
                   onClick={() => setSelectedMonths(opt.months)}
@@ -330,7 +342,7 @@ export default function CreateReservationPage() {
                 >
                   {opt.popular && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[10px] font-black uppercase bg-[#FF9600] border border-[#E58800] text-white px-2 py-0.5 rounded-full whitespace-nowrap">
-                      Tiết kiệm 5%
+                      {opt.discount > 0 ? `Tiết kiệm ${opt.discount}%` : 'Phổ biến'}
                     </span>
                   )}
                   {!opt.popular && opt.discount > 0 && (

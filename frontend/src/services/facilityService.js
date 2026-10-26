@@ -15,6 +15,13 @@ export const getFacilityAvailability = (facilityId) => {
     return api.get(`/facilities/${facilityId}/availability`).then(res => res.data);
 };
 
+// Flow 1 / 4: chính sách giá đang áp dụng của cơ sở (công khai)
+// trả { depositMonthMultiplier, bookingPackages:[{months, discountPercent}], renewalPackages, welcomeVoucher,
+//       cancelFreeHours, cancelFeePercent, lateFeePercentPerDay, lateFeeMaxPercent, liquidationDays, allowLateFeeWaiver }
+export const getFacilityPricing = (facilityId) => {
+    return api.get(`/facilities/${facilityId}/pricing`).then(res => res.data);
+};
+
 // UC-09: Lấy danh sách thành phố (cho dropdown)
 export const getCities = () => {
     return api.get('/facilities/cities').then(res => res.data);

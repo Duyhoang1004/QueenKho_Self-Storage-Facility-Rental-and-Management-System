@@ -35,17 +35,17 @@ public class VnpayService {
     private final RentalContractRepository contracts; 
     private final ReservationRepository reservations;
     private final StaffTaskService staffTasks;
-    private final LateFeeService lateFeeService;
+    private final PricingService pricing;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
                         ReservationRepository reservations, StaffTaskService staffTasks,
-                        LateFeeService lateFeeService, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                        PricingService pricing, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.payments = payments;
         this.contracts = contracts;
         this.reservations = reservations;
         this.staffTasks = staffTasks;
-        this.lateFeeService = lateFeeService;
+        this.pricing = pricing;
         this.jdbcTemplate = jdbcTemplate;
     }
 
@@ -76,15 +76,14 @@ public class VnpayService {
         
         BigDecimal price = (BigDecimal) r.get("base_price_monthly");
         int m = ((Number) r.get("duration_months")).intValue();
-        int discountPercent = (m == 3) ? 5 : (m == 6) ? 10 : (m == 12) ? 15 : 0;
-        
-        BigDecimal rent = price.multiply(BigDecimal.valueOf(m));
-        BigDecimal discountAmount = rent.multiply(BigDecimal.valueOf(discountPercent))
-                                        .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+        // Flow 4: % ưu đãi và tiền cọc đều lấy từ snapshot của đơn (chốt theo chính sách lúc tạo đơn — PR-M6)
+        Integer snapshot = r.get("rent_discount_percent") == null ? null : ((Number) r.get("rent_discount_percent")).intValue();
+        int discountPercent = pricing.snapshotOrDefault(snapshot, m);
+
+        BigDecimal rent = PricingService.discountedRent(price, m, discountPercent);
         BigDecimal depositAmount = (BigDecimal) r.get("deposit_amount");
-        // Voucher được giữ nguyên theo yêu cầu hiện tại; cọc luôn lấy từ snapshot của đơn (PR-M6).
-        BigDecimal netAmount = rent.subtract(discountAmount).add(depositAmount).subtract(BigDecimal.valueOf(100000));
-        
+        BigDecimal netAmount = rent.add(depositAmount).subtract(PricingService.WELCOME_VOUCHER);
+
         return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, depositAmount, ip, holdExpiresAt);
     }
     
@@ -125,32 +124,12 @@ public class VnpayService {
                     "Hợp đồng đang ở trạng thái " + c.getStatus() + ", không thể gia hạn.");
         }
 
-        // Tính tiền thuê các tháng gia hạn
-        BigDecimal basePrice = BigDecimal.ZERO;
-        if (c.getStorageUnit() != null && c.getStorageUnit().getUnitType() != null
-                && c.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
-            basePrice = c.getStorageUnit().getUnitType().getBasePriceMonthly();
-        }
-        BigDecimal subtotal = basePrice.multiply(BigDecimal.valueOf(m));
-        BigDecimal discount = m >= 12 ? new BigDecimal("0.10") : m >= 6 ? new BigDecimal("0.05") : BigDecimal.ZERO;
-        BigDecimal rentAmount = subtotal.subtract(subtotal.multiply(discount)).setScale(0, RoundingMode.HALF_UP);
-
-        // PR-Q6: Tính phí trễ bằng LateFeeService tại thời điểm tạo link và CHỐT CỨNG số tiền này
-        BigDecimal lateFeeAmount = BigDecimal.ZERO;
-        if ("OVERDUE".equals(status)) {
-            var lateFeeResult = lateFeeService.calculateLateFee(c);
-            if (lateFeeResult != null && lateFeeResult.getLateFeeAmount() != null) {
-                lateFeeAmount = lateFeeResult.getLateFeeAmount().setScale(0, RoundingMode.HALF_UP);
-            }
-        } else if ("TERMINATION_PENDING".equals(status) && c.getEndDate() != null) {
-            long daysPast = ChronoUnit.DAYS.between(c.getEndDate(), LocalDate.now(LateFeeService.VIETNAM_ZONE));
-            if (daysPast >= 2 && daysPast <= 5) {
-                BigDecimal dailyRate = basePrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
-                lateFeeAmount = dailyRate.multiply(BigDecimal.valueOf(daysPast - 1));
-            }
-        }
-
-        BigDecimal totalAmount = rentAmount.add(lateFeeAmount).setScale(0, RoundingMode.HALF_UP);
+        // Flow 6 / PR-Q6: báo giá dùng chung với màn hình (GET /contracts/{id}/renewal-quote) và CHỐT CỨNG
+        // số tiền tại thời điểm tạo link: tiền thuê theo % ưu đãi gia hạn của BOM + phí trễ (0 nếu FM đã miễn)
+        var quote = pricing.quoteRenewal(c, m);
+        BigDecimal rentAmount = quote.rentAmount();
+        BigDecimal lateFeeAmount = quote.lateFeeAmount();
+        BigDecimal totalAmount = quote.totalAmount();
 
         // PR-Q6: Trong MỘT @Transactional, tạo sẵn 2 dòng PENDING trong payment_transactions:
         // (a) dòng chính loại MONTHLY_RENT, số tiền = tiền thuê các tháng gia hạn;
@@ -180,6 +159,40 @@ public class VnpayService {
         );
     }
     
+    /**
+     * UC-20 / PR-O9: khách trả khoản nợ phí sự cố (DAMAGE_FEE vượt cọc, đang PENDING) qua VNPAY.
+     * Không tạo dòng mới: đổi transaction_code của chính khoản nợ sang mã mới → link mới thay link cũ,
+     * khoản nợ luôn chỉ có 1 dòng. Trả lỗi / huỷ trên VNPAY → khoản nợ vẫn PENDING (không bị "xoá nợ").
+     */
+    @Transactional
+    public Map<String, Object> createDebtPayment(Integer paymentId, Integer actorUserId, String ip) {
+        if (paymentId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu khoản cần thanh toán");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT id, user_id, amount, status, payment_type, payment_method FROM payment_transactions " +
+                        "WITH (UPDLOCK, ROWLOCK) WHERE id = ?", paymentId);
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khoản cần thanh toán");
+        }
+        var debt = rows.get(0);
+        if (!Objects.equals(actorUserId, ((Number) debt.get("user_id")).intValue())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền thanh toán khoản này");
+        }
+        if (!"DAMAGE_FEE".equals(debt.get("payment_type")) || !"VNPAY".equals(debt.get("payment_method"))
+                || !"PENDING".equals(debt.get("status"))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Khoản này không còn ở trạng thái chờ thanh toán");
+        }
+        String ref = "QKF" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
+        jdbcTemplate.update("UPDATE payment_transactions SET transaction_code = ? WHERE id = ?", ref, paymentId);
+        BigDecimal amount = ((BigDecimal) debt.get("amount")).setScale(0, RoundingMode.HALF_UP);
+        return Map.of(
+            "orderId", ref,
+            "payUrl", payUrl(ref, "DEBT", amount, ip, null),
+            "amount", amount
+        );
+    }
+
     private Map<String, Object> create(String kind, Integer rId, Integer cId, Integer m, Object uId,
                                        BigDecimal amount, BigDecimal deposit, String ip, LocalDateTime expiresAt) {
         amount = amount.setScale(0, RoundingMode.HALF_UP);
@@ -206,7 +219,12 @@ public class VnpayService {
         p.put("vnp_Amount", amt.multiply(BigDecimal.valueOf(100)).toPlainString()); 
         p.put("vnp_OrderType", "other"); 
         p.put("vnp_Locale", "vn");
-        p.put("vnp_OrderInfo", ("DEPOSIT".equals(kind) ? "Thanh toan " : "Gia han ") + ref); 
+        String orderInfo = switch (kind) {
+            case "DEPOSIT" -> "Thanh toan ";
+            case "DEBT" -> "Thanh toan phi su co ";
+            default -> "Gia han ";
+        };
+        p.put("vnp_OrderInfo", orderInfo + ref);
         p.put("vnp_ReturnUrl", returnUrl); 
         p.put("vnp_IpAddr", ip != null ? ip : "127.0.0.1");
         
@@ -228,7 +246,11 @@ public class VnpayService {
         var p = payments.findPayment(ref, false);
         if (p == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy giao dịch");
         
-        String path = "DEPOSIT".equals(p.get("payment_type")) ? "/booking/confirmation" : "/kho-cua-toi/hop-dong/" + p.get("reservation_id");
+        String path = switch (String.valueOf(p.get("payment_type"))) {
+            case "DEPOSIT" -> "/booking/confirmation";
+            case "DAMAGE_FEE" -> "/thanh-toan";
+            default -> "/kho-cua-toi/hop-dong/" + p.get("reservation_id");
+        };
         return frontendUrl + path + "?orderId=" + encode(ref) + "&vnpResponse=" + encode(params.getOrDefault("vnp_ResponseCode", ""));
     }
     
@@ -259,7 +281,14 @@ public class VnpayService {
         boolean vnpaySuccess = "00".equals(p.get("vnp_ResponseCode"))
                 && "00".equals(p.get("vnp_TransactionStatus"));
 
+        boolean isDebt = "DAMAGE_FEE".equals(db.get("payment_type"));
+
         if (!vnpaySuccess) {
+            if ("PENDING".equals(currentStatus) && isDebt) {
+                // Khoản nợ không được chuyển FAILED — khách vẫn còn nợ, chỉ là lần trả này không thành công
+                logPayment(db, "[VNPAY] Thanh toán phí sự cố " + ref + " không thành công; khoản nợ vẫn chờ thanh toán");
+                return Map.of("RspCode", "00", "Message", "Success");
+            }
             if ("PENDING".equals(currentStatus)) {
                 updatePaymentGroup(ref, "FAILED");
                 logPayment(db, "[VNPAY] Giao dịch " + ref + " thất bại; đơn vẫn giữ chỗ để thanh toán lại");
@@ -291,6 +320,14 @@ public class VnpayService {
                     reservationId);
             updatePaymentGroup(ref, "SUCCESS");
             createLatePaymentRefund(ref, db, "IPN thành công sau 15 phút giữ chỗ");
+            return Map.of("RspCode", "00", "Message", "Success");
+        }
+
+        if (isDebt) {
+            // UC-20: trả xong khoản nợ → khách hết bị chặn đặt kho mới (PR-Q12 đếm DAMAGE_FEE PENDING)
+            updatePaymentGroup(ref, "SUCCESS");
+            logPayment(db, "[DEBT_PAID] Khách thanh toán phí sự cố " + ((BigDecimal) db.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString()
+                    + "đ qua VNPAY (" + ref + ")");
             return Map.of("RspCode", "00", "Message", "Success");
         }
 
@@ -334,7 +371,10 @@ public class VnpayService {
             return "Số tháng gia hạn không hợp lệ";
         }
         c.setEndDate(currentEnd.plusMonths(monthsToRenew));
-        
+        // Flow 6: miễn phí trễ chỉ áp dụng cho đợt quá hạn vừa kết thúc
+        c.setLateFeeWaived(false);
+        c.setLateFeeWaiverNote(null);
+
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
             c.setStatus("ACTIVE");
             // UC-16: khách gia hạn → huỷ task check-out đang mở

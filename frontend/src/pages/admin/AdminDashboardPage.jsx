@@ -110,6 +110,14 @@ export default function AdminDashboardPage() {
               tone="bg-[#F3E3FF] border-[#CE82FF] text-[#A559D9]" />
           </div>
 
+          {/* Lịch sử đăng nhập hôm nay — nhiều lần thất bại là dấu hiệu dò mật khẩu */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <StatTile to="/admin/login-history" icon="login" label="Lượt đăng nhập hôm nay" value={data.loginsToday ?? 0}
+              tone="bg-[#D7FFB8] border-[#58CC02] text-[#58A700]" />
+            <StatTile to="/admin/login-history" icon="gpp_bad" label="Đăng nhập thất bại hôm nay" value={data.failedLoginsToday ?? 0}
+              tone="bg-[#FFDFE0] border-[#FF4B4B] text-[#EA2B2B]" />
+          </div>
+
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-6">
             <SectionCard title="Người dùng theo vai trò" subtitle="Đang hoạt động / tổng số — bấm để xem danh sách">
               <div className="flex flex-col gap-3">

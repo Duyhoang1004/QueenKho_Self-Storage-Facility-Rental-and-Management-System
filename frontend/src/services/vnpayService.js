@@ -1,11 +1,10 @@
-import axios from 'axios'
-const base = 'http://localhost:8080/api/payments/vnpay'
+import api, { API_ORIGIN } from './api'
 
-const authConfig = () => {
-  const token = sessionStorage.getItem('accessToken')
-  return token ? { headers: { Authorization: `Bearer ${token}` } } : {}
-}
+// Đi qua cùng instance `api` (gắn token + tự xử lý 401); URL tuyệt đối nên baseURL /api/v1 bị bỏ qua
+const base = `${API_ORIGIN}/api/payments/vnpay`
 
-export const createVnpayPayment = async (reservationId) => (await axios.post(`${base}/create`, { reservationId }, authConfig())).data
-export const createVnpayRenewal = async (contractId, months) => (await axios.post(`${base}/create-renewal`, { contractId, months }, authConfig())).data
-export const getVnpayStatus = async (orderId) => (await axios.get(`${base}/status/${encodeURIComponent(orderId)}`, authConfig())).data
+export const createVnpayPayment = async (reservationId) => (await api.post(`${base}/create`, { reservationId })).data
+export const createVnpayRenewal = async (contractId, months) => (await api.post(`${base}/create-renewal`, { contractId, months })).data
+// UC-20: trả khoản nợ phí sự cố (DAMAGE_FEE) còn chờ thanh toán
+export const createVnpayDebt = async (paymentId) => (await api.post(`${base}/create-debt`, { paymentId })).data
+export const getVnpayStatus = async (orderId) => (await api.get(`${base}/status/${encodeURIComponent(orderId)}`)).data

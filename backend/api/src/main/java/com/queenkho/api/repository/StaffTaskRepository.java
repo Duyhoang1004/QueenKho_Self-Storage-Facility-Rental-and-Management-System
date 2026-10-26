@@ -57,6 +57,15 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
               @Param("staff") User staff,
               @Param("now") LocalDateTime now);
 
+    // Flow 5: Manager giao task cho nhân viên — task chưa có người (OPEN) hoặc đổi người đang làm (IN_PROGRESS).
+    // Điều kiện nằm trong câu UPDATE giống claim: task vừa bị người khác nhận / vừa quá hạn → 0 dòng.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'IN_PROGRESS', t.staff = :staff, t.claimedAt = :now " +
+            "WHERE t.id = :taskId AND t.status IN ('OPEN', 'IN_PROGRESS') AND t.dueAt > :now")
+    int assign(@Param("taskId") Integer taskId,
+               @Param("staff") User staff,
+               @Param("now") LocalDateTime now);
+
     // UC-17: Manager gỡ người nhận → task về OPEN cho nhân viên khác nhận
     @Modifying(clearAutomatically = true)
     @Query("UPDATE StaffTask t SET t.status = 'OPEN', t.staff = NULL, t.claimedAt = NULL " +

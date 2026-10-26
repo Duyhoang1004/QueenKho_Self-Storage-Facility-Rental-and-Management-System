@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { requestCheckout } from '../services/contractService'
+import { useEffect, useState } from 'react'
+import { getRenewalQuote, requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
 
 function formatVND(v) {
@@ -102,19 +102,34 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     return `${d}/${m}/${y}`
   }
 
-  // Tính giá & chiết khấu
-  const getPricing = (months) => {
-    const subtotal = basePrice * months
-    let discountPercent = 0
-    if (months === 12) discountPercent = 10
-    else if (months === 6) discountPercent = 5
+  // Flow 4 / 6: báo giá 4 gói lấy từ backend — cùng hàm tính với VNPAY (ưu đãi gia hạn của BOM,
+  // phí trễ theo chính sách gắn HĐ, = 0 nếu quản lý đã miễn phí trễ)
+  const [quotes, setQuotes] = useState([])
+  const contractId = contract?.contractId
+  useEffect(() => {
+    if (!isOpen || !contractId || !isRenewable) return undefined
+    let cancelled = false
+    getRenewalQuote(contractId)
+      .then((data) => { if (!cancelled) setQuotes(Array.isArray(data) ? data : []) })
+      .catch(() => { if (!cancelled) setQuotes([]) })
+    return () => { cancelled = true }
+  }, [isOpen, contractId, isRenewable])
+  const quoteOf = (months) => quotes.find((q) => q.months === months)
 
+  // Dự phòng khi chưa tải được báo giá (bảng mặc định 0/0/5/10%)
+  const getPricing = (months) => {
+    const quote = quoteOf(months)
+    if (quote) {
+      return { subtotal: Number(quote.subtotal), discountPercent: quote.discountPercent, discountAmount: Number(quote.discountAmount), total: Number(quote.rentAmount) }
+    }
+    const subtotal = basePrice * months
+    const discountPercent = months === 12 ? 10 : months === 6 ? 5 : 0
     const discountAmount = Math.round((subtotal * discountPercent) / 100)
-    const total = subtotal - discountAmount
-    return { subtotal, discountPercent, discountAmount, total }
+    return { subtotal, discountPercent, discountAmount, total: subtotal - discountAmount }
   }
 
   const currentPricing = getPricing(selectedMonths)
+  const currentQuote = quoteOf(selectedMonths)
   const getTerminationGraceFee = () => {
     if (!isTerminationPending || !contract?.endDate) return 0
     const end = new Date(`${contract.endDate}T00:00:00`)
@@ -123,10 +138,14 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     if (daysPast < 2 || daysPast > 5) return 0
     return Math.round(basePrice / 30) * (daysPast - 1)
   }
-  const lateFee = contract?.status === 'OVERDUE'
-    ? Number(contract?.lateFeeAmount || 0)
-    : getTerminationGraceFee()
-  const totalPayment = currentPricing.total + lateFee
+  const lateFee = currentQuote
+    ? Number(currentQuote.lateFeeAmount || 0)
+    : contract?.status === 'OVERDUE'
+      ? Number(contract?.lateFeeAmount || 0)
+      : getTerminationGraceFee()
+  const lateFeeWaived = Boolean(currentQuote?.lateFeeWaived || contract?.lateFeeWaived)
+  const totalPayment = currentQuote ? Number(currentQuote.totalAmount) : currentPricing.total + lateFee
+  const maxRenewalDiscount = Math.max(0, ...[1, 3, 6, 12].map((m) => getPricing(m).discountPercent))
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
   const handleRenewSubmit = async (e) => {
@@ -358,15 +377,19 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 <span className="font-title-md text-xs sm:text-sm text-slate-800 font-semibold">
                   Chọn gói thời gian gia hạn thêm:
                 </span>
-                <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến 10%</span>
+                {maxRenewalDiscount > 0 && (
+                  <span className="text-xs text-blue-600 font-semibold">Tiết kiệm đến {maxRenewalDiscount}%</span>
+                )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { m: 1, label: '+1 Tháng', desc: 'Chu kỳ gốc', discount: 0 },
-                  { m: 3, label: '+3 Tháng', desc: 'Không ưu đãi', discount: 0 },
-                  { m: 6, label: '+6 Tháng', desc: 'Giảm 5%', popular: true, discount: 5 },
-                  { m: 12, label: '+12 Tháng', desc: 'Giảm 10%', best: true, discount: 10 },
-                ].map((item) => {
+                  { m: 1, label: '+1 Tháng' },
+                  { m: 3, label: '+3 Tháng' },
+                  { m: 6, label: '+6 Tháng', popular: true },
+                  { m: 12, label: '+12 Tháng', best: true },
+                ].map((base) => {
+                  const discount = getPricing(base.m).discountPercent
+                  const item = { ...base, discount, desc: discount > 0 ? `Giảm ${discount}%` : base.m === 1 ? 'Chu kỳ gốc' : 'Không ưu đãi' }
                   const isSelected = selectedMonths === item.m
                   return (
                     <button
@@ -420,6 +443,15 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
                   <span>Chiết khấu kỳ hạn dài:</span>
                   <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
+                </div>
+              )}
+              {contract?.status === 'OVERDUE' && lateFeeWaived && (
+                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold bg-emerald-50/90 p-2.5 rounded-lg border border-emerald-200">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-emerald-600">volunteer_activism</span>
+                    Phí trễ hạn ({contract.overdueDays || 0} ngày):
+                  </span>
+                  <span className="font-bold">Đã được quản lý miễn</span>
                 </div>
               )}
               {contract?.status === 'OVERDUE' && lateFee > 0 && (

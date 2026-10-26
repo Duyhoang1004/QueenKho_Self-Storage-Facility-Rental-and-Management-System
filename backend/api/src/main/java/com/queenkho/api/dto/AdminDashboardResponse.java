@@ -21,6 +21,8 @@ public class AdminDashboardResponse {
     private List<FacilityItem> facilitiesWithoutManager;   // PR-A4: cơ sở ACTIVE chưa có FM ACTIVE
     private long logsToday;
     private List<ActivityLogResponse> recentLogs;          // 10 log mới nhất
+    private long loginsToday;                              // đăng nhập thành công từ 0h hôm nay
+    private long failedLoginsToday;                        // đăng nhập thất bại từ 0h hôm nay
 
     @NoArgsConstructor
     @AllArgsConstructor

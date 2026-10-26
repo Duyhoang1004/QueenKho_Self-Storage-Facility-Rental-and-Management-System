@@ -13,6 +13,13 @@ export async function claimStaffTask(taskId, staffId) {
   return res.data
 }
 
+// Flow 5: Facility Manager giao task cho 1 nhân viên cùng cơ sở (hoặc đổi người đang làm)
+// → trả task đã cập nhật (IN_PROGRESS + staffName). Người giao lấy từ token.
+export async function assignStaffTask(taskId, staffId) {
+  const res = await api.post(`/staff-tasks/${taskId}/assign`, null, { params: { staffId } })
+  return res.data
+}
+
 // UC-17: Facility Manager gỡ người nhận → task về OPEN
 export async function unassignStaffTask(taskId, managerId) {
   const res = await api.post(`/staff-tasks/${taskId}/unassign`, null, { params: { managerId } })

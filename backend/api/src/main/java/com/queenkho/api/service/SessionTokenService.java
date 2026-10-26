@@ -32,4 +32,26 @@ public class SessionTokenService {
         }
         return userId;
     }
+
+    // PR-90: dùng trong AccessControlFilter — không ném lỗi, trả null nếu thiếu / sai token
+    public Integer findUserId(String authorizationHeader) {
+        String token = extractToken(authorizationHeader);
+        return token == null ? null : sessions.get(token);
+    }
+
+    // Đăng xuất / tài khoản bị khoá giữa phiên → huỷ token
+    public void revoke(String authorizationHeader) {
+        String token = extractToken(authorizationHeader);
+        if (token != null) {
+            sessions.remove(token);
+        }
+    }
+
+    private static String extractToken(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authorizationHeader.substring(7).trim();
+        return token.isEmpty() ? null : token;
+    }
 }

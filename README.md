@@ -129,6 +129,10 @@ Script sẽ tự động:
 | Ô kho         | 42       | Mã `KV-<cơ sở>-<zone><phòng>`, vd `KV-TB-A101`                          |
 | Tài khoản     | 29       | Xem mục 4 — Tài khoản kiểm thử                                          |
 
+> **Đã có DB và muốn giữ dữ liệu?** Không chạy lại `QueenKho_full.sql`, chỉ chạy các file cập nhật (chạy lại nhiều lần không sao):
+> `Update_rental_policy_uc07.sql` → `Update_hoan_thien_flow.sql` (ưu đãi gói, miễn phí trễ, lịch sử đăng nhập — 26/10/2026).
+> Dùng `sqlcmd` thì thêm `-I -f 65001`, ví dụ: `sqlcmd -S localhost -U sa -P 12345 -I -f 65001 -i sql_script/Update_hoan_thien_flow.sql`
+
 > Các file cũ (`QueenKho.sql`, `QueenKhoDuLieuMau_UC09.sql`, `rental_policies_data.sql`, `Update_activity_logs.sql`, `setup_test_env.sql`) đã được gộp vào `QueenKho_full.sql`.  
 > Khi thêm bảng / cột mới: sửa **`QueenKho_full.sql`** (backend dùng `ddl-auto: validate` nên schema phải khớp Entity).
 

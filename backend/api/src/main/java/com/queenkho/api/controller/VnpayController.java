@@ -19,6 +19,7 @@ public class VnpayController {
     }
     public record ReservationRequest(Integer reservationId) {}
     public record RenewalRequest(Integer contractId, Integer months) {}
+    public record DebtRequest(Integer paymentId) {}
     @PostMapping("/create") public Map<String, Object> create(@RequestBody ReservationRequest request, HttpServletRequest http) {
         Integer userId = sessions.requireUser(http.getHeader("Authorization"));
         return service.createReservation(request.reservationId(), userId, http.getRemoteAddr());
@@ -26,6 +27,11 @@ public class VnpayController {
     @PostMapping("/create-renewal") public Map<String, Object> createRenewal(@RequestBody RenewalRequest request, HttpServletRequest http) {
         Integer userId = sessions.requireUser(http.getHeader("Authorization"));
         return service.createRenewal(request.contractId(), request.months(), userId, http.getRemoteAddr());
+    }
+    // UC-20: trả khoản nợ phí sự cố còn PENDING
+    @PostMapping("/create-debt") public Map<String, Object> createDebt(@RequestBody DebtRequest request, HttpServletRequest http) {
+        Integer userId = sessions.requireUser(http.getHeader("Authorization"));
+        return service.createDebtPayment(request.paymentId(), userId, http.getRemoteAddr());
     }
     @GetMapping("/return") public ResponseEntity<Void> result(@RequestParam Map<String, String> params) {
         String destination = service.returnDestination(params);
@@ -42,6 +48,13 @@ public class VnpayController {
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
         return ResponseEntity.status(ex.getStatus())
                 .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    // Trả lỗi đúng format chung { error, message } để FE hiện được câu báo lỗi tiếng Việt
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<?> handleStatusException(org.springframework.web.server.ResponseStatusException ex) {
+        return ResponseEntity.status(ex.getStatusCode())
+                .body(Map.of("error", "PAYMENT_ERROR", "message", ex.getReason() != null ? ex.getReason() : "Lỗi thanh toán"));
     }
 }
 

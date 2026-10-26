@@ -113,7 +113,14 @@ public class LateFeeService {
         BigDecimal maxFee = depositHeld.multiply(maxPercent).setScale(0, RoundingMode.HALF_UP);
         BigDecimal lateFeeAmount = calculatedFee.min(maxFee).min(depositHeld);
 
-        boolean isMaxReached = lateFeeAmount.compareTo(maxFee) >= 0;
+        // Flow 6: FM đã miễn phí trễ cho đợt quá hạn này (chính sách cơ sở cho phép) → không thu phí trễ.
+        // Số ngày quá hạn, khoá PIN, mốc thanh lý vẫn giữ nguyên.
+        boolean waived = Boolean.TRUE.equals(contract.getLateFeeWaived());
+        if (waived) {
+            lateFeeAmount = BigDecimal.ZERO;
+        }
+
+        boolean isMaxReached = !waived && lateFeeAmount.compareTo(maxFee) >= 0;
 
         // PR-Q5: OVERDUE thì PIN bị khóa ở mức hiển thị
         boolean isPinLocked = "OVERDUE".equalsIgnoreCase(contract.getStatus());
@@ -135,6 +142,7 @@ public class LateFeeService {
                 .estimatedDepositRefund(estimatedRefund)
                 .ratePerDay(ratePerDay)
                 .maxPercent(maxPercent)
+                .lateFeeWaived(waived)
                 .build();
     }
 }

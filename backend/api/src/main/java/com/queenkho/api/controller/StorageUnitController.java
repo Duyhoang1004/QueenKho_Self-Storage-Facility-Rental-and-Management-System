@@ -21,6 +21,9 @@ public class StorageUnitController {
 
     private final StorageUnitService storageUnitService;
 
+    // PR-90: FM chỉ thao tác ô kho thuộc cơ sở của mình (danh sách đã bị AccessControlFilter khoá facilityId)
+    private final com.queenkho.api.security.OwnershipGuard ownershipGuard;
+
     /**
      * UC-06: Lấy danh sách ô kho và bộ chỉ số KPI vận hành của cơ sở
      * GET /api/v1/storage-units?facilityId=1&status=AVAILABLE&floor=Tầng 1&keyword=A101
@@ -52,6 +55,7 @@ public class StorageUnitController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<StorageUnitDetailResponse> getStorageUnitDetail(@PathVariable String id) {
+        ownershipGuard.checkStorageUnit(id);
         return ResponseEntity.ok(storageUnitService.getStorageUnitDetail(id));
     }
 
@@ -88,6 +92,7 @@ public class StorageUnitController {
             @RequestParam(required = false) Integer actorUserId,
             @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
 
+        ownershipGuard.checkStorageUnit(id);
         Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
         StorageUnitDetailResponse updated = storageUnitService.updateStorageUnit(id, request, effectiveUserId);
         return ResponseEntity.ok(updated);
@@ -104,6 +109,7 @@ public class StorageUnitController {
             @RequestParam(required = false) Integer actorUserId,
             @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
 
+        ownershipGuard.checkStorageUnit(id);
         Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
         StorageUnitDetailResponse updated = storageUnitService.updateStorageUnitStatus(id, request, effectiveUserId);
         return ResponseEntity.ok(updated);
@@ -119,6 +125,7 @@ public class StorageUnitController {
             @RequestParam(required = false) Integer actorUserId,
             @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
 
+        ownershipGuard.checkStorageUnit(id);
         Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
         storageUnitService.deleteStorageUnit(id, effectiveUserId);
         return ResponseEntity.ok(Map.of("message", "Đã xóa ô kho " + id + " thành công"));

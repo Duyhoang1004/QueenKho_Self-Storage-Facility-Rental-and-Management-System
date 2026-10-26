@@ -572,6 +572,7 @@
 #        log doi thanh "[RESCHEDULE] ..." voi user_id = managerId (truoc day la id khach)
 # POST /api/v1/reservations/{id}/no-show    : "staffId" tro thanh BAT BUOC
 #        thieu -> 400 { "error": "INVALID_ACTION", "message": "Thiếu người thao tác (staffId)" }
+#   (26/10/2026 — PR-90: managerId / staffId nay do backend tu dien theo token, FE gui hay khong deu duoc)
 
 ## UC-07: Chính sách thuê kho
 
@@ -586,3 +587,76 @@ Mọi request dưới đây dùng `Authorization: Bearer <accessToken>` từ đ�
 - `POST /api/v1/rental-policies/facilities/{facilityId}/activate/{policyId}`: chọn đúng phiên bản đã có làm bản đang áp dụng (BOM), không tạo bản mới, HTTP 200.
 
 Body tạo phiên bản: `{ "depositMonthMultiplier": 1, "cancelFeePercent": 50, "cancelFreeHours": 24, "lateFeePercentPerDay": 10 }`. Các trường là số nguyên; phí trễ mỗi ngày từ 0–50%. Phiên bản mới có trần phí trễ cố định 50% tiền cọc và mốc xét thanh lý cố định 30 ngày. Response thêm `id`, `facilityId`, `version`, `active`, `lateFeeMaxPercent`, `liquidationDays`, `createdAt`, `createdBy`. Chính sách đã phát hành không có API ghi đè/xoá vì hợp đồng cũ giữ `rental_policy_id` đã ký. Chạy `sql_script/Update_rental_policy_uc07.sql` để thêm `is_active` và ràng buộc mỗi cơ sở chỉ có một bản đang áp dụng.
+
+## Hoàn thiện 5 flow Must-have (26/10/2026)
+
+DB đang có dữ liệu: chạy `sql_script/Update_hoan_thien_flow.sql` (thêm cột ưu đãi / miễn phí trễ, `reservations.rent_discount_percent`, bảng `login_history`). DB mới: `QueenKho_full.sql` đã gộp sẵn.
+
+### PR-90 — Xác thực & phân quyền theo token (áp dụng cho MỌI API)
+
+- Mọi request `/api/**` đi qua `AccessControlFilter` + bảng quyền `AccessPolicy` (backend/api/.../security).
+- API công khai (không cần token): `POST /auth/login|register|logout`, `GET /facilities`, `/facilities/search`, `/facilities/cities`, `/facilities/{id}/availability`, `/facilities/{id}/pricing`, `GET /unit-types`, VNPAY `/return` `/ipn`.
+- API còn lại cần `Authorization: Bearer <accessToken>`:
+  - thiếu / sai / hết hạn token → `401 { "error": "UNAUTHORIZED" }`; tài khoản bị khoá giữa phiên → `401 ACCOUNT_LOCKED` (token bị huỷ).
+  - vai trò không có quyền → `403 FORBIDDEN_ROLE`; API chưa khai báo trong bảng quyền → `403 API_NOT_DECLARED`.
+  - bản ghi theo id không thuộc mình → `403 FORBIDDEN_OWNER` (khách) / `403 FORBIDDEN_FACILITY` (Staff, FM).
+- Backend **ghi đè** tham số danh tính theo token (FE gửi sai cũng không có tác dụng): `actorUserId`, header `X-User-Id`, `userId` (trừ màn nhật ký Admin), `customerId` (khách), `staffId` (Staff), `managerId` (FM), `facilityId` + header `X-Facility-Id` (Staff, FM — luôn là cơ sở được gán). Body của tạo đơn / No-Show / dời lịch / thanh lý / liên hệ quá hạn / báo cáo liên hệ cũng lấy người thao tác từ token.
+- `GET /api/v1/admin/roles/access-matrix` (ADMIN): ma trận quyền backend đang áp dụng
+  `[{ "code": "TASK_MANAGE", "name": "...", "description": "...", "roleScopes": { "FACILITY_MANAGER": "Cơ sở được gán" } }]`.
+- `POST /api/v1/auth/logout`: huỷ token phía server + ghi lịch sử đăng xuất. Luôn 200 `{ "message": "Đã đăng xuất" }`.
+
+### Flow 1 / 4 — Giá gói & ưu đãi theo chính sách
+
+- `GET /api/v1/facilities/{id}/pricing` (công khai):
+  `{ "facilityId": 1, "policyVersion": 2, "depositMonthMultiplier": 1, "bookingPackages": [{ "months": 3, "discountPercent": 5 }, ...], "renewalPackages": [...], "welcomeVoucher": 100000, "cancelFreeHours": 24, "cancelFeePercent": 50, "lateFeePercentPerDay": 10, "lateFeeMaxPercent": 50, "liquidationDays": 30, "allowLateFeeWaiver": true }`
+- `POST /api/v1/reservations`: % ưu đãi gói được chốt vào đơn (`rent_discount_percent`) như tiền cọc. Lỗi mới:
+  `409 NO_AVAILABILITY` (hết suất đúng loại + cơ sở, PR-B1), `400` "Cơ sở này đang tạm ngưng nhận đặt chỗ mới".
+- `POST /api/v1/rental-policies/facilities/{facilityId}` (BOM): body thêm (không bắt buộc, bỏ trống = kế thừa bản đang hiệu lực)
+  `bookingDiscount3m|6m|12m`, `renewalDiscount3m|6m|12m` (0–50) và `allowLateFeeWaiver` (true/false). Response trả thêm đúng các trường này.
+
+### Flow 1 — Gán ô (sửa L-11)
+
+- `GET /api/v1/reservations/{id}/available-units`: chỉ ô AVAILABLE **cùng cơ sở + cùng loại** với đơn; hết thì trả `[]`.
+- `POST /api/v1/reservations/{id}/assign`: ô khác cơ sở / khác loại → `400`; 2 người gán cùng 1 ô → người sau `400` "không khả dụng".
+
+### Flow 2 — Check-in (sửa L-17)
+
+- `POST /api/v1/staff-tasks/{id}/check-in`: trước ngày khách hẹn nhận kho → `409 CHECK_IN_TOO_EARLY`.
+
+### Flow 5 — FM giao việc
+
+- `POST /api/v1/staff-tasks/{id}/assign?staffId=13` (FM): task `OPEN` → `IN_PROGRESS` với người được giao; task `IN_PROGRESS` → đổi người. Trả `StaffTaskResponse`. Log `[TASK_ASSIGN]`.
+  Lỗi: `400 INVALID_STAFF` (không phải Staff cùng cơ sở), `400 STAFF_INACTIVE`, `409 TASK_ALREADY_ASSIGNED`, `409 TASK_NOT_ASSIGNABLE` (task REFUND / đã đóng), `409 TASK_OVERDUE`, `403 FORBIDDEN_FACILITY`.
+- `POST /api/v1/staff-tasks/{id}/claim`: không cần `staffId` nữa (lấy từ token).
+
+### Flow 5 / 4 — Báo cáo cơ sở cho FM
+
+- FM được gọi `GET /api/v1/bom/revenue/overview|timeline|by-unit-type|transactions|occupancy` — `facilityId` luôn bị khoá về cơ sở của FM. `by-facility` (so sánh các cơ sở) chỉ BOM.
+- `GET /api/v1/facilities/{id}/dashboard`: FM chỉ xem cơ sở của mình (`403 FORBIDDEN_FACILITY`).
+
+### Flow 6 — Gia hạn & miễn phí trễ
+
+- `GET /api/v1/contracts/{id}/renewal-quote` (khách chủ HĐ): báo giá 4 gói, đúng số VNPAY sẽ thu
+  `[{ "months": 1, "discountPercent": 0, "monthlyPrice": 500000, "subtotal": 500000, "discountAmount": 0, "rentAmount": 500000, "lateFeeAmount": 150000, "lateFeeWaived": false, "totalAmount": 650000 }, ...]`
+- `POST /api/v1/contracts/{id}/waive-late-fee` (FM) body `{ "reason": "5–400 ký tự" }` → `{ "message", "contractId", "lateFeeWaived": true, "waivedAmount" }`. Huỷ link gia hạn đang chờ (đã chốt phí trễ cũ). Log `[FEE_WAIVE]`.
+  Lỗi: `400 INVALID_INPUT` (lý do), `403 WAIVER_NOT_ALLOWED` (BOM tắt trong chính sách), `403 FORBIDDEN_FACILITY`, `409 CONTRACT_NOT_OVERDUE`, `409 LATE_FEE_ALREADY_WAIVED`.
+- `GET /api/v1/contracts/{id}` và `GET /contracts/manager/overdue`: trả thêm `lateFeeWaived`, `lateFeeWaiverNote` (HĐ chi tiết có thêm `facilityId`). Gia hạn thành công / đợt quá hạn mới → cờ tự tắt. Thanh lý vẫn trừ phí trễ theo D-09.
+
+### UC-20 — Thanh toán của khách
+
+- `GET /api/v1/payments/my` (khách, lấy từ token):
+  `{ "summary": { "totalPaid", "totalRefunded", "pendingRefund", "outstandingDebt", "depositOffset" }, "debts": [PaymentItem], "overdueContracts": [{ "contractId", "contractCode", "reservationId", "facilityName", "overdueDays", "lateFeeAmount", "lateFeeWaived" }], "transactions": [PaymentItem] }`
+  `PaymentItem = { id, transactionCode, paymentType, paymentMethod, amount, status, paidAt, renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName }`
+- `POST /api/payments/vnpay/create-debt` body `{ "paymentId": 70 }` → `{ "orderId": "QKF...", "payUrl", "amount" }`. Chỉ khoản `DAMAGE_FEE / VNPAY / PENDING` của chính khách (`403` / `409`).
+  IPN thành công → khoản nợ `SUCCESS`, log `[DEBT_PAID]`, khách hết bị chặn `CUSTOMER_HAS_DEBT`. Khách huỷ trên VNPAY → khoản nợ **vẫn PENDING**. VNPAY trả về `/thanh-toan?orderId=...&vnpResponse=..`.
+- Lỗi VNPAY (create / create-renewal / create-debt / status) nay trả `{ "error": "PAYMENT_ERROR", "message": "..." }`.
+
+### Admin — Lịch sử đăng nhập
+
+- `GET /api/v1/admin/login-history?keyword=&eventType=LOGIN_SUCCESS|LOGIN_FAILED|LOGOUT&from=YYYY-MM-DD&to=YYYY-MM-DD&page=0&size=20` (ADMIN)
+  → `PageResponse<{ id, userId, email, fullName, role, eventType, failureReason, ipAddress, userAgent, createdAt }>`. `400 INVALID_INPUT` khi loại sự kiện sai / from > to.
+- `GET /api/v1/admin/dashboard`: thêm `loginsToday`, `failedLoginsToday`.
+
+### Log mới (PR-A9)
+
+`[RESERVATION_CREATE]` (khách tạo đơn) · `[UNIT_ASSIGN]` (FM gán ô) · `[TASK_ASSIGN]` · `[FEE_WAIVE]` · `[DEBT_PAID]`.

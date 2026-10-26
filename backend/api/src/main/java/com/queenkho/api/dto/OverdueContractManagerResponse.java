@@ -36,5 +36,9 @@ public class OverdueContractManagerResponse {
 
     @com.fasterxml.jackson.annotation.JsonProperty("refundRequested")
     private Boolean refundRequested;
+
+    // Flow 6: FM đã miễn phí trễ cho đợt quá hạn này (kèm lý do, người, thời điểm)
+    private Boolean lateFeeWaived;
+    private String lateFeeWaiverNote;
 }
 

@@ -13,7 +13,16 @@ const EMPTY_FORM = {
   cancelFeePercent: '20',
   cancelFreeHours: '24',
   lateFeePercentPerDay: '10',
+  // Flow 4: % ưu đãi tiền thuê theo gói (0–50%)
+  bookingDiscount3m: '5',
+  bookingDiscount6m: '10',
+  bookingDiscount12m: '15',
+  renewalDiscount3m: '0',
+  renewalDiscount6m: '5',
+  renewalDiscount12m: '10',
 };
+
+const DISCOUNT_KEYS = ['bookingDiscount3m', 'bookingDiscount6m', 'bookingDiscount12m', 'renewalDiscount3m', 'renewalDiscount6m', 'renewalDiscount12m'];
 
 function formatDate(value) {
   if (!value) return '—';
@@ -65,6 +74,11 @@ function validatePolicy(form) {
   if (form.lateFeePercentPerDay === '' || number('lateFeePercentPerDay') < 0 || number('lateFeePercentPerDay') > 50) {
     errors.lateFeePercentPerDay = 'Phí trễ hạn phải từ 0% đến 50% mỗi ngày.';
   }
+  DISCOUNT_KEYS.forEach((key) => {
+    if (number(key) < 0 || number(key) > 50) {
+      errors[key] = 'Ưu đãi phải từ 0% đến 50%.';
+    }
+  });
   return errors;
 }
 
@@ -139,6 +153,13 @@ function PolicySection({ icon, title, expanded, onToggle, children, tone = 'blue
       background: 'bg-[#F3E3FF]',
       hover: 'hover:bg-[#EBD3FC]',
       icon: 'border-[#CE82FF] bg-[#F3E3FF] text-[#A559D9]',
+    },
+    green: {
+      border: 'border-[#58CC02]',
+      softBorder: 'border-[#B4E885]',
+      background: 'bg-[#EAF7DD]',
+      hover: 'hover:bg-[#DDF2C8]',
+      icon: 'border-[#B4E885] bg-[#EAF7DD] text-[#58A700]',
     },
   };
   const color = tones[tone] || tones.blue;
@@ -227,7 +248,10 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
     cancelFeePercent: String(policy.cancelFeePercent),
     cancelFreeHours: String(policy.cancelFreeHours),
     lateFeePercentPerDay: String(policy.lateFeePercentPerDay),
+    ...Object.fromEntries(DISCOUNT_KEYS.map((key) => [key, String(policy[key] ?? EMPTY_FORM[key])])),
   } : EMPTY_FORM);
+  // Flow 4: BOM cho phép / không cho phép FM miễn phí trễ cho khách (không nằm trong form số)
+  const [allowLateFeeWaiver, setAllowLateFeeWaiver] = useState(policy ? policy.allowLateFeeWaiver !== false : true);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -249,7 +273,7 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
     setSaving(true);
     try {
       setSubmitError('');
-      await createRentalPolicyVersion(facility.id, form);
+      await createRentalPolicyVersion(facility.id, { ...form, allowLateFeeWaiver });
       onSaved(policy ? `Đã tạo phiên bản mới cho ${facility.name}.` : `Đã thiết lập chính sách cho ${facility.name}.`);
     } catch (error) {
       setSubmitError(rentalPolicyError(error));
@@ -282,6 +306,27 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
           <NumberField label="Phí hủy đặt chỗ" name="cancelFeePercent" value={form.cancelFeePercent} onChange={handleChange} error={errors.cancelFeePercent} min="0" max="100" suffix="%" hint="Tỷ lệ khấu trừ khi hủy" />
           <NumberField label="Thời gian hủy miễn phí" name="cancelFreeHours" value={form.cancelFreeHours} onChange={handleChange} error={errors.cancelFreeHours} min="0" suffix="giờ" hint="Tính trước giờ hẹn nhận kho" />
           <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="50" suffix="%/ngày" hint="Tính trên cọc đang giữ; tối đa 50% cọc" />
+        </div>
+
+        {/* Flow 4: ưu đãi theo gói thuê — gói 1 tháng luôn 0% */}
+        <div className="mt-4 border-t-2 border-[#F0F0F0] pt-4">
+          <p className="text-sm font-black text-[#4B4B4B]">Ưu đãi tiền thuê theo gói</p>
+          <p className="mb-3 text-xs font-medium text-[#777777]">Đặt mới chốt % vào đơn lúc khách đặt; gia hạn tính theo % đang hiệu lực lúc khách gia hạn.</p>
+          <div className="grid grid-cols-1 gap-x-5 gap-y-3 md:grid-cols-3">
+            <NumberField label="Đặt mới 3 tháng" name="bookingDiscount3m" value={form.bookingDiscount3m} onChange={handleChange} error={errors.bookingDiscount3m} min="0" max="50" suffix="%" />
+            <NumberField label="Đặt mới 6 tháng" name="bookingDiscount6m" value={form.bookingDiscount6m} onChange={handleChange} error={errors.bookingDiscount6m} min="0" max="50" suffix="%" />
+            <NumberField label="Đặt mới 12 tháng" name="bookingDiscount12m" value={form.bookingDiscount12m} onChange={handleChange} error={errors.bookingDiscount12m} min="0" max="50" suffix="%" />
+            <NumberField label="Gia hạn 3 tháng" name="renewalDiscount3m" value={form.renewalDiscount3m} onChange={handleChange} error={errors.renewalDiscount3m} min="0" max="50" suffix="%" />
+            <NumberField label="Gia hạn 6 tháng" name="renewalDiscount6m" value={form.renewalDiscount6m} onChange={handleChange} error={errors.renewalDiscount6m} min="0" max="50" suffix="%" />
+            <NumberField label="Gia hạn 12 tháng" name="renewalDiscount12m" value={form.renewalDiscount12m} onChange={handleChange} error={errors.renewalDiscount12m} min="0" max="50" suffix="%" />
+          </div>
+          <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-2xl border-2 border-[#E5E5E5] p-3 hover:bg-[#F7F7F7]">
+            <input type="checkbox" checked={allowLateFeeWaiver} onChange={(e) => setAllowLateFeeWaiver(e.target.checked)} className="mt-0.5 h-4 w-4 cursor-pointer" />
+            <span>
+              <span className="block text-sm font-bold text-[#4B4B4B]">Cho phép Quản lý cơ sở miễn phí trễ</span>
+              <span className="block text-xs font-medium text-[#777777]">FM được miễn phí trễ (kèm lý do, có ghi log) cho khách quá hạn có lý do chính đáng.</span>
+            </span>
+          </label>
         </div>
 
         {submitError && <p role="alert" className="mt-3 text-sm text-[#FF4B4B]">{submitError}</p>}
@@ -333,6 +378,9 @@ function HistoryModal({ facility, history, currentPolicyId, onClose, onActivate,
                 <span>Trễ hạn: <strong className="text-[#4B4B4B]">{item.lateFeePercentPerDay}%/ngày</strong></span>
                 <span>Trần phí: <strong className="text-[#4B4B4B]">{item.lateFeeMaxPercent}%</strong></span>
                 <span>Thanh lý: <strong className="text-[#4B4B4B]">{item.liquidationDays} ngày</strong></span>
+                <span>Ưu đãi đặt: <strong className="text-[#4B4B4B]">{item.bookingDiscount3m ?? 5}/{item.bookingDiscount6m ?? 10}/{item.bookingDiscount12m ?? 15}%</strong></span>
+                <span>Ưu đãi gia hạn: <strong className="text-[#4B4B4B]">{item.renewalDiscount3m ?? 0}/{item.renewalDiscount6m ?? 5}/{item.renewalDiscount12m ?? 10}%</strong></span>
+                <span>Miễn phí trễ: <strong className="text-[#4B4B4B]">{item.allowLateFeeWaiver === false ? 'Không' : 'Cho phép'}</strong></span>
               </div>
             </article>;
           })}
@@ -347,7 +395,7 @@ export default function BomRentalPoliciesPage() {
   const [policies, setPolicies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedFacilityId, setSelectedFacilityId] = useState('');
-  const [expandedSections, setExpandedSections] = useState({ cancellation: false, overdue: false, liquidation: false });
+  const [expandedSections, setExpandedSections] = useState({ cancellation: false, discount: false, overdue: false, liquidation: false });
   const [activeFacility, setActiveFacility] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -520,13 +568,19 @@ export default function BomRentalPoliciesPage() {
                       <p className="text-[11px] font-medium text-[#AFAFAF]">Các quy định được hệ thống áp dụng tự động cho cơ sở đã chọn</p>
                     </div>
                   </div>
-                  <span className="duo-badge border-2 border-[#84D8FF] bg-[#DDF4FF] text-[10px] text-[#1CB0F6]">3 nhóm quy định</span>
+                  <span className="duo-badge border-2 border-[#84D8FF] bg-[#DDF4FF] text-[10px] text-[#1CB0F6]">4 nhóm quy định</span>
                 </div>
                 <div className="space-y-3 rounded-2xl border-2 border-[#E5E5E5] bg-[#F7F7F7] p-3">
                   <PolicySection icon="currency_exchange" title="Chính sách đặt cọc & hủy đặt chỗ" tone="orange" expanded={expandedSections.cancellation} onToggle={() => toggleSection('cancellation')}>
                     <RuleLine icon="account_balance_wallet" title={`Cọc khi đặt kho: ${selectedPolicy.depositMonthMultiplier} tháng tiền thuê`} description="Cọc được tính từ giá niêm yết theo chính sách hiện hành và lưu cố định vào đơn đặt kho." tone="green" />
                     <RuleLine icon="timer" title={`Hủy trước giờ nhận kho trên ${selectedPolicy.cancelFreeHours} giờ: Hoàn 100%`} description="Mốc tính là giờ hẹn nhận kho; khách hàng được hoàn lại toàn bộ số tiền đã thanh toán." tone="blue" />
                     <RuleLine icon="percent" title={`Hủy trong ${selectedPolicy.cancelFreeHours} giờ trước khi nhận: Phí ${selectedPolicy.cancelFeePercent}% cọc`} description="Phí hủy được khấu trừ trên tiền cọc; phần tiền còn lại được tạo yêu cầu hoàn." tone="orange" />
+                  </PolicySection>
+
+                  <PolicySection icon="sell" title="Ưu đãi theo gói & miễn phí" tone="green" expanded={expandedSections.discount} onToggle={() => toggleSection('discount')}>
+                    <RuleLine icon="add_shopping_cart" title={`Đặt mới 3 / 6 / 12 tháng: giảm ${selectedPolicy.bookingDiscount3m ?? 5}% / ${selectedPolicy.bookingDiscount6m ?? 10}% / ${selectedPolicy.bookingDiscount12m ?? 15}% tiền thuê`} description="% ưu đãi được chốt vào đơn lúc khách đặt; đổi chính sách sau đó không làm đổi số tiền của đơn đã tạo." tone="green" />
+                    <RuleLine icon="event_repeat" title={`Gia hạn 3 / 6 / 12 tháng: giảm ${selectedPolicy.renewalDiscount3m ?? 0}% / ${selectedPolicy.renewalDiscount6m ?? 5}% / ${selectedPolicy.renewalDiscount12m ?? 10}%`} description="Áp dụng theo chính sách đang hiệu lực lúc khách bấm gia hạn." tone="blue" />
+                    <RuleLine icon="volunteer_activism" title={selectedPolicy.allowLateFeeWaiver === false ? 'Không cho phép miễn phí trễ' : 'Cho phép FM miễn phí trễ (kèm lý do)'} description="FM miễn phí trễ cho khách quá hạn có lý do chính đáng; mọi lần miễn đều được ghi nhật ký [FEE_WAIVE]." tone="orange" />
                   </PolicySection>
 
                   <PolicySection icon="running_with_errors" title="Xử lý thanh toán trễ hạn" tone="red" expanded={expandedSections.overdue} onToggle={() => toggleSection('overdue')}>

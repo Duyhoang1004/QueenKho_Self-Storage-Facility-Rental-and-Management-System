@@ -55,4 +55,12 @@ public class RentalContract {
 
     @Column(name = "rfid_card_code", length = 50)
     private String rfidCardCode;
+
+    // Flow 6: FM miễn phí trễ cho đợt quá hạn hiện tại (chỉ khi chính sách cơ sở cho phép).
+    // Tự về false khi hợp đồng hết quá hạn (gia hạn xong) hoặc bắt đầu một đợt quá hạn mới.
+    @Column(name = "late_fee_waived", nullable = false)
+    private Boolean lateFeeWaived = false;
+
+    @Column(name = "late_fee_waiver_note", length = 500)
+    private String lateFeeWaiverNote;
 }

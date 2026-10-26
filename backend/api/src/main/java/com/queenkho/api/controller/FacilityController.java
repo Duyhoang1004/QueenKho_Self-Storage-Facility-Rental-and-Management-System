@@ -32,6 +32,12 @@ public class FacilityController {
     @Autowired
     private FacilityService facilityService;
 
+    @Autowired
+    private com.queenkho.api.service.PricingService pricingService;
+
+    @Autowired
+    private com.queenkho.api.security.OwnershipGuard ownershipGuard;
+
     // ──────────────────────────────────────────────────────
     // UC-09 API 1: Lấy tất cả cơ sở ACTIVE kèm tổng ô trống
     // GET /api/v1/facilities
@@ -80,12 +86,21 @@ public class FacilityController {
     }
 
     // ──────────────────────────────────────────────────────
+    // Flow 1 / 4: chính sách giá đang áp dụng (gói, % ưu đãi, cọc, quy định huỷ, phí trễ)
+    // GET /api/v1/facilities/{id}/pricing — công khai, trang đặt kho dùng
+    // ──────────────────────────────────────────────────────
+    @GetMapping("/{id}/pricing")
+    public ResponseEntity<?> getFacilityPricing(@PathVariable Integer id) {
+        return ResponseEntity.ok(pricingService.facilityPricing(id));
+    }
+
     // ──────────────────────────────────────────────────────
     // UC-30: FM Dashboard tổng quan vận hành cơ sở
-    // GET /api/v1/facilities/{id}/dashboard
+    // GET /api/v1/facilities/{id}/dashboard — FM chỉ xem được cơ sở của mình (PR-90)
     // ──────────────────────────────────────────────────────
     @GetMapping("/{id}/dashboard")
     public ResponseEntity<?> getFacilityDashboard(@PathVariable Integer id) {
+        ownershipGuard.checkFacility(id);
         try {
             return ResponseEntity.ok(facilityService.getFacilityDashboardStats(id));
         } catch (FacilityException e) {

@@ -11,6 +11,8 @@ import {
   resolveSupportTask,
   suggestAccessPin,
 } from '../../services/staffTaskService';
+import SimulationButton from '../../components/SimulationButton';
+import { simulateArriveToday, simulateNoShow } from '../../services/simulationService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -793,6 +795,27 @@ export default function StaffTaskDetailPage() {
         </div>
         <span className={`duo-badge whitespace-nowrap ${status.cls}`}>{status.label}</span>
       </div>
+
+      {/* Demo: tua thời gian cho task bàn giao chưa check-in (ẩn khi backend tắt giả lập) */}
+      {task.taskType === 'CHECK_IN' && task.contractStatus === 'PENDING_CHECK_IN'
+        && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
+        <div className="flex flex-wrap items-start gap-3 mb-6">
+          <SimulationButton
+            label="Khách tới hôm nay"
+            description="Dời lịch hẹn của khách về hôm nay (hạn 21:00) để check-in ngay, không phải chờ đúng ngày hẹn."
+            onRun={() => simulateArriveToday(task.id)}
+            onDone={() => loadTask()}
+          />
+          {isManager && task.reservationId && (
+            <SimulationButton
+              label="Khách bùng hẹn (đủ No-Show)"
+              description="Lùi giờ hẹn 49 giờ và ghi 2 lần gọi khách thất bại cách nhau 25 giờ. Sau đó đơn hiện ở tab No-Show với nút huỷ đã bật."
+              onRun={() => simulateNoShow(task.reservationId)}
+              onDone={() => loadTask()}
+            />
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)] gap-6 items-start">
         {/* Cột trái: thông tin khách, ô kho, hợp đồng */}

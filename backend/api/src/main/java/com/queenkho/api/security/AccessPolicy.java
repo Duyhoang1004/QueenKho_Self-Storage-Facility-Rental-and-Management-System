@@ -84,6 +84,13 @@ public class AccessPolicy {
                 "Tạo / khoá tài khoản, gán vai trò và cơ sở", scopes("ADMIN", SYSTEM));
         group("ADMIN_AUDIT", "Nhật ký hoạt động & lịch sử đăng nhập",
                 "Theo dõi ai làm gì, đăng nhập lúc nào, từ đâu", scopes("ADMIN", SYSTEM));
+        // Demo: nút "⚡ Giả lập" tua thời gian (tắt bằng queenkho.simulation.enabled=false)
+        group("DEV_SIM_CHECKIN", "Giả lập demo: khách tới nhận kho hôm nay",
+                "Dời lịch hẹn về hôm nay để check-in ngay", scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
+        group("DEV_SIM_CUSTOMER", "Giả lập demo: giữ chỗ 15 phút, ticket tự đóng",
+                "Tua giờ để thấy job tự huỷ đơn / tự đóng ticket", scopes("CUSTOMER", OWN, "FACILITY_MANAGER", FACILITY));
+        group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, thanh lý",
+                "Tua 48h / 3 ngày / 31 ngày để demo chế tài", scopes("FACILITY_MANAGER", FACILITY));
 
         // ---------- Luật: khớp từ trên xuống, luật đầu tiên khớp được dùng ----------
         // Công khai
@@ -173,6 +180,14 @@ public class AccessPolicy {
         rule(null, "/api/v1/admin/activity-logs/**", "ADMIN_AUDIT");
         rule(null, "/api/v1/admin/login-history/**", "ADMIN_AUDIT");
         rule(null, "/api/v1/admin/dashboard/**", "ADMIN_AUDIT");
+
+        // Demo giả lập
+        rule("GET", "/api/v1/dev/simulation/status", AUTHENTICATED);
+        rule("POST", "/api/v1/dev/simulation/tasks/{id}/arrive-today", "DEV_SIM_CHECKIN");
+        rule("POST", "/api/v1/dev/simulation/reservations/{id}/expire-hold", "DEV_SIM_CUSTOMER");
+        rule("POST", "/api/v1/dev/simulation/support-requests/{id}/auto-close", "DEV_SIM_CUSTOMER");
+        rule("POST", "/api/v1/dev/simulation/reservations/{id}/trigger-noshow", "DEV_SIM_MANAGER");
+        rule("POST", "/api/v1/dev/simulation/contracts/{id}/make-overdue", "DEV_SIM_MANAGER");
     }
 
     private static Map<String, String> scopes(String... roleAndScope) {

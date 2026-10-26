@@ -36,9 +36,25 @@ Cột **KQ** để người test điền ✅ / ❌ / ⚠️.
 
 | Loại | Lệnh | Mong đợi |
 |---|---|---|
-| Unit test backend (109 bài) | `cd backend/api && ./mvnw test` | `BUILD SUCCESS`. Riêng `AccessPolicyTest` quét **mọi endpoint** của mọi controller: API nào quên khai báo quyền thì test fail |
-| E2E 5 flow qua API thật | `bash docs/test-e2e/e2e-5-flow.sh` (Git Bash, backend + DB đang chạy) | `KẾT QUẢ: 59 PASS / 0 FAIL`. Script ký IPN VNPAY sandbox nên không cần nhập thẻ |
+| Unit test backend (120 bài) | `cd backend/api && ./mvnw test` | `BUILD SUCCESS`. Riêng `AccessPolicyTest` quét **mọi endpoint** của mọi controller: API nào quên khai báo quyền thì test fail |
+| E2E 5 flow + giả lập qua API thật | `bash docs/test-e2e/e2e-5-flow.sh` (Git Bash, backend + DB đang chạy; backend ở cổng khác thì thêm `E2E_HOST=http://localhost:8090` phía trước) | `KẾT QUẢ: 80 PASS / 0 FAIL`. Script ký IPN VNPAY sandbox nên không cần nhập thẻ; chạy lại nhiều lần được (tự dọn dữ liệu `RFID-E2E-*` của lần trước) |
 | Frontend | `cd frontend && npm run build` | build OK |
+
+### 0.2 Nút "⚡ Giả lập" — tua thời gian khi demo
+
+Các quy tắc phụ thuộc thời gian (giữ chỗ 15 phút, hẹn nhận kho, No-Show 48h, quá hạn, thanh lý 30 ngày, tự đóng ticket 3 ngày) không thể chờ thật trong buổi demo. Nút **⚡ Giả lập** (viền đứt màu cam) chỉ sửa **mốc thời gian**, sau đó nghiệp vụ thật chạy tiếp: job, nút No-Show, nút Thanh lý, phí trễ…
+
+- Mỗi lần bấm có hộp xác nhận và ghi nhật ký `[SIMULATION]` kèm người bấm, nên hội đồng xem `/admin/logs` sẽ thấy rõ đây là thao tác tua thời gian.
+- Tắt khi chạy thật: `SIMULATION_ENABLED=false` → toàn bộ nút tự ẩn.
+
+| Nút | Ở đâu (ai bấm) | Kết quả ngay sau khi bấm | Bước demo tiếp theo |
+|---|---|---|---|
+| ⚡ Khách tới hôm nay | Chi tiết task Check-in (Staff `/staff/tasks/:id` hoặc FM `/manager/tasks/:id`) | Ngày hẹn và HĐ dời về hôm nay, task hạn 21:00 | Staff lập biên bản check-in ngay (trước đó báo `CHECK_IN_TOO_EARLY`) |
+| ⚡ Quá 15p | `/kho-cua-toi`, đơn "Chờ thanh toán" (Khách) | Đơn **Hết hạn**, suất kho được nhả | Tìm kho thấy số ô trống tăng lại |
+| ⚡ Khách bùng hẹn (đủ No-Show) | Chi tiết task Check-in của FM (`/manager/tasks/:id`) | Giờ hẹn lùi 49h + 2 lần gọi thất bại cách 25h | `/manager/pending` → tab No-Show: nút huỷ No-Show đã bật |
+| ⚡ Quá hạn 3 ngày | Chi tiết HĐ của FM (`/manager/contracts/:id`) | HĐ **Quá hạn**, PIN bị khoá, phí trễ 3 ngày | `/manager/overdue` → **Miễn phí trễ**; khách gia hạn |
+| ⚡ Quá hạn 31 ngày (thanh lý) | Chi tiết HĐ, hoặc nút "⚡ 31 ngày" ở `/manager/overdue` | Vượt mốc 30 ngày | Nút **Thanh lý** được bật |
+| ⚡ Quá 3 ngày | `/ho-tro`, ticket "Chờ xác nhận" (Khách) | Hệ thống tự **đóng** ticket | Xem log `[SUPPORT_AUTO_CLOSE]` |
 
 ---
 
@@ -49,9 +65,9 @@ Cột **KQ** để người test điền ✅ / ❌ / ⚠️.
 | 0–2 | BOM | `/bom/policies` | Mở chính sách Tân Bình: cọc, huỷ, phí trễ, **ưu đãi gói 3/6/12 tháng**, **cho phép FM miễn phí trễ**. Tạo phiên bản mới, xem lịch sử phiên bản |
 | 2–5 | Khách | `/tim-va-dat-kho` → `/booking` | Tìm kho, chọn Mini M 3 tháng: giá theo ưu đãi BOM vừa đặt. Thanh toán VNPAY sandbox → "Đã đặt cọc" |
 | 5–7 | FM | `/manager/pending` → `/manager/tasks` | Gán ô (chỉ hiện ô đúng loại) → hợp đồng chờ check-in → bấm **Giao việc** cho Staff 1 |
-| 7–9 | Staff 1 | `/staff` | Mở task (đã được giao) → biên bản 5 mục, PIN, RFID → hợp đồng ACTIVE |
+| 7–9 | Staff 1 | `/staff` | Mở task (đã được giao). Nếu khách hẹn ngày khác: bấm **⚡ Khách tới hôm nay**. Lập biên bản 5 mục, PIN, RFID → hợp đồng ACTIVE |
 | 9–11 | Khách | `/kho-cua-toi`, `/ho-tro`, `/thanh-toan` | Xem PIN, gửi yêu cầu hỗ trợ khoá, xem lịch sử thanh toán |
-| 11–13 | FM | `/manager/reports`, `/manager/overdue` | Báo cáo cơ sở (ô trống / đang thuê / doanh thu / quá hạn, xuất CSV). Miễn phí trễ cho 1 hợp đồng quá hạn |
+| 11–13 | FM | `/manager/reports`, `/manager/contracts/:id`, `/manager/overdue` | Báo cáo cơ sở (xuất CSV). Ở chi tiết HĐ bấm **⚡ Quá hạn 3 ngày** → sang màn quá hạn **Miễn phí trễ**; **⚡ 31 ngày** → **Thanh lý** |
 | 13–15 | Admin | `/admin/roles`, `/admin/login-history` | Ma trận quyền **lấy thẳng từ backend**. Thử KH2 gọi API của KH1 → 403. Xem lịch sử đăng nhập |
 
 ---

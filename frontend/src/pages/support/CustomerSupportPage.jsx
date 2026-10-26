@@ -9,6 +9,8 @@ import {
   reopenSupportTicket,
 } from '../../services/supportService';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
+import SimulationButton from '../../components/SimulationButton';
+import { simulateTicketAutoClose } from '../../services/simulationService';
 
 export const ISSUE_TYPE_META = {
   LOCK_ISSUE: {
@@ -711,6 +713,13 @@ export default function CustomerSupportPage() {
                         <span className="material-symbols-outlined text-[18px]">thumb_up</span>
                         Đã ổn (Đóng yêu cầu)
                       </button>
+                      {/* Demo: tua 4 ngày để thấy hệ thống tự đóng ticket (PR-52) */}
+                      <SimulationButton
+                        label="Quá 3 ngày"
+                        description={`Cho ticket ${ticket.ticketCode} đã xử lý quá 3 ngày mà khách không phản hồi: hệ thống tự đóng yêu cầu.`}
+                        onRun={() => simulateTicketAutoClose(ticket.id)}
+                        onDone={() => fetchData()}
+                      />
                     </div>
                   </div>
                 )}

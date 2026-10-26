@@ -4,8 +4,10 @@
 # Lưu ý: body JSON trong script để KHÔNG DẤU — Git Bash trên Windows truyền tiếng Việt cho curl.exe sai mã hoá.
 # E2E 5 flow Must-have qua API thật (backend localhost:8080, DB QueenKhoDB)
 SCR="$(cd "$(dirname "$0")" && pwd)"
-API=http://localhost:8080/api/v1
-PAY=http://localhost:8080/api/payments/vnpay
+# Đổi cổng nếu backend chạy chỗ khác: E2E_HOST=http://localhost:8090 bash docs/test-e2e/e2e-5-flow.sh
+HOST=${E2E_HOST:-http://localhost:8080}
+API=$HOST/api/v1
+PAY=$HOST/api/payments/vnpay
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✅ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
@@ -17,8 +19,15 @@ call() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -X $m -H "Autho
 code() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -o /dev/null -w "%{http_code}" -X $m -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d "$d" "$u"; else curl -s -o /dev/null -w "%{http_code}" -X $m -H "Authorization: Bearer $t" "$u"; fi; }
 ipn()  { curl -s "$PAY/ipn?$(node "$SCR/vnp_sign.js" "$1" "$2" "${3:-00}")" | jget "o.RspCode"; }
 TODAY=$(date +%Y-%m-%d)
-# Chuẩn bị: đúng 1 ô Mini M trống ở Tân Bình (để thử chống overbooking), không còn đơn chờ giữ suất
-sql "UPDATE rental_contracts SET status='ACTIVE', end_date=DATEADD(month,1,CAST(GETDATE() AS date)) WHERE status='OVERDUE' AND customer_id=(SELECT id FROM users WHERE email='khachhang1@gmail.com');
+# Chuẩn bị (chỉ đụng dữ liệu do chính script tạo ra — thẻ RFID-E2E-*):
+#  - kết thúc HĐ e2e lần chạy trước để trả ô; nhả ô bảo trì không còn HĐ nào giữ
+#  - đúng 1 ô Mini M trống ở Tân Bình (để thử chống overbooking), không còn đơn chờ giữ suất
+sql "UPDATE reservations SET status='COMPLETED' WHERE id IN (SELECT reservation_id FROM rental_contracts WHERE rfid_card_code LIKE 'RFID-E2E-%' AND status IN ('ACTIVE','OVERDUE'));
+     UPDATE storage_units SET status='AVAILABLE' WHERE id IN (SELECT storage_unit_id FROM rental_contracts WHERE rfid_card_code LIKE 'RFID-E2E-%' AND status IN ('ACTIVE','OVERDUE'));
+     UPDATE rental_contracts SET status='TERMINATED', access_pin_code=NULL, rfid_card_code=NULL WHERE rfid_card_code LIKE 'RFID-E2E-%' AND status IN ('ACTIVE','OVERDUE');
+     UPDATE storage_units SET status='AVAILABLE' WHERE facility_id=1 AND unit_type_id<>1 AND status='MAINTENANCE'
+       AND id NOT IN (SELECT storage_unit_id FROM rental_contracts WHERE status IN ('ACTIVE','OVERDUE','PENDING_CHECK_IN','TERMINATION_PENDING'));
+     UPDATE rental_contracts SET status='ACTIVE', end_date=DATEADD(month,1,CAST(GETDATE() AS date)) WHERE status='OVERDUE' AND customer_id=(SELECT id FROM users WHERE email='khachhang1@gmail.com');
      UPDATE storage_units SET status='MAINTENANCE' WHERE facility_id=1 AND unit_type_id=1 AND status='AVAILABLE';
      UPDATE storage_units SET status='AVAILABLE' WHERE id=(SELECT TOP 1 id FROM storage_units WHERE facility_id=1 AND unit_type_id=1 AND status='MAINTENANCE' ORDER BY id);
      UPDATE reservations SET status='EXPIRED' WHERE status='PENDING';" >/dev/null
@@ -128,8 +137,10 @@ C2=$(sql "SELECT id FROM rental_contracts WHERE reservation_id=$RES2"); T3=$(sql
 call POST $ST1 "$API/staff-tasks/$T3/claim" >/dev/null
 PIN2=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
 code POST $ST1 "$API/staff-tasks/$T3/check-in" "{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN2\",\"rfidCardCode\":\"RFID-E2E-$RES2\"}" >/dev/null
-# Giả lập job quá hạn: hết hạn 3 ngày trước
-sql "UPDATE rental_contracts SET end_date=DATEADD(day,-3,CAST(GETDATE() AS date)), status='OVERDUE' WHERE id=$C2" >/dev/null
+# Nút "⚡ Giả lập: Quá hạn 3 ngày" (thay cho sửa SQL tay)
+check "Staff không dùng được giả lập quá hạn" "$(code POST $ST1 "$API/dev/simulation/contracts/$C2/make-overdue?days=3")" "403"
+check "Giả lập quá hạn 3 ngày" "$(call POST $FM "$API/dev/simulation/contracts/$C2/make-overdue?days=3" | jget 'o.endDate')" "$(date -d '-3 day' +%Y-%m-%d)"
+check "HĐ chuyển OVERDUE" "$(sql "SELECT status FROM rental_contracts WHERE id=$C2")" "OVERDUE"
 Q=$(call GET $KH "$API/contracts/$C2/renewal-quote")
 check "Báo giá gia hạn 1 tháng: thuê $PRICE + phí trễ 3 ngày 10%×3 cọc = $LATE" "$(echo "$Q" | jget 'o[0].lateFeeAmount+"/"+o[0].totalAmount')" "$LATE/$RENEW_TOTAL"
 check "Lý do quá ngắn → 400" "$(code POST $FM "$API/contracts/$C2/waive-late-fee" '{"reason":"ok"}')" "400"
@@ -141,6 +152,56 @@ P=$(call POST $KH "$PAY/create-renewal" "{\"contractId\":$C2,\"months\":1}")
 check "Link gia hạn đúng $PRICE" "$(echo "$P" | jget 'o.amount')" "$PRICE"
 check "IPN gia hạn" "$(ipn $(echo "$P" | jget 'o.orderId') $PRICE)" "00"
 check "HĐ ACTIVE lại, cờ miễn reset" "$(sql "SELECT status+'/'+CAST(late_fee_waived AS varchar) FROM rental_contracts WHERE id=$C2")" "ACTIVE/0"
+
+echo "== Giả lập demo (nút ⚡)"
+pick_type() { sql "SELECT TOP 1 unit_type_id FROM storage_units WHERE facility_id=1 AND unit_type_id<>1 AND status='AVAILABLE' GROUP BY unit_type_id ORDER BY COUNT(*) DESC"; }
+new_paid_assigned() { # $1 = ngày bắt đầu → in: reservationId contractId taskId
+  local t r p u c tk
+  t=$(pick_type); r=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$t,\"startDate\":\"$1\",\"durationMonths\":1}" | jget 'o.id')
+  p=$(call POST $KH "$PAY/create" "{\"reservationId\":$r}"); ipn $(echo "$p" | jget 'o.orderId') $(echo "$p" | jget 'o.amount') >/dev/null
+  u=$(call GET $FM "$API/reservations/$r/available-units" | jget 'o[0].id'); code POST $FM "$API/reservations/$r/assign" "{\"storageUnitId\":\"$u\"}" >/dev/null
+  c=$(sql "SELECT id FROM rental_contracts WHERE reservation_id=$r"); tk=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$c AND task_type='CHECK_IN'")
+  echo "$r $c $tk"
+}
+check "Trạng thái giả lập: đang bật" "$(call GET $KH "$API/dev/simulation/status" | jget 'o.enabled')" "true"
+
+# ⚡ Quá 15 phút giữ chỗ
+R5=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$(pick_type),\"startDate\":\"$TODAY\",\"durationMonths\":1}" | jget 'o.id')
+check "KH2 giả lập đơn của KH1 → 403" "$(code POST $KH2 "$API/dev/simulation/reservations/$R5/expire-hold")" "403"
+check "⚡ Quá 15p → hệ thống huỷ ngay (EXPIRED)" "$(call POST $KH "$API/dev/simulation/reservations/$R5/expire-hold" | jget 'o.status')" "EXPIRED"
+
+# ⚡ Khách tới hôm nay
+TOMORROW=$(date -d '+1 day' +%Y-%m-%d)
+read R6 C6 T6K <<< "$(new_paid_assigned $TOMORROW)"
+call POST $ST1 "$API/staff-tasks/$T6K/claim" >/dev/null
+PIN6=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
+CI6="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN6\",\"rfidCardCode\":\"RFID-E2E-$R6\"}"
+check "Hẹn ngày mai → check-in hôm nay bị chặn" "$(call POST $ST1 "$API/staff-tasks/$T6K/check-in" "$CI6" | jget 'o.error')" "CHECK_IN_TOO_EARLY"
+check "⚡ Khách tới hôm nay" "$(code POST $ST1 "$API/dev/simulation/tasks/$T6K/arrive-today")" "200"
+check "Check-in được ngay sau giả lập" "$(code POST $ST1 "$API/staff-tasks/$T6K/check-in" "$CI6")" "200"
+
+# ⚡ Quá hạn 31 ngày → thanh lý
+check "Chưa quá hạn đủ 30 ngày → chưa thanh lý được" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=3"; code POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly som"}')" "200409"
+check "⚡ Quá hạn 31 ngày" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=31")" "200"
+check "Thanh lý được" "$(code POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly sau 31 ngay"}')" "200"
+check "HĐ LIQUIDATED" "$(sql "SELECT status FROM rental_contracts WHERE id=$C6")" "LIQUIDATED"
+
+# ⚡ Khách bùng hẹn → No-Show thật
+read R7 C7 T7K <<< "$(new_paid_assigned $TOMORROW)"
+check "Chưa đủ điều kiện → No-Show bị chặn" "$(code POST $FM "$API/reservations/$R7/no-show" '{"reason":"E2E"}')" "409"
+check "⚡ Khách bùng hẹn" "$(code POST $FM "$API/dev/simulation/reservations/$R7/trigger-noshow")" "200"
+check "Đơn hiện ở tab No-Show, đủ điều kiện" "$(call GET $FM "$API/reservations/overdue-no-show" | jget "o.filter(x=>x.id==$R7).map(x=>x.noShowEligible)[0]")" "true"
+check "FM xử lý No-Show thành công" "$(code POST $FM "$API/reservations/$R7/no-show" '{"reason":"E2E khach khong den"}')" "200"
+check "Ô được nhả lại" "$(sql "SELECT su.status FROM rental_contracts rc JOIN storage_units su ON su.id=rc.storage_unit_id WHERE rc.id=$C7")" "AVAILABLE"
+# ⚡ Ticket đã xử lý quá 3 ngày → tự đóng (dùng HĐ C2 đang thuê)
+TK=$(call POST $KH "$API/support-requests" "{\"contractId\":$C2,\"issueType\":\"CLEANING\",\"description\":\"E2E can ve sinh khu vuc truoc o kho\"}" | jget 'o.id')
+ST=$(sql "SELECT TOP 1 id FROM facility_tasks WHERE support_request_id=$TK AND task_type='SUPPORT' ORDER BY id DESC")
+call POST $FM "$API/staff-tasks/$ST/assign?staffId=$STAFF1_ID" >/dev/null
+code POST $ST1 "$API/staff-tasks/$ST/resolve-support" '{"resolutionNote":"Da ve sinh xong"}' >/dev/null
+check "Ticket đã xử lý (RESOLVED)" "$(sql "SELECT status FROM support_requests WHERE id=$TK")" "RESOLVED"
+check "⚡ Quá 3 ngày → hệ thống tự đóng" "$(call POST $KH "$API/dev/simulation/support-requests/$TK/auto-close" | jget 'o.status')" "CLOSED"
+
+check "Nhật ký có [SIMULATION]" "$(sql "SELECT CASE WHEN COUNT(*)>=5 THEN 'ok' ELSE 'thieu' END FROM activity_logs WHERE action LIKE '\[SIMULATION]%' ESCAPE '\' AND created_at > DATEADD(minute,-10,SYSDATETIME())")" "ok"
 
 echo "== Flow 4b: Báo cáo"
 check "FM xem báo cáo cơ sở mình (bị khoá facilityId)" "$(code GET $FM "$API/bom/revenue/overview?facilityId=3&year=2026")" "200"

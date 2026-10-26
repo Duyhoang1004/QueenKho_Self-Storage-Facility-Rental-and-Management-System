@@ -1522,6 +1522,7 @@ public class StaffTaskService {
                 .contractId(contract != null ? contract.getId() : null)
                 .contractCode(contract != null ? contract.getContractCode() : null)
                 .reservationCode(reservationCode)
+                .reservationId(contract != null && contract.getReservation() != null ? contract.getReservation().getId() : null)
                 .contractStatus(contract != null ? contract.getStatus() : null)
                 .contractStartDate(contract != null ? contract.getStartDate() : null)
                 .contractEndDate(contract != null ? contract.getEndDate() : null)

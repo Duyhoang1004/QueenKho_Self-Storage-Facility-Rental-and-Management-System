@@ -8,6 +8,13 @@
       "port": 8080
     },
     {
+      "name": "backend-8090",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "mvn", "-f", "D:\\FPTU\\FPTU\\Semester5\\SWP391\\project\\QueenKho\\backend\\api\\pom.xml", "spring-boot:run", "-Dspring-boot.run.arguments=--server.port=8090"],
+      "port": 8090,
+      "autoPort": false
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "cd /d D:\\FPTU\\FPTU\\Semester5\\SWP391\\project\\QueenKho\\frontend && npm run dev"],

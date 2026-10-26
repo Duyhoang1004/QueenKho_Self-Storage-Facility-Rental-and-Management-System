@@ -9,7 +9,7 @@
 * **Tổng số lỗi ghi nhận**: 12 lỗi
 * **Đã khắc phục hoàn tất (`RESOLVED`)**: 12 lỗi
 * **Đang xử lý / Kiểm thử (`IN_PROGRESS` / `TESTING`)**: 0 lỗi
-* **Bảo vệ bằng kiểm thử tự động**: 109 bài Unit Test (JUnit 5 + Mockito) — cập nhật 26/10/2026
+* **Bảo vệ bằng kiểm thử tự động**: 120 bài Unit Test (JUnit 5 + Mockito) — cập nhật 26/10/2026
 
 ---
 

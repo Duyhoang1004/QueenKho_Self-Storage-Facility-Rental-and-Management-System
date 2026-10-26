@@ -4,6 +4,8 @@ import { getMyReservations } from "../../services/reservationService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
 import { createVnpayPayment } from "../../services/vnpayService";
+import SimulationButton from "../../components/SimulationButton";
+import { simulateExpireHold } from "../../services/simulationService";
 
 const STATUS_META = {
   PENDING: {
@@ -632,6 +634,15 @@ export default function MyReservationsPage() {
                               </span>
                               HỦY ĐƠN
                             </button>
+                            {/* Demo: tua 16 phút để thấy hệ thống tự huỷ đơn chưa cọc */}
+                            {r.status === "PENDING" && (
+                              <SimulationButton
+                                label="Quá 15p"
+                                description={`Cho đơn ${r.reservationCode} quá 15 phút giữ chỗ mà chưa thanh toán: hệ thống tự huỷ đơn và nhả suất kho.`}
+                                onRun={() => simulateExpireHold(r.id)}
+                                onDone={() => setReloadKey((k) => k + 1)}
+                              />
+                            )}
                             </>
                           )}
                         </div>

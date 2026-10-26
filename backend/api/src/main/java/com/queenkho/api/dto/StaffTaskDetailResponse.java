@@ -31,6 +31,7 @@ public class StaffTaskDetailResponse {
     private Integer contractId;
     private String contractCode;
     private String reservationCode;
+    private Integer reservationId;   // Demo: nút giả lập No-Show cần id đơn
     private String contractStatus;
     private LocalDate contractStartDate;
     private LocalDate contractEndDate;

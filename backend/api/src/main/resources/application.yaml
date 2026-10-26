@@ -24,3 +24,8 @@ vnpay:
   return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/payments/vnpay/return}
   frontend-url: ${VNPAY_FRONTEND_URL:http://localhost:5173}
   local-return-confirm: ${VNPAY_LOCAL_RETURN_CONFIRM:true}
+
+queenkho:
+  # Nút "⚡ Giả lập" tua thời gian để demo (DemoSimulationService). Tắt khi chạy thật: SIMULATION_ENABLED=false
+  simulation:
+    enabled: ${SIMULATION_ENABLED:true}

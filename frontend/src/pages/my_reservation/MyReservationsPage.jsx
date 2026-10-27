@@ -92,6 +92,15 @@ function getActualMonths(r) {
   return Number(r.durationMonths || 1);
 }
 
+function getStorageLocation(r) {
+  const parts = [
+    r.storageUnitFloor,
+    r.storageUnitZone ? `Khu ${r.storageUnitZone}` : null,
+    r.storageUnitRoomNumber ? `Phòng ${r.storageUnitRoomNumber}` : null,
+  ].filter(Boolean);
+  return parts.join(" • ");
+}
+
 function readUserId() {
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   return user.userId ?? null;
@@ -148,6 +157,13 @@ export default function MyReservationsPage() {
               endDate: c.endDate,
               contractId: c.contractId,
               contractCode: c.contractCode,
+              storageUnitId: c.storageUnitId || r.storageUnitId,
+              storageUnitFloor: c.floor || r.storageUnitFloor,
+              storageUnitZone: c.zone || r.storageUnitZone,
+              storageUnitRoomNumber: c.roomNumber || r.storageUnitRoomNumber,
+              facilityName: c.facilityName || r.facilityName,
+              facilityAddress: c.facilityAddress || r.facilityAddress,
+              facilityHotline: c.facilityHotline || r.facilityHotline,
             };
           }
           return r;
@@ -197,7 +213,8 @@ export default function MyReservationsPage() {
         customerInfo: {
           fullName: reservation.customerName || sessionUser.fullName || "",
           phone: reservation.customerPhone || sessionUser.phone || "",
-          email: sessionUser.email || "",
+          email: reservation.customerEmail || sessionUser.email || "",
+          cccd: reservation.customerCccd || sessionUser.cccd || "",
         },
         selectedMonths: reservation.durationMonths,
         startDate: reservation.startDate,
@@ -206,6 +223,7 @@ export default function MyReservationsPage() {
         storage: {
           branch: reservation.facilityName,
           address: reservation.facilityAddress,
+          hotline: reservation.facilityHotline,
           name: reservation.unitTypeName,
           area: Number(reservation.areaSqm || 0),
           dimension: reservation.dimensions,
@@ -421,18 +439,18 @@ export default function MyReservationsPage() {
 
         {!loading && !error && visibleReservations.length > 0 && (
           <div className="max-w-full overflow-x-auto bg-white custom-scrollbar pb-2">
-            <table className="w-full min-w-[1080px] table-fixed text-left border-collapse">
+            <table className="w-full min-w-[1180px] table-fixed text-left border-collapse">
               <colgroup>
-                <col className="w-[112px]" />
-                <col className="w-[105px]" />
-                <col className="w-[125px]" />
-                <col className="w-[82px]" />
                 <col className="w-[100px]" />
-                <col className="w-[68px]" />
-                <col className="w-[175px]" />
-                <col className="w-[92px]" />
-                <col className="w-[190px]" />
-                <col className="w-[158px]" />
+                <col className="w-[165px]" />
+                <col className="w-[135px]" />
+                <col className="w-[135px]" />
+                <col className="w-[90px]" />
+                <col className="w-[58px]" />
+                <col className="w-[150px]" />
+                <col className="w-[78px]" />
+                <col className="w-[155px]" />
+                <col className="w-[114px]" />
               </colgroup>
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
@@ -489,25 +507,41 @@ export default function MyReservationsPage() {
                       </td>
 
                       {/* Cột 2: Cơ sở */}
-                      <td className="px-3 py-3 whitespace-nowrap font-extrabold text-[#4B4B4B]">
-                        {r.facilityName.replace("QueenKho ", "")}
+                      <td className="px-3 py-3 align-top">
+                        <div className="font-extrabold text-[#4B4B4B]">
+                          {(r.facilityName || "Chưa cập nhật").replace("QueenKho ", "")}
+                        </div>
+                        <div className="mt-1 flex items-start gap-1 text-[10px] font-bold leading-4 text-[#AFAFAF]">
+                          <span className="material-symbols-outlined mt-px text-[13px] shrink-0">location_on</span>
+                          <span>{r.facilityAddress || "Địa chỉ đang cập nhật"}</span>
+                        </div>
+                        {r.facilityHotline && (
+                          <div className="mt-0.5 text-[10px] font-bold text-[#777777]">Hotline: {r.facilityHotline}</div>
+                        )}
                       </td>
 
                       {/* Cột 3: Loại kho */}
-                      <td className="px-3 py-3 whitespace-nowrap text-[#777777]">
-                        {r.unitTypeName}
+                      <td className="px-3 py-3 align-top text-[#777777]">
+                        <div>{r.unitTypeName || "Chưa cập nhật"}</div>
+                        <div className="mt-1 text-[10px] font-bold text-[#AFAFAF]">
+                          {r.dimensions || "Kích thước đang cập nhật"}
+                        </div>
                       </td>
 
                       {/* Cột 4: Ô kho */}
-                      <td className="px-3 py-3 whitespace-nowrap">
+                      <td className="px-3 py-3 align-top">
                         {r.storageUnitId ? (
-                          <span className="font-mono font-black text-[#4B4B4B]">
-                            {r.storageUnitId}
-                          </span>
+                          <div>
+                            <span className="font-mono font-black text-[#1CB0F6]">{r.storageUnitId}</span>
+                            <span className="mt-1 block text-[10px] font-bold text-[#777777]">
+                              {getStorageLocation(r) || "Vị trí đang cập nhật"}
+                            </span>
+                          </div>
                         ) : (
-                          <span className="text-[#AFAFAF] italic">
-                            Chưa gán
-                          </span>
+                          <div className="leading-4">
+                            <span className="text-[#AFAFAF] italic">Chưa gán ô</span>
+                            <span className="block text-[10px] font-bold text-[#AFAFAF]">Quản lý cơ sở sẽ phân bổ</span>
+                          </div>
                         )}
                       </td>
 

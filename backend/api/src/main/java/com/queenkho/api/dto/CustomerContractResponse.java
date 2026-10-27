@@ -69,4 +69,11 @@ public class CustomerContractResponse {
     private String heldGoodsStatus;                  // HOLDING / RETURNED / SOLD / DESTROYED / HANDED_TO_AUTHORITY
     private LocalDate heldGoodsHoldUntil;
     private String heldGoodsLocation;
+
+    // Thông tin đầy đủ để khách nhận diện đúng cơ sở và liên hệ khi đến nhận kho.
+    private String facilityName;
+    private String facilityAddress;
+    private String facilityHotline;
+    private String customerEmail;
+    private String customerCccd;
 }

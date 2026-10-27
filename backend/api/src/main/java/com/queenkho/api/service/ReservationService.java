@@ -75,6 +75,11 @@ public class ReservationService {
         return reservationRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId)
                 .stream()
                 .map(r -> {
+                    com.queenkho.api.entity.StorageUnit assignedUnit = null;
+                    if (r.getStorageUnitId() != null && !r.getStorageUnitId().isBlank()) {
+                        assignedUnit = storageUnitRepository.findById(r.getStorageUnitId()).orElse(null);
+                    }
+
                     // 1. Tính tổng tiền thực tế khách đã thanh toán thành công từ
                     // payment_transactions
                     BigDecimal actualTotalPaid;
@@ -175,7 +180,13 @@ public class ReservationService {
                             r.getCreatedAt(),
                             contractEndDate,
                             actualTotalPaid,
-                            contractId);
+                            contractId,
+                            r.getCustomer().getEmail(),
+                            r.getCustomer().getCccd(),
+                            r.getFacility().getHotline(),
+                            assignedUnit != null ? assignedUnit.getFloor() : null,
+                            assignedUnit != null ? assignedUnit.getZone() : null,
+                            assignedUnit != null ? assignedUnit.getRoomNumber() : null);
                 })
                 .toList();
     }

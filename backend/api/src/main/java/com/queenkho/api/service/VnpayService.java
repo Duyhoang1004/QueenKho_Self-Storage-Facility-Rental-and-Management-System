@@ -492,7 +492,7 @@ public class VnpayService {
 
         String note = String.format(
                 "[HOÀN TIỀN VNPAY VỀ MUỘN] Mã gốc: %s | Số tiền: %s VND | Lý do: %s",
-                originalRef, amount.toPlainString(), reason);
+                originalRef, amount.setScale(0, RoundingMode.HALF_UP).toPlainString(), reason);
         jdbcTemplate.update(
                 "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
                 "VALUES (?, 'REFUND', ?, ?, 'OPEN', ?, ?, SYSDATETIME())",

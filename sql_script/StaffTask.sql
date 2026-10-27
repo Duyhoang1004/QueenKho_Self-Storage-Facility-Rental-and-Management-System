@@ -17,7 +17,7 @@ BEGIN
         due_at DATETIME2(7) NULL,
         
         -- Field 2: Link ảnh bằng chứng nhân viên upload khi hoàn thành
-        evidence_image_url NVARCHAR(1000) NULL,
+        evidence_image_url NVARCHAR(MAX) NULL,
         
         note NVARCHAR(1000) NULL,
         created_at DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
@@ -33,7 +33,7 @@ BEGIN
     -- 2. KIỂM TRA & BỔ SUNG CỘT ẢNH BẰNG CHỨNG (NẾU CHƯA CÓ)
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('staff_tasks') AND name = 'evidence_image_url')
     BEGIN
-        ALTER TABLE staff_tasks ADD evidence_image_url NVARCHAR(1000) NULL;
+        ALTER TABLE staff_tasks ADD evidence_image_url NVARCHAR(MAX) NULL;
         PRINT N'   + Đã thêm cột evidence_image_url (Ảnh bằng chứng).';
     END
 

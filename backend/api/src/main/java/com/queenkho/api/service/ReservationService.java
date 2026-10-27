@@ -653,7 +653,7 @@ public class ReservationService {
                             : "");
 
             String penaltyNote = preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
-                    ? " (Đã trừ phí hủy: " + preview.getPenaltyAmount().toPlainString() + " VND)"
+                    ? " (Đã trừ phí hủy: " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND)"
                     : " (Hoàn toàn bộ theo chính sách)";
 
             if (hasBankInfo) {
@@ -662,7 +662,7 @@ public class ReservationService {
                         reservation.getReservationCode(),
                         reservation.getCustomer().getFullName(),
                         reservation.getCustomer().getPhone(),
-                        refundAmount.toPlainString(),
+                        refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString(),
                         penaltyNote,
                         request.getBankName().trim(),
                         request.getBankAccountNumber().trim(),
@@ -674,7 +674,7 @@ public class ReservationService {
                         reservation.getReservationCode(),
                         reservation.getCustomer().getFullName(),
                         reservation.getCustomer().getPhone(),
-                        refundAmount.toPlainString(),
+                        refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString(),
                         penaltyNote,
                         reasonText);
             }
@@ -709,7 +709,7 @@ public class ReservationService {
         String actionLog = "Người dùng ID " + reservation.getCustomer().getId()
                 + " yêu cầu hủy đơn " + reservation.getReservationCode();
         if (wasDepositPaid && preview != null) {
-            actionLog += " (Có hoàn cọc: " + preview.getRefundAmount().toPlainString() + " VND)";
+            actionLog += " (Có hoàn cọc: " + preview.getRefundAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND)";
         } else {
             actionLog += " (Không hoàn cọc)";
         }

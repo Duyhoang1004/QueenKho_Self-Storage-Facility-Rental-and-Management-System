@@ -1579,12 +1579,13 @@ public class StaffTaskService {
             facName = facilityRepository.findById(task.getFacilityId()).map(f -> f.getName()).orElse(null);
         }
 
+        java.util.Optional<com.queenkho.api.entity.Reservation> resOpt = java.util.Optional.empty();
         // Nếu contract null (task hoàn cọc đơn đặt chỗ bị hủy) -> Tìm qua reservation hoặc parse note
         if (contract == null && task.getNote() != null) {
             java.util.regex.Matcher mRes = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)").matcher(task.getNote());
             if (mRes.find()) {
                 reservationCode = mRes.group(1).trim();
-                java.util.Optional<com.queenkho.api.entity.Reservation> resOpt = reservationRepository.findByReservationCode(reservationCode);
+                resOpt = reservationRepository.findByReservationCode(reservationCode);
                 if (resOpt.isPresent()) {
                     com.queenkho.api.entity.Reservation res = resOpt.get();
                     if (res.getCustomer() != null) {
@@ -1666,6 +1667,55 @@ public class StaffTaskService {
         BigDecimal refundAmount = depositHeld.subtract(totalDamageCost).max(BigDecimal.ZERO);
         BigDecimal excessDebtAmount = totalDamageCost.subtract(depositHeld).max(BigDecimal.ZERO);
         BigDecimal depositRefund = refundAmount;
+        if (contract == null) {
+            if (resOpt != null && resOpt.isPresent()) {
+                com.queenkho.api.entity.Reservation res = resOpt.get();
+                BigDecimal resDeposit = res.getTotalDepositPaid() != null && res.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                        ? res.getTotalDepositPaid()
+                        : (res.getDepositAmount() != null ? res.getDepositAmount() : BigDecimal.ZERO);
+                depositHeld = resDeposit.setScale(0, RoundingMode.HALF_UP);
+
+                try {
+                    BigDecimal resRefund = jdbcTemplate.queryForObject(
+                            "SELECT TOP 1 amount FROM payment_transactions WHERE reservation_id = ? AND payment_type = 'REFUND' ORDER BY id DESC",
+                            BigDecimal.class, res.getId());
+                    if (resRefund != null && resRefund.compareTo(BigDecimal.ZERO) > 0) {
+                        refundAmount = resRefund.setScale(0, RoundingMode.HALF_UP);
+                        depositRefund = refundAmount;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (refundAmount.compareTo(BigDecimal.ZERO) == 0 && task.getNote() != null) {
+                java.util.regex.Matcher mRef = java.util.regex.Pattern.compile("(?:Số tiền hoàn|Hoàn tiền|Số tiền):\\s*([0-9.,]+)").matcher(task.getNote());
+                if (mRef.find()) {
+                    String val = mRef.group(1).trim();
+                    if (val.endsWith(".00")) val = val.substring(0, val.length() - 3);
+                    val = val.replace(",", "").replace(".", "");
+                    try {
+                        refundAmount = new BigDecimal(val);
+                        depositRefund = refundAmount;
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            if (depositHeld.compareTo(BigDecimal.ZERO) == 0 && refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+                depositHeld = refundAmount;
+                if (task.getNote() != null) {
+                    java.util.regex.Matcher mPen = java.util.regex.Pattern.compile("(?:Đã trừ (?:phạt )?(?:hủy trễ|phí hủy)?(?:\\s*50% cọc)?:?|Phí hủy:?)\\s*([0-9.,]+)").matcher(task.getNote());
+                    if (mPen.find()) {
+                        String val = mPen.group(1).trim();
+                        if (val.endsWith(".00")) val = val.substring(0, val.length() - 3);
+                        val = val.replace(",", "").replace(".", "");
+                        try {
+                            depositHeld = depositHeld.add(new BigDecimal(val));
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+        }
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
         BigDecimal rentPaid = BigDecimal.ZERO;
         BigDecimal breakFee = BigDecimal.ZERO;
@@ -1891,11 +1941,11 @@ public class StaffTaskService {
                         "Bắt buộc xác nhận khách hàng đã ký nhận tiền mặt tại quầy");
             }
         } else {
-            if (ftCode.isEmpty() && !hasEvidenceImg) {
+            if (!hasEvidenceImg) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_EVIDENCE_REQUIRED",
-                        "Bắt buộc nhập mã giao dịch ngân hàng (mã FT) hoặc tải ảnh biên lai khi hoàn tiền qua chuyển khoản");
+                        "Bắt buộc tải ảnh biên lai khi hoàn tiền qua chuyển khoản");
             }
-            if (ftCode.isEmpty() && hasEvidenceImg) {
+            if (ftCode.isEmpty()) {
                 ftCode = "UNC-IMAGE";
             }
         }
@@ -1951,6 +2001,9 @@ public class StaffTaskService {
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElse(task));
     }
 
+
+
+
     private static final java.util.regex.Pattern REFUND_ORIGINAL_REF = java.util.regex.Pattern.compile("Mã gốc:\\s*([A-Za-z0-9_-]+)");
     private static final java.util.regex.Pattern REFUND_RESERVATION_CODE = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)");
 
@@ -1976,6 +2029,10 @@ public class StaffTaskService {
         }
         java.util.regex.Matcher reservationCode = REFUND_RESERVATION_CODE.matcher(note);
         if (reservationCode.find()) {
+            try {
+                jdbcTemplate.update("UPDATE reservations SET status = 'REFUNDED' WHERE reservation_code = ?", reservationCode.group(1));
+            } catch (Exception ignored) {
+            }
             return jdbcTemplate.update(
                     "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME() " +
                             "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code NOT LIKE 'REF-LATE-%' " +
@@ -2188,7 +2245,9 @@ public class StaffTaskService {
             if (dmg.compareTo(BigDecimal.ZERO) == 0 && rawNote != null) {
                 java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Sự cố:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(rawNote);
                 if (m.find()) {
-                    dmg = new BigDecimal(m.group(1).replace(",", "").replace(".", ""));
+                    String val = m.group(1).trim();
+                    if (val.endsWith(".00")) val = val.substring(0, val.length() - 3);
+                    dmg = new BigDecimal(val.replace(",", "").replace(".", ""));
                 }
             }
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, dmg);

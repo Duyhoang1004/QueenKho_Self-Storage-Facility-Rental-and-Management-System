@@ -221,7 +221,7 @@ BEGIN
         status              NVARCHAR(30) NOT NULL DEFAULT 'OPEN',
         staff_id            INT NULL,
         due_at              DATETIME2 NOT NULL,
-        evidence_image_url  NVARCHAR(1000) NULL,
+        evidence_image_url  NVARCHAR(MAX) NULL,
         note                NVARCHAR(1000) NULL,
         created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
         claimed_at          DATETIME2 NULL,
@@ -249,7 +249,7 @@ ELSE
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('facility_tasks') AND name = 'evidence_image_url')
     BEGIN
-        ALTER TABLE facility_tasks ADD evidence_image_url NVARCHAR(1000) NULL;
+        ALTER TABLE facility_tasks ADD evidence_image_url NVARCHAR(MAX) NULL;
         PRINT N'   [+] Đã thêm cột evidence_image_url vào facility_tasks.';
     END
 

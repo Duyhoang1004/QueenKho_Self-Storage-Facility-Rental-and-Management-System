@@ -266,8 +266,8 @@ BEGIN
         status              NVARCHAR(30) NOT NULL DEFAULT 'OPEN', -- OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
         staff_id            INT NULL,                             -- ID người phụ trách (Staff hoặc Facility Manager)
         due_at              DATETIME2(7) NOT NULL,                -- Deadline hoàn thành
-        evidence_image_url  NVARCHAR(1000) NULL,                  -- Ảnh bằng chứng chuyển khoản / nghiệm thu
-        maintenance_reason  NVARCHAR(20) NULL,                    -- Task MAINTENANCE: DAMAGE (sự cố trả kho) / LIQUIDATION (dọn kho sau thanh lý)
+        evidence_image_url  NVARCHAR(MAX) NULL,
+        maintenance_reason  NVARCHAR(20) NULL,
         note                NVARCHAR(1000) NULL,                  -- Chi tiết STK, thông tin hoàn cọc
         created_at          DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
         claimed_at          DATETIME2(7) NULL,

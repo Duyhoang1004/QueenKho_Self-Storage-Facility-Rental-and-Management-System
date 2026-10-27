@@ -656,6 +656,7 @@ export default function StaffTaskDetailPage() {
 
   // State cho Refund (UC-25)
   const [evidenceImageUrl, setEvidenceImageUrl] = useState('');
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [refundNotes, setRefundNotes] = useState('');
   const [copiedField, setCopiedField] = useState(null);
 
@@ -984,14 +985,17 @@ export default function StaffTaskDetailPage() {
     ? Number(task.depositRefund)
     : Math.max(0, Number(task?.depositHeldAmount || 0) - Number(task?.totalDamageCost || 0));
 
+  const calculatedSum = effectiveDepositRefund + effectiveEarlyRentRefund;
   const effectiveRefundAmount = Number(task?.refundAmount) > 0
     ? Number(task.refundAmount)
-    : (parsedRefund?.refundAmountNum > 0
-        ? Math.max(parsedRefund.refundAmountNum, effectiveDepositRefund + effectiveEarlyRentRefund)
-        : (effectiveDepositRefund + effectiveEarlyRentRefund));
+    : (calculatedSum > 0 ? calculatedSum : (parsedRefund?.refundAmountNum || 0));
 
   // Submit Refund (UC-25)
   const handleSubmitRefund = () => {
+    if (!parsedRefund?.isCash && !evidenceImageUrl.trim()) {
+      setToast({ type: 'error', message: 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.' });
+      return;
+    }
     setSubmitting(true);
     const amount = effectiveRefundAmount > 0 ? effectiveRefundAmount : undefined;
     completeRefundTask(task.id, userId, {
@@ -1602,7 +1606,14 @@ export default function StaffTaskDetailPage() {
                             const file = e.target.files?.[0];
                             if (!file) return;
                             try {
-                              const dataUrl = await compressImageToDataUrl(file);
+                              let finalUrl = null;
+                              try {
+                                const res = await uploadImageFile(file);
+                                if (res?.url) finalUrl = res.url;
+                              } catch (uploadErr) {
+                                console.warn('Upload API failed, fallback to compressed dataUrl', uploadErr);
+                              }
+                              const dataUrl = finalUrl || await compressImageToDataUrl(file);
                               setEvidenceImageUrl(dataUrl);
                             } catch (err) {
                               setToast({ type: 'error', message: err.message || 'Không đọc được ảnh biên lai.' });
@@ -1651,10 +1662,21 @@ export default function StaffTaskDetailPage() {
                     />
                   </label>
 
+                  {!parsedRefund?.isCash && !evidenceImageUrl.trim() && (
+                    <p className="text-[11px] font-bold text-[#FF4B4B]">
+                      * Bắt buộc tải lên ảnh biên lai chuyển tiền trước khi xác nhận
+                    </p>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setConfirmRefundOpen(true)}
-                    disabled={submitting}
+                    onClick={() => {
+                      if (!parsedRefund?.isCash && !evidenceImageUrl.trim()) {
+                        setToast({ type: 'error', message: 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.' });
+                        return;
+                      }
+                      setConfirmRefundOpen(true);
+                    }}
+                    disabled={submitting || (!parsedRefund?.isCash && !evidenceImageUrl.trim())}
                     className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="material-symbols-outlined text-[20px]">payments</span>

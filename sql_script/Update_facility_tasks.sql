@@ -26,7 +26,7 @@ BEGIN
         status              NVARCHAR(30) NOT NULL DEFAULT 'OPEN', -- OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
         staff_id            INT NULL,                             -- ID người phụ trách (Lưu ID của Staff hoặc ID của Facility Manager)
         due_at              DATETIME2(7) NOT NULL,                -- Deadline hoàn thành (Hạn 24h đối với task Refund)
-        evidence_image_url  NVARCHAR(1000) NULL,                  -- Ảnh bằng chứng chuyển khoản / nghiệm thu
+        evidence_image_url  NVARCHAR(MAX) NULL,                  -- Ảnh bằng chứng chuyển khoản / nghiệm thu
         note                NVARCHAR(1000) NULL,                  -- Chi tiết STK, thông tin hoàn cọc
         created_at          DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
         claimed_at          DATETIME2(7) NULL,
@@ -63,7 +63,7 @@ BEGIN
     -- 3.1. Thêm cột evidence_image_url nếu thiếu
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('facility_tasks') AND name = 'evidence_image_url')
     BEGIN
-        ALTER TABLE facility_tasks ADD evidence_image_url NVARCHAR(1000) NULL;
+        ALTER TABLE facility_tasks ADD evidence_image_url NVARCHAR(MAX) NULL;
         PRINT N'   [+] Đã thêm cột evidence_image_url.';
     END
 

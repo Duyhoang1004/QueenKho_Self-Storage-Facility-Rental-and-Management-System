@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
 import java.nio.file.*;
@@ -44,7 +45,15 @@ public class UploadController {
 
         try {
             Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
-            String fileUrl = "http://localhost:8080/uploads/" + newFileName;
+            String fileUrl;
+            try {
+                fileUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+                        .path("/uploads/")
+                        .path(newFileName)
+                        .toUriString();
+            } catch (Exception ex) {
+                fileUrl = "http://localhost:8080/uploads/" + newFileName;
+            }
             return ResponseEntity.ok(Map.of(
                     "url", fileUrl,
                     "fileName", newFileName

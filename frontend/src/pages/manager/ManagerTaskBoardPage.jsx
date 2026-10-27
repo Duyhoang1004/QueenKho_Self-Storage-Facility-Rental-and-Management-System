@@ -270,28 +270,35 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const renderActions = task => {
     const detailUrl = task.taskType === 'REFUND' ? `/manager/refunds/${task.id}` : `/manager/tasks/${task.id}`
 
-    // Task REFUND: Manager xem chi tiết hoặc xác nhận đã thực hiện chuyển khoản / hoàn tiền cọc
+    // Task REFUND: Manager xem chi tiết (dòng 1) + xác nhận đã thực hiện hoàn tiền (dòng 2)
     if (task.taskType === 'REFUND') {
       if (['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)) {
         return (
-          <div className="flex items-center gap-2">
-            <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-              <span className="material-symbols-outlined text-[18px]">visibility</span>
+          <>
+            <Link
+              to={detailUrl}
+              className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[17px]">visibility</span>
               Xem chi tiết
             </Link>
             <button
+              type="button"
               onClick={() => openRefundModal(task)}
-              className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+              className="duo-btn-green w-full py-1.5 px-2.5 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px]">payments</span>
+              <span className="material-symbols-outlined text-[17px]">payments</span>
               Xác nhận đã hoàn tiền
             </button>
-          </div>
+          </>
         )
       }
       return (
-        <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-          <span className="material-symbols-outlined text-[18px]">visibility</span>
+        <Link
+          to={detailUrl}
+          className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[17px]">visibility</span>
           Xem chi tiết
         </Link>
       )
@@ -302,79 +309,108 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) <= new Date())
     if (task.taskType === 'SUPPORT' && isTaskOverdue) {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-            <span className="material-symbols-outlined text-[18px]">visibility</span>
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
           </Link>
           <button
+            type="button"
             onClick={() => openExtendSupportModal(task)}
-            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">more_time</span>
+            <span className="material-symbols-outlined text-[17px]">more_time</span>
             Gia hạn xử lý
           </button>
-        </div>
+        </>
       )
     }
 
+    // Task đang xử lý (3 nút bấm: mỗi nút bấm 1 dòng xếp chồng)
     if (task.status === 'IN_PROGRESS' && !isTaskOverdue) {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-            <span className="material-symbols-outlined text-[18px]">visibility</span>
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
           </Link>
           <button
+            type="button"
             onClick={() => setAssignTask(task)}
-            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">sync_alt</span>
+            <span className="material-symbols-outlined text-[17px]">sync_alt</span>
             Đổi người
           </button>
           <button
+            type="button"
             onClick={() => setConfirmTask(task)}
-            className="duo-btn-red px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            className="duo-btn-red w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">person_remove</span>
+            <span className="material-symbols-outlined text-[17px]">person_remove</span>
             Gỡ người nhận
           </button>
-        </div>
+        </>
       )
     }
 
     // PR-O10: task bảo trì quá hạn không giao lại được → FM mở phiếu và tự bấm "Sửa xong / Dọn xong"
     if (task.taskType === 'MAINTENANCE' && isTaskOverdue) {
       return (
-        <Link to={detailUrl} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
-          <span className="material-symbols-outlined text-[18px]">build</span>
-          Hoàn tất bảo trì
-        </Link>
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
+            Xem chi tiết
+          </Link>
+          <Link
+            to={detailUrl}
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">build</span>
+            Hoàn tất bảo trì
+          </Link>
+        </>
       )
     }
 
     // Flow 5: task chưa ai nhận → Manager chủ động giao cho nhân viên
     if (task.status === 'OPEN' && !isTaskOverdue) {
       return (
-        <div className="flex flex-wrap items-center gap-2">
-          <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-            <span className="material-symbols-outlined text-[18px]">visibility</span>
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
           </Link>
           <button
+            type="button"
             onClick={() => setAssignTask(task)}
-            className="duo-btn-green px-4 py-2 text-xs gap-1.5 cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">assignment_ind</span>
+            <span className="material-symbols-outlined text-[17px]">assignment_ind</span>
             Giao việc
           </button>
-        </div>
+        </>
       )
     }
 
     return (
-      <Link to={detailUrl} className="duo-btn-gray px-4 py-2 text-xs gap-1.5">
-        <span className="material-symbols-outlined text-[18px]">visibility</span>
+      <Link
+        to={detailUrl}
+        className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+      >
+        <span className="material-symbols-outlined text-[17px]">visibility</span>
         Xem chi tiết
       </Link>
     )
@@ -439,6 +475,8 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           currentStaffId={user.userId}
           forceStaffId={!isRefundMode && viewScope === 'MINE' ? user.userId : null}
           initialTypeFilter={initialTypeFilter}
+          defaultLayout="list"
+          showLayoutToggle={true}
         />
       ) : (
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">

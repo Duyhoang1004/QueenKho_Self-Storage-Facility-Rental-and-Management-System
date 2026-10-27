@@ -1309,7 +1309,7 @@ export default function StaffTaskDetailPage() {
                       <div className="flex justify-between items-center py-0.5">
                         <span className="font-bold text-[#718096] flex items-center gap-1">
                           Khấu trừ tiền cọc:
-                          <span className="text-[10px] font-semibold text-[#E53E3E]">(hủy sát giờ &lt; 24h)</span>
+                          <span className="text-[10px] font-semibold text-[#E53E3E]">(hủy đơn trễ trong 24h trước thời điểm nhận kho)</span>
                         </span>
                         <span className="font-black text-[#E53E3E]">
                           - {parsedRefund.penaltyAmount}
@@ -1347,7 +1347,7 @@ export default function StaffTaskDetailPage() {
                           <div className="flex justify-between items-center py-0.5">
                             <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
                             <span className="font-black text-[#2F855A]">
-                              {parsedRefund?.policyApplied || (task.contractCode || parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ hẹn > 24h (Hoàn 100%)')}
+                              {parsedRefund?.policyApplied || (task.contractCode || parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)')}
                             </span>
                           </div>
                         )}
@@ -1366,7 +1366,7 @@ export default function StaffTaskDetailPage() {
                     <p className="text-[10px] text-[#A0AEC0] italic mt-0.5">
                       {parsedRefund?.footerNote || (task.contractCode || parsedRefund?.isCheckout
                         ? '* Tổng tiền hoàn bao gồm tiền cọc hợp đồng và tiền thuê các tháng còn lại sau khi trừ thời gian đã dùng & phí phạt trả sớm (PR-O2).'
-                        : '* Quý khách hủy đơn trước giờ hẹn > 24h được hoàn trả 100% tiền cọc.')}
+                        : '* Khách hủy đơn sớm trước 24h so với thời điểm nhận kho được hoàn trả 100% tiền cọc.')}
                     </p>
                   </div>
                 </div>

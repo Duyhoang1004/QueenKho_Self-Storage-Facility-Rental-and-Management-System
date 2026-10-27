@@ -1,10 +1,23 @@
 /**
  * Utility parse ghi chú hoàn tiền cọc (Refund Task)
  * Hỗ trợ các định dạng:
- * - Hủy đơn đặt cọc online (Hoàn 100% hoặc Phạt 50% cọc do hủy sát giờ < 24h)
+ * - Hủy đơn đặt cọc online (Khách hủy đơn sớm trước 24h so với thời điểm nhận kho -> Hoàn 100%, hoặc Khách hủy đơn trễ trong 24h trước thời điểm nhận kho -> Trừ 50% cọc)
  * - Hủy đơn đặt cọc nhận tiền mặt tại quầy
  * - Nghiệm thu trả kho (Check-out) khấu trừ hư hại
  */
+function parseMoneyNumber(str) {
+  if (!str) return NaN;
+  const s = String(str).trim();
+  if (/^\d+\.\d+$/.test(s)) {
+    const [intPart, decPart] = s.split('.');
+    if (intPart.length >= 4 || decPart.length !== 3) {
+      return Math.round(parseFloat(s));
+    }
+  }
+  const raw = s.replace(/,/g, '').replace(/\./g, '');
+  return Number(raw);
+}
+
 export function parseRefundNote(note) {
   if (!note) return {};
   const res = {
@@ -23,6 +36,8 @@ export function parseRefundNote(note) {
     bankName: '',
     bankAccountNumber: '',
     bankAccountName: '',
+    accountNumber: '',
+    accountHolder: '',
     reason: '',
     isCash: false,
     raw: note,
@@ -38,6 +53,10 @@ export function parseRefundNote(note) {
     res.customerName = mCustomer[1]?.trim() || '';
     res.customerPhone = mCustomer[2]?.trim() || '';
   }
+  if (!res.customerPhone) {
+    const mPhone = note.match(/SĐT:\s*([0-9+\s.-]+)/i);
+    if (mPhone) res.customerPhone = mPhone[1].trim();
+  }
 
   // Kiểm tra loại hoàn tiền: Trả kho (Checkout) vs Hủy đơn đặt cọc (Cancellation)
   const isCheckout = /trả kho|nghiệm thu|cọc gốc|hư hại/i.test(note);
@@ -46,16 +65,14 @@ export function parseRefundNote(note) {
   // 3. Số tiền hoàn
   const mNetRefund = note.match(/(?:THỰC HOÀN|Tổng hoàn:?)\s*([0-9.,]+)\s*[₫đVND]*/i);
   if (mNetRefund) {
-    const rawNet = mNetRefund[1].replace(/,/g, '').replace(/\./g, '');
-    const numNet = Number(rawNet);
+    const numNet = parseMoneyNumber(mNetRefund[1]);
     res.refundAmountNum = !isNaN(numNet) ? numNet : 0;
     res.refundAmount = !isNaN(numNet) ? `${numNet.toLocaleString('vi-VN')} ₫` : `${mNetRefund[1].trim()} ₫`;
   }
 
-  const mAmount = note.match(/Số tiền hoàn:\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
+  const mAmount = note.match(/(?:Số tiền hoàn|Số tiền):\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
   if (mAmount && !res.refundAmountNum) {
-    const rawVal = mAmount[1].replace(/,/g, '').replace(/\./g, '');
-    const num = Number(rawVal);
+    const num = parseMoneyNumber(mAmount[1]);
     res.refundAmountNum = !isNaN(num) ? num : 0;
     res.refundAmount = !isNaN(num) ? `${num.toLocaleString('vi-VN')} ₫` : `${mAmount[1]} ₫`;
   }
@@ -65,40 +82,35 @@ export function parseRefundNote(note) {
     // ==================== TRƯỜNG HỢP 1: HOÀN CỌC & TIỀN THUÊ TRẢ SỚM KHI TRẢ KHO ====================
     const mDeposit = note.match(/Cọc gốc:?\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mDeposit) {
-      const rawDep = mDeposit[1].replace(/,/g, '').replace(/\./g, '');
-      const numDep = Number(rawDep);
+      const numDep = parseMoneyNumber(mDeposit[1]);
       res.originalTotalNum = !isNaN(numDep) ? numDep : 0;
       res.originalTotal = !isNaN(numDep) ? `${numDep.toLocaleString('vi-VN')} ₫` : `${mDeposit[1].trim()} ₫`;
     }
 
     const mDepRefund = note.match(/Cọc hoàn:?\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mDepRefund) {
-      const rawDepRef = mDepRefund[1].replace(/,/g, '').replace(/\./g, '');
-      const numDepRef = Number(rawDepRef);
+      const numDepRef = parseMoneyNumber(mDepRefund[1]);
       res.depositRefundNum = !isNaN(numDepRef) ? numDepRef : 0;
       res.depositRefund = !isNaN(numDepRef) ? `${numDepRef.toLocaleString('vi-VN')} ₫` : `${mDepRefund[1].trim()} ₫`;
     }
 
     const mEarlyRent = note.match(/Hoàn tiền thuê trả sớm:?\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mEarlyRent) {
-      const rawEarly = mEarlyRent[1].replace(/,/g, '').replace(/\./g, '');
-      const numEarly = Number(rawEarly);
+      const numEarly = parseMoneyNumber(mEarlyRent[1]);
       res.earlyRentRefundNum = !isNaN(numEarly) ? numEarly : 0;
       res.earlyRentRefund = !isNaN(numEarly) ? `${numEarly.toLocaleString('vi-VN')} ₫` : `${mEarlyRent[1].trim()} ₫`;
     }
 
     const mDamage = note.match(/(?:Phí hư hại|Sự cố:?)\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mDamage) {
-      const rawDam = mDamage[1].replace(/,/g, '').replace(/\./g, '');
-      const numDam = Number(rawDam);
+      const numDam = parseMoneyNumber(mDamage[1]);
       res.penaltyAmountNum = !isNaN(numDam) ? numDam : 0;
       res.penaltyAmount = !isNaN(numDam) ? `${numDam.toLocaleString('vi-VN')} ₫` : `${mDamage[1].trim()} ₫`;
     }
 
     const mLate = note.match(/Phí trễ(?: hạn)?:?\s*([0-9.,]+)\s*[₫đVND]*(?:\s*\(([0-9]+)\s*ngày\))?/i);
     if (mLate) {
-      const rawLate = mLate[1].replace(/,/g, '').replace(/\./g, '');
-      const numLate = Number(rawLate);
+      const numLate = parseMoneyNumber(mLate[1]);
       res.lateFeeNum = !isNaN(numLate) ? numLate : 0;
       res.lateFee = !isNaN(numLate) ? `${numLate.toLocaleString('vi-VN')} ₫` : `${mLate[1].trim()} ₫`;
       if (mLate[2]) {
@@ -139,29 +151,28 @@ export function parseRefundNote(note) {
     }
   } else {
     // ==================== TRƯỜNG HỢP 2: HOÀN CỌC KHI HỦY ĐƠN ĐẶT CHỖ ====================
-    const mPenalty = note.match(/Đã trừ phạt (?:hủy trễ|trễ)?\s*50% cọc:\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
+    const mPenalty = note.match(/(?:Đã trừ phạt(?:\s*hủy trễ|\s*trễ)?(?:\s*50%\s*cọc)?|Đã trừ phí hủy):\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
     if (mPenalty) {
       res.isPenalty50 = true;
-      const rawPen = mPenalty[1].replace(/,/g, '').replace(/\./g, '');
-      const numPen = Number(rawPen);
+      const numPen = parseMoneyNumber(mPenalty[1]);
       res.penaltyAmountNum = !isNaN(numPen) ? numPen : 0;
       res.penaltyAmount = !isNaN(numPen) ? `${numPen.toLocaleString('vi-VN')} ₫` : `${mPenalty[1]} ₫`;
       res.policyBadge = 'Khấu trừ 50% tiền cọc';
-      res.policyApplied = 'Khấu trừ 50% tiền cọc (hủy sát giờ < 24h)';
-      res.penaltyNote = `Đã trừ phạt hủy trễ (50% tiền cọc): ${res.penaltyAmount}`;
-      res.footerNote = '* Lưu ý: Hủy trong vòng 24h trước giờ hẹn nhận kho sẽ khấu trừ 50% tiền cọc theo quy định.';
+      res.policyApplied = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+      res.penaltyNote = `Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%): ${res.penaltyAmount}`;
+      res.footerNote = '* Lưu ý: Khách hủy đơn trễ trong 24h trước thời điểm nhận kho sẽ bị trừ 50% tiền cọc theo quy định.';
     } else if (note.includes('50%')) {
       res.isPenalty50 = true;
       res.policyBadge = 'Khấu trừ 50% tiền cọc';
-      res.policyApplied = 'Khấu trừ 50% tiền cọc (hủy sát giờ < 24h)';
-      res.penaltyNote = 'Đã trừ phạt hủy trễ (50% tiền cọc)';
-      res.footerNote = '* Lưu ý: Hủy trong vòng 24h trước giờ hẹn nhận kho sẽ khấu trừ 50% tiền cọc theo quy định.';
+      res.policyApplied = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+      res.penaltyNote = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+      res.footerNote = '* Lưu ý: Khách hủy đơn trễ trong 24h trước thời điểm nhận kho sẽ bị trừ 50% tiền cọc theo quy định.';
     } else {
       res.isFull100 = true;
       res.policyBadge = 'Hoàn 100% cọc';
-      res.policyApplied = 'Hủy trước giờ hẹn > 24h (Hoàn 100% cọc)';
-      res.penaltyNote = 'Hủy trước giờ hẹn > 24h (Hoàn 100%)';
-      res.footerNote = '* Khách hàng hủy đơn hợp lệ trước 24h giờ hẹn nhận kho được hoàn trả 100% tiền cọc.';
+      res.policyApplied = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
+      res.penaltyNote = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
+      res.footerNote = '* Khách hủy đơn sớm trước 24h so với thời điểm nhận kho được hoàn trả 100% tiền cọc.';
     }
   }
 
@@ -181,16 +192,28 @@ export function parseRefundNote(note) {
   if (mBankName) res.bankName = mBankName[1].trim();
 
   const mStk = note.match(/STK:\s*([A-Za-z0-9_-]+)/i);
-  if (mStk) res.bankAccountNumber = mStk[1].trim();
+  if (mStk) {
+    res.bankAccountNumber = mStk[1].trim();
+    res.accountNumber = res.bankAccountNumber;
+  }
 
   const mAccountName = note.match(/Chủ TK:\s*([^|]+)/i);
-  if (mAccountName) res.bankAccountName = mAccountName[1].trim();
+  if (mAccountName) {
+    res.bankAccountName = mAccountName[1].trim();
+    res.accountHolder = res.bankAccountName;
+  }
 
   const mStkAlt = note.match(/Hoàn cọc STK:\s*([A-Za-z0-9_-]+)\s*\(([^)-]+)(?:-\s*([^)]+))?\)/i);
   if (mStkAlt) {
-    if (!res.bankAccountNumber) res.bankAccountNumber = mStkAlt[1].trim();
+    if (!res.bankAccountNumber) {
+      res.bankAccountNumber = mStkAlt[1].trim();
+      res.accountNumber = res.bankAccountNumber;
+    }
     if (!res.bankName) res.bankName = mStkAlt[2].trim();
-    if (!res.bankAccountName && mStkAlt[3]) res.bankAccountName = mStkAlt[3].trim();
+    if (!res.bankAccountName && mStkAlt[3]) {
+      res.bankAccountName = mStkAlt[3].trim();
+      res.accountHolder = res.bankAccountName;
+    }
   }
 
   // 6. Kiểm tra hoàn tiền mặt
@@ -205,6 +228,17 @@ export function parseRefundNote(note) {
   } else {
     const mNote = note.match(/Ghi chú:\s*([^|]+)/i);
     if (mNote) res.reason = mNote[1].trim();
+  }
+
+  // Chuẩn hóa hiển thị lý do hoàn tiền cho đúng nghiệp vụ:
+  // - Hủy trễ trong 24h trước thời điểm nhận kho (trừ 50%)
+  // - Hủy sớm trước 24h so với thời điểm nhận kho (hoàn 100%)
+  if (res.reason) {
+    if (/hủy đơn sau 24h/i.test(res.reason)) {
+      res.reason = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+    } else if (/hủy đơn trong 24h miễn phí/i.test(res.reason)) {
+      res.reason = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
+    }
   }
 
   return res;

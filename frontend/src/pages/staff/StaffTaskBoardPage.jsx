@@ -39,7 +39,7 @@ export default function StaffTaskBoardPage() {
       });
   };
 
-  // UC-18, UC-23, UC-27: mọi thẻ có "Xem chi tiết"; task mình đang giữ thì nút chính theo đúng loại việc
+  // UC-18, UC-23, UC-27: Layout chuẩn theo thiết kế: Nút xem chi tiết ở trên, nút hành động chính ở dưới
   const renderActions = task => {
     const isMyInProgress = task.status === 'IN_PROGRESS' && task.staffId === user.userId;
     const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT') && isMyInProgress;
@@ -49,48 +49,73 @@ export default function StaffTaskBoardPage() {
       && ['IN_PROGRESS', 'OVERDUE'].includes(task.status);
     const isOverdue = task.status === 'OVERDUE' || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) < new Date());
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <>
+        {/* Nút xem chi tiết (Dòng trên) */}
+        <Link
+          to={`/staff/tasks/${task.id}`}
+          className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          title="Xem chi tiết công việc"
+        >
+          <span className="material-symbols-outlined text-[17px]">visibility</span>
+          Xem chi tiết
+        </Link>
+
+        {/* Nút hành động chính (Dòng dưới) */}
+        {task.status === 'OPEN' && (
+          <button
+            type="button"
+            onClick={() => setConfirmTask(task)}
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">front_hand</span>
+            Nhận việc
+          </button>
+        )}
+
         {task.taskType === 'CHECK_IN' && isOverdue && (
           <button
             type="button"
             onClick={() => setReportTask(task)}
-            className="duo-btn-blue px-3 py-2 text-xs flex items-center gap-1.5"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
             title="Báo cáo kết quả liên hệ khách hàng cho Quản lý"
           >
             <span className="material-symbols-outlined text-[16px]">phone_in_talk</span>
             Báo cáo liên hệ
           </button>
         )}
-        {canHandover ? (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">
+
+        {canHandover && (
+          <Link
+            to={`/staff/tasks/${task.id}`}
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">
               {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
             </span>
             {task.taskType === 'CHECK_OUT' ? 'Nghiệm thu trả kho' : 'Lập biên bản'}
           </Link>
-        ) : canResolveSupport ? (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">support_agent</span>
+        )}
+
+        {canResolveSupport && (
+          <Link
+            to={`/staff/tasks/${task.id}`}
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">support_agent</span>
             Xử lý hỗ trợ
           </Link>
-        ) : canMaintain ? (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">build</span>
+        )}
+
+        {canMaintain && (
+          <Link
+            to={`/staff/tasks/${task.id}`}
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">build</span>
             Mở phiếu bảo trì
           </Link>
-        ) : (
-          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">visibility</span>
-            Xem chi tiết
-          </Link>
         )}
-        {task.status === 'OPEN' && (
-          <button onClick={() => setConfirmTask(task)} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
-            <span className="material-symbols-outlined text-[18px]">front_hand</span>
-            Nhận việc
-          </button>
-        )}
-      </div>
+      </>
     );
   };
 
@@ -109,6 +134,8 @@ export default function StaffTaskBoardPage() {
           currentStaffId={user.userId}
           renderActions={renderActions}
           reloadKey={reloadKey}
+          defaultLayout="list"
+          showLayoutToggle={true}
         />
       ) : (
         <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">

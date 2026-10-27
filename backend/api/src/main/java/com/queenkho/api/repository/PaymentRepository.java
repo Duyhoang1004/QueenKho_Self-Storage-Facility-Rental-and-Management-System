@@ -68,10 +68,21 @@ public class PaymentRepository {
 
     public Map<String, Object> paymentStatus(String ref) {
         try {
-            return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, r.status AS reservation_status, " +
+            return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, p.amount AS payment_amount, p.paid_at, " +
+                    "p.reservation_id, r.reservation_code, r.start_date, r.duration_months, r.deposit_amount, r.storage_unit_id, " +
+                    "r.status AS reservation_status, u.full_name AS customer_name, u.phone AS customer_phone, " +
+                    "u.email AS customer_email, u.cccd AS customer_cccd, f.name AS facility_name, " +
+                    "f.address AS facility_address, f.hotline AS facility_hotline, ut.name AS unit_type_name, " +
+                    "ut.area_sqm, ut.dimensions, su.floor AS storage_unit_floor, su.zone AS storage_unit_zone, " +
+                    "su.room_number AS storage_unit_room_number, " +
                     "(SELECT TOP 1 rp.status FROM payment_transactions rp " +
                     " WHERE rp.transaction_code = CONCAT('REF-LATE-', p.transaction_code)) AS refund_status " +
-                    "FROM payment_transactions p LEFT JOIN reservations r ON r.id = p.reservation_id " +
+                    "FROM payment_transactions p " +
+                    "LEFT JOIN reservations r ON r.id = p.reservation_id " +
+                    "LEFT JOIN users u ON u.id = r.customer_id " +
+                    "LEFT JOIN facilities f ON f.id = r.facility_id " +
+                    "LEFT JOIN unit_types ut ON ut.id = r.unit_type_id " +
+                    "LEFT JOIN storage_units su ON su.id = r.storage_unit_id " +
                     "WHERE p.transaction_code = ? AND p.payment_method = 'VNPAY'", ref);
         } catch (EmptyResultDataAccessException e) {
             return null;

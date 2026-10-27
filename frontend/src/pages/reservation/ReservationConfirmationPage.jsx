@@ -11,6 +11,7 @@ export default function ReservationConfirmationPage() {
   const navigate = useNavigate()
   const { state } = useLocation()
   const [finalStatus, setFinalStatus] = useState('PENDING')
+  const [serverDetails, setServerDetails] = useState({})
   const [searchParams] = useSearchParams()
 
   let savedContext = {}
@@ -23,25 +24,38 @@ export default function ReservationConfirmationPage() {
   const paymentContext = state || savedContext
   const reservation = paymentContext.reservation || {}
   const customerInfo = paymentContext.customerInfo || {}
-  const selectedMonths = paymentContext.selectedMonths || reservation.durationMonths || 1
-  const startDate = paymentContext.startDate || reservation.startDate || ''
-  const totalPayment = paymentContext.totalPayment || 0
-  const depositAmount = paymentContext.deposit || reservation.depositAmount || 0
   const storage = paymentContext.storage || {}
-  const reservationCode = reservation.reservationCode || 'RES-000000'
-  const branch = storage.branch || reservation.facilityName || '—'
-  const address = storage.address || reservation.facilityAddress || '—'
-  const unitName = storage.name || reservation.unitTypeName || '—'
-  const area = storage.area ?? reservation.areaSqm ?? '—'
-  const dimension = storage.dimension || reservation.dimensions || '—'
-  const customerName = customerInfo.fullName || reservation.customerName || 'Khách hàng'
-  const customerPhone = customerInfo.phone || reservation.customerPhone || '---'
+  const selectedMonths = serverDetails.duration_months || paymentContext.selectedMonths || reservation.durationMonths || 1
+  const startDate = serverDetails.start_date || paymentContext.startDate || reservation.startDate || ''
+  const totalPayment = serverDetails.payment_amount ?? paymentContext.totalPayment ?? 0
+  const depositAmount = serverDetails.deposit_amount ?? paymentContext.deposit ?? reservation.depositAmount ?? 0
+  const reservationCode = serverDetails.reservation_code || reservation.reservationCode || 'Đang cập nhật'
+  const branch = serverDetails.facility_name || storage.branch || reservation.facilityName || 'Chưa cập nhật'
+  const address = serverDetails.facility_address || storage.address || reservation.facilityAddress || 'Chưa cập nhật'
+  const facilityHotline = serverDetails.facility_hotline || storage.hotline || reservation.facilityHotline || ''
+  const unitName = serverDetails.unit_type_name || storage.name || reservation.unitTypeName || 'Chưa cập nhật'
+  const dimension = serverDetails.dimensions || storage.dimension || reservation.dimensions || 'Chưa cập nhật'
+  const storageUnitId = serverDetails.storage_unit_id || reservation.storageUnitId || ''
+  const unitLocation = [
+    serverDetails.storage_unit_floor || reservation.storageUnitFloor,
+    (serverDetails.storage_unit_zone || reservation.storageUnitZone)
+      ? `Khu ${serverDetails.storage_unit_zone || reservation.storageUnitZone}`
+      : '',
+    (serverDetails.storage_unit_room_number || reservation.storageUnitRoomNumber)
+      ? `Phòng ${serverDetails.storage_unit_room_number || reservation.storageUnitRoomNumber}`
+      : '',
+  ].filter(Boolean).join(' • ')
+  const customerName = serverDetails.customer_name || customerInfo.fullName || reservation.customerName || 'Khách hàng'
+  const customerPhone = serverDetails.customer_phone || customerInfo.phone || reservation.customerPhone || 'Chưa cập nhật'
+  const customerEmail = serverDetails.customer_email || customerInfo.email || reservation.customerEmail || 'Chưa cập nhật'
+  const customerCccd = serverDetails.customer_cccd || customerInfo.cccd || reservation.customerCccd || 'Chưa cập nhật'
+  const customerAddress = customerInfo.address || 'Chưa cập nhật'
 
-  const now = new Date()
-  const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} ngày ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`
-
-  const startDateObj = startDate ? new Date(startDate) : new Date()
-  const startDateStr = `${startDateObj.getDate()}/${startDateObj.getMonth() + 1}/${startDateObj.getFullYear()}`
+  const paidAt = serverDetails.paid_at ? new Date(serverDetails.paid_at) : new Date()
+  const timeStr = `${paidAt.getHours()}:${String(paidAt.getMinutes()).padStart(2, '0')} ngày ${paidAt.getDate()}/${paidAt.getMonth() + 1}/${paidAt.getFullYear()}`
+  const startDateStr = startDate
+    ? String(startDate).split('-').reverse().join('/')
+    : 'Chưa cập nhật'
 
   useEffect(() => {
     const orderId = searchParams.get('orderId')
@@ -62,6 +76,7 @@ export default function ReservationConfirmationPage() {
         try {
           const result = await getVnpayStatus(orderId)
           if (!active) return
+          setServerDetails(result || {})
           if (result.status === 'SUCCESS') {
             setFinalStatus(result.refund_status || result.reservation_status === 'REFUND_PENDING' ? 'REFUND_PENDING' : 'DEPOSIT_PAID')
             clearInterval(intervalId)
@@ -182,15 +197,20 @@ export default function ReservationConfirmationPage() {
               </div>
             </div>
 
-            {/* 3 thông tin nhanh */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mx-6 mt-4">
+            {/* Thông tin nhanh */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mx-6 mt-4">
               <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Cơ sở hoạt động</span>
                 <p className="text-sm font-black text-[#4B4B4B] mt-1">{branch}</p>
               </div>
               <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
-                <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Kích thước khoang</span>
-                <p className="text-sm font-black text-[#4B4B4B] mt-1">{area} m² • {dimension}</p>
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Địa chỉ nhận kho</span>
+                <p className="text-sm font-black text-[#4B4B4B] mt-1 leading-5">{address}</p>
+              </div>
+              <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Loại kho đăng ký</span>
+                <p className="text-sm font-black text-[#4B4B4B] mt-1">{unitName}</p>
+                <p className="text-[11px] font-bold text-[#AFAFAF] mt-0.5">{dimension}</p>
               </div>
               <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl p-3.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF] block">Đã thanh toán</span>
@@ -226,13 +246,24 @@ export default function ReservationConfirmationPage() {
                 <div>
                   <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Loại kho đăng ký</p>
                   <p className="text-sm font-black text-[#4B4B4B]">{unitName}</p>
-                  <p className="text-xs font-bold text-[#AFAFAF]">{area} m² • {dimension}</p>
+                  <p className="text-xs font-bold text-[#AFAFAF]">{dimension}</p>
                 </div>
 
                 <div>
                   <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Khách hàng</p>
                   <p className="text-sm font-black text-[#4B4B4B]">{customerName}</p>
                   <p className="text-xs font-bold text-[#AFAFAF]">{customerPhone}</p>
+                </div>
+
+                <div>
+                  <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Liên hệ khách hàng</p>
+                  <p className="text-sm font-black text-[#4B4B4B] break-all">{customerEmail}</p>
+                  <p className="text-xs font-bold text-[#AFAFAF]">CCCD / Passport: {customerCccd}</p>
+                </div>
+
+                <div>
+                  <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Địa chỉ người thuê</p>
+                  <p className="text-sm font-black text-[#4B4B4B]">{customerAddress}</p>
                 </div>
 
                 <div>
@@ -251,6 +282,22 @@ export default function ReservationConfirmationPage() {
                   <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Địa chỉ kho</p>
                   <p className="text-sm font-black text-[#4B4B4B]">{branch}</p>
                   <p className="text-xs font-bold text-[#AFAFAF]">{address}</p>
+                  {facilityHotline && <p className="text-[11px] font-bold text-[#777777] mt-1">Hotline: {facilityHotline}</p>}
+                </div>
+
+                <div>
+                  <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Ô kho thực tế</p>
+                  {storageUnitId ? (
+                    <>
+                      <p className="text-sm font-black font-mono text-[#1CB0F6]">{storageUnitId}</p>
+                      <p className="text-xs font-bold text-[#AFAFAF]">{unitLocation || 'Vị trí đang cập nhật'}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-black text-[#FF9600]">Chưa gán ô kho</p>
+                      <p className="text-xs font-bold text-[#AFAFAF]">Quản lý cơ sở sẽ phân bổ ô phù hợp sau khi xác nhận cọc.</p>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

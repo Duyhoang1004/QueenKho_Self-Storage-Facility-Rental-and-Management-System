@@ -368,7 +368,7 @@ export default function BomRevenuePage() {
               <span>/</span>
               <span>Tài chính</span>
               <span>/</span>
-              <span className="text-[#1CB0F6]">Dashboard Doanh Thu Toàn Hệ Thống (UC-29)</span>
+              <span className="text-[#1CB0F6]">Dashboard Doanh Thu Toàn Hệ Thống</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-black text-[#4B4B4B] tracking-tight flex items-center gap-3">
               <span>Báo Cáo & Dashboard Doanh Thu Toàn Hệ Thống</span>

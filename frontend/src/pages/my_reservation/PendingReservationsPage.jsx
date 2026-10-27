@@ -176,7 +176,7 @@ export default function PendingReservationsPage() {
             }`}
           >
             <span className="material-symbols-outlined text-[15px] mr-1 align-middle">warning</span>
-            Quá hạn No-Show {!overdueLoading && overdueItems.length > 0 && <span className="ml-1 bg-[#FFDFDF] text-[#FF4B4B] px-1.5 py-0.5 rounded-full text-[10px]">{overdueItems.length}</span>}
+            Quá hạn nhận kho (Vắng mặt) {!overdueLoading && overdueItems.length > 0 && <span className="ml-1 bg-[#FFDFDF] text-[#FF4B4B] px-1.5 py-0.5 rounded-full text-[10px]">{overdueItems.length}</span>}
           </button>
         </div>
 
@@ -408,15 +408,15 @@ export default function PendingReservationsPage() {
                               {r.noShowEligible ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#EBFBF0] text-[#188838] border border-[#A3E5B5]">
                                   <span className="material-symbols-outlined text-[12px]">check_circle</span>
-                                  Đủ ĐK No-Show
+                                  Đủ ĐK vắng mặt
                                 </span>
                               ) : (
                                 <span
-                                  title={r.noShowIneligibleReason || 'Chưa đủ điều kiện No-Show theo PR-X3'}
+                                  title={r.noShowEligible === false ? (r.noShowIneligibleReason || 'Chưa đủ điều kiện xử lý vắng mặt') : 'Đủ điều kiện xử lý'}
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#FFF0E6] text-[#E05300] border border-[#FFBB96] cursor-help"
                                 >
                                   <span className="material-symbols-outlined text-[12px]">schedule</span>
-                                  Chưa đủ ĐK (PR-X3)
+                                  Chưa đủ điều kiện
                                 </span>
                               )}
                             </div>
@@ -440,12 +440,12 @@ export default function PendingReservationsPage() {
                                   ? 'border-[#FFA39E] bg-[#FFF1F0] text-[#CF1322] hover:bg-[#FFCCC7]'
                                   : 'border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e]'
                               }`}
-                              title={r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý No-Show'}
+                              title={r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý khách vắng mặt'}
                             >
                               <span className="material-symbols-outlined text-[14px] mr-1 align-middle">
                                 {r.noShowEligible === false ? 'info' : 'person_off'}
                               </span>
-                              No-Show
+                              Khách vắng mặt
                             </button>
                           </div>
                         </td>
@@ -472,7 +472,7 @@ export default function PendingReservationsPage() {
         reservation={noShowTarget}
         onClose={() => setNoShowTarget(null)}
         onSuccess={(code) => {
-          setToast({ title: 'Đã xử lý No-Show!', desc: `Đơn ${code} đã bị hủy, ô kho đã được giải phóng.` })
+          setToast({ title: 'Đã xử lý khách vắng mặt!', desc: `Đơn ${code} đã bị hủy, ô kho đã được giải phóng.` })
           setTimeout(() => setToast(null), 4500)
           reloadOverdue()
         }}

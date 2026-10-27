@@ -276,7 +276,7 @@ export default function StorageManagementPage() {
               <span>/</span>
               <span>{facilityName}</span>
               <span>/</span>
-              <span className="text-[#58CC02]">Quản lý ô kho (UC-06)</span>
+              <span className="text-[#58CC02]">Quản lý ô kho</span>
             </div>
             <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">
               Quản Lý Danh Mục Ô Kho

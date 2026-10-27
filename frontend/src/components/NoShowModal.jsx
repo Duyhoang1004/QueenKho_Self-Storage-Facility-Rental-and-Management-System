@@ -63,7 +63,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
             <span className="material-symbols-outlined text-[26px]">person_off</span>
           </div>
           <div>
-            <h2 className="text-base font-black text-[#4B4B4B] uppercase tracking-wide">Xử lý No-Show (PR-X3)</h2>
+            <h2 className="text-base font-black text-[#4B4B4B] uppercase tracking-wide">Xử lý khách không đến nhận kho</h2>
             <p className="text-xs font-bold text-[#AFAFAF]">Đơn <span className="text-[#FF4B4B]">{reservation.reservationCode}</span> — {reservation.customerName}</p>
           </div>
           <button onClick={handleClose} className="ml-auto text-[#AFAFAF] hover:text-[#4B4B4B]">
@@ -76,7 +76,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
           <div className="bg-[#FFF0E6] border-2 border-[#FF9600] rounded-2xl p-4 text-xs font-bold text-[#D06B00] flex gap-3">
             <span className="material-symbols-outlined text-[22px] shrink-0 text-[#E58800]">lock_clock</span>
             <div className="flex flex-col gap-1">
-              <span className="font-black uppercase text-[#E58800]">Chưa đủ điều kiện xử lý No-Show (Quy định PR-X3)</span>
+              <span className="font-black uppercase text-[#E58800]">Chưa đủ điều kiện xử lý khách vắng mặt</span>
               <p className="leading-relaxed text-[#4B4B4B]">{reservation.noShowIneligibleReason || 'Phải quá 48h từ giờ hẹn và có tối thiểu 2 lần liên hệ thất bại cách nhau 24h.'}</p>
               <div className="flex items-center gap-2 mt-1 text-[11px]">
                 <span className="px-2 py-0.5 rounded-md bg-white border border-[#FFD591] font-black text-[#B26B00]">
@@ -91,7 +91,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
             <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
             <span>
               {waivePenalty ? (
-                <>Thao tác này sẽ <strong>hủy đơn</strong>, kích hoạt <strong>miễn phạt No-Show (hoàn 100% tiền đã đóng)</strong> và giải phóng ô kho về trạng thái sẵn sàng.</>
+                <>Thao tác này sẽ <strong>hủy đơn</strong>, kích hoạt <strong>miễn phạt vắng mặt (hoàn 100% tiền đã đóng)</strong> và giải phóng ô kho về trạng thái sẵn sàng.</>
               ) : (
                 <>Thao tác này sẽ <strong>hủy đơn</strong>, <strong>tịch thu tiền cọc {reservation.depositAmount?.toLocaleString('vi-VN')}₫</strong> (hoàn lại tiền thuê trả trước nếu có) và giải phóng ô kho về trạng thái sẵn sàng.</>
               )}
@@ -108,7 +108,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
             className="w-4 h-4 rounded text-[#1CB0F6] focus:ring-0"
           />
           <div className="flex flex-col">
-            <span className="text-xs font-black text-[#4B4B4B]">Miễn phạt No-Show (Quy định PR-X1)</span>
+            <span className="text-xs font-black text-[#4B4B4B]">Miễn phạt vắng mặt</span>
             <span className="text-[11px] font-bold text-[#AFAFAF]">Facility Manager phê duyệt hoàn 100% tiền cọc + tiền thuê (trường hợp bất khả kháng)</span>
           </div>
         </label>
@@ -127,9 +127,9 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
           </div>
         )}
 
-        {/* Lý do No-Show */}
+        {/* Lý do khách không đến */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider">Lý do No-Show</label>
+          <label className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider">Lý do khách không đến</label>
           <select
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -168,7 +168,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
                 : 'border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e]'
             }`}
           >
-            {loading ? 'Đang xử lý...' : isEligible ? 'XÁC NHẬN NO-SHOW' : 'CHƯA ĐỦ ĐIỀU KIỆN (PR-X3)'}
+            {loading ? 'Đang xử lý...' : isEligible ? 'XÁC NHẬN VẮNG MẶT' : 'CHƯA ĐỦ ĐIỀU KIỆN'}
           </button>
         </div>
       </div>

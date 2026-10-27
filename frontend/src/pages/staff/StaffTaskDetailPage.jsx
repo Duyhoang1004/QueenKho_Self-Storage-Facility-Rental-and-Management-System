@@ -819,7 +819,7 @@ export default function StaffTaskDetailPage() {
   // Kiểm tra tính hợp lệ của từng mục sự cố (UC-24)
   const damageValidationError = (() => {
     if (conditionFailed && damageCases.length === 0) {
-      return 'Ô kho không sạch hoặc khoá hư hỏng — bắt buộc thêm ít nhất 1 hạng mục sự cố (UC-24).';
+      return 'Ô kho không sạch hoặc khoá hư hỏng — bắt buộc thêm ít nhất 1 hạng mục sự cố .';
     }
     for (let i = 0; i < damageCases.length; i++) {
       const d = damageCases[i];
@@ -1498,7 +1498,7 @@ export default function StaffTaskDetailPage() {
               ) : (
                 <div className="flex flex-col gap-5">
                   <div>
-                    <h2 className="text-lg font-black text-[#4B4B4B]">Xác nhận hoàn tiền cho khách hàng (UC-25)</h2>
+                    <h2 className="text-lg font-black text-[#4B4B4B]">Xác nhận hoàn tiền cho khách hàng</h2>
                     <p className="text-xs font-bold text-[#AFAFAF]">
                       Kiểm tra thông tin tài khoản thụ hưởng bên dưới và bấm xác nhận sau khi đã chuyển khoản hoàn tiền.
                     </p>
@@ -2066,7 +2066,7 @@ export default function StaffTaskDetailPage() {
                 {/* Danh sách sự cố đã ghi nhận (UC-24) */}
                 <div>
                   <h2 className="text-sm font-black uppercase text-[#4B4B4B] tracking-wide mb-3">
-                    Báo cáo sự cố hư hỏng (UC-24)
+                    Báo cáo sự cố hư hỏng
                   </h2>
                   {!task.damageCases || task.damageCases.length === 0 ? (
                     <div className="rounded-2xl bg-[#D7FFB8]/50 border-2 border-[#58CC02] px-4 py-3 flex items-center gap-2.5 text-xs font-black text-[#58A700]">
@@ -2144,7 +2144,7 @@ export default function StaffTaskDetailPage() {
             <div className="duo-card p-6 flex flex-col gap-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản nghiệm thu trả kho (UC-23)</h2>
+                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản nghiệm thu trả kho</h2>
                   <p className="text-xs font-bold text-[#AFAFAF]">
                     Kiểm tra hiện trạng ô kho, thu hồi quyền truy cập và lập biên bản sự cố nếu có hư hại.
                   </p>
@@ -2623,7 +2623,7 @@ export default function StaffTaskDetailPage() {
             <div className="duo-card p-6 flex flex-col gap-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao (UC-18)</h2>
+                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao</h2>
                   <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 5 mục, cấp mã PIN + thẻ RFID rồi xác nhận.</p>
                 </div>
                 <button

@@ -18,6 +18,7 @@ const TYPE_LABELS = {
   MONTHLY_RENT: 'Gia hạn',
   LATE_FEE: 'Phí trễ',
   DAMAGE_FEE: 'Phí sự cố',
+  OVERSTAY_FEE: 'Phí chiếm dụng / lưu giữ',
   REFUND: 'Hoàn tiền',
 }
 const METHOD_LABELS = { VNPAY: 'VNPAY', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', DEPOSIT_OFFSET: 'Trừ cọc' }

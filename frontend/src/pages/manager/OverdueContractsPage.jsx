@@ -214,6 +214,11 @@ export default function OverdueContractsPage() {
     (c.storageUnitId || '').toLowerCase().includes(search.toLowerCase())
   )
 
+  // PR-Q9 / PR-Q14: thanh lý trừ cọc phí trễ + phí chiếm dụng; vượt cọc thành nợ OVERSTAY_FEE của khách
+  const liquidationCharge = liquidateContractTarget
+    ? Number(liquidateContractTarget.lateFeeAmount || 0) + Number(liquidateContractTarget.overstayFeeAmount || 0)
+    : 0
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
       {/* Toast thông báo */}
@@ -233,6 +238,10 @@ export default function OverdueContractsPage() {
           </h1>
           <p className="text-xs font-bold text-[#AFAFAF] uppercase tracking-wider mt-1">
             Theo dõi công nợ, lịch sử đôn đốc và quy trình thanh lý hợp đồng tại cơ sở
+          </p>
+          {/* PR-Q8 / PR-Q10: lịch liên hệ đề xuất để kịp thanh lý khi quá 15 ngày */}
+          <p className="text-[11px] font-bold text-[#777777] mt-1">
+            Lịch liên hệ đề xuất: ngày quá hạn thứ 1 · 3 · 7 (đủ 3 lần). Quá mốc thanh lý theo chính sách (bản mới 15 ngày) là được thanh lý để ô sớm cho thuê lại.
           </p>
         </div>
       </div>
@@ -323,7 +332,7 @@ export default function OverdueContractsPage() {
                   <th className="py-3.5 px-4">Khách Hàng</th>
                   <th className="py-3.5 px-4">Ô Kho</th>
                   <th className="py-3.5 px-4 text-center">Quá Hạn</th>
-                  <th className="py-3.5 px-4 text-right">Phí Trễ Lũy Kế</th>
+                  <th className="py-3.5 px-4 text-right">Phí Trễ + Chiếm Dụng</th>
                   <th className="py-3.5 px-4">Ghi Chú Đôn Đốc Gần Nhất</th>
                   <th className="py-3.5 px-4 text-center">Thao Tác</th>
                 </tr>
@@ -354,6 +363,12 @@ export default function OverdueContractsPage() {
                         ) : formatVND(c.lateFeeAmount)}
                         {c.isMaxLateFeeReached && !c.lateFeeWaived && (
                           <div className="text-[10px] text-[#FF9600] font-bold">Chạm trần cọc</div>
+                        )}
+                        {/* PR-Q14: phí chiếm dụng (không trần) */}
+                        {Number(c.overstayFeeAmount) > 0 && (
+                          <div className="text-[10px] text-[#777777] font-bold" title="Phí chiếm dụng ô: giá ngày × % chính sách × số ngày quá hạn">
+                            + chiếm dụng {formatVND(c.overstayFeeAmount)}
+                          </div>
                         )}
                       </td>
                       <td className="py-3.5 px-4 max-w-xs">
@@ -418,12 +433,12 @@ export default function OverdueContractsPage() {
                             </button>
                           )}
 
-                          {/* Demo: tua tới mốc 31 ngày để bật nút Thanh lý */}
+                          {/* Demo: tua qua mốc thanh lý của chính sách (bản mới 15 ngày) để bật nút Thanh lý */}
                           {!c.canLiquidate && (
                             <SimulationButton
-                              label="31 ngày"
-                              description={`Cho HĐ #${c.contractCode} quá hạn 31 ngày để vượt mốc thanh lý 30 ngày.`}
-                              onRun={() => simulateOverdue(c.contractId, 31)}
+                              label={`${(c.liquidationDaysThreshold || 15) + 1} ngày`}
+                              description={`Cho HĐ #${c.contractCode} quá hạn ${(c.liquidationDaysThreshold || 15) + 1} ngày để vượt mốc thanh lý ${c.liquidationDaysThreshold || 15} ngày.`}
+                              onRun={() => simulateOverdue(c.contractId, (c.liquidationDaysThreshold || 15) + 1)}
                               onDone={() => fetchContracts()}
                             />
                           )}
@@ -477,6 +492,9 @@ export default function OverdueContractsPage() {
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#FF4B4B]">
                         {formatVND(c.lateFeeAmount)}
+                        {Number(c.overstayFeeAmount) > 0 && (
+                          <div className="text-[10px] text-[#777777] font-bold">+ chiếm dụng {formatVND(c.overstayFeeAmount)}</div>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#58CC02] text-sm">
                         {formatVND(held)}
@@ -712,18 +730,24 @@ export default function OverdueContractsPage() {
                   <span>Phí phạt quá hạn khấu trừ vào cọc:</span>
                   <span>-{formatVND(liquidateContractTarget.lateFeeAmount)}</span>
                 </div>
+                {Number(liquidateContractTarget.overstayFeeAmount) > 0 && (
+                  <div className="flex justify-between items-center text-red-600 font-bold">
+                    <span>Phí chiếm dụng ô ({liquidateContractTarget.overdueDays} ngày):</span>
+                    <span>-{formatVND(liquidateContractTarget.overstayFeeAmount)}</span>
+                  </div>
+                )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline font-black">
                   <span className="text-[#4B4B4B] uppercase text-[11px]">Cọc còn lại sau thanh lý:</span>
                   <span className="text-base text-[#58CC02]">
-                    {formatVND(
-                      Math.max(
-                        0,
-                        Number(liquidateContractTarget.depositHeldAmount || 0) -
-                          Number(liquidateContractTarget.lateFeeAmount || 0)
-                      )
-                    )}
+                    {formatVND(Math.max(0, Number(liquidateContractTarget.depositHeldAmount || 0) - liquidationCharge))}
                   </span>
                 </div>
+                {liquidationCharge > Number(liquidateContractTarget.depositHeldAmount || 0) && (
+                  <div className="flex justify-between items-center text-[#FF4B4B] font-black">
+                    <span>Vượt cọc → khoản nợ của khách:</span>
+                    <span>{formatVND(liquidationCharge - Number(liquidateContractTarget.depositHeldAmount || 0))}</span>
+                  </div>
+                )}
               </div>
 
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs space-y-1">

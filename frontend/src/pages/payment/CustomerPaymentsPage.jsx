@@ -4,7 +4,7 @@ import { getMyPayments } from '../../services/paymentService'
 import { createVnpayDebt } from '../../services/vnpayService'
 
 // UC-20 (PR-50): khách xem MỌI giao dịch của mình và trả các khoản còn nợ.
-//  - Phí sự cố vượt cọc (DAMAGE_FEE) → trả ngay qua VNPAY tại đây; trả xong được đặt kho mới.
+//  - Phí sự cố / phí chiếm dụng vượt cọc (DAMAGE_FEE / OVERSTAY_FEE) → trả ngay qua VNPAY tại đây; trả xong được đặt kho mới.
 //  - Hợp đồng quá hạn → trả bằng cách gia hạn ở trang hợp đồng (tiền thuê + phí trễ).
 
 const TYPE_LABELS = {
@@ -12,6 +12,7 @@ const TYPE_LABELS = {
   MONTHLY_RENT: { label: 'Gia hạn thuê', icon: 'event_repeat' },
   LATE_FEE: { label: 'Phí trễ hạn', icon: 'timer_off' },
   DAMAGE_FEE: { label: 'Phí sự cố', icon: 'construction' },
+  OVERSTAY_FEE: { label: 'Phí chiếm dụng / lưu giữ', icon: 'door_front' }, // PR-Q14 / PR-Q15
   REFUND: { label: 'Hoàn tiền', icon: 'currency_exchange' },
 }
 
@@ -169,7 +170,7 @@ export default function CustomerPaymentsPage() {
             <div key={debt.id} className="duo-card p-5 border-2 border-[#FF4B4B] flex flex-col md:flex-row md:items-center gap-4">
               <span className="material-symbols-outlined text-[32px] text-[#FF4B4B]">construction</span>
               <div className="flex-1 min-w-0">
-                <p className="font-black text-[#4B4B4B]">Phí sự cố vượt tiền cọc · HĐ {debt.contractCode || '—'}</p>
+                <p className="font-black text-[#4B4B4B]">{debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
                 <p className="text-xs font-bold text-[#777777]">
                   {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — phát sinh khi nghiệm thu trả kho
                 </p>
@@ -192,7 +193,7 @@ export default function CustomerPaymentsPage() {
                 <p className="font-black text-[#4B4B4B]">Hợp đồng {c.contractCode} quá hạn {c.overdueDays} ngày</p>
                 <p className="text-xs font-bold text-[#777777]">
                   {c.facilityName} — gia hạn để mở lại mã PIN.{' '}
-                  {c.lateFeeWaived ? 'Quản lý đã miễn phí trễ cho bạn.' : `Phí trễ hiện tại ${formatVND(c.lateFeeAmount)}.`}
+                  {c.lateFeeWaived ? 'Quản lý đã miễn phí trễ cho bạn.' : `Phí trễ hiện tại ${formatVND(c.lateFeeAmount)}.`}{Number(c.overstayFeeAmount) > 0 ? ` Phí chiếm dụng ô ${formatVND(c.overstayFeeAmount)} (tăng mỗi ngày).` : ''}
                 </p>
               </div>
               {c.reservationId && (

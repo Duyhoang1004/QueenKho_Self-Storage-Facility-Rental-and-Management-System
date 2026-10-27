@@ -63,6 +63,14 @@ public class RentalPolicy {
     @Column(name = "allow_late_fee_waiver", nullable = false)
     private boolean allowLateFeeWaiver = true;
 
+    // PR-Q14: phí chiếm dụng mỗi ngày quá hạn = giá ngày × % (100–300, không trần)
+    @Column(name = "overstay_percent", nullable = false)
+    private Integer overstayPercent = 150;
+
+    // PR-Q15: phí lưu giữ hàng sau thanh lý mỗi ngày = giá ngày × % (0–100)
+    @Column(name = "held_goods_fee_percent", nullable = false)
+    private Integer heldGoodsFeePercent = 20;
+
     @Column(nullable = false)
     private Integer version;
 

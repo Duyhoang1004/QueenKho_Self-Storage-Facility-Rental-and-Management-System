@@ -30,6 +30,9 @@ export async function createRentalPolicyVersion(facilityId, values) {
     renewalDiscount6m: optionalNumber(values.renewalDiscount6m),
     renewalDiscount12m: optionalNumber(values.renewalDiscount12m),
     allowLateFeeWaiver: values.allowLateFeeWaiver,
+    // PR-Q14 / PR-Q15: % phí chiếm dụng khi quá hạn + % phí lưu giữ hàng sau thanh lý
+    overstayPercent: optionalNumber(values.overstayPercent),
+    heldGoodsFeePercent: optionalNumber(values.heldGoodsFeePercent),
   });
   return response.data;
 }

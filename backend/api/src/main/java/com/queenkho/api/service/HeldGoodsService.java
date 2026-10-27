@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -165,17 +166,44 @@ public class HeldGoodsService {
             }
         }
 
+        // PR-Q15: phí lưu giữ hàng (khách đồng ý điều khoản v2). Thu theo thứ tự: tiền bán còn dư → cọc còn giữ
+        // → (chỉ khi khách nhận lại) khách trả tại quầy. Không đủ thì cơ sở tự chịu phần thiếu, không sinh nợ mới.
+        // Giao cho cơ quan chức năng (hàng cấm / giấy tờ) không tính phí.
+        BigDecimal storageFee = "HANDED_TO_AUTHORITY".equals(outcome) ? BigDecimal.ZERO : storageFee(goods, LocalDate.now());
+        boolean depositAvailable = includeRemainingDeposit(contract);
+        BigDecimal depositHeld = depositAvailable ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
+        BigDecimal surplus = proceeds != null ? proceeds.subtract(debtOffset) : BigDecimal.ZERO;
+        BigDecimal feeFromSale = storageFee.min(surplus);
+        BigDecimal feeFromDeposit = storageFee.subtract(feeFromSale).min(depositHeld);
+        BigDecimal feeAtCounter = storageFee.subtract(feeFromSale).subtract(feeFromDeposit);
+        if ("RETURNED".equals(outcome) && feeAtCounter.compareTo(BigDecimal.ZERO) > 0
+                && !Boolean.TRUE.equals(request.getStorageFeeCollected())) {
+            throw new HeldGoodsException(HttpStatus.CONFLICT, "STORAGE_FEE_UNPAID",
+                    "Khách cần trả phí lưu giữ còn thiếu " + vnd(feeAtCounter) + "đ tại quầy trước khi nhận lại hàng");
+        }
+        if (!"RETURNED".equals(outcome)) {
+            feeAtCounter = BigDecimal.ZERO;
+        }
+        BigDecimal feeCharged = feeFromSale.add(feeFromDeposit).add(feeAtCounter);
+
         if ("SOLD".equals(outcome)) {
             // Tính phần hoàn trước khi UPDATE để lưu luôn vào hồ sơ
-            BigDecimal surplus = proceeds.subtract(debtOffset);
-            BigDecimal depositHeld = includeRemainingDeposit(contract) ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
-            refund = surplus.add(depositHeld);
+            refund = surplus.subtract(feeFromSale).add(depositHeld.subtract(feeFromDeposit));
         }
 
         // UPDATE có điều kiện status = HOLDING: chống bấm đúp / 2 người xử lý cùng lúc
-        int updated = heldGoodsRepository.resolve(id, outcome, note, manager, proceeds, debtOffset, refund);
+        int updated = heldGoodsRepository.resolve(id, outcome, note, manager, proceeds, debtOffset, refund,
+                storageFee.compareTo(BigDecimal.ZERO) > 0 ? feeCharged : null);
         if (updated == 0) {
             throw new HeldGoodsException(HttpStatus.CONFLICT, "HELD_GOODS_ALREADY_RESOLVED", "Hồ sơ này đã được xử lý trước đó");
+        }
+
+        recordStorageFee(contract, customerId, feeFromSale, "GOODS_SALE");
+        recordStorageFee(contract, customerId, feeFromDeposit, "DEPOSIT_OFFSET");
+        recordStorageFee(contract, customerId, feeAtCounter, "CASH");
+        if (feeFromDeposit.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update("UPDATE rental_contracts SET deposit_held_amount = deposit_held_amount - ? WHERE id = ?",
+                    feeFromDeposit, contract.getId());
         }
 
         if ("SOLD".equals(outcome)) {
@@ -183,16 +211,58 @@ public class HeldGoodsService {
                 offsetDebts(customerId, debtOffset);
             }
             if (refund.compareTo(BigDecimal.ZERO) > 0) {
-                createRefundTask(contract, manager, refund, proceeds.subtract(debtOffset));
+                createRefundTask(contract, manager, refund, surplus.subtract(feeFromSale));
             }
         }
 
         activityLogService.log(manager.getId(),
                 "[GOODS_" + outcome + "] HĐ " + contract.getContractCode() + ": " + note
-                        + (proceeds != null ? " (bán " + vnd(proceeds) + "đ, trừ nợ " + vnd(debtOffset) + "đ, hoàn khách " + vnd(refund) + "đ)" : ""),
+                        + (proceeds != null ? " (bán " + vnd(proceeds) + "đ, trừ nợ " + vnd(debtOffset) + "đ, hoàn khách " + vnd(refund) + "đ)" : "")
+                        + (feeCharged.compareTo(BigDecimal.ZERO) > 0 ? " · phí lưu giữ " + vnd(feeCharged) + "đ" : ""),
                 "held_goods", String.valueOf(id));
 
         return toResponse(heldGoodsRepository.findDetailById(id).orElseThrow());
+    }
+
+    // ================== PHÍ LƯU GIỮ (PR-Q15) ==================
+
+    /** Số ngày đã lưu giữ tính đến asOf (tối đa đến hết hạn lưu giữ) */
+    static long heldDays(HeldGoods goods, LocalDate asOf) {
+        LocalDate start = goods.getHoldUntil().minusDays(HOLD_DAYS);
+        LocalDate end = asOf.isAfter(goods.getHoldUntil()) ? goods.getHoldUntil() : asOf;
+        return Math.max(0, ChronoUnit.DAYS.between(start, end));
+    }
+
+    /** Phí 1 ngày lưu giữ = giá ngày của ô cũ × held_goods_fee_percent; 0 nếu khách chưa đồng ý điều khoản v2 */
+    BigDecimal storageFeePerDay(RentalContract contract) {
+        if (!LateFeeService.acceptsOverstayTerms(termsVersion(contract))) return BigDecimal.ZERO;
+        BigDecimal monthly = contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null
+                ? contract.getStorageUnit().getUnitType().getBasePriceMonthly() : null;
+        return LateFeeService.dailyRate(monthly).multiply(BigDecimal.valueOf(storageFeePercent(contract)))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+    }
+
+    BigDecimal storageFee(HeldGoods goods, LocalDate asOf) {
+        return storageFeePerDay(goods.getContract()).multiply(BigDecimal.valueOf(heldDays(goods, asOf)));
+    }
+
+    private int storageFeePercent(RentalContract contract) {
+        if (contract.getRentalPolicyId() == null) return LateFeeService.DEFAULT_HELD_GOODS_FEE_PERCENT;
+        List<Integer> rows = jdbcTemplate.queryForList(
+                "SELECT held_goods_fee_percent FROM rental_policy WHERE id = ?", Integer.class, contract.getRentalPolicyId());
+        return rows == null || rows.isEmpty() || rows.get(0) == null
+                ? LateFeeService.DEFAULT_HELD_GOODS_FEE_PERCENT : rows.get(0);
+    }
+
+    // Phí lưu giữ là doanh thu chiếm dụng → ghi OVERSTAY_FEE SUCCESS (method cho biết nguồn tiền)
+    private void recordStorageFee(RentalContract contract, Integer customerId, BigDecimal amount, String method) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0 || customerId == null) return;
+        Integer reservationId = contract.getReservation() != null ? contract.getReservation().getId() : null;
+        jdbcTemplate.update(
+                "INSERT INTO payment_transactions (transaction_code, user_id, reservation_id, contract_id, payment_type, " +
+                        "payment_method, amount, status, paid_at) VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', ?, ?, 'SUCCESS', SYSDATETIME())",
+                "HG-" + method.charAt(0) + "-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                customerId, reservationId, contract.getId(), method, amount);
     }
 
     // ================== HELPERS ==================
@@ -213,7 +283,7 @@ public class HeldGoodsService {
     BigDecimal customerDebt(Integer customerId) {
         if (customerId == null) return BigDecimal.ZERO;
         BigDecimal debt = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE payment_type = 'DAMAGE_FEE' AND status = 'PENDING' " +
+                "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE payment_type IN ('DAMAGE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND renewal_months IS NULL " +
                         "AND (user_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE customer_id = ?))",
                 BigDecimal.class, customerId, customerId);
         return debt != null ? debt : BigDecimal.ZERO;
@@ -222,8 +292,8 @@ public class HeldGoodsService {
     // Trừ nợ bằng tiền bán hàng, khoản cũ trước. Khoản trừ không hết thì tách: phần đã trả SUCCESS, phần còn lại vẫn PENDING.
     private void offsetDebts(Integer customerId, BigDecimal amount) {
         List<Map<String, Object>> debts = jdbcTemplate.queryForList(
-                "SELECT id, amount, user_id, reservation_id, contract_id FROM payment_transactions " +
-                        "WHERE payment_type = 'DAMAGE_FEE' AND status = 'PENDING' " +
+                "SELECT id, amount, user_id, reservation_id, contract_id, payment_type FROM payment_transactions " +
+                        "WHERE payment_type IN ('DAMAGE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND renewal_months IS NULL " +
                         "AND (user_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE customer_id = ?)) ORDER BY id",
                 customerId, customerId);
         BigDecimal remaining = amount;
@@ -240,9 +310,10 @@ public class HeldGoodsService {
                         remaining, debtId);
                 jdbcTemplate.update(
                         "INSERT INTO payment_transactions (transaction_code, user_id, reservation_id, contract_id, payment_type, " +
-                                "payment_method, amount, status, paid_at) VALUES (?, ?, ?, ?, 'DAMAGE_FEE', 'GOODS_SALE', ?, 'SUCCESS', SYSDATETIME())",
+                                "payment_method, amount, status, paid_at) VALUES (?, ?, ?, ?, ?, 'GOODS_SALE', ?, 'SUCCESS', SYSDATETIME())",
                         "DMG-SALE-" + debtId + "-" + (System.currentTimeMillis() % 100000),
-                        d.get("user_id"), d.get("reservation_id"), d.get("contract_id"), remaining);
+                        d.get("user_id"), d.get("reservation_id"), d.get("contract_id"),
+                        d.get("payment_type") != null ? d.get("payment_type") : "DAMAGE_FEE", remaining);
                 remaining = BigDecimal.ZERO;
             }
         }
@@ -336,6 +407,10 @@ public class HeldGoodsService {
                 .proceedsAmount(g.getProceedsAmount())
                 .debtOffsetAmount(g.getDebtOffsetAmount())
                 .refundAmount(g.getRefundAmount())
+                .storageFeePerDay(storageFeePerDay(c))
+                .heldDays(heldDays(g, today))
+                .estimatedStorageFee("HOLDING".equals(g.getStatus()) ? storageFee(g, today) : null)
+                .storageFeeAmount(g.getStorageFeeAmount())
                 .resolvedNote(g.getResolvedNote())
                 .resolvedByName(g.getResolvedBy() != null ? g.getResolvedBy().getFullName() : null)
                 .resolvedAt(g.getResolvedAt())

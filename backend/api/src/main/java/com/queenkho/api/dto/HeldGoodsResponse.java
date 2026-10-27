@@ -31,12 +31,18 @@ public class HeldGoodsResponse {
     private boolean holdExpired;
     private String termsVersion;       // NULL = đơn cũ chưa đồng ý điều khoản → không được bán
     private boolean canSell;           // hết hạn + đã đồng ý điều khoản
-    private BigDecimal customerDebt;   // nợ DAMAGE_FEE còn PENDING của khách (phải trả trước khi nhận lại)
+    private BigDecimal customerDebt;   // nợ DAMAGE_FEE / OVERSTAY_FEE còn PENDING của khách (phải trả trước khi nhận lại)
     private BigDecimal depositHeld;    // cọc còn giữ sau thanh lý
 
     private BigDecimal proceedsAmount;
     private BigDecimal debtOffsetAmount;
     private BigDecimal refundAmount;
+
+    // PR-Q15: phí lưu giữ hàng (0 nếu khách chưa đồng ý điều khoản v2)
+    private BigDecimal storageFeePerDay;
+    private long heldDays;
+    private BigDecimal estimatedStorageFee; // tạm tính đến hôm nay (chỉ khi đang HOLDING)
+    private BigDecimal storageFeeAmount;    // đã tính khi chốt hồ sơ
     private String resolvedNote;
     private String resolvedByName;
     private LocalDateTime resolvedAt;

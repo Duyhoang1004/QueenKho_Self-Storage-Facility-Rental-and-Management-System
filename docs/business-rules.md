@@ -1,6 +1,7 @@
 # QueenKho — Business Rules
 
 > Cập nhật: 17/10/2026 · Nguồn: code trên `main` (commit `e887c67`) + file phân công `SWP391_Task` + các buổi chốt nghiệp vụ + góp ý thành viên (17/10, mục 7).
+> Cập nhật 27/10/2026: góp ý giảng viên — gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (D-12, PR-R10 → R12, PR-Q14, PR-Q15; mục 7).
 >
 > **Ký hiệu**
 > - **BR-xx** — rule **đang chạy trong code**. Dòng có ~~gạch~~ là rule cũ **đã bị thay** bởi PR ghi bên cạnh.
@@ -70,9 +71,10 @@
 | D-06 | **Bỏ voucher.** | PR-B9; sửa L-04. |
 | D-07 | **No-Show**: mặc định tịch thu 100% cọc, **hoàn toàn bộ tiền thuê**. FM được **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. Chỉ được bấm No-Show sau **≥ 2 lần liên hệ thất bại cách nhau ≥ 24h** và đã qua **48h** từ giờ hẹn. | PR-X1, PR-X3; sửa L-06. |
 | D-08 | **Giữ 2 bảng ưu đãi**: đặt mới 1/3/6/12T giảm **0/5/10/15%**; gia hạn **0/0/5/10%**. | Gom % về 1 chỗ ở BE, FE lấy từ API (hiện đang lặp ở `VnpayService`, `ContractService`, `CreateReservationPage.jsx`, `ContractOptionsModal.jsx`). |
-| D-09 | **Thanh lý**: trừ phí trễ 50% cọc; **50% còn lại tạm giữ**, chỉ hoàn khi khách đến cơ sở làm việc với FM. | PR-Q9. |
+| D-09 | **Thanh lý**: trừ phí trễ (trần 50% cọc) **+ phí chiếm dụng** (PR-Q14) vào cọc; phần cọc còn lại **tạm giữ**, chỉ hoàn khi khách đến cơ sở làm việc với FM; phí vượt cọc thành **khoản nợ** của khách. *(sửa 27/10/2026 — trước đây chỉ trừ 50% cọc)* | PR-Q9. |
 | D-10 | **Trả kho sớm được hoàn tiền thuê** theo nguyên tắc *thu hồi ưu đãi + phí phá hợp đồng* (thay quy định "trả sớm không hoàn"). | PR-O2. |
 | D-11 | **Ân hạn dọn đồ**: miễn phí **1 ngày** sau `end_date`; ngày 2 → 5 tính **tiền thuê theo ngày**, trừ vào cọc. | PR-O1, PR-O14. |
+| D-12 | (27/10/2026, góp ý giảng viên) **Tối ưu doanh thu ô kho** — khách cũ không được giữ ô "miễn phí" khi không thuê tiếp. 4 tầng: **(1)** gia hạn phải báo trước 3 ngày, quá mốc thì ô thành *sắp trống* và được bán trước cho khách khác; **(2)** quá hạn tính **phí chiếm dụng** mỗi ngày, không trần, để quá hạn luôn đắt hơn gia hạn; **(3)** thanh lý sau **15 ngày** (thay 30) để ô sớm cho thuê lại; **(4)** hàng lưu giữ sau thanh lý tính **phí lưu giữ**. Tầng 2–4 chỉ áp dụng cho khách đã đồng ý **điều khoản v2**. | PR-R10, PR-R11, PR-R12, PR-Q8, PR-Q14, PR-Q15. |
 
 ### 1.3 Ma trận vai trò → màn hình
 | Nhóm màn hình | CUSTOMER | STAFF | FM | BOM | ADMIN |
@@ -110,9 +112,17 @@ PENDING_CHECK_IN ──(check-in, UC-18)──▶ ACTIVE ──(yêu cầu trả
                     (job 00:05, end_date < hôm nay)          (qua end_date + 5 ngày ân hạn)
                                           ▼                                        │
                                        OVERDUE ◀───────────────────────────────────┘
-                                          │  ├──(gia hạn + trả phí trễ)──▶ ACTIVE
+                                          │  ├──(gia hạn + trả phí trễ + phí chiếm dụng)──▶ ACTIVE
                                           │  └──(hẹn trả kho)──▶ TERMINATION_PENDING
-                                          └──(quá liquidation_days, FM bấm)──▶ LIQUIDATED
+                                          └──(quá liquidation_days — bản mới 15 ngày, FM bấm)──▶ LIQUIDATED
+```
+**Mốc gia hạn (PR-R10 / PR-R11)** — không đổi trạng thái hợp đồng, chỉ đổi cách tính suất:
+```
+            end_date − 3 (hết ngày)                end_date
+  ───────────────────┼─────────────────────────────────┼──────────────────────▶
+   ƯU TIÊN: gia hạn  │ MUỘN: ô "sắp trống", người khác  │ OVERDUE: vẫn "sắp trống",
+   tự do             │ đặt trước được; khách cũ chỉ gia │ + phí trễ + phí chiếm dụng
+                     │ hạn nếu chưa ai cần ô            │
 ```
 ⚙️ Hiện tại: chưa có gì chuyển sang `OVERDUE` / `LIQUIDATED`, chưa có nghiệm thu → `TERMINATED`.
 
@@ -143,9 +153,10 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | `MONTHLY_RENT` | Gia hạn |
 | `LATE_FEE` | Phí trễ (trả khi gia hạn, hoặc trừ vào cọc) |
 | `DAMAGE_FEE` 🆕 | Phí sự cố hư hỏng |
+| `OVERSTAY_FEE` 🆕 | (27/10/2026) **Phí chiếm dụng** ô khi quá hạn (PR-Q14) và **phí lưu giữ** hàng sau thanh lý (PR-Q15). Là tiền cho việc dùng chỗ → tính vào **doanh thu thuê** (PR-M7). Dòng phụ của link gia hạn có `renewal_months` ≠ NULL (mã `OS` + mã giao dịch chính); khoản nợ có `renewal_months` = NULL. |
 | `REFUND` | Hoàn tiền (huỷ đơn, No-Show, trả kho, thanh lý, IPN về trễ) |
 
-`payment_method`: `VNPAY` · `BANK_TRANSFER` · `CASH` · `DEPOSIT_OFFSET` 🆕 (trừ vào cọc, không phải tiền mới — PR-M8).
+`payment_method`: `VNPAY` · `BANK_TRANSFER` · `CASH` · `DEPOSIT_OFFSET` 🆕 (trừ vào cọc, không phải tiền mới — PR-M8) · `GOODS_SALE` (trừ từ tiền bán hàng lưu giữ — PR-Q10).
 `status`: `PENDING` → `SUCCESS` / `FAILED`.
 
 ---
@@ -180,7 +191,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Rule |
 |---|---|
 | BR-10 | Chỉ cơ sở `ACTIVE`. Lọc từ khoá, thành phố, loại kho, khoảng giá, khoảng diện tích. |
-| BR-11 | **Số suất** của (cơ sở × loại kho) = ô `AVAILABLE` − đơn `PENDING` − đơn `DEPOSIT_PAID` (≥ 0). Suất = 0 → ẩn. Đây là công thức "giữ tạm" của D-02, dùng chung cho PR-B1, PR-M10. |
+| BR-11 | **Số suất** của (cơ sở × loại kho) = ô `AVAILABLE` − đơn `PENDING` − đơn `DEPOSIT_PAID` (≥ 0). Suất = 0 → ẩn. Đây là công thức "giữ tạm" của D-02, dùng chung cho PR-B1, PR-M10. *(27/10/2026)* Suất = 0 nhưng có ô **sắp trống** (PR-R11) → vẫn hiện, nhãn **"Trống từ dd/MM"** (`availableFrom`); bấm Đặt kho thì ngày nhận kho tối thiểu là ngày đó. |
 | PR-M4 | Loại kho `INACTIVE` không hiện trong tìm kiếm. |
 
 ### UC-10 / UC-11 / EX-01 / EX-02 Đặt chỗ & thanh toán cọc ✅
@@ -200,7 +211,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 **Đã chốt**
 | Mã | Rule |
 |---|---|
-| PR-B1 | Tạo đơn **tính lại số suất (BR-11) trong transaction có khoá** theo cơ sở + loại kho. Hết → 409 `OUT_OF_STOCK`. (sửa L-13) |
+| PR-B1 | Tạo đơn **tính lại số suất (BR-11) trong transaction có khoá** theo cơ sở + loại kho. Hết → 409 `OUT_OF_STOCK`. (sửa L-13) *(27/10/2026)* Số suất cộng thêm các ô **sắp trống** có ngày giao ≤ ngày nhận kho của đơn (PR-R11). Hết → 409 `NO_AVAILABILITY`, message báo **ngày nhận kho sớm nhất** nếu có ô sắp trống. |
 | PR-B2 | Mỗi khách tối đa **1 đơn `PENDING`** → 409 `PENDING_EXISTS`. |
 | PR-B3 | Chỉ `CUSTOMER` `ACTIVE` được đặt; cơ sở và loại kho phải `ACTIVE`. Khách có hợp đồng `OVERDUE` hoặc còn nợ → PR-Q12. Bỏ fallback `customerId ?? 1` ở FE (L-22). |
 | PR-B4 | Ngày bắt đầu: **từ ngày mai đến tối đa 30 ngày tới** (FE + BE). |
@@ -235,6 +246,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-15 | Đọc `cancel_free_hours`, `cancel_fee_percent` từ chính sách thay vì viết cứng. |
 | PR-M5 | Dùng chính sách **hiện hành của cơ sở lúc huỷ** (đơn chưa có hợp đồng nên chưa gắn chính sách). |
 | PR-O12 | Đơn đã thanh toán khi huỷ → task `REFUND` cho FM (BR-34), FM hoàn theo PR-O12 (có bằng chứng). |
+| PR-R12 | (27/10/2026) Đơn `DEPOSIT_PAID` **đã tới ngày nhận kho mà cơ sở chưa gán được ô** (ô sắp trống khách cũ chưa trả — PR-R11) → lỗi cơ sở: khách huỷ được **hoàn 100%**, không tính `cancel_fee_percent`. FM vẫn có thể gán ô khác cùng loại nếu có ô `AVAILABLE`. |
 
 ### UC-13 / UC-14 Duyệt đơn & gán ô ✅
 | Mã | Rule |
@@ -301,7 +313,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ### UC-20 Lịch sử & khoản phải thanh toán ⬜ (đổi phạm vi)
 | Mã | Rule |
 |---|---|
-| PR-50 | (D-01) Không thu hằng tháng → "Pay Monthly Rent" trùng UC-21. UC-20 đổi thành: xem **mọi giao dịch** của khách (cọc, thuê, gia hạn, phí trễ, phí sự cố, hoàn tiền) + **trả các khoản nợ** phát sinh (`DAMAGE_FEE` vượt cọc — PR-O9) qua VNPAY. |
+| PR-50 | (D-01) Không thu hằng tháng → "Pay Monthly Rent" trùng UC-21. UC-20 đổi thành: xem **mọi giao dịch** của khách (cọc, thuê, gia hạn, phí trễ, phí sự cố, phí chiếm dụng / lưu giữ, hoàn tiền) + **trả các khoản nợ** phát sinh (`DAMAGE_FEE` vượt cọc — PR-O9; `OVERSTAY_FEE` vượt cọc — PR-Q14) qua VNPAY. Mục "Hợp đồng quá hạn" hiện cả phí chiếm dụng đang tăng theo ngày. |
 
 ### UC-21 Gia hạn hợp đồng ✅
 **Đang chạy** (`VnpayService.createRenewal / settleRenewal`, `ContractOptionsModal.jsx`)
@@ -316,14 +328,16 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-R1 | Chỉ gia hạn khi `ACTIVE` / `TERMINATION_PENDING` / `OVERDUE` → khác 409 `CONTRACT_NOT_RENEWABLE`. FE ẩn tab Gia hạn tương ứng. (sửa L-23) |
 | PR-R2 | BE chỉ nhận **1 / 3 / 6 / 12**; số tháng lưu tường minh, không cắt từ mã giao dịch. (sửa L-20) |
-| PR-R3 | Giữ BR-82: ngày quá hạn trước đó không nằm trong kỳ mới → thu bằng **phí trễ** (PR-Q6). Gia hạn khi đang trong ân hạn của `TERMINATION_PENDING`: kỳ mới tính từ hôm nay, các ngày ân hạn đã qua (từ ngày 2) tính theo PR-O14 và cộng vào lần thanh toán gia hạn. |
+| PR-R3 | Giữ BR-82: ngày quá hạn trước đó không nằm trong kỳ mới → thu bằng **phí trễ + phí chiếm dụng** (PR-Q6, PR-Q14). Gia hạn khi đang trong ân hạn của `TERMINATION_PENDING`: kỳ mới tính từ hôm nay, các ngày ân hạn đã qua (từ ngày 2) tính theo PR-O14 và cộng vào lần thanh toán gia hạn. |
 | PR-R4 | Giá = giá niêm yết hiện tại (PR-12); FE báo nếu giá đã đổi so với lúc ký. |
 | PR-R5 | Mỗi hợp đồng **1 giao dịch gia hạn `PENDING`**; link mới → giao dịch cũ `FAILED`; IPN về muộn của giao dịch cũ → `SUCCESS` + yêu cầu hoàn tiền (PR-O12). |
 | PR-R6 | **Xoá** `POST /contracts/{id}/renew` — chỉ gia hạn qua VNPAY. (sửa L-02) |
 | PR-R7 | Gia hạn khi `TERMINATION_PENDING` → huỷ task trả kho, bỏ thông tin hoàn cọc, báo "Yêu cầu trả kho đã được huỷ". |
 | PR-R8 | Trang hợp đồng đọc đúng `vnpResponse` + `orderId`, hỏi trạng thái giao dịch rồi hiện toast. (sửa L-19) |
-| PR-R9 | Còn ≤ 7 ngày đến `end_date` → banner nhắc ở "Kho của tôi", trang hợp đồng và dashboard FM. |
-| PR-Q6 | Gia hạn hợp đồng `OVERDUE`: 1 lần VNPAY = **phí trễ + tiền kỳ mới** → ghi 2 giao dịch `LATE_FEE` + `MONTHLY_RENT`; PIN mở lại. |
+| PR-R9 | Còn ≤ 7 ngày đến `end_date` → banner nhắc ở "Kho của tôi", trang hợp đồng và dashboard FM. *(27/10/2026: banner trang hợp đồng ghi rõ hạn chót gia hạn ưu tiên của PR-R10.)* |
+| PR-Q6 | Gia hạn hợp đồng `OVERDUE`: 1 lần VNPAY = **phí trễ + phí chiếm dụng + tiền kỳ mới** → ghi giao dịch `MONTHLY_RENT` + `LATE_FEE` (mã `LF…`) + `OVERSTAY_FEE` (mã `OS…`); IPN đối soát tổng cả nhóm; PIN mở lại. |
+| PR-R10 | (27/10/2026, D-12) **Gia hạn báo trước 3 ngày**: hạn chót gia hạn ưu tiên = **hết ngày `end_date` − 3**. Trước mốc: gia hạn tự do. Sau mốc (còn < 3 ngày, ngày cuối, đã hẹn trả kho `TERMINATION_PENDING`, hoặc đã `OVERDUE`) → **cửa sổ muộn**: chỉ gia hạn được khi ô **chưa có ai đặt trước** (PR-R11), ngược lại 409 `RENEWAL_UNIT_RESERVED` (kiểm tra lại ngay trước khi tạo link VNPAY, sau khi khoá hợp đồng). Màn gia hạn hiện: hạn chót + số ngày còn lại, hạn mới của từng gói 1/3/6/12, banner cửa sổ muộn; bị chặn thì khoá nút thanh toán và gợi ý "Hẹn trả kho". API `GET /contracts/{id}/renewal-eligibility`. |
+| PR-R11 | (27/10/2026, D-12) **Ô "sắp trống"**: ô `OCCUPIED` của hợp đồng đang ở cửa sổ muộn (PR-R10) được tính là suất cho **đơn đặt mới cùng cơ sở + loại kho có ngày nhận kho ≥ ngày giao ô**. Ngày giao ô (ước tính an toàn): `ACTIVE` / `TERMINATION_PENDING` → `end_date` + 6 (hết 5 ngày ân hạn PR-O1); `OVERDUE` → `end_date` + `liquidation_days` + 2 (thanh lý + 1 ngày dọn ô). Không đổi dữ liệu nào trong DB — chỉ là cách đếm suất (BR-11, PR-B1). Ô **đã có người cần** khi: số đơn đang giữ suất > ô `AVAILABLE` + các ô sắp trống **khác** → khách cũ không gia hạn được. Ô chỉ thật sự gán khi khách cũ trả kho / bị thanh lý xong (UC-14 như cũ). ⚠️ Giới hạn: khoảng ~15 phút giữa lúc khách cũ tạo link VNPAY và lúc IPN về, ô vẫn được tính sắp trống — nếu trùng, đơn mới xử lý theo PR-R12. |
 
 ### UC-22 Yêu cầu trả kho ✅ (cần sửa)
 **Đang chạy** (`ContractService.requestCheckout`)
@@ -335,7 +349,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Rule |
 |---|---|
 | PR-O1 | Ngày hẹn: **từ ngày mai đến `end_date` + 5 ngày** (ân hạn chuyển đồ; phí theo PR-O14). Hợp đồng `OVERDUE` → hẹn trong **3 ngày tới**. Kiểm tra cả FE + BE. (sửa L-09) |
-| PR-O14 | (D-11) **Phí ân hạn**: ngày `end_date` + 1 **miễn phí**; ngày + 2 → + 5 tính **tiền thuê theo ngày = giá niêm yết lúc ký / 30** mỗi ngày (không phải phí phạt). Tính đến ngày nghiệm thu thực tế, **trừ vào cọc** khi hoàn (`LATE_FEE` method `DEPOSIT_OFFSET`). FE hiện số phí dự kiến khi khách chọn ngày hẹn sau `end_date` + 1. Lỡ ân hạn (qua + 5 chưa nghiệm thu) → chuyển sang phí trễ PR-Q3 (tính từ `end_date` + 1, **thay** phí ân hạn, không cộng dồn hai loại). |
+| PR-O14 | (D-11) **Phí ân hạn**: ngày `end_date` + 1 **miễn phí**; ngày + 2 → + 5 tính **tiền thuê theo ngày = giá niêm yết lúc ký / 30** mỗi ngày (không phải phí phạt). Tính đến ngày nghiệm thu thực tế, **trừ vào cọc** khi hoàn (`LATE_FEE` method `DEPOSIT_OFFSET`). FE hiện số phí dự kiến khi khách chọn ngày hẹn sau `end_date` + 1. Lỡ ân hạn (qua + 5 chưa nghiệm thu) → chuyển sang phí trễ PR-Q3 **+ phí chiếm dụng PR-Q14** cho mọi ngày từ `end_date` + 1 (**thay** phí ân hạn, không cộng dồn phí ân hạn). |
 | PR-O2 | (D-10) **Trả sớm** (ngày hẹn < `end_date`) được hoàn tiền thuê theo công thức: **Hoàn tiền thuê = tiền thuê kỳ hiện tại đã trả − (số tháng đã dùng, làm tròn lên × giá niêm yết lúc ký, *không* ưu đãi) − phí phá hợp đồng (1 tháng giá niêm yết lúc ký)**, tối thiểu 0. "Số tháng đã dùng" tính từ ngày bắt đầu kỳ hiện tại đến ngày nghiệm thu. Cọc hoàn riêng theo PR-O11. FE hiện bảng tính dự kiến trước khi khách xác nhận. *Ví dụ*: gói 12T giá 1.850.000đ (ưu đãi 15% → đã trả 18.870.000đ), dùng 2 tháng → 18.870.000 − 2 × 1.850.000 − 1.850.000 = **13.320.000đ**. |
 | PR-O3 | Bắt buộc chọn cách nhận cọc: **chuyển khoản** (ngân hàng, số TK, chủ TK) hoặc **tiền mặt tại quầy**; FE gửi đủ field. (sửa L-18) |
 | PR-O4 | Khách **huỷ yêu cầu trả kho** được trước ngày hẹn nếu chưa quá `end_date` → hợp đồng `ACTIVE`, đơn `UNIT_ASSIGNED`, task `CANCELLED`. |
@@ -359,7 +373,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ### UC-25 Hoàn tiền ⬜
 | Mã | Rule |
 |---|---|
-| PR-O11 | **Hoàn cọc** khi trả kho = cọc đang giữ − phí sự cố − phí ân hạn (PR-O14) **hoặc** phí trễ (PR-Q3), ≥ 0. Trả sớm thì cộng thêm **hoàn tiền thuê** (PR-O2) vào cùng task `REFUND`, ghi rõ 2 phần. Bằng 0 vẫn tạo task để FM đóng hồ sơ. |
+| PR-O11 | **Hoàn cọc** khi trả kho = cọc đang giữ − phí sự cố − phí ân hạn (PR-O14) **hoặc** phí trễ (PR-Q3) − phí chiếm dụng (PR-Q14), ≥ 0. *(27/10/2026)* Cọc trừ **theo thứ tự**: sự cố → ân hạn / phí trễ → phí chiếm dụng; mỗi khoản ghi giao dịch `DEPOSIT_OFFSET` riêng. Phí trễ không bao giờ vượt cọc; sự cố vượt cọc → nợ `DAMAGE_FEE`, phí chiếm dụng vượt cọc → nợ `OVERSTAY_FEE` (cả hai `VNPAY` `PENDING`, khách trả ở UC-20). Trả sớm thì cộng thêm **hoàn tiền thuê** (PR-O2) vào cùng task `REFUND`, ghi rõ 2 phần. Bằng 0 vẫn tạo task để FM đóng hồ sơ. |
 | PR-O12 | (D-04) Mỗi khoản cần hoàn sinh **1 task `REFUND`** trong `facility_tasks` của cơ sở, **FM xử lý** (không vào việc của Staff). Nguồn: huỷ đơn (UC-15), No-Show (PR-X1), IPN về muộn (PR-B6, PR-R5), trả kho thường / trả sớm (UC-23, PR-O2), phần cọc còn giữ khi thanh lý (PR-Q9). Task ghi số tiền, cách nhận (chuyển khoản / tiền mặt), thông tin tài khoản; hạn theo PR-93. FM hoàn tất → task `COMPLETED`, giao dịch `REFUND` `SUCCESS`, log người xác nhận. *(đã code ở #55, #57)* |
 | PR-O15 | **Bằng chứng hoàn tiền** (bắt buộc trước khi hoàn tất task `REFUND`): **chuyển khoản** → bắt buộc nhập **mã giao dịch ngân hàng (mã FT)**; ảnh chụp màn hình chuyển khoản không bắt buộc (dán link vào `evidence_image_url`). **Tiền mặt** → bắt buộc tick "Khách đã ký nhận tiền" + ghi chú. BOM xem lại được mã FT / ảnh / ghi chú khi đối soát (UC-29). Thiếu → 400 `REFUND_EVIDENCE_REQUIRED`. *(code #57 đang cho ảnh tuỳ chọn, chưa bắt buộc mã FT — L-24)* |
 
@@ -373,11 +387,13 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-Q5 | `OVERDUE` → **PIN bị khoá** (trạng thái hiển thị). Hẹn trả kho → PIN mở lại để dọn đồ. |
 | PR-Q6 | Lối ra **gia hạn** — xem UC-21. |
 | PR-Q7 | Lối ra **trả kho**: hẹn trong 3 ngày (PR-O1); phí trễ tính đến ngày nghiệm thu, trừ vào cọc (PR-O11). |
-| PR-Q8 | Lối ra **thanh lý**: quá `liquidation_days` (mặc định 30) → **FM bấm Thanh lý** (không tự động), bắt buộc ghi chú quá trình liên hệ khách. |
-| PR-Q9 | Thanh lý: hợp đồng `LIQUIDATED`; đơn `COMPLETED`; xoá PIN/RFID; ô `MAINTENANCE` ("Dọn xong" → `AVAILABLE`); trừ phí trễ 50% cọc; **50% còn lại tạm giữ** (D-09) — hiện "Còn giữ cọc: X đ", FM bấm "Hoàn phần cọc còn lại" khi khách đến làm việc → PR-O12. Đóng ticket còn mở (PR-S8). |
-| PR-Q10 | (sửa 27/10/2026) **Điều khoản xử lý tài sản khi không trả kho** (v1) — khách bắt buộc đồng ý khi đặt kho (lưu `reservations.terms_version`, `terms_accepted_at`): thanh lý cần **≥ 3 lần liên hệ** (409 `NOT_ENOUGH_CONTACTS`); thanh lý sinh task `MAINTENANCE` "Dọn ô sau thanh lý" (≥ 2 người mở kho, kiểm kê, chụp ảnh, biên bản, chuyển khu lưu giữ); hàng lưu giữ **60 ngày**, quá hạn **bán thanh lý** trừ nợ, dư hoàn khách; hàng cấm / giấy tờ giao công an / UBND phường. Đơn cũ chưa đồng ý → không được bán. Căn cứ: BLDS 2015 Điều 346–350 (cầm giữ không cho bán nếu không có thoả thuận). "Dọn xong" bắt buộc biên bản kiểm kê (danh sách, người chứng kiến, khu lưu giữ, ≥ 1 ảnh) → bảng `held_goods`. FM xử lý ở trang **Hàng đang lưu giữ**: khách nhận lại (phải hết nợ) · bán thanh lý (hết hạn + đã đồng ý; tiền bán trừ nợ `DAMAGE_FEE` trước, dư + cọc còn giữ → task `REFUND`) · tiêu huỷ (hết hạn) · giao cơ quan chức năng (bất cứ lúc nào). |
-| PR-Q11 | Màn FM **"Hợp đồng quá hạn"**: mã HĐ, khách, SĐT, ô, số ngày quá hạn, phí trễ hiện tại, ghi chú liên hệ (nhiều lần, lưu log), nút Thanh lý (bật khi đủ ngày). |
-| PR-Q12 | Khách có hợp đồng `OVERDUE` hoặc còn nợ (`DAMAGE_FEE` `PENDING`) → không đặt chỗ mới, 409 `CUSTOMER_HAS_DEBT`. |
+| PR-Q8 | Lối ra **thanh lý**: quá `liquidation_days` → **FM bấm Thanh lý** (không tự động), bắt buộc ghi chú quá trình liên hệ khách. *(27/10/2026, D-12)* Phiên bản chính sách mới: **15 ngày** (bản cũ 30 — hợp đồng đã ký giữ mốc của bản gắn với nó, PR-M5). Lịch liên hệ đề xuất: ngày quá hạn thứ **1 · 3 · 7** (đủ 3 lần của PR-Q10) để kịp thanh lý ngay khi qua mốc. Mục đích: **thanh lý là giải phóng ô**, không phải xử lý hàng — hàng vẫn lưu giữ đủ 60 ngày ở khu lưu giữ, ô dọn xong là cho thuê lại. |
+| PR-Q9 | Thanh lý: hợp đồng `LIQUIDATED`; đơn `COMPLETED`; xoá PIN/RFID; ô `MAINTENANCE` ("Dọn xong" → `AVAILABLE`); trừ vào cọc **phí trễ** (trần 50% cọc, `LATE_FEE` `DEPOSIT_OFFSET`) rồi **phí chiếm dụng** (PR-Q14, `OVERSTAY_FEE` `DEPOSIT_OFFSET`); phí chiếm dụng vượt cọc → **nợ** `OVERSTAY_FEE` `VNPAY` `PENDING`. Cọc còn lại **tạm giữ** (D-09) — hiện "Còn giữ cọc: X đ", FM bấm "Hoàn phần cọc còn lại" khi khách đến làm việc → PR-O12. Thanh lý luôn tắt miễn phí trễ (tính đủ 150%). Đóng ticket còn mở (PR-S8). |
+| PR-Q10 | (sửa 27/10/2026) **Điều khoản xử lý tài sản khi không trả kho** (v1 → **v2** từ 27/10/2026: thêm gia hạn báo trước 3 ngày, phí chiếm dụng, thanh lý sau 15 ngày, phí lưu giữ hàng; đơn mới lưu `terms_version = 'v2'`) — khách bắt buộc đồng ý khi đặt kho (lưu `reservations.terms_version`, `terms_accepted_at`): thanh lý cần **≥ 3 lần liên hệ** (409 `NOT_ENOUGH_CONTACTS`); thanh lý sinh task `MAINTENANCE` "Dọn ô sau thanh lý" (≥ 2 người mở kho, kiểm kê, chụp ảnh, biên bản, chuyển khu lưu giữ); hàng lưu giữ **60 ngày**, quá hạn **bán thanh lý** trừ nợ, dư hoàn khách; hàng cấm / giấy tờ giao công an / UBND phường. Đơn cũ chưa đồng ý → không được bán. Căn cứ: BLDS 2015 Điều 346–350 (cầm giữ không cho bán nếu không có thoả thuận). "Dọn xong" bắt buộc biên bản kiểm kê (danh sách, người chứng kiến, khu lưu giữ, ≥ 1 ảnh) → bảng `held_goods`. FM xử lý ở trang **Hàng đang lưu giữ**: khách nhận lại (phải hết nợ + trả phí lưu giữ PR-Q15) · bán thanh lý (hết hạn + đã đồng ý; tiền bán trừ nợ `DAMAGE_FEE` / `OVERSTAY_FEE` trước, rồi phí lưu giữ, dư + cọc còn giữ → task `REFUND`) · tiêu huỷ (hết hạn) · giao cơ quan chức năng (bất cứ lúc nào). |
+| PR-Q11 | Màn FM **"Hợp đồng quá hạn"**: mã HĐ, khách, SĐT, ô, số ngày quá hạn, phí trễ hiện tại **+ phí chiếm dụng**, ghi chú liên hệ (nhiều lần, lưu log), nút Thanh lý (bật khi đủ ngày). Popup thanh lý hiện cọc còn lại và phần **vượt cọc thành nợ**. |
+| PR-Q12 | Khách có hợp đồng `OVERDUE` hoặc còn nợ (`DAMAGE_FEE` `PENDING`, hoặc `OVERSTAY_FEE` `PENDING` không phải dòng phụ gia hạn) → không đặt chỗ mới, 409 `CUSTOMER_HAS_DEBT`. |
+| PR-Q14 | (27/10/2026, D-12) **Phí chiếm dụng** (overstay): mỗi ngày quá hạn (đếm như PR-Q2) = **giá niêm yết / 30 × `rental_policy.overstay_percent`** (mặc định **150%**, BOM chỉnh 100–300%), **không trần** → quá hạn luôn đắt hơn gia hạn. Cộng **thêm** vào phí trễ PR-Q3 (phí trễ vẫn là phạt một lần, trần 50% cọc). Tính động như PR-Q4, chỉ ghi giao dịch `OVERSTAY_FEE` khi: khách gia hạn (dòng phụ VNPAY), trả kho lỡ ân hạn (trừ cọc / nợ — PR-O11), bị thanh lý (PR-Q9). FM **miễn phí trễ** (Flow 6) → phí trễ = 0 và phí chiếm dụng chỉ còn **100%** giá ngày (bỏ phần phạt, vẫn thu tiền những ngày đã chiếm ô). Chỉ áp dụng khi khách đã đồng ý **điều khoản v2**; đơn cũ (v1 / chưa đồng ý) phí chiếm dụng = 0. |
+| PR-Q15 | (27/10/2026, D-12) **Phí lưu giữ hàng** sau thanh lý: mỗi ngày lưu giữ (tính từ ngày thanh lý, tối đa đến hết hạn 60 ngày) = **giá ngày của ô cũ × `rental_policy.held_goods_fee_percent`** (mặc định **20%**, BOM chỉnh 0–100%). Thu khi FM chốt hồ sơ, theo thứ tự: tiền bán còn dư (bán thanh lý) → cọc còn giữ → (chỉ khi **khách nhận lại**) khách trả tại quầy — FM phải tick "Đã thu tại quầy", thiếu → 409 `STORAGE_FEE_UNPAID`. Không đủ thì cơ sở tự chịu phần thiếu, không sinh nợ mới. **Giao cơ quan chức năng** không tính phí. Ghi `OVERSTAY_FEE` `SUCCESS` (method `GOODS_SALE` / `DEPOSIT_OFFSET` / `CASH`) + lưu `held_goods.storage_fee_amount`. Chỉ áp dụng điều khoản v2. |
 
 ### UC-04 Quản lý cơ sở (BOM) ⬜
 | Mã | Rule |
@@ -398,7 +414,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | Mã | Rule |
 |---|---|
 | PR-13 | Mỗi cơ sở có đúng 1 chính sách **đang hiệu lực**. Tạo/sửa sẽ phát hành phiên bản mới và áp dụng bản đó; BOM có thể chọn lại chính phiên bản cũ làm bản hiệu lực mà không tạo bản sao. Không ghi đè nội dung; hợp đồng giữ `rental_policy_id` lúc ký. Màn hình xem được lịch sử phiên bản. |
-| PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50. Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 30 ngày**; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký. |
+| PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50; *(27/10/2026)* **% phí chiếm dụng 100–300** (mặc định 150, PR-Q14); **% phí lưu giữ hàng 0–100** (mặc định 20, PR-Q15). Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 15 ngày** *(trước 27/10/2026 là 30)*; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký — script `Update_gia_han_doanh_thu.sql` tạo **phiên bản mới** cho mỗi cơ sở thay vì sửa bản cũ. |
 | PR-15 | Code đọc chính sách thay cho số viết cứng (cọc, phí huỷ, phí trễ, thanh lý). (sửa L-03) |
 | PR-M5 | Huỷ đơn → chính sách hiện hành lúc huỷ; phí trễ / thanh lý → chính sách gắn hợp đồng. Chỉ BOM sửa, FM chỉ xem. |
 | PR-M6 | BOM được chỉnh `deposit_month_multiplier` (xem UC-10). |
@@ -407,7 +423,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 ### UC-29 Dashboard doanh thu (BOM) ⬜
 | Mã | Rule |
 |---|---|
-| PR-M7 | Ghi nhận theo **ngày thực thu** (`paid_at`), giao dịch `SUCCESS`. 4 chỉ số: **Doanh thu thuê** = (`DEPOSIT` − phần cọc) + `MONTHLY_RENT`; **Thu phí phạt** = `LATE_FEE` + `DAMAGE_FEE`; **Đã hoàn tiền** = `REFUND`; **Cọc đang giữ** = Σ `deposit_held_amount` hợp đồng còn hiệu lực + phần cọc còn giữ của hợp đồng thanh lý. Lọc cơ sở, tháng / quý / năm; biểu đồ theo tháng, cơ sở, loại kho; **tỉ lệ lấp đầy** = `OCCUPIED` / (tổng ô − `MAINTENANCE`); số hợp đồng mới / kết thúc. |
+| PR-M7 | Ghi nhận theo **ngày thực thu** (`paid_at`), giao dịch `SUCCESS`. 4 chỉ số: **Doanh thu thuê** = (`DEPOSIT` − phần cọc) + `MONTHLY_RENT` + `OVERSTAY_FEE` *(27/10/2026: phí chiếm dụng / lưu giữ là tiền cho việc dùng chỗ, không phải phạt)*; **Thu phí phạt** = `LATE_FEE` + `DAMAGE_FEE`; **Đã hoàn tiền** = `REFUND`; **Cọc đang giữ** = Σ `deposit_held_amount` hợp đồng còn hiệu lực + phần cọc còn giữ của hợp đồng thanh lý. Lọc cơ sở, tháng / quý / năm; biểu đồ theo tháng, cơ sở, loại kho; **tỉ lệ lấp đầy** = `OCCUPIED` / (tổng ô − `MAINTENANCE`); số hợp đồng mới / kết thúc. |
 | PR-M8 | Phí trừ vào cọc ghi method `DEPOSIT_OFFSET` → tính vào "Thu phí phạt" nhưng **không** là tiền mới thu vào (tránh tính trùng cọc). |
 
 ### UC-06 Danh mục ô kho (FM) ✅
@@ -544,6 +560,9 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | ~~`users`~~ | ✅ Tài khoản `system@queenkho.local` (role `ADMIN`, `DISABLED`) dùng cho log của job; UC-31 gộp tài khoản trùng `system@queenkho.com` và thêm index `IX_activitylogs_created_at`. | PR-A8 | UC-31 |
 | `handover_records` | + `is_prohibited_goods_committed` BIT NOT NULL DEFAULT 0 | PR-C7 | UC-18 |
 | Comment trạng thái | `reservations`: thêm `TERMINATION_PENDING`, `REFUNDED` (code #57 đang dùng), dùng `EXPIRED`; `storage_units`: bỏ `RESERVED` | L-12, PR-B7, PR-M9 | ai sửa SQL trước |
+| `rental_policy` | ✅ (27/10/2026) + `overstay_percent` INT DEFAULT 150 (100–300), + `held_goods_fee_percent` INT DEFAULT 20 (0–100), `liquidation_days` DEFAULT 30 → **15**; DB cũ chạy `Update_gia_han_doanh_thu.sql` (sinh phiên bản chính sách mới, không sửa bản cũ) | PR-Q8, PR-Q14, PR-Q15, PR-14 | gia hạn & doanh thu |
+| `held_goods` | ✅ (27/10/2026) + `storage_fee_amount` DECIMAL(12,2) NULL | PR-Q15 | gia hạn & doanh thu |
+| `payment_transactions` | ✅ (27/10/2026) `payment_type` thêm `OVERSTAY_FEE` (không có CHECK, chỉ sửa comment) | PR-Q14, PR-Q15 | gia hạn & doanh thu |
 | ~~`staff_tasks`~~ | ✅ Đã đổi tên thành `facility_tasks`, thêm loại `REFUND` / `MAINTENANCE`, cột `evidence_image_url` (#55). Các chỗ khác trong tài liệu nhắc "bảng task" đều là `facility_tasks`. | PR-O12 | đã xong |
 
 ---
@@ -564,6 +583,9 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 409 | `CHECK_IN_TOO_EARLY` | Check-in / nghiệm thu trước ngày hẹn | PR-C1, PR-O5 |
 | 409 | `TASK_TOO_FAR` | Nhận task có hạn quá 3 ngày | PR-C6 |
 | 409 | `CONTRACT_NOT_RENEWABLE` | Gia hạn hợp đồng sai trạng thái | PR-R1 |
+| 409 | `RENEWAL_UNIT_RESERVED` | Gia hạn sau hạn chót ưu tiên (`end_date` − 3) mà ô đã có khách khác đặt trước | PR-R10, PR-R11 |
+| 409 | `NO_AVAILABILITY` | Hết suất khi tạo đơn; message báo ngày nhận kho sớm nhất nếu có ô sắp trống | PR-B1, PR-R11 |
+| 409 | `STORAGE_FEE_UNPAID` | Khách nhận lại hàng lưu giữ mà chưa thu đủ phí lưu giữ tại quầy | PR-Q15 |
 | 409 | `SLOT_IN_USE` | Thao tác ô kho làm âm số suất | PR-M10 |
 | 409 | `NO_SHOW_NOT_ALLOWED_YET` | Chưa đủ 2 lần liên hệ cách 24h / chưa qua 48h | PR-X3 |
 | 400 | `REFUND_EVIDENCE_REQUIRED` | Hoàn tất hoàn tiền thiếu mã FT / xác nhận ký nhận | PR-O15 |
@@ -604,3 +626,17 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | **Báo cáo cơ sở** cho FM (`/manager/reports`) | Dùng chung API doanh thu của BOM, `facilityId` bị khoá về cơ sở FM; xuất CSV | `ManagerReportsPage.jsx` |
 | **Lịch sử đăng nhập** (Admin) | Bảng `login_history`: đăng nhập thành công / thất bại (kèm lý do) / đăng xuất, IP, trình duyệt; lỗi ghi lịch sử không chặn đăng nhập | `LoginHistoryService`, `/admin/login-history` |
 | Sửa lỗi | L-11, L-13, L-17, L-22 (mục 4); BUG-06 (hoàn tất 1 task hoàn tiền làm SUCCESS mọi REFUND của cơ sở); BUG-07 (No-Show thiếu giao dịch REFUND); I12 (huỷ trả kho đóng nhầm ticket hỗ trợ); log thiếu khi tạo đơn / gán ô (PR-A9) | xem `docs/bug-log.md` |
+
+### 27/10/2026 — Góp ý giảng viên: gia hạn & tối ưu doanh thu ô kho (D-12)
+Góp ý: *"ước lượng thời gian gia hạn, ít nhất báo trước 3 ngày mới cho thuê tiếp; gia hạn ngày cuối thì ô phải chưa ai đặt trước"* + nhóm phân tích thêm: với rule cũ, khách quá hạn chiếm ô tới 30 ngày mà cơ sở chỉ thu tối đa 50% cọc (từ ngày 6 coi như ở miễn phí, hàng lưu giữ 60 ngày cũng miễn phí) → khách **có lợi khi cố tình quá hạn**.
+
+| Tầng | Rule | Trước | Sau |
+|---|---|---|---|
+| 1. Gia hạn báo trước 3 ngày | PR-R10, PR-R11, PR-R12 | Gia hạn được bất cứ lúc nào khi `ACTIVE`/`TERMINATION_PENDING`/`OVERDUE`; ô đang thuê không bao giờ bán trước được | Hạn chót ưu tiên `end_date` − 3. Qua mốc → ô **sắp trống**, khách khác đặt trước được (ngày nhận ≥ ngày giao ô); khách cũ chỉ gia hạn khi chưa ai cần ô (409 `RENEWAL_UNIT_RESERVED`). Tìm kho hiện "Trống từ dd/MM". Tới ngày nhận mà cơ sở chưa có ô → khách huỷ hoàn 100% |
+| 2. Phí chiếm dụng | PR-Q14, PR-Q6, PR-O11, PR-O14 | Chỉ phí trễ 10% cọc/ngày, trần 50% cọc | + giá ngày × 150% mỗi ngày quá hạn, **không trần**; trừ cọc sau phí trễ, vượt cọc thành nợ `OVERSTAY_FEE` trả qua VNPAY, chưa trả bị chặn đặt kho |
+| 3. Thanh lý sớm | PR-Q8, PR-Q9, PR-14, D-09 | Quá 30 ngày | Quá **15 ngày** (phiên bản chính sách mới); lịch liên hệ 1 · 3 · 7; thanh lý = giải phóng ô, hàng vẫn giữ 60 ngày |
+| 4. Phí lưu giữ hàng | PR-Q15, PR-Q10 | Lưu giữ 60 ngày miễn phí | Giá ngày × 20% mỗi ngày lưu giữ; thu từ tiền bán → cọc → tại quầy khi khách nhận lại |
+
+Ví dụ (ô 1.500.000đ/tháng, cọc 1 tháng, khách bỏ mặc kho): **trước** — ô bị giữ ~30 ngày, cơ sở thu 750.000đ; **sau** — ô bị giữ ≤ 15 ngày (và đã bán trước được từ `end_date` − 2), cơ sở thu 750.000đ phí trễ + 15 × 75.000đ = 1.125.000đ phí chiếm dụng (trừ hết cọc, 375.000đ còn lại thành nợ).
+
+Tầng 2–4 chỉ áp dụng cho đơn đặt từ **điều khoản v2** (`reservations.terms_version = 'v2'`); hợp đồng cũ giữ rule cũ (pháp lý: khách chưa đồng ý mức phí mới). Code: `RenewalPolicyService` (mới), `LateFeeService`, `PricingService.quoteRenewal`, `VnpayService.createRenewal`, `ContractService.liquidateContract`, `StaffTaskService.calculateCheckoutRefund`, `HeldGoodsService.resolve`, `ReservationService.countFreeSlots / previewCancel`, `FacilityService` (tìm kho), `BomRevenueService`; FE `ContractOptionsModal`, `CustomerContractPage`, `OverdueContractsPage`, `HeldGoodsPage`, `BomRentalPoliciesPage`, `SearchResultsPage`, `CreateReservationPage`, `AssetTermsModal` (v2).

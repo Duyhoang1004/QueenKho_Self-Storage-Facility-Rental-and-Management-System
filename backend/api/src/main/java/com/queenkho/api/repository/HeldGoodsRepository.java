@@ -46,7 +46,7 @@ public interface HeldGoodsRepository extends JpaRepository<HeldGoods, Integer> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE HeldGoods h SET h.status = :status, h.resolvedNote = :note, h.resolvedBy = :actor, " +
             "h.resolvedAt = CURRENT_TIMESTAMP, h.proceedsAmount = :proceeds, h.debtOffsetAmount = :debtOffset, " +
-            "h.refundAmount = :refund " +
+            "h.refundAmount = :refund, h.storageFeeAmount = :storageFee " +
             "WHERE h.id = :id AND h.status = 'HOLDING'")
     int resolve(@Param("id") Integer id,
                 @Param("status") String status,
@@ -54,5 +54,6 @@ public interface HeldGoodsRepository extends JpaRepository<HeldGoods, Integer> {
                 @Param("actor") User actor,
                 @Param("proceeds") BigDecimal proceeds,
                 @Param("debtOffset") BigDecimal debtOffset,
-                @Param("refund") BigDecimal refund);
+                @Param("refund") BigDecimal refund,
+                @Param("storageFee") BigDecimal storageFee);
 }

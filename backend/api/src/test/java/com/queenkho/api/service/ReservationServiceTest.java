@@ -68,6 +68,9 @@ class ReservationServiceTest {
     @Mock
     private ActivityLogService activityLogService;
 
+    @Mock
+    private RenewalPolicyService renewalPolicyService;
+
     @InjectMocks
     private ReservationService reservationService;
 

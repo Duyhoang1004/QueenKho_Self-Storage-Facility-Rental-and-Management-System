@@ -7,6 +7,13 @@ import {
   getCities,
 } from '../../services/facilityService'
 
+// yyyy-MM-dd → dd/MM/yyyy
+function formatShortDate(value) {
+  if (!value) return '—'
+  const [y, m, d] = String(value).split('-')
+  return `${d}/${m}/${y}`
+}
+
 function formatVND(amount) {
   return Number(amount).toLocaleString('vi-VN') + 'đ'
 }
@@ -85,7 +92,7 @@ export default function SearchResultsPage() {
       if (facilityId && !kw && !ct && !ut) {
         const detail = await getFacilityAvailability(facilityId)
         const items = detail.unitTypeAvailability
-          .filter((slot) => slot.availableCount > 0)
+          .filter((slot) => slot.availableCount > 0 || slot.availableFrom) // PR-R11: còn ô "sắp trống"
           .map((slot) => ({
             facilityId: detail.facility.id,
             facilityName: detail.facility.name,
@@ -101,6 +108,7 @@ export default function SearchResultsPage() {
             suggestedCapacity: slot.suggestedCapacity,
             features: slot.features,
             availableCount: slot.availableCount,
+            availableFrom: slot.availableFrom,
           }))
         setResults(items)
         setTotalElements(items.length)
@@ -183,8 +191,9 @@ export default function SearchResultsPage() {
     return list
   }, [results, onlyAvailable, selectedFeatures, sortOption])
 
-  function handleBooking(facilityId, unitTypeId) {
-    navigate(`/booking?facilityId=${facilityId}&unitTypeId=${unitTypeId}`)
+  // PR-R11: hết ô ngay nhưng có ô sắp trống → trang đặt kho chỉ cho chọn ngày nhận từ availableFrom
+  function handleBooking(facilityId, unitTypeId, availableFrom) {
+    navigate(`/booking?facilityId=${facilityId}&unitTypeId=${unitTypeId}${availableFrom ? `&from=${availableFrom}` : ''}`)
   }
 
   function getUnitTypeName(id) {
@@ -668,13 +677,20 @@ export default function SearchResultsPage() {
                       <span className="material-symbols-outlined text-[18px] text-[#58CC02]">apartment</span>
                       <span className="text-xs font-black text-[#4B4B4B] truncate">{item.facilityName}</span>
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 ${
-                      item.availableCount > 2
-                        ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
-                        : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
-                    }`}>
-                      Còn {item.availableCount} ô
-                    </span>
+                    {item.availableCount > 0 ? (
+                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 ${
+                        item.availableCount > 2
+                          ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
+                          : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
+                      }`}>
+                        Còn {item.availableCount} ô
+                      </span>
+                    ) : (
+                      // PR-R11: ô của khách cũ đã qua hạn chót gia hạn → đặt trước, nhận kho từ ngày này
+                      <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]">
+                        Trống từ {formatShortDate(item.availableFrom)}
+                      </span>
+                    )}
                   </div>
 
                   <h3 className="text-lg font-black text-[#4B4B4B] group-hover:text-[#1CB0F6] transition-colors">
@@ -707,7 +723,7 @@ export default function SearchResultsPage() {
                   </div>
 
                   <button
-                    onClick={() => handleBooking(item.facilityId, item.unitTypeId)}
+                    onClick={() => handleBooking(item.facilityId, item.unitTypeId, item.availableFrom)}
                     className="duo-btn-green px-5 py-2.5 text-xs tracking-wider"
                   >
                     ĐẶT KHO

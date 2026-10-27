@@ -45,7 +45,7 @@ class BomRevenueServiceTest {
         // feesRevenue   = 1.200.000 (LATE_FEE + DAMAGE_FEE)
         // refundDisbursed = 2.000.000 (REFUND)
         // depositsHeld  = 5.000.000 (Ký quỹ đang giữ)
-        when(jdbc.queryForObject(contains("IN ('DEPOSIT','MONTHLY_RENT')"), eq(BigDecimal.class)))
+        when(jdbc.queryForObject(contains("IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')"), eq(BigDecimal.class)))
                 .thenReturn(new BigDecimal("15000000.00"));
         when(jdbc.queryForObject(contains("IN ('LATE_FEE','DAMAGE_FEE')"), eq(BigDecimal.class)))
                 .thenReturn(new BigDecimal("1200000.00"));

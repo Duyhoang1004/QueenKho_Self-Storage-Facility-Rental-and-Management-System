@@ -42,6 +42,7 @@ class StaffTaskAssignAndRefundTest {
     @Mock ActivityLogService activityLogService;
     @Mock JdbcTemplate jdbcTemplate;
 
+    @Mock LateFeeService lateFeeService;
     @InjectMocks StaffTaskService service;
 
     User manager;

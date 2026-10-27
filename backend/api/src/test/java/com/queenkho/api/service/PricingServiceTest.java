@@ -144,4 +144,15 @@ class PricingServiceTest {
         assertTrue(quote.lateFeeWaived());
         assertEquals(0, new BigDecimal("750000").compareTo(quote.totalAmount()));
     }
+
+    @Test
+    @DisplayName("PR-Q14: gia hạn HĐ quá hạn cộng thêm phí chiếm dụng những ngày đã quá hạn")
+    void quoteOverdueContractAddsOverstayFee() {
+        contract.setStatus("OVERDUE");
+        when(lateFeeService.calculateLateFee(contract)).thenReturn(LateFeeCalculationResult.builder()
+                .lateFeeAmount(new BigDecimal("225000")).overstayFeeAmount(new BigDecimal("375000")).build());
+        RenewalQuoteResponse quote = pricing.quoteRenewal(contract, 1);
+        assertEquals(0, new BigDecimal("375000").compareTo(quote.overstayFeeAmount()));
+        assertEquals(0, new BigDecimal("1350000").compareTo(quote.totalAmount()));
+    }
 }

@@ -50,7 +50,8 @@ class VnpayDebtPaymentTest {
 
     @BeforeEach
     void setUp() {
-        service = new VnpayService(payments, contracts, reservations, staffTasks, pricing, jdbcTemplate);
+        service = new VnpayService(payments, contracts, reservations, staffTasks, pricing, jdbcTemplate,
+                mock(RenewalPolicyService.class));
         ReflectionTestUtils.setField(service, "hashSecret", SECRET);
         ReflectionTestUtils.setField(service, "tmnCode", "TMN");
         ReflectionTestUtils.setField(service, "payUrl", "https://sandbox/pay");

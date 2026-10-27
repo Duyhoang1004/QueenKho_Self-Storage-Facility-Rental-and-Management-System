@@ -462,6 +462,7 @@ public class ContractService {
             LateFeeCalculationResult lateCalc = lateFeeService.calculateLateFee(dummyContract);
 
             BigDecimal lateFeeDisplay = lateCalc.getLateFeeAmount();
+            BigDecimal overstayDisplay = lateCalc.getOverstayFeeAmount();
             boolean canLiquidate = lateCalc.isCanLiquidate();
 
             if ("LIQUIDATED".equalsIgnoreCase(status)) {
@@ -475,9 +476,15 @@ public class ContractService {
                     if (!feeList.isEmpty() && feeList.get(0) != null) {
                         lateFeeDisplay = feeList.get(0);
                     }
+                    // PR-Q14: phí chiếm dụng đã chốt lúc thanh lý (phần trừ cọc + phần thành nợ)
+                    overstayDisplay = jdbcTemplate.queryForObject(
+                            "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE contract_id = ? " +
+                                    "AND payment_type = 'OVERSTAY_FEE' AND transaction_code LIKE 'OS-%'",
+                            BigDecimal.class, contractId);
                 } catch (Exception ignored) {
                 }
             }
+            if (overstayDisplay == null) overstayDisplay = BigDecimal.ZERO;
 
             return OverdueContractManagerResponse.builder()
                     .contractId(contractId)
@@ -501,6 +508,8 @@ public class ContractService {
                     .lateFeeWaiverNote(rs.getString("late_fee_waiver_note"))
                     .minContactsRequired(MIN_CONTACTS_BEFORE_LIQUIDATION)
                     .termsVersion(rs.getString("terms_version"))
+                    .overstayFeeAmount(overstayDisplay)
+                    .totalOverdueCharge(lateFeeDisplay.add(overstayDisplay))
                     .build();
         }, targetFacilityId, targetStatus);
     }
@@ -677,7 +686,12 @@ public class ContractService {
 
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal lateFee = lateFeeCalc.getLateFeeAmount(); // Đã trần 50% cọc
-        BigDecimal remainingDeposit = depositHeld.subtract(lateFee).max(BigDecimal.ZERO);
+        // PR-Q14: phí chiếm dụng trừ tiếp vào phần cọc còn lại; thiếu bao nhiêu thành khoản nợ OVERSTAY_FEE
+        BigDecimal overstayFee = lateFeeCalc.getOverstayFeeAmount() != null ? lateFeeCalc.getOverstayFeeAmount() : BigDecimal.ZERO;
+        BigDecimal afterLateFee = depositHeld.subtract(lateFee).max(BigDecimal.ZERO);
+        BigDecimal overstayOffset = overstayFee.min(afterLateFee);
+        BigDecimal overstayDebt = overstayFee.subtract(overstayOffset);
+        BigDecimal remainingDeposit = afterLateFee.subtract(overstayOffset);
 
         // 1. Cập nhật hợp đồng: LIQUIDATED, xóa pin & rfid, cập nhật deposit_held_amount
         contract.setStatus("LIQUIDATED");
@@ -721,6 +735,24 @@ public class ContractService {
                         "VALUES (?, ?, ?, ?, 'LATE_FEE', 'DEPOSIT_OFFSET', ?, 'SUCCESS', SYSDATETIME())",
                 feeTxnCode, customerId, reservationId, contract.getId(), lateFee);
 
+        // 5b. PR-Q14: phí chiếm dụng — phần trừ cọc (SUCCESS) + phần vượt cọc thành nợ (PENDING, khách trả qua VNPAY)
+        if (overstayOffset.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'DEPOSIT_OFFSET', ?, 'SUCCESS', SYSDATETIME())",
+                    "OS-OFF-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), overstayOffset);
+        }
+        if (overstayDebt.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'VNPAY', ?, 'PENDING', NULL)",
+                    "OS-DEBT-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), overstayDebt);
+        }
+
         // 6. Ghi activity_logs "[LIQUIDATION] HĐ <mã>: <note>" do chính FM ghi, KHÔNG nuốt lỗi ghi log
         String logAction = "[LIQUIDATION] HĐ " + contract.getContractCode() + ": " + request.getNote().trim();
         jdbcTemplate.update(
@@ -736,6 +768,8 @@ public class ContractService {
                 "contractId", contract.getId(),
                 "status", "LIQUIDATED",
                 "lateFeeAmount", lateFee,
+                "overstayFeeAmount", overstayFee,
+                "overstayDebtAmount", overstayDebt,
                 "remainingDeposit", remainingDeposit
         );
     }
@@ -787,7 +821,7 @@ public class ContractService {
         jdbcTemplate.update(
                 "UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL " +
                         "WHERE contract_id = ? AND payment_method = 'VNPAY' " +
-                        "AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE') AND status = 'PENDING'",
+                        "AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND (payment_type <> 'OVERSTAY_FEE' OR renewal_months IS NOT NULL)",
                 contractId);
 
         String logAction = "[FEE_WAIVE] " + manager.getFullName() + " miễn phí trễ HĐ " + contract.getContractCode()

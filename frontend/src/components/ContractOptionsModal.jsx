@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getRenewalQuote, requestCheckout } from '../services/contractService'
+import { getRenewalEligibility, getRenewalQuote, requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
 
 function formatVND(v) {
@@ -105,6 +105,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   // Flow 4 / 6: báo giá 4 gói lấy từ backend — cùng hàm tính với VNPAY (ưu đãi gia hạn của BOM,
   // phí trễ theo chính sách gắn HĐ, = 0 nếu quản lý đã miễn phí trễ)
   const [quotes, setQuotes] = useState([])
+  // PR-R10 / PR-R11: hạn chót gia hạn ưu tiên + ô đã có người đặt trước chưa
+  const [eligibility, setEligibility] = useState(null)
   const contractId = contract?.contractId
   useEffect(() => {
     if (!isOpen || !contractId || !isRenewable) return undefined
@@ -112,9 +114,17 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     getRenewalQuote(contractId)
       .then((data) => { if (!cancelled) setQuotes(Array.isArray(data) ? data : []) })
       .catch(() => { if (!cancelled) setQuotes([]) })
+    getRenewalEligibility(contractId)
+      .then((data) => { if (!cancelled) setEligibility(data) })
+      .catch(() => { if (!cancelled) setEligibility(null) })
     return () => { cancelled = true }
   }, [isOpen, contractId, isRenewable])
   const quoteOf = (months) => quotes.find((q) => q.months === months)
+  const newEndDateOf = (months) => {
+    const pkg = eligibility?.packages?.find((p) => p.months === months)
+    return pkg ? formatDate(pkg.newEndDate) : calculateNewEndDate(months)
+  }
+  const renewBlocked = eligibility?.renewable === false
 
   // Dự phòng khi chưa tải được báo giá (bảng mặc định 0/0/5/10%)
   const getPricing = (months) => {
@@ -144,7 +154,9 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       ? Number(contract?.lateFeeAmount || 0)
       : getTerminationGraceFee()
   const lateFeeWaived = Boolean(currentQuote?.lateFeeWaived || contract?.lateFeeWaived)
-  const totalPayment = currentQuote ? Number(currentQuote.totalAmount) : currentPricing.total + lateFee
+  // PR-Q14: phí chiếm dụng các ngày đã quá hạn (đã nằm trong totalAmount của báo giá)
+  const overstayFee = currentQuote ? Number(currentQuote.overstayFeeAmount || 0) : Number(contract?.overstayFeeAmount || 0)
+  const totalPayment = currentQuote ? Number(currentQuote.totalAmount) : currentPricing.total + lateFee + overstayFee
   const maxRenewalDiscount = Math.max(0, ...[1, 3, 6, 12].map((m) => getPricing(m).discountPercent))
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
@@ -285,7 +297,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     } else if (diffDays >= 2 && diffDays <= 5) {
       graceCalc = { days: diffDays, fee: Math.round((basePrice / 30) * (diffDays - 1)), isFree: false }
     } else {
-      graceCalc = { days: diffDays, fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10), isOverdue: true }
+      // PR-Q14: lỡ ân hạn → phí trễ (trần 50% cọc) + phí chiếm dụng mỗi ngày quá hạn (không trần)
+      graceCalc = {
+        days: diffDays,
+        fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10),
+        overstay: Number(contract.overstayDailyAmount || 0) * diffDays,
+        isOverdue: true,
+      }
     }
   }
 
@@ -364,6 +382,42 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             )}
 
+            {/* PR-R10 / PR-R11: hạn chót gia hạn ưu tiên */}
+            {eligibility?.window === 'PRIORITY' && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-start gap-2">
+                <span className="material-symbols-outlined text-blue-600 text-[18px] shrink-0">schedule</span>
+                <span>
+                  Gia hạn ưu tiên đến hết ngày <strong>{formatDate(eligibility.priorityDeadline)}</strong>
+                  {eligibility.daysUntilDeadline > 0 ? ` (còn ${eligibility.daysUntilDeadline} ngày)` : ' (hôm nay là ngày cuối)'}.
+                  Sau mốc này, ô kho sẽ mở cho khách khác đặt trước và quý khách chỉ gia hạn được nếu chưa có ai đặt ô.
+                </span>
+              </div>
+            )}
+            {eligibility?.window === 'LATE' && !renewBlocked && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2">
+                <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">hourglass_bottom</span>
+                <span>
+                  Đã qua hạn chót gia hạn ưu tiên ({formatDate(eligibility.priorityDeadline)}). Ô kho đang mở cho khách khác đặt trước —
+                  hiện vẫn còn gia hạn được, quý khách nên thanh toán ngay.
+                </span>
+              </div>
+            )}
+            {renewBlocked && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0">block</span>
+                  <span>{eligibility.blockedReason || 'Ô kho đã có khách khác đặt trước, không thể gia hạn.'}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('checkout')}
+                  className="self-start px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 font-semibold hover:bg-red-100 cursor-pointer"
+                >
+                  Chuyển sang Hẹn trả kho
+                </button>
+              </div>
+            )}
+
             {isTerminationPending && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2">
                 <span className="material-symbols-outlined text-amber-600 text-[18px]">info</span>
@@ -416,6 +470,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                       <span className={`text-[11px] mt-0.5 ${item.discount > 0 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}`}>
                         {item.desc}
                       </span>
+                      <span className="text-[10px] mt-0.5 text-slate-500 font-mono">→ {newEndDateOf(item.m)}</span>
                     </button>
                   )
                 })}
@@ -430,7 +485,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   Hạn mới sau gia hạn:
                 </span>
                 <span className="font-title-md text-slate-800 font-bold font-mono">
-                  {calculateNewEndDate(selectedMonths)}
+                  {newEndDateOf(selectedMonths)}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-slate-600">
@@ -463,6 +518,15 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
                 </div>
               )}
+              {contract?.status === 'OVERDUE' && overstayFee > 0 && (
+                <div className="flex items-center justify-between text-xs text-red-700 font-semibold bg-red-50/90 p-2.5 rounded-lg border border-red-200">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px] text-red-600">door_front</span>
+                    Phí chiếm dụng ô ({contract.overdueDays || 0} ngày quá hạn):
+                  </span>
+                  <span className="font-mono font-bold">+{formatVND(overstayFee)}</span>
+                </div>
+              )}
               {isTerminationPending && lateFee > 0 && (
                 <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
                   <span className="flex items-center gap-1.5">
@@ -493,7 +557,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={renewLoading}
+              disabled={renewLoading || renewBlocked}
               className="w-full py-3 px-6 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
             >
               {renewLoading ? (
@@ -614,6 +678,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 <p className="leading-relaxed text-[11px]">
                   {graceCalc.isFree
                     ? 'Ngày đầu tiên sau khi kết thúc hợp đồng được miễn phí hoàn toàn để quý khách thuận tiện chuyển đồ.'
+                    : graceCalc.isOverdue
+                    ? `Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}` : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`
                     : `Ngày thứ ${graceCalc.days} sau hạn HĐ: Tính tiền thuê theo ngày (${formatVND(Math.round(basePrice / 30))}/ngày). Phí ân hạn dự kiến: ${formatVND(graceCalc.fee)} (sẽ được khấu trừ trực tiếp vào tiền cọc khi nghiệm thu).`}
                 </p>
               </div>

@@ -600,7 +600,7 @@ BEGIN
         renewal_discount_3m, renewal_discount_6m, renewal_discount_12m,
         allow_late_fee_waiver
     )
-    SELECT f.id, LEFT(N'Chính sách ' + f.name + N' - Tiêu chuẩn', 150), 1, 50, 24, 10, 50, 30, 1, 1, 5, 10, 15, 0, 5, 10, 1
+    SELECT f.id, LEFT(N'Chính sách ' + f.name + N' - Tiêu chuẩn', 150), 1, 50, 24, 10, 50, 15, 1, 1, 5, 10, 15, 0, 5, 10, 1
     FROM facilities f
     WHERE NOT EXISTS (SELECT 1 FROM rental_policy p WHERE p.facility_id = f.id);
 END

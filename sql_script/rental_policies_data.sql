@@ -8,7 +8,7 @@ INSERT INTO rental_policy (
     cancel_free_hours, late_fee_percent_per_day, late_fee_max_percent,
     liquidation_days, version, is_active
 )
-SELECT f.id, LEFT(N'Chính sách ' + f.name + N' - Tiêu chuẩn', 150), 1, 50, 24, 10, 50, 30, 1, 1
+SELECT f.id, LEFT(N'Chính sách ' + f.name + N' - Tiêu chuẩn', 150), 1, 50, 24, 10, 50, 15, 1, 1
 FROM facilities f
 WHERE NOT EXISTS (SELECT 1 FROM rental_policy p WHERE p.facility_id = f.id);
 GO

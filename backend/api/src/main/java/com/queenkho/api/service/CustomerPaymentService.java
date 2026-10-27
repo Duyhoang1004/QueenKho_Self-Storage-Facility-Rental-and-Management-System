@@ -106,9 +106,10 @@ public class CustomerPaymentService {
                 debts, overdue, transactions);
     }
 
-    // Khoản nợ khách tự trả online: phí sự cố vượt cọc còn PENDING (PR-O9)
+    // Khoản nợ khách tự trả online: phí sự cố / phí chiếm dụng vượt cọc còn PENDING (PR-O9, PR-Q14).
+    // renewal_months != NULL là dòng phụ của link gia hạn đang chờ, không phải nợ.
     static boolean isDebt(CustomerPaymentsResponse.PaymentItem p) {
-        return "DAMAGE_FEE".equals(p.paymentType()) && "VNPAY".equals(p.paymentMethod()) && "PENDING".equals(p.status());
+        return ("DAMAGE_FEE".equals(p.paymentType()) || "OVERSTAY_FEE".equals(p.paymentType())) && "VNPAY".equals(p.paymentMethod()) && "PENDING".equals(p.status()) && p.renewalMonths() == null;
     }
 
     private CustomerPaymentsResponse.OverdueItem toOverdueItem(RentalContract c) {
@@ -122,6 +123,7 @@ public class CustomerPaymentService {
                 facilityName,
                 late.getOverdueDays(),
                 late.getLateFeeAmount(),
-                late.isLateFeeWaived());
+                late.isLateFeeWaived(),
+                late.getOverstayFeeAmount());
     }
 }

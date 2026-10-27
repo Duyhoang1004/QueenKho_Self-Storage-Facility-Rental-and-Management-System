@@ -251,7 +251,7 @@ public class DemoSimulationService {
         // Link gia hạn đang chờ đã chốt số tiền cũ → huỷ để khách tạo link mới có phí trễ đúng
         jdbcTemplate.update(
                 "UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL WHERE contract_id = ? " +
-                        "AND payment_method = 'VNPAY' AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE') AND status = 'PENDING'",
+                        "AND payment_method = 'VNPAY' AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND (payment_type <> 'OVERSTAY_FEE' OR renewal_months IS NOT NULL)",
                 contractId);
         if (missedCheckout) {
             // Giống job PR-Q1 (OverdueContractProcessor): đơn về UNIT_ASSIGNED, huỷ task CHECK_OUT khách không tới

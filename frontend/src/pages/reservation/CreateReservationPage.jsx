@@ -50,6 +50,8 @@ export default function CreateReservationPage() {
   const location = useLocation()
   const facilityId = Number(searchParams.get('facilityId'))
   const unitTypeId = Number(searchParams.get('unitTypeId'))
+  // PR-R11: đặt trước ô "sắp trống" → chỉ nhận kho được từ ngày này (yyyy-MM-dd)
+  const availableFrom = searchParams.get('from') || ''
   const hasParams = facilityId > 0 && unitTypeId > 0
   const loginRedirectTarget = location.pathname + location.search
 
@@ -190,6 +192,11 @@ export default function CreateReservationPage() {
       setError('Vui lòng chọn ngày bắt đầu nhận kho.')
       return
     }
+    // PR-R11: ô "sắp trống" chỉ giao được từ ngày khách cũ hết ân hạn
+    if (availableFrom && startDate < availableFrom) {
+      setError(`Loại kho này hiện hết ô trống, chỉ nhận kho được từ ngày ${availableFrom.split('-').reverse().join('/')}.`)
+      return
+    }
     if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email || !customerInfo.address) {
       setError('Vui lòng điền đầy đủ thông tin khách hàng.')
       return
@@ -235,6 +242,7 @@ export default function CreateReservationPage() {
   }
 
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+  const minStartDate = availableFrom && availableFrom > tomorrowStr ? availableFrom : tomorrowStr
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8">
@@ -385,11 +393,17 @@ export default function CreateReservationPage() {
                 <input
                   type="date"
                   value={startDate}
-                  min={tomorrowStr}
+                  min={minStartDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   className="duo-input w-full pl-11"
                 />
               </div>
+              {availableFrom && (
+                <p className="text-xs font-bold text-[#1899D6] mt-2">
+                  Loại kho này đang hết ô trống — quý khách đặt trước ô sắp được trả, nhận kho từ ngày {availableFrom.split('-').reverse().join('/')}.
+                  Nếu tới ngày nhận cơ sở chưa bàn giao được ô, quý khách được huỷ và hoàn 100%.
+                </p>
+              )}
               <p className="text-xs font-bold text-[#AFAFAF] mt-2">
                 🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
               </p>

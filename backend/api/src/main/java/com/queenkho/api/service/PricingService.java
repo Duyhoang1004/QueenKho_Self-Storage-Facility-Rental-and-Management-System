@@ -113,7 +113,7 @@ public class PricingService {
 
     /**
      * Flow 6: báo giá gia hạn — VnpayService.createRenewal dùng đúng hàm này để thu tiền.
-     *  - OVERDUE            : + phí trễ theo chính sách gắn HĐ (0 nếu FM đã miễn).
+     *  - OVERDUE            : + phí trễ theo chính sách gắn HĐ (0 nếu FM đã miễn) + phí chiếm dụng (PR-Q14).
      *  - TERMINATION_PENDING: + tiền thuê theo ngày cho ngày ân hạn 2 → 5 sau end_date (PR-O14).
      */
     @Transactional(readOnly = true)
@@ -133,10 +133,15 @@ public class PricingService {
 
         String status = contract.getStatus() != null ? contract.getStatus().toUpperCase() : "";
         BigDecimal lateFee = BigDecimal.ZERO;
+        BigDecimal overstayFee = BigDecimal.ZERO;
         if ("OVERDUE".equals(status)) {
             var result = lateFeeService.calculateLateFee(contract);
             if (result != null && result.getLateFeeAmount() != null) {
                 lateFee = result.getLateFeeAmount().setScale(0, RoundingMode.HALF_UP);
+            }
+            // PR-Q14: những ngày đã chiếm ô sau end_date không nằm trong kỳ mới → thu phí chiếm dụng cùng lần gia hạn
+            if (result != null && result.getOverstayFeeAmount() != null) {
+                overstayFee = result.getOverstayFeeAmount().setScale(0, RoundingMode.HALF_UP);
             }
         } else if ("TERMINATION_PENDING".equals(status) && contract.getEndDate() != null) {
             long daysPast = ChronoUnit.DAYS.between(contract.getEndDate(), LocalDate.now(LateFeeService.VIETNAM_ZONE));
@@ -147,6 +152,6 @@ public class PricingService {
         }
         boolean waived = Boolean.TRUE.equals(contract.getLateFeeWaived()) && "OVERDUE".equals(status);
         return new RenewalQuoteResponse(months, percent, monthlyPrice, subtotal, discount, rent, lateFee, waived,
-                rent.add(lateFee).setScale(0, RoundingMode.HALF_UP));
+                overstayFee, rent.add(lateFee).add(overstayFee).setScale(0, RoundingMode.HALF_UP));
     }
 }

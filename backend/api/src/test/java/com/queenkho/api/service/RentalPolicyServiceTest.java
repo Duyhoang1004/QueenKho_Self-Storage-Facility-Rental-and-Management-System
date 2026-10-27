@@ -76,7 +76,7 @@ class RentalPolicyServiceTest {
         assertEquals(12, result.id());
         assertEquals(2, result.depositMonthMultiplier());
         assertEquals(50, result.lateFeeMaxPercent());
-        assertEquals(30, result.liquidationDays());
+        assertEquals(15, result.liquidationDays()); // PR-Q8 (27/10/2026): phiên bản mới thanh lý sau 15 ngày
         assertTrue(result.active());
         assertFalse(previous.isActive());
         assertEquals(1, previous.getVersion());

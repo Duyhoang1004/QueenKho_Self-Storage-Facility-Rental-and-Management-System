@@ -75,6 +75,7 @@ export default function HeldGoodsPage() {
   const [modal, setModal] = useState(null) // { item, outcome }
   const [note, setNote] = useState('')
   const [proceeds, setProceeds] = useState('')
+  const [feeCollected, setFeeCollected] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalError, setModalError] = useState('')
 
@@ -94,6 +95,7 @@ export default function HeldGoodsPage() {
     setModal({ item, outcome })
     setNote('')
     setProceeds('')
+    setFeeCollected(false)
     setModalError('')
   }
 
@@ -114,6 +116,7 @@ export default function HeldGoodsPage() {
         outcome: modal.outcome,
         note: note.trim(),
         proceedsAmount: modal.outcome === 'SOLD' ? Number(proceeds) : null,
+        storageFeeCollected: modal.outcome === 'RETURNED' ? feeCollected : null,
       })
       setToast(`Đã ghi nhận "${OUTCOMES[modal.outcome].label}" cho hàng HĐ ${modal.item.contractCode}`)
       setTimeout(() => setToast(''), 4000)
@@ -126,10 +129,14 @@ export default function HeldGoodsPage() {
     }
   }
 
-  // Dự tính khi bán: tiền bán trừ nợ trước, phần dư + cọc còn giữ hoàn khách (nếu chưa hoàn cọc riêng)
+  // Dự tính khi bán: tiền bán trừ nợ trước, rồi trừ phí lưu giữ (PR-Q15), phần dư + cọc còn giữ hoàn khách
   const saleProceeds = Number(proceeds) || 0
   const saleDebtOffset = modal ? Math.min(saleProceeds, Number(modal.item.customerDebt) || 0) : 0
-  const saleSurplus = saleProceeds - saleDebtOffset
+  const storageFee = modal && modal.outcome !== 'HANDED_TO_AUTHORITY' ? Number(modal.item.estimatedStorageFee) || 0 : 0
+  const saleFeeOffset = Math.min(storageFee, saleProceeds - saleDebtOffset)
+  const saleSurplus = saleProceeds - saleDebtOffset - saleFeeOffset
+  // Khách nhận lại: phí lưu giữ trừ vào cọc còn giữ, thiếu thì thu tại quầy
+  const feeAtCounter = modal ? Math.max(0, storageFee - (Number(modal.item.depositHeld) || 0)) : 0
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 flex flex-col gap-6">
@@ -220,6 +227,18 @@ export default function HeldGoodsPage() {
                     {item.termsVersion ? `Đã đồng ý (${item.termsVersion})` : 'Đơn cũ — không được bán'}
                   </p>
                 </div>
+                {/* PR-Q15: phí lưu giữ hàng (chỉ đơn đồng ý điều khoản v2) */}
+                {Number(item.storageFeePerDay) > 0 && (
+                  <div className="col-span-2">
+                    <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Phí lưu giữ</p>
+                    <p className="font-black text-[#4B4B4B]">
+                      {formatVND(item.storageFeePerDay)}/ngày · đã lưu {item.heldDays} ngày ·{' '}
+                      <span className="text-[#FF4B4B]">
+                        {tab === 'HOLDING' ? `tạm tính ${formatVND(item.estimatedStorageFee)}` : `đã thu ${formatVND(item.storageFeeAmount)}`}
+                      </span>
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-3.5 flex flex-col gap-2">
@@ -307,6 +326,9 @@ export default function HeldGoodsPage() {
                 </label>
                 <div className="rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
                   <div className="flex justify-between"><span>Trừ nợ còn lại của khách</span><span className="text-[#FF4B4B]">- {formatVND(saleDebtOffset)}</span></div>
+                  {storageFee > 0 && (
+                    <div className="flex justify-between"><span>Trừ phí lưu giữ ({modal.item.heldDays} ngày)</span><span className="text-[#FF4B4B]">- {formatVND(saleFeeOffset)}</span></div>
+                  )}
                   <div className="flex justify-between"><span>Phần dư hoàn khách</span><span className="text-[#1899D6]">{formatVND(saleSurplus)}</span></div>
                   {Number(modal.item.depositHeld) > 0 && (
                     <p className="text-[11px] text-[#777777]">
@@ -315,6 +337,24 @@ export default function HeldGoodsPage() {
                   )}
                   <p className="text-[11px] text-[#777777]">Có tiền hoàn → hệ thống tạo task Hoàn tiền cho Quản lý.</p>
                 </div>
+              </div>
+            )}
+
+            {/* PR-Q15: khách nhận lại — phí lưu giữ trừ vào cọc, thiếu thì thu tại quầy */}
+            {modal.outcome === 'RETURNED' && storageFee > 0 && (
+              <div className="rounded-xl bg-[#FFF8E1] border border-[#FFC800] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-2">
+                <div className="flex justify-between">
+                  <span>Phí lưu giữ {modal.item.heldDays} ngày</span><span>{formatVND(storageFee)}</span>
+                </div>
+                <div className="flex justify-between text-[#777777]">
+                  <span>Trừ vào cọc còn giữ</span><span>- {formatVND(storageFee - feeAtCounter)}</span>
+                </div>
+                {feeAtCounter > 0 && (
+                  <label className="flex items-center gap-2 cursor-pointer text-[#B78900]">
+                    <input type="checkbox" checked={feeCollected} onChange={(e) => setFeeCollected(e.target.checked)} />
+                    Đã thu tại quầy phần còn thiếu {formatVND(feeAtCounter)}
+                  </label>
+                )}
               </div>
             )}
 

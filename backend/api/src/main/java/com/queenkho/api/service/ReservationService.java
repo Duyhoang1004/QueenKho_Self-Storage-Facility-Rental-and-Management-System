@@ -26,6 +26,7 @@ import com.queenkho.api.repository.UnitTypeRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -34,7 +35,8 @@ import java.util.Random;
 public class ReservationService {
     // Phiên bản "Điều khoản xử lý tài sản khi không trả kho" (nội dung ở FE: components/AssetTermsModal.jsx).
     // Đổi nội dung điều khoản → tăng version để biết khách nào đồng ý bản nào.
-    public static final String ASSET_TERMS_VERSION = "v1";
+    // v2 (27/10/2026): thêm phí chiếm dụng khi quá hạn (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15)
+    public static final String ASSET_TERMS_VERSION = "v2";
 
     @Autowired
     private ReservationRepository reservationRepository;
@@ -68,6 +70,9 @@ public class ReservationService {
 
     @Autowired
     private ActivityLogService activityLogService;
+
+    @Autowired
+    private RenewalPolicyService renewalPolicyService;
 
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
@@ -298,7 +303,7 @@ public class ReservationService {
         Map<String, Object> debtCheck = jdbcTemplate.queryForMap(
                 "SELECT " +
                         "  (SELECT COUNT(1) FROM rental_contracts WHERE customer_id = ? AND status = 'OVERDUE') AS overdue_count, " +
-                        "  (SELECT COUNT(1) FROM payment_transactions WHERE (user_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE customer_id = ?)) AND payment_type = 'DAMAGE_FEE' AND status = 'PENDING') AS damage_count",
+                        "  (SELECT COUNT(1) FROM payment_transactions WHERE (user_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE customer_id = ?)) AND ((payment_type = 'DAMAGE_FEE') OR (payment_type = 'OVERSTAY_FEE' AND renewal_months IS NULL)) AND status = 'PENDING') AS damage_count",
                 customer.getId(), customer.getId(), customer.getId()
         );
         int overdueCount = ((Number) debtCheck.get("overdue_count")).intValue();
@@ -308,7 +313,7 @@ public class ReservationService {
             throw new com.queenkho.api.exception.ReservationException(
                     org.springframework.http.HttpStatus.CONFLICT,
                     "CUSTOMER_HAS_DEBT",
-                    "Quý khách đang có hợp đồng quá hạn hoặc khoản bồi thường thiệt hại (DAMAGE_FEE) chưa thanh toán. Vui lòng thanh toán khoản nợ trước khi đặt chỗ kho mới."
+                    "Quý khách đang có hợp đồng quá hạn hoặc khoản nợ (phí sự cố / phí chiếm dụng) chưa thanh toán. Vui lòng thanh toán khoản nợ trước khi đặt chỗ kho mới."
             );
         }
 
@@ -336,11 +341,18 @@ public class ReservationService {
         // Khoá dòng cơ sở trong transaction → 2 khách đặt cùng lúc phải xếp hàng, người sau thấy đúng số suất còn lại.
         jdbcTemplate.queryForObject("SELECT id FROM facilities WITH (UPDLOCK, HOLDLOCK) WHERE id = ?",
                 Integer.class, facility.getId());
-        int freeSlots = countFreeSlots(facility.getId(), unitType.getId());
+        int freeSlots = countFreeSlots(facility.getId(), unitType.getId(), request.getStartDate());
         if (freeSlots <= 0) {
+            // PR-R11: hết ô trống nhưng sắp có ô trả về → báo ngày nhận kho sớm nhất có thể chọn
+            LocalDate slotDate = renewalPolicyService.earliestSlotDate(facility.getId(), unitType.getId(),
+                    renewalPolicyService.freeSlotsNow(facility.getId(), unitType.getId()));
             throw new com.queenkho.api.exception.ReservationException(HttpStatus.CONFLICT, "NO_AVAILABILITY",
                     "Loại kho \"" + unitType.getName() + "\" tại " + facility.getName()
-                            + " vừa hết chỗ trống. Vui lòng chọn loại kho hoặc cơ sở khác.");
+                            + (slotDate != null
+                                ? " hiện đã hết chỗ trống. Sớm nhất có thể nhận kho từ ngày "
+                                    + slotDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                                    + " — vui lòng chọn ngày bắt đầu từ ngày này."
+                                : " vừa hết chỗ trống. Vui lòng chọn loại kho hoặc cơ sở khác."));
         }
 
         // Sinh ma don ngau nhien
@@ -393,14 +405,15 @@ public class ReservationService {
     }
 
     // Số suất còn nhận đơn = ô AVAILABLE đúng loại − đơn đang giữ suất (đơn PENDING còn trong 15 phút + đơn đã cọc chưa gán ô)
-    int countFreeSlots(Integer facilityId, Integer unitTypeId) {
+    // PR-R11: + các ô "sắp trống" (khách cũ đã qua hạn chót gia hạn) mà ngày nhận kho của đơn mới ≥ ngày ô trống được nhận
+    int countFreeSlots(Integer facilityId, Integer unitTypeId, LocalDate startDate) {
         Integer free = jdbcTemplate.queryForObject(
                 "SELECT " +
                         "(SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND unit_type_id = ? AND status = 'AVAILABLE') - " +
                         "(SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND unit_type_id = ? AND storage_unit_id IS NULL " +
                         "   AND (status = 'DEPOSIT_PAID' OR (status = 'PENDING' AND created_at > DATEADD(MINUTE, -15, SYSDATETIME()))))",
                 Integer.class, facilityId, unitTypeId, facilityId, unitTypeId);
-        return free != null ? free : 0;
+        return (free != null ? free : 0) + renewalPolicyService.countReleasingBy(facilityId, unitTypeId, startDate);
     }
 
     // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán.
@@ -569,10 +582,18 @@ public class ReservationService {
         BigDecimal penalty;
         BigDecimal refund;
 
+        // PR-R11: đã tới ngày nhận kho mà cơ sở vẫn chưa gán được ô (ô "sắp trống" khách cũ chưa trả) → lỗi cơ sở,
+        // khách huỷ được hoàn 100%.
+        boolean facilityNoUnit = "DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
+                && reservation.getStartDate() != null && !LocalDate.now().isBefore(reservation.getStartDate());
+
         // Chưa thu tiền thì không phạt và không phát sinh hoàn tiền.
         if (totalPaid.compareTo(BigDecimal.ZERO) <= 0) {
             penalty = BigDecimal.ZERO;
             refund = BigDecimal.ZERO;
+        } else if (facilityNoUnit) {
+            penalty = BigDecimal.ZERO;
+            refund = totalPaid;
         // PR-M5: đơn chưa gắn hợp đồng nên đọc chính sách hiện hành lúc hủy.
         } else if (appointmentTime != null
                 && LocalDateTime.now().plusHours(cancelRules[0]).isBefore(appointmentTime)) {

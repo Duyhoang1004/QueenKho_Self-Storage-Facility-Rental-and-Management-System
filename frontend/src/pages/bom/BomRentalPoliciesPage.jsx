@@ -20,6 +20,9 @@ const EMPTY_FORM = {
   renewalDiscount3m: '0',
   renewalDiscount6m: '5',
   renewalDiscount12m: '10',
+  // PR-Q14 / PR-Q15: % giá thuê theo ngày tính phí chiếm dụng khi quá hạn và phí lưu giữ hàng sau thanh lý
+  overstayPercent: '150',
+  heldGoodsFeePercent: '20',
 };
 
 const DISCOUNT_KEYS = ['bookingDiscount3m', 'bookingDiscount6m', 'bookingDiscount12m', 'renewalDiscount3m', 'renewalDiscount6m', 'renewalDiscount12m'];
@@ -79,6 +82,12 @@ function validatePolicy(form) {
       errors[key] = 'Ưu đãi phải từ 0% đến 50%.';
     }
   });
+  if (number('overstayPercent') < 100 || number('overstayPercent') > 300) {
+    errors.overstayPercent = 'Phí chiếm dụng phải từ 100% đến 300% giá ngày.';
+  }
+  if (number('heldGoodsFeePercent') < 0 || number('heldGoodsFeePercent') > 100) {
+    errors.heldGoodsFeePercent = 'Phí lưu giữ phải từ 0% đến 100% giá ngày.';
+  }
   return errors;
 }
 
@@ -249,6 +258,8 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
     cancelFreeHours: String(policy.cancelFreeHours),
     lateFeePercentPerDay: String(policy.lateFeePercentPerDay),
     ...Object.fromEntries(DISCOUNT_KEYS.map((key) => [key, String(policy[key] ?? EMPTY_FORM[key])])),
+    overstayPercent: String(policy.overstayPercent ?? EMPTY_FORM.overstayPercent),
+    heldGoodsFeePercent: String(policy.heldGoodsFeePercent ?? EMPTY_FORM.heldGoodsFeePercent),
   } : EMPTY_FORM);
   // Flow 4: BOM cho phép / không cho phép FM miễn phí trễ cho khách (không nằm trong form số)
   const [allowLateFeeWaiver, setAllowLateFeeWaiver] = useState(policy ? policy.allowLateFeeWaiver !== false : true);
@@ -306,7 +317,10 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
           <NumberField label="Phí hủy đặt chỗ" name="cancelFeePercent" value={form.cancelFeePercent} onChange={handleChange} error={errors.cancelFeePercent} min="0" max="100" suffix="%" hint="Tỷ lệ khấu trừ khi hủy" />
           <NumberField label="Thời gian hủy miễn phí" name="cancelFreeHours" value={form.cancelFreeHours} onChange={handleChange} error={errors.cancelFreeHours} min="0" suffix="giờ" hint="Tính trước giờ hẹn nhận kho" />
           <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="50" suffix="%/ngày" hint="Tính trên cọc đang giữ; tối đa 50% cọc" />
+          <NumberField label="Phí chiếm dụng khi quá hạn" name="overstayPercent" value={form.overstayPercent} onChange={handleChange} error={errors.overstayPercent} min="100" max="300" suffix="% giá ngày" hint="Mỗi ngày quá hạn, không trần — quá hạn luôn đắt hơn gia hạn" />
+          <NumberField label="Phí lưu giữ hàng sau thanh lý" name="heldGoodsFeePercent" value={form.heldGoodsFeePercent} onChange={handleChange} error={errors.heldGoodsFeePercent} min="0" max="100" suffix="% giá ngày" hint="Mỗi ngày lưu giữ (tối đa 60 ngày)" />
         </div>
+        <p className="mt-2 text-xs font-medium text-[#777777]">Mốc thanh lý của phiên bản mới cố định 15 ngày quá hạn. Hai loại phí trên chỉ áp dụng cho khách đã đồng ý điều khoản v2.</p>
 
         {/* Flow 4: ưu đãi theo gói thuê — gói 1 tháng luôn 0% */}
         <div className="mt-4 border-t-2 border-[#F0F0F0] pt-4">
@@ -381,6 +395,8 @@ function HistoryModal({ facility, history, currentPolicyId, onClose, onActivate,
                 <span>Ưu đãi đặt: <strong className="text-[#4B4B4B]">{item.bookingDiscount3m ?? 5}/{item.bookingDiscount6m ?? 10}/{item.bookingDiscount12m ?? 15}%</strong></span>
                 <span>Ưu đãi gia hạn: <strong className="text-[#4B4B4B]">{item.renewalDiscount3m ?? 0}/{item.renewalDiscount6m ?? 5}/{item.renewalDiscount12m ?? 10}%</strong></span>
                 <span>Miễn phí trễ: <strong className="text-[#4B4B4B]">{item.allowLateFeeWaiver === false ? 'Không' : 'Cho phép'}</strong></span>
+                <span>Chiếm dụng: <strong className="text-[#4B4B4B]">{item.overstayPercent ?? 150}% giá ngày</strong></span>
+                <span>Lưu giữ hàng: <strong className="text-[#4B4B4B]">{item.heldGoodsFeePercent ?? 20}% giá ngày</strong></span>
               </div>
             </article>;
           })}
@@ -586,6 +602,7 @@ export default function BomRentalPoliciesPage() {
                   <PolicySection icon="running_with_errors" title="Xử lý thanh toán trễ hạn" tone="red" expanded={expandedSections.overdue} onToggle={() => toggleSection('overdue')}>
                     <RuleLine icon="schedule" title={`Mỗi ngày quá hạn: ${selectedPolicy.lateFeePercentPerDay}% cọc đang giữ`} description="Phí được tính động theo số ngày quá hạn và chưa ghi giao dịch cho đến khi khách thanh toán hoặc bị khấu trừ vào cọc." tone="blue" />
                     <RuleLine icon="vertical_align_top" title={`Mức phí tối đa: ${selectedPolicy.lateFeeMaxPercent}% cọc đang giữ`} description="Khi chạm mức trần, hệ thống ngừng tăng phí trễ hạn." tone="orange" />
+                    <RuleLine icon="door_front" title={`Phí chiếm dụng: ${selectedPolicy.overstayPercent ?? 150}% giá thuê theo ngày × số ngày quá hạn`} description="Không có trần — quá hạn luôn đắt hơn gia hạn. Trừ vào cọc sau phí trễ; vượt cọc thành khoản nợ của khách (chỉ khách đồng ý điều khoản v2)." tone="red" />
                     <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Cho phép FM thanh lý`} description="Hệ thống chỉ mở quyền thao tác; FM phải xác nhận thanh lý và nhập ghi chú quá trình liên hệ khách." tone="red" />
                   </PolicySection>
 

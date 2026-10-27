@@ -2,6 +2,7 @@ package com.queenkho.api.dto;
 
 import lombok.*;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @NoArgsConstructor
@@ -41,5 +42,6 @@ public class FacilityAvailabilityResponse {
         private String features;
         private int totalUnits;
         private int availableCount;
+        private LocalDate availableFrom; // PR-R11: null = còn ô ngay; có giá trị = chỉ nhận được từ ngày này
     }
 }

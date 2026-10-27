@@ -76,4 +76,10 @@ public class CustomerContractResponse {
     private String facilityHotline;
     private String customerEmail;
     private String customerCccd;
+
+    // PR-Q14: phí chiếm dụng khi OVERDUE (0 nếu đơn trước điều khoản v2)
+    private BigDecimal overstayDailyAmount;
+    private BigDecimal overstayFeeAmount;
+    private BigDecimal totalOverdueCharge;           // phí trễ + phí chiếm dụng
+    private BigDecimal amountBeyondDeposit;          // phần vượt cọc sẽ thành nợ nếu trả kho / bị thanh lý
 }

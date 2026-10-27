@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
@@ -45,6 +46,9 @@ public class FacilityService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private RenewalPolicyService renewalPolicyService;
 
     private static final List<String> PENDING_STATUSES = List.of("PENDING", "DEPOSIT_PAID");
 
@@ -103,16 +107,19 @@ public class FacilityService {
                 long physical = physicalMap.getOrDefault(ut.getId(), 0L);
                 long pending = pendingMap.getOrDefault(ut.getId(), 0L);
                 int available = (int) Math.max(0, physical - pending);
+                // PR-R11: hết ô ngay nhưng có ô "sắp trống" → vẫn hiện, kèm ngày nhận kho sớm nhất
+                LocalDate availableFrom = available > 0 ? null
+                    : renewalPolicyService.earliestSlotDate(f.getId(), ut.getId(), (int) (physical - pending));
 
-                // Chỉ hiển thị nếu còn slot
-                if (available > 0) {
+                // Chỉ hiển thị nếu còn slot (ngay hoặc từ ngày availableFrom)
+                if (available > 0 || availableFrom != null) {
                     results.add(new FacilitySearchResultItem(
                         f.getId(), f.getName(), f.getCity(), f.getDistrict(),
                         f.getAddress(), f.getHotline(),
                         ut.getId(), ut.getName(), ut.getAreaSqm(),
                         ut.getBasePriceMonthly(), ut.getDimensions(),
                         ut.getSuggestedCapacity(), ut.getFeatures(),
-                        available
+                        available, availableFrom
                     ));
                 }
             }
@@ -162,12 +169,14 @@ public class FacilityService {
             long physical = availableMap.getOrDefault(ut.getId(), 0L);
             long pending = pendingMap.getOrDefault(ut.getId(), 0L);
             int available = (int) Math.max(0, physical - pending);
+            LocalDate availableFrom = available > 0 ? null
+                : renewalPolicyService.earliestSlotDate(facilityId, ut.getId(), (int) (physical - pending));
 
             slots.add(new FacilityAvailabilityResponse.UnitTypeSlot(
                 ut.getId(), ut.getName(), ut.getAreaSqm(),
                 ut.getBasePriceMonthly(), ut.getDimensions(),
                 ut.getSuggestedCapacity(), ut.getFeatures(),
-                (int) total, available
+                (int) total, available, availableFrom
             ));
         }
 

@@ -58,6 +58,10 @@ public class HeldGoods {
     @Column(name = "refund_amount", precision = 12, scale = 2)
     private BigDecimal refundAmount;
 
+    // PR-Q15: phí lưu giữ hàng đã tính khi chốt hồ sơ (NULL = đơn cũ / không áp dụng)
+    @Column(name = "storage_fee_amount", precision = 12, scale = 2)
+    private BigDecimal storageFeeAmount;
+
     @Column(name = "resolved_note", length = 1000)
     private String resolvedNote;
 

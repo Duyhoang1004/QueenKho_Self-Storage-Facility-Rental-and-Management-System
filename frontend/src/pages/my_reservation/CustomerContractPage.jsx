@@ -16,6 +16,20 @@ function formatDate(val) {
   return `${d}/${m}/${y}`;
 }
 
+// PR-R9 / PR-R10: còn ≤ 7 ngày đến end_date → { daysLeft, deadline (end_date − 3), late (đã qua hạn chót ưu tiên) }
+function getRenewalReminder(endDate) {
+  if (!endDate) return null;
+  const [y, m, d] = String(endDate).split("-").map(Number);
+  const end = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysLeft = Math.round((end - today) / 86400000);
+  if (daysLeft < 0 || daysLeft > 7) return null;
+  const dl = new Date(y, m - 1, d - 3);
+  const deadline = `${dl.getFullYear()}-${String(dl.getMonth() + 1).padStart(2, "0")}-${String(dl.getDate()).padStart(2, "0")}`;
+  return { daysLeft, deadline, late: daysLeft < 3 };
+}
+
 // Hàm tính số tháng thuê giữa ngày bắt đầu và kết thúc
 function getContractMonths(startDate, endDate) {
   if (!startDate || !endDate) return 1;
@@ -241,6 +255,9 @@ export default function CustomerContractPage() {
   const rentPaid = monthlyRent * totalMonths;
   const totalPaidAll = depositAmount + rentPaid;
 
+  // PR-R9 / PR-R10: nhắc gia hạn khi còn ≤ 7 ngày; hạn chót gia hạn ưu tiên = end_date − 3
+  const renewalReminder = getRenewalReminder(contract.endDate);
+
   return (
     <div className="max-w-[1000px] w-full mx-auto px-8 py-8 flex flex-col gap-6">
       {toastMessage && (
@@ -402,6 +419,35 @@ export default function CustomerContractPage() {
         </span>
       </div>
 
+      {/* PR-R9 / PR-R10: còn ≤ 7 ngày hết hạn → nhắc hạn chót gia hạn ưu tiên (end_date − 3) */}
+      {contract.status === "ACTIVE" && renewalReminder && (
+        <div className={`border-2 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${renewalReminder.late ? "bg-[#FFF8EE] border-[#FFD8A8]" : "bg-[#EEF8FF] border-[#B8E2FF]"}`}>
+          <div className="flex items-start gap-3">
+            <span className={`material-symbols-outlined text-[28px] shrink-0 ${renewalReminder.late ? "text-[#FF9600]" : "text-[#1CB0F6]"}`}>
+              {renewalReminder.late ? "hourglass_bottom" : "event_upcoming"}
+            </span>
+            <div className="text-xs text-[#4B4B4B] leading-relaxed">
+              <p className="font-black text-sm">Hợp đồng còn {renewalReminder.daysLeft} ngày là hết hạn ({formatDate(contract.endDate)})</p>
+              {renewalReminder.late ? (
+                <p>Đã qua hạn chót gia hạn ưu tiên <strong>{formatDate(renewalReminder.deadline)}</strong>: ô kho đang mở cho khách khác đặt trước, chỉ gia hạn được nếu chưa có ai đặt.</p>
+              ) : (
+                <p>Gia hạn trước hết ngày <strong>{formatDate(renewalReminder.deadline)}</strong> để giữ chắc ô kho. Sau mốc này ô sẽ mở cho khách khác đặt trước.</p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setOptionsModalTab("renew");
+              setIsOptionsModalOpen(true);
+            }}
+            className="duo-btn-green px-4 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">autorenew</span>
+            Gia hạn ngay
+          </button>
+        </div>
+      )}
+
       {/* Cảnh báo quá hạn (OVERDUE) theo Business Rule */}
       {contract.status === "OVERDUE" && (
         <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -414,7 +460,21 @@ export default function CustomerContractPage() {
                 Hợp đồng đã quá hạn {contract.overdueDays || 1} ngày
               </h3>
               <p className="text-xs text-[#777777] mt-1 leading-relaxed">
-                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>. Tiền cọc ước tính sau khi trừ phí trễ: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
+                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>.
+                {Number(contract.overstayFeeAmount) > 0 && (
+                  <> Phí chiếm dụng ô ({formatVND(contract.overstayDailyAmount)}/ngày, không giới hạn): <strong className="text-[#FF4B4B]">{formatVND(contract.overstayFeeAmount)}</strong>.</>
+                )}
+                {" "}Tiền cọc ước tính sau khi trừ các khoản phí: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
+                {Number(contract.amountBeyondDeposit) > 0 && (
+                  <span className="text-[#FF4B4B] font-bold block mt-1">
+                    * Phí đã vượt tiền cọc {formatVND(contract.amountBeyondDeposit)} — phần này sẽ thành khoản nợ khi trả kho hoặc bị thanh lý.
+                  </span>
+                )}
+                {contract.liquidationDaysThreshold && (
+                  <span className="block mt-1">
+                    Quá hạn quá {contract.liquidationDaysThreshold} ngày, cơ sở có quyền thanh lý hợp đồng và chuyển hàng sang khu lưu giữ.
+                  </span>
+                )}
                 {contract.isPinLocked && (
                   <span className="text-[#FF4B4B] font-bold block mt-1">
                     * Mã PIN SmartLock của khoang đã bị khóa.

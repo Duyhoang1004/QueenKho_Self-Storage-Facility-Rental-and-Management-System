@@ -50,5 +50,23 @@ public class LateFeeCalculationResult {
 
     /** Flow 6: FM đã miễn phí trễ cho đợt quá hạn này → lateFeeAmount = 0 */
     private boolean lateFeeWaived;
+
+    /** PR-Q14: hợp đồng có áp dụng phí chiếm dụng không (khách đồng ý điều khoản từ v2) */
+    private boolean overstayApplied;
+
+    /** PR-Q14: % giá ngày tính mỗi ngày chiếm dụng (150 theo chính sách; 100 nếu FM đã miễn phí trễ) */
+    private int overstayPercent;
+
+    /** PR-Q14: tiền chiếm dụng 1 ngày = giá niêm yết / 30 × overstayPercent */
+    private BigDecimal overstayDailyAmount;
+
+    /** PR-Q14: phí chiếm dụng = tiền 1 ngày × số ngày quá hạn (không trần) */
+    private BigDecimal overstayFeeAmount;
+
+    /** Tổng phải trả cho đợt quá hạn = phí trễ + phí chiếm dụng */
+    private BigDecimal totalOverdueCharge;
+
+    /** Phần vượt cọc — khi trả kho / thanh lý sẽ thành khoản nợ OVERSTAY_FEE */
+    private BigDecimal amountBeyondDeposit;
 }
 

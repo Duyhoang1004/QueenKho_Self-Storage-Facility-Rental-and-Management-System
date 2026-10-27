@@ -19,9 +19,16 @@ export async function getContractByReservation(reservationId) {
 }
 
 // Flow 6: báo giá gia hạn 1/3/6/12 tháng (đúng số VNPAY sẽ thu)
-// trả [{ months, discountPercent, subtotal, discountAmount, rentAmount, lateFeeAmount, lateFeeWaived, totalAmount }]
+// trả [{ months, discountPercent, subtotal, discountAmount, rentAmount, lateFeeAmount, lateFeeWaived, overstayFeeAmount, totalAmount }]
 export async function getRenewalQuote(contractId) {
   const res = await api.get(`/contracts/${contractId}/renewal-quote`)
+  return res.data
+}
+
+// PR-R10 / PR-R11: còn gia hạn được không + hạn chót ưu tiên (end_date − 3) + hạn mới từng gói
+// trả { window: PRIORITY | LATE | CLOSED, renewable, unitReleasing, priorityDeadline, daysUntilDeadline, blockedReason, packages: [{ months, newEndDate }] }
+export async function getRenewalEligibility(contractId) {
+  const res = await api.get(`/contracts/${contractId}/renewal-eligibility`)
   return res.data
 }
 

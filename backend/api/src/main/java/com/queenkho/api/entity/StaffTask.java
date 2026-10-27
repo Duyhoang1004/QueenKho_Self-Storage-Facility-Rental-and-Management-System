@@ -51,7 +51,7 @@ public class StaffTask {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
-    @Column(name = "evidence_image_url", length = 1000)
+    @Column(name = "evidence_image_url")
     private String evidenceImageUrl;
 
     // Task MAINTENANCE: DAMAGE (sự cố sau trả kho) / LIQUIDATION (dọn kho sau thanh lý)

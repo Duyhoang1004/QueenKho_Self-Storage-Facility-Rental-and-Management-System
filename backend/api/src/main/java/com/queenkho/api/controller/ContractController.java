@@ -166,7 +166,9 @@ public class ContractController {
                 if (refundNote != null) {
                     java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:Phí hư hại|Phi hu hai|Ph\\? hu h\\?i|Sự cố:)\\s*([0-9.,]+)", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(refundNote);
                     if (m.find()) {
-                        String val = m.group(1).replace(",", "").replace(".", "");
+                        String val = m.group(1).trim();
+                        if (val.endsWith(".00")) val = val.substring(0, val.length() - 3);
+                        val = val.replace(",", "").replace(".", "");
                         damageFee = new BigDecimal(val);
                     }
                 }

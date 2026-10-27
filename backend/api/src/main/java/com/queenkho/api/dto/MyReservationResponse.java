@@ -27,4 +27,10 @@ public class MyReservationResponse {
     private LocalDate endDate;
     private BigDecimal totalPaid; 
     private Integer contractId; 
+    private String customerEmail;
+    private String customerCccd;
+    private String facilityHotline;
+    private String storageUnitFloor;
+    private String storageUnitZone;
+    private String storageUnitRoomNumber;
 }

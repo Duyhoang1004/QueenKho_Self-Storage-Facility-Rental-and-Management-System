@@ -260,7 +260,12 @@ public class ContractController {
                 rc.getReservation().getTermsAcceptedAt(),
                 heldGoods != null ? heldGoods.getStatus() : null,
                 heldGoods != null ? heldGoods.getHoldUntil() : null,
-                heldGoods != null ? heldGoods.getStorageLocation() : null);
+                heldGoods != null ? heldGoods.getStorageLocation() : null,
+                su.getFacility() != null ? su.getFacility().getName() : null,
+                su.getFacility() != null ? su.getFacility().getAddress() : null,
+                su.getFacility() != null ? su.getFacility().getHotline() : null,
+                rc.getCustomer().getEmail(),
+                rc.getCustomer().getCccd());
     }
 
     // GET /api/v1/contracts?managerId=3

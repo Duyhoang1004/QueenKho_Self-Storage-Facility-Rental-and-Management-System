@@ -449,6 +449,35 @@ export default function CustomerContractPage() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Cơ sở nhận kho */}
+        <div className="duo-card p-6">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
+            <span className="material-symbols-outlined text-[#1CB0F6] text-[28px]">location_on</span>
+            <h2 className="text-lg font-black text-[#4B4B4B] uppercase">Cơ sở nhận kho</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <InfoRow label="Tên cơ sở" value={contract.facilityName} />
+            <InfoRow label="Hotline" value={contract.facilityHotline} />
+            <div className="sm:col-span-2">
+              <InfoRow label="Địa chỉ nhận kho" value={contract.facilityAddress} />
+            </div>
+          </div>
+        </div>
+
+        {/* Người thuê */}
+        <div className="duo-card p-6">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
+            <span className="material-symbols-outlined text-[#58CC02] text-[28px]">person</span>
+            <h2 className="text-lg font-black text-[#4B4B4B] uppercase">Thông tin người thuê</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <InfoRow label="Họ và tên" value={contract.customerFullName} />
+            <InfoRow label="Số điện thoại" value={contract.customerPhone} />
+            <InfoRow label="Email" value={contract.customerEmail} />
+            <InfoRow label="CCCD / Passport" value={contract.customerCccd} mono />
+          </div>
+        </div>
+
         {/* Ô kho đã thuê */}
         <div className="duo-card p-6 col-span-full">
           <div className="flex items-center gap-2 mb-6 pb-4 border-b-2 border-[#E5E5E5]">
@@ -462,9 +491,9 @@ export default function CustomerContractPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
             <InfoRow label="Mã Ô kho" value={contract.storageUnitId} mono />
             <InfoRow label="Loại kho" value={contract.unitTypeName} />
-            <InfoRow label="Diện tích" value={`${contract.areaSqm} m²`} />
-            <InfoRow label="Tầng" value={`Tầng ${contract.floor}`} />
-            <InfoRow label="Khu vực" value={`Khu ${contract.zone}`} />
+            <InfoRow label="Diện tích" value={contract.areaSqm ? `${contract.areaSqm} m²` : "—"} />
+            <InfoRow label="Tầng" value={contract.floor} />
+            <InfoRow label="Khu vực" value={contract.zone ? `Khu ${contract.zone}` : "—"} />
             <InfoRow label="Phòng số" value={contract.roomNumber} mono />
           </div>
         </div>

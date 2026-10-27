@@ -29,6 +29,9 @@ public class StorageUnitDetailResponse {
     private boolean overdue; // true if current contract is OVERDUE
     private CurrentContractInfo currentContract;
     private boolean canDelete; // true only if never had any rental contract in history
+    // PR-O10: ô MAINTENANCE có task bảo trì đang mở → FE hiện "Chờ sửa (task #id)" thay vì ô FM tự khoá
+    private Integer maintenanceTaskId;
+    private String maintenanceReason; // DAMAGE (sự cố sau trả kho) / LIQUIDATION (dọn kho sau thanh lý)
 
     @Data
     @Builder

@@ -127,7 +127,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 `RESERVED` **không dùng** (PR-M9). Nhãn "Quá hạn" trên lưới ô là suy ra từ hợp đồng (PR-M11).
 
 ### 2.4 Công việc — `facility_tasks` (đổi tên từ `staff_tasks` ở #55)
-- Loại: `CHECK_IN` (sinh khi gán ô) · `CHECK_OUT` (sinh khi yêu cầu trả kho) · `SUPPORT` (sinh khi khách tạo ticket) · `REFUND` (sinh khi phát sinh tiền hoàn — **FM xử lý**, PR-O12) · `MAINTENANCE` (có trong schema, chưa dùng).
+- Loại: `CHECK_IN` (sinh khi gán ô) · `CHECK_OUT` (sinh khi yêu cầu trả kho) · `SUPPORT` (sinh khi khách tạo ticket) · `REFUND` (sinh khi phát sinh tiền hoàn — **FM xử lý**, PR-O12) · `MAINTENANCE` (sinh khi nghiệm thu có sự cố hoặc thanh lý — Staff / FM bấm "Sửa xong / Dọn xong", PR-O10).
 - `OPEN` ──nhận──▶ `IN_PROGRESS` ──xong──▶ `COMPLETED`; FM gỡ người nhận → `OPEN`; quá `due_at` → `OVERDUE`; huỷ → `CANCELLED`.
 - `OVERDUE` thoát ra: `CHECK_IN` — FM dời lịch hoặc No-Show (EX-03); `CHECK_OUT` — FM dời ngày trả kho (PR-O13); `SUPPORT` — FM gia hạn task (PR-S4); `REFUND` — FM vẫn hoàn tất được (task hiện đỏ).
 - Cột `evidence_image_url` lưu bằng chứng hoàn tiền (PR-O12).
@@ -353,7 +353,8 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 |---|---|
 | PR-O8 | Bảng mới `damage_cases` (mục 5). 1 lần nghiệm thu có thể nhiều sự cố; chi phí ≥ 0 do Staff nhập. |
 | PR-O9 | Tổng phí sự cố **trừ vào cọc** (`DAMAGE_FEE`, method `DEPOSIT_OFFSET`); vượt cọc → phần thiếu là **khoản nợ** (`DAMAGE_FEE` `PENDING`), khách trả ở UC-20, chưa trả → bị chặn đặt chỗ (PR-Q12). |
-| PR-O10 | Ô `MAINTENANCE` do sự cố → FM bấm **"Sửa xong"** → `AVAILABLE` (UC-06). |
+| PR-O10 | Ô `MAINTENANCE` do sự cố → sinh task `MAINTENANCE` (hạn 21:00 sau 3 ngày). Staff đang giữ task hoặc FM (đóng thẳng) bấm **"Sửa xong"** (ghi chú ≥ 10 ký tự, ảnh sau sửa tuỳ chọn) → task `COMPLETED`, ô `AVAILABLE`. Task quá hạn vẫn đóng được. FM "Mở lại kho" (UC-06) cũng tự đóng task. *(27/10/2026)* |
+| PR-O16 | (27/10/2026) Mỗi sự cố **bắt buộc** chọn lỗi: **khách** (`CUSTOMER`) → trừ cọc theo PR-O9; **cơ sở** (`FACILITY`) → chỉ ghi chi phí nội bộ, **không** tính khách, cọc hoàn bình thường. Cả hai đều đưa ô vào bảo trì. |
 
 ### UC-25 Hoàn tiền ⬜
 | Mã | Rule |
@@ -374,7 +375,7 @@ AVAILABLE ──(gán ô)──▶ OCCUPIED ──(nghiệm thu đạt / No-Show
 | PR-Q7 | Lối ra **trả kho**: hẹn trong 3 ngày (PR-O1); phí trễ tính đến ngày nghiệm thu, trừ vào cọc (PR-O11). |
 | PR-Q8 | Lối ra **thanh lý**: quá `liquidation_days` (mặc định 30) → **FM bấm Thanh lý** (không tự động), bắt buộc ghi chú quá trình liên hệ khách. |
 | PR-Q9 | Thanh lý: hợp đồng `LIQUIDATED`; đơn `COMPLETED`; xoá PIN/RFID; ô `MAINTENANCE` ("Dọn xong" → `AVAILABLE`); trừ phí trễ 50% cọc; **50% còn lại tạm giữ** (D-09) — hiện "Còn giữ cọc: X đ", FM bấm "Hoàn phần cọc còn lại" khi khách đến làm việc → PR-O12. Đóng ticket còn mở (PR-S8). |
-| PR-Q10 | Xử lý đồ của khách khi thanh lý làm **ngoài hệ thống**, chỉ ghi chú log. |
+| PR-Q10 | (sửa 27/10/2026) **Điều khoản xử lý tài sản khi không trả kho** (v1) — khách bắt buộc đồng ý khi đặt kho (lưu `reservations.terms_version`, `terms_accepted_at`): thanh lý cần **≥ 3 lần liên hệ** (409 `NOT_ENOUGH_CONTACTS`); thanh lý sinh task `MAINTENANCE` "Dọn ô sau thanh lý" (≥ 2 người mở kho, kiểm kê, chụp ảnh, biên bản, chuyển khu lưu giữ); hàng lưu giữ **60 ngày**, quá hạn **bán thanh lý** trừ nợ, dư hoàn khách; hàng cấm / giấy tờ giao công an / UBND phường. Đơn cũ chưa đồng ý → không được bán. Căn cứ: BLDS 2015 Điều 346–350 (cầm giữ không cho bán nếu không có thoả thuận). "Dọn xong" bắt buộc biên bản kiểm kê (danh sách, người chứng kiến, khu lưu giữ, ≥ 1 ảnh) → bảng `held_goods`. FM xử lý ở trang **Hàng đang lưu giữ**: khách nhận lại (phải hết nợ) · bán thanh lý (hết hạn + đã đồng ý; tiền bán trừ nợ `DAMAGE_FEE` trước, dư + cọc còn giữ → task `REFUND`) · tiêu huỷ (hết hạn) · giao cơ quan chức năng (bất cứ lúc nào). |
 | PR-Q11 | Màn FM **"Hợp đồng quá hạn"**: mã HĐ, khách, SĐT, ô, số ngày quá hạn, phí trễ hiện tại, ghi chú liên hệ (nhiều lần, lưu log), nút Thanh lý (bật khi đủ ngày). |
 | PR-Q12 | Khách có hợp đồng `OVERDUE` hoặc còn nợ (`DAMAGE_FEE` `PENDING`) → không đặt chỗ mới, 409 `CUSTOMER_HAS_DEBT`. |
 

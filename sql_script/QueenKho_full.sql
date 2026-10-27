@@ -162,6 +162,8 @@ CREATE TABLE reservations (
     expected_appointment_time   DATETIME2 NULL,
     start_date                  DATE NULL,
     rent_discount_percent       INT NULL,            -- % ưu đãi tiền thuê chốt lúc tạo đơn (giống deposit_amount)
+    terms_version               NVARCHAR(20) NULL,   -- Phiên bản điều khoản xử lý tài sản khách đã đồng ý (NULL = đơn cũ, chưa đồng ý)
+    terms_accepted_at           DATETIME2 NULL,      -- Thời điểm khách tick đồng ý điều khoản khi đặt kho
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),
@@ -289,6 +291,7 @@ CREATE TABLE facility_tasks (
     staff_id            INT NULL,                             -- ID người phụ trách (Staff hoặc Facility Manager)
     due_at              DATETIME2 NOT NULL,                   -- deadline hoàn thành
     evidence_image_url  NVARCHAR(1000) NULL,                  -- ảnh bằng chứng chuyển khoản / nghiệm thu
+    maintenance_reason  NVARCHAR(20) NULL,                    -- Task MAINTENANCE: DAMAGE (sự cố trả kho) / LIQUIDATION (dọn kho sau thanh lý)
     note                NVARCHAR(1000) NULL,                  -- chi tiết STK, thông tin hoàn cọc
     created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     claimed_at          DATETIME2 NULL,
@@ -319,14 +322,49 @@ CREATE TABLE damage_cases (
     title               NVARCHAR(150) NOT NULL,                   -- Ví dụ: 'Vệ sinh rác', 'Hỏng khóa', 'Vỡ vách ngăn'
     description         NVARCHAR(1000) NULL,                      -- Mô tả chi tiết mức độ hư hại
     estimated_cost      DECIMAL(12,2) NOT NULL DEFAULT 0,         -- Chi phí đền bù (>= 0)
+    liable_party        NVARCHAR(20) NOT NULL DEFAULT 'CUSTOMER', -- CUSTOMER: lỗi khách, trừ cọc / FACILITY: lỗi cơ sở, không tính khách
     evidence_image_urls NVARCHAR(MAX) NULL,                       -- Danh sách link ảnh (JSON array hoặc dấu phẩy phân tách)
     created_at          DATETIME2(7) NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_damagecases_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
-    CONSTRAINT FK_damagecases_task     FOREIGN KEY (task_id) REFERENCES facility_tasks(id)
+    CONSTRAINT FK_damagecases_task     FOREIGN KEY (task_id) REFERENCES facility_tasks(id),
+    CONSTRAINT CK_damagecases_liable   CHECK (liable_party IN ('CUSTOMER', 'FACILITY'))
 );
 GO
 CREATE INDEX IX_damagecases_contract ON damage_cases(contract_id);
 CREATE INDEX IX_damagecases_task ON damage_cases(task_id);
+GO
+
+/* ---------- 12b. held_goods (PR-Q10: hàng của khách lưu giữ sau thanh lý) ----------
+   Tạo khi Staff / FM bấm "Dọn xong" task dọn kho sau thanh lý (kèm biên bản kiểm kê).
+   HOLDING 60 ngày → RETURNED / SOLD / DESTROYED / HANDED_TO_AUTHORITY. */
+CREATE TABLE held_goods (
+    id                  INT IDENTITY(1,1) PRIMARY KEY,
+    contract_id         INT NOT NULL,
+    facility_id         INT NOT NULL,
+    task_id             INT NULL,                                 -- task MAINTENANCE dọn kho đã tạo bản ghi
+    inventory_note      NVARCHAR(2000) NOT NULL,                  -- Danh sách hàng kiểm kê
+    evidence_image_urls NVARCHAR(MAX) NULL,                       -- Ảnh kiểm kê (link, phân tách bằng |||)
+    witness_note        NVARCHAR(500) NOT NULL,                   -- Người mở kho / chứng kiến
+    storage_location    NVARCHAR(100) NOT NULL,                   -- Khu lưu giữ (VD: Kho K2 - kệ 3)
+    status              NVARCHAR(30) NOT NULL DEFAULT 'HOLDING',
+    hold_until          DATE NOT NULL,                            -- Hết hạn lưu giữ (ngày thanh lý + 60)
+    proceeds_amount     DECIMAL(12,2) NULL,                       -- Tiền bán thanh lý (SOLD)
+    debt_offset_amount  DECIMAL(12,2) NULL,                       -- Phần tiền bán dùng trừ nợ của khách
+    refund_amount       DECIMAL(12,2) NULL,                       -- Phần hoàn khách (dư tiền bán + cọc còn giữ)
+    resolved_note       NVARCHAR(1000) NULL,
+    resolved_by         INT NULL,
+    resolved_at         DATETIME2 NULL,
+    created_by          INT NOT NULL,
+    created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_heldgoods_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
+    CONSTRAINT FK_heldgoods_facility FOREIGN KEY (facility_id) REFERENCES facilities(id),
+    CONSTRAINT FK_heldgoods_task     FOREIGN KEY (task_id)     REFERENCES facility_tasks(id),
+    CONSTRAINT FK_heldgoods_resolver FOREIGN KEY (resolved_by) REFERENCES users(id),
+    CONSTRAINT FK_heldgoods_creator  FOREIGN KEY (created_by)  REFERENCES users(id),
+    CONSTRAINT CK_heldgoods_status   CHECK (status IN ('HOLDING', 'RETURNED', 'SOLD', 'DESTROYED', 'HANDED_TO_AUTHORITY'))
+);
+CREATE INDEX IX_heldgoods_facility_status ON held_goods(facility_id, status);
+CREATE INDEX IX_heldgoods_contract ON held_goods(contract_id);
 GO
 
 /* ---------- 13. activity_logs ---------- */

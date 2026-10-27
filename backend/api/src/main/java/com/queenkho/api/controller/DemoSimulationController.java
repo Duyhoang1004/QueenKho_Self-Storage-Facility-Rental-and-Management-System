@@ -38,6 +38,24 @@ public class DemoSimulationController {
         return ResponseEntity.ok(simulationService.arriveToday(id, currentUser.require()));
     }
 
+    // Flow 3: khách tới trả kho hôm nay (Staff / FM, task CHECK_OUT)
+    @PostMapping("/tasks/{id}/checkout-today")
+    public ResponseEntity<Map<String, Object>> checkoutToday(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.checkoutToday(id, currentUser.require()));
+    }
+
+    // Flow 6: đã gọi khách quá hạn 3 lần không được → đủ điều kiện liên hệ để thanh lý (FM)
+    @PostMapping("/contracts/{id}/add-failed-contacts")
+    public ResponseEntity<Map<String, Object>> addFailedContacts(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.addFailedContacts(id, currentUser.require()));
+    }
+
+    // PR-Q10: hàng lưu giữ sau thanh lý hết hạn 60 ngày (FM)
+    @PostMapping("/held-goods/{id}/expire-hold")
+    public ResponseEntity<Map<String, Object>> expireHeldGoods(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.expireHeldGoods(id, currentUser.require()));
+    }
+
     // Flow 1: đơn chưa cọc quá 15 phút giữ chỗ (khách chủ đơn / FM)
     @PostMapping("/reservations/{id}/expire-hold")
     public ResponseEntity<Map<String, Object>> expireHold(@PathVariable Integer id) {
@@ -50,7 +68,8 @@ public class DemoSimulationController {
         return ResponseEntity.ok(simulationService.triggerNoShow(id, currentUser.require()));
     }
 
-    // Flow 6: hợp đồng quá hạn N ngày — 3 ngày để thấy phí trễ, 31 ngày để thanh lý (FM)
+    // Flow 6: hợp đồng quá hạn N ngày — 3 ngày để thấy phí trễ, 31 ngày để thanh lý (FM).
+    // Hợp đồng đang chờ trả kho = khách không tới trả kho (N > 5 ngày ân hạn)
     @PostMapping("/contracts/{id}/make-overdue")
     public ResponseEntity<Map<String, Object>> makeOverdue(@PathVariable Integer id,
                                                            @RequestParam(defaultValue = "3") int days) {

@@ -46,12 +46,14 @@ check "FM không sửa được chính sách" "$(code POST $FM "$API/rental-poli
 
 echo "== Flow 1: Đặt kho Mini M (Tân Bình) 3 tháng, ngày bắt đầu hôm nay"
 FREE=$(sql "SELECT COUNT(*) FROM storage_units WHERE facility_id=1 AND unit_type_id=1 AND status='AVAILABLE'")
-R=$(call POST $KH "$API/reservations" "{\"customerId\":2,\"facilityId\":1,\"unitTypeId\":1,\"startDate\":\"$TODAY\",\"durationMonths\":3}")
+check "Chưa đồng ý điều khoản xử lý tài sản → 400" "$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":1,\"startDate\":\"$TODAY\",\"durationMonths\":3}" | jget 'o.error')" "TERMS_NOT_ACCEPTED"
+R=$(call POST $KH "$API/reservations" "{\"customerId\":2,\"facilityId\":1,\"unitTypeId\":1,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true}")
 RES1=$(echo "$R" | jget 'o.id'); echo "  đơn #$RES1 $(echo "$R" | jget 'o.reservationCode')"
 check "Đơn đứng tên KH1 dù gửi customerId=2" "$(sql "SELECT customer_id FROM reservations WHERE id=$RES1")" "$(sql "SELECT id FROM users WHERE email='khachhang1@gmail.com'")"
+check "Lưu phiên bản điều khoản khách đồng ý" "$(sql "SELECT terms_version + CASE WHEN terms_accepted_at IS NULL THEN '/null' ELSE '/ok' END FROM reservations WHERE id=$RES1")" "v1/ok"
 check "Chốt % ưu đãi 8% vào đơn" "$(sql "SELECT rent_discount_percent FROM reservations WHERE id=$RES1")" "8"
 if [ "$FREE" == "1" ]; then
-  R2=$(call POST $KH2 "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":1,\"startDate\":\"$TODAY\",\"durationMonths\":1}")
+  R2=$(call POST $KH2 "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":1,\"startDate\":\"$TODAY\",\"durationMonths\":1,\"acceptedTerms\":true}")
   check "KH2 đặt suất Mini M cuối cùng → hết chỗ (L-13)" "$(echo "$R2" | jget 'o.error')" "NO_AVAILABILITY"
 fi
 P=$(call POST $KH "$PAY/create" "{\"reservationId\":$RES1}")
@@ -98,12 +100,28 @@ R=$(call POST $KH "$API/contracts/$C1/request-checkout" "{\"checkoutDate\":\"$TO
 check "Yêu cầu trả kho" "$(sql "SELECT status FROM rental_contracts WHERE id=$C1")" "TERMINATION_PENDING"
 T2=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C1 AND task_type='CHECK_OUT' AND status='OPEN'")
 check "FM giao nghiệm thu cho Staff2" "$(call POST $FM "$API/staff-tasks/$T2/assign?staffId=$STAFF2_ID" | jget 'o.staffId')" "$STAFF2_ID"
-OUT="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\",\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
-check "Staff2 nghiệm thu có sự cố 3.000.000 (vượt cọc)" "$(code POST $ST2 "$API/staff-tasks/$T2/check-out" "$OUT")" "200"
+NOLIABLE="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
+check "Sự cố chưa chọn lỗi khách / lỗi cơ sở → 400" "$(call POST $ST2 "$API/staff-tasks/$T2/check-out" "$NOLIABLE" | jget 'o.error')" "INVALID_DAMAGE_ITEM"
+OUT="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\",\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"liableParty\":\"CUSTOMER\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]},{\"title\":\"Tham dot mai\",\"estimatedCost\":800000,\"liableParty\":\"FACILITY\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
+check "Staff2 nghiệm thu: lỗi khách 3.000.000 (vượt cọc) + lỗi cơ sở 800.000" "$(code POST $ST2 "$API/staff-tasks/$T2/check-out" "$OUT")" "200"
 check "HĐ TERMINATED, ô bảo trì" "$(sql "SELECT rc.status+'/'+su.status FROM rental_contracts rc JOIN storage_units su ON su.id=rc.storage_unit_id WHERE rc.id=$C1")" "TERMINATED/MAINTENANCE"
+# (Trả sớm → tiền thuê được hoàn bù trước vào nợ, nên tổng DAMAGE_FEE có thể < 3.000.000 — kiểm tra ở biên bản)
+check "Chỉ tính khách phần lỗi khách: khách chịu 3.000.000 / cơ sở chịu 800.000" "$(call GET $ST2 "$API/staff-tasks/$T2" | jget "o.totalDamageCost+'/'+o.facilityDamageCost")" "3000000/800000"
 DEBT=$(sql "SELECT id FROM payment_transactions WHERE contract_id=$C1 AND payment_type='DAMAGE_FEE' AND status='PENDING'")
 [ -n "$DEBT" ] && ok "Phát sinh khoản nợ phí sự cố #$DEBT" || bad "Không có khoản nợ phí sự cố"
-R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":6,\"startDate\":\"$TODAY\",\"durationMonths\":1}")
+
+echo "== PR-O10: Task bảo trì sau trả kho có sự cố"
+MT=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C1 AND task_type='MAINTENANCE' AND status='OPEN'")
+[ -n "$MT" ] && ok "Sinh task bảo trì #$MT" || bad "Không sinh task bảo trì"
+check "Chi tiết task bảo trì có danh sách sự cố (2 mục, 1 lỗi cơ sở)" "$(call GET $ST2 "$API/staff-tasks/$MT" | jget "o.damageCases.length+'/'+o.damageCases.filter(d=>d.liableParty==='FACILITY').length")" "2/1"
+check "Staff2 nhận việc bảo trì" "$(code POST $ST2 "$API/staff-tasks/$MT/claim")" "200"
+MNOTE='{"note":"Da thay vach ton moi va chong tham tran"}'
+check "Staff1 bấm Sửa xong task của Staff2 → 409" "$(call POST $ST1 "$API/staff-tasks/$MT/complete-maintenance" "$MNOTE" | jget 'o.error')" "TASK_NOT_YOURS"
+check "Ghi chú quá ngắn → 400" "$(code POST $ST2 "$API/staff-tasks/$MT/complete-maintenance" '{"note":"xong"}')" "400"
+check "Staff2 Sửa xong" "$(code POST $ST2 "$API/staff-tasks/$MT/complete-maintenance" "$MNOTE")" "200"
+check "Task COMPLETED, ô sẵn sàng cho thuê" "$(sql "SELECT ft.status+'/'+su.status FROM facility_tasks ft JOIN rental_contracts rc ON rc.id=ft.contract_id JOIN storage_units su ON su.id=rc.storage_unit_id WHERE ft.id=$MT")" "COMPLETED/AVAILABLE"
+check "Bấm Sửa xong lần 2 → 409" "$(call POST $ST2 "$API/staff-tasks/$MT/complete-maintenance" "$MNOTE" | jget 'o.error')" "TASK_ALREADY_COMPLETED"
+R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":6,\"startDate\":\"$TODAY\",\"durationMonths\":1,\"acceptedTerms\":true}")
 check "Còn nợ → không đặt được kho mới" "$(echo "$R" | jget 'o.error')" "CUSTOMER_HAS_DEBT"
 
 echo "== UC-20: Khách xem thanh toán và trả nợ"
@@ -128,7 +146,7 @@ T6=$(sql "SELECT TOP 1 unit_type_id FROM storage_units WHERE facility_id=1 AND u
 if [ -z "$T6" ]; then bad "Tân Bình hết ô trống để thử Flow 6 — mở bảo trì 1 ô ở /manager/storage rồi chạy lại"; fi
 PRICE=$(sql "SELECT CAST(base_price_monthly AS INT) FROM unit_types WHERE id=$T6"); LATE=$((PRICE * 3 / 10)); RENEW_TOTAL=$((PRICE + LATE))
 echo "  dùng loại kho #$T6 giá $PRICE"
-R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$T6,\"startDate\":\"$TODAY\",\"durationMonths\":1}")
+R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$T6,\"startDate\":\"$TODAY\",\"durationMonths\":1,\"acceptedTerms\":true}")
 RES2=$(echo "$R" | jget 'o.id'); P=$(call POST $KH "$PAY/create" "{\"reservationId\":$RES2}")
 ipn $(echo "$P" | jget 'o.orderId') $(echo "$P" | jget 'o.amount') >/dev/null
 U2=$(call GET $FM "$API/reservations/$RES2/available-units" | jget 'o[0].id')
@@ -157,7 +175,7 @@ echo "== Giả lập demo (nút ⚡)"
 pick_type() { sql "SELECT TOP 1 unit_type_id FROM storage_units WHERE facility_id=1 AND unit_type_id<>1 AND status='AVAILABLE' GROUP BY unit_type_id ORDER BY COUNT(*) DESC"; }
 new_paid_assigned() { # $1 = ngày bắt đầu → in: reservationId contractId taskId
   local t r p u c tk
-  t=$(pick_type); r=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$t,\"startDate\":\"$1\",\"durationMonths\":1}" | jget 'o.id')
+  t=$(pick_type); r=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$t,\"startDate\":\"$1\",\"durationMonths\":1,\"acceptedTerms\":true}" | jget 'o.id')
   p=$(call POST $KH "$PAY/create" "{\"reservationId\":$r}"); ipn $(echo "$p" | jget 'o.orderId') $(echo "$p" | jget 'o.amount') >/dev/null
   u=$(call GET $FM "$API/reservations/$r/available-units" | jget 'o[0].id'); code POST $FM "$API/reservations/$r/assign" "{\"storageUnitId\":\"$u\"}" >/dev/null
   c=$(sql "SELECT id FROM rental_contracts WHERE reservation_id=$r"); tk=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$c AND task_type='CHECK_IN'")
@@ -166,7 +184,7 @@ new_paid_assigned() { # $1 = ngày bắt đầu → in: reservationId contractId
 check "Trạng thái giả lập: đang bật" "$(call GET $KH "$API/dev/simulation/status" | jget 'o.enabled')" "true"
 
 # ⚡ Quá 15 phút giữ chỗ
-R5=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$(pick_type),\"startDate\":\"$TODAY\",\"durationMonths\":1}" | jget 'o.id')
+R5=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$(pick_type),\"startDate\":\"$TODAY\",\"durationMonths\":1,\"acceptedTerms\":true}" | jget 'o.id')
 check "KH2 giả lập đơn của KH1 → 403" "$(code POST $KH2 "$API/dev/simulation/reservations/$R5/expire-hold")" "403"
 check "⚡ Quá 15p → hệ thống huỷ ngay (EXPIRED)" "$(call POST $KH "$API/dev/simulation/reservations/$R5/expire-hold" | jget 'o.status')" "EXPIRED"
 
@@ -182,9 +200,37 @@ check "Check-in được ngay sau giả lập" "$(code POST $ST1 "$API/staff-tas
 
 # ⚡ Quá hạn 31 ngày → thanh lý
 check "Chưa quá hạn đủ 30 ngày → chưa thanh lý được" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=3"; code POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly som"}')" "200409"
-check "⚡ Quá hạn 31 ngày" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=31")" "200"
+# Khách hẹn trả kho rồi không tới → quá hạn → thanh lý
+call POST $KH "$API/contracts/$C6/request-checkout" "{\"checkoutDate\":\"$TODAY\",\"refundMethod\":\"CASH\"}" >/dev/null
+check "Khách hẹn trả kho (từ quá hạn)" "$(sql "SELECT status FROM rental_contracts WHERE id=$C6")" "TERMINATION_PENDING"
+check "⚡ Không tới trả kho 3 ngày → còn 5 ngày ân hạn, chặn" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=3")" "400"
+check "⚡ Khách không tới trả kho 31 ngày" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=31")" "200"
+check "HĐ OVERDUE, task nghiệm thu bị huỷ" "$(sql "SELECT rc.status+'/'+(SELECT TOP 1 status FROM facility_tasks WHERE contract_id=$C6 AND task_type='CHECK_OUT' ORDER BY id DESC) FROM rental_contracts rc WHERE rc.id=$C6")" "OVERDUE/CANCELLED"
+check "Chưa đủ 3 lần liên hệ → chưa thanh lý được" "$(call POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly sau 31 ngay"}' | jget 'o.error')" "NOT_ENOUGH_CONTACTS"
+check "⚡ Ghi 3 lần liên hệ thất bại" "$(code POST $FM "$API/dev/simulation/contracts/$C6/add-failed-contacts")" "200"
 check "Thanh lý được" "$(code POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly sau 31 ngay"}')" "200"
 check "HĐ LIQUIDATED" "$(sql "SELECT status FROM rental_contracts WHERE id=$C6")" "LIQUIDATED"
+MT6=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C6 AND task_type='MAINTENANCE' AND status='OPEN'")
+[ -n "$MT6" ] && ok "Sinh task Dọn kho sau thanh lý #$MT6" || bad "Không sinh task dọn kho sau thanh lý"
+check "Dọn xong thiếu biên bản kiểm kê → 400" "$(call POST $FM "$API/staff-tasks/$MT6/complete-maintenance" '{"note":"Kiem ke 12 thung, chuyen sang khu luu giu K2"}' | jget 'o.error')" "INVENTORY_REQUIRED"
+INV='{"note":"Da mo kho, kiem ke va chuyen hang sang khu luu giu","inventoryNote":"12 thung carton, 1 tu lanh mini","witnessNote":"Staff1 + FM Tan Binh","storageLocation":"Khu K2 - ke 3","inventoryImages":["http://localhost:8080/uploads/demo.png"]}'
+check "FM Dọn xong thẳng kèm kiểm kê (không cần nhận việc)" "$(code POST $FM "$API/staff-tasks/$MT6/complete-maintenance" "$INV")" "200"
+check "Ô sau thanh lý sẵn sàng cho thuê" "$(sql "SELECT su.status FROM rental_contracts rc JOIN storage_units su ON su.id=rc.storage_unit_id WHERE rc.id=$C6")" "AVAILABLE"
+
+echo "== PR-Q10: Hàng lưu giữ sau thanh lý"
+HG=$(sql "SELECT id FROM held_goods WHERE contract_id=$C6 AND status='HOLDING'")
+[ -n "$HG" ] && ok "Lập hồ sơ lưu giữ #$HG" || bad "Không lập hồ sơ lưu giữ"
+check "Lưu giữ 60 ngày" "$(sql "SELECT DATEDIFF(day, CAST(GETDATE() AS date), hold_until) FROM held_goods WHERE id=$HG")" "60"
+check "FM thấy hồ sơ ở trang Hàng đang lưu giữ" "$(call GET $FM "$API/held-goods" | jget "o.filter(x=>x.id==$HG).map(x=>x.termsVersion+'/'+x.canSell)[0]")" "v1/false"
+check "Staff không xem được hàng lưu giữ → 403" "$(code GET $ST1 "$API/held-goods")" "403"
+SALE='{"outcome":"SOLD","note":"Ban thanh ly cho co so thu mua, bien ban 03","proceedsAmount":2000000}'
+check "Chưa hết 60 ngày → chưa bán được" "$(call POST $FM "$API/held-goods/$HG/resolve" "$SALE" | jget 'o.error')" "HOLD_NOT_EXPIRED"
+check "⚡ Hết hạn lưu giữ" "$(code POST $FM "$API/dev/simulation/held-goods/$HG/expire-hold")" "200"
+DEP6=$(sql "SELECT CAST(deposit_held_amount AS INT) FROM rental_contracts WHERE id=$C6")
+check "Bán thanh lý 2.000.000" "$(call POST $FM "$API/held-goods/$HG/resolve" "$SALE" | jget 'o.status')" "SOLD"
+check "Hoàn khách = dư tiền bán + cọc còn giữ" "$(sql "SELECT CAST(refund_amount AS INT) FROM held_goods WHERE id=$HG")" "$((2000000 + DEP6))"
+check "Sinh task hoàn tiền cho FM" "$(sql "SELECT COUNT(*) FROM facility_tasks WHERE contract_id=$C6 AND task_type='REFUND' AND note LIKE N'%bán thanh lý%'")" "1"
+check "Xử lý lần 2 → 409" "$(call POST $FM "$API/held-goods/$HG/resolve" '{"outcome":"DESTROYED","note":"Tieu huy hang con lai"}' | jget 'o.error')" "HELD_GOODS_ALREADY_RESOLVED"
 
 # ⚡ Khách bùng hẹn → No-Show thật
 read R7 C7 T7K <<< "$(new_paid_assigned $TOMORROW)"

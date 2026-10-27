@@ -4,15 +4,17 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import {
   checkInStaffTask,
   checkOutStaffTask,
+  completeMaintenanceTask,
   completeRefundTask,
   extendSupportTask,
   getStaffTaskDetail,
   resetSupportContractPin,
   resolveSupportTask,
   suggestAccessPin,
+  uploadImageFile,
 } from '../../services/staffTaskService';
 import SimulationButton from '../../components/SimulationButton';
-import { simulateArriveToday, simulateNoShow } from '../../services/simulationService';
+import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue } from '../../services/simulationService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -100,7 +102,16 @@ const DAMAGE_PRESETS = [
   { title: 'Hư hỏng / mất thẻ từ RFID',              cost: 100000, desc: 'Khách làm mất hoặc làm gãy hỏng thẻ từ RFID được cấp.' },
   { title: 'Hỏng chốt khoá điện tử SmartLock',       cost: 350000, desc: 'Khoá SmartLock bị cạy hoặc va đập gây kẹt chốt.' },
   { title: 'Móp méo / trầy xước vách ngăn ô kho',    cost: 500000, desc: 'Vách tôn / cửa cuốn bị móp biến dạng do va chạm khi chuyển đồ.' },
+  { title: 'Thấm dột mái / rỉ nước từ trần',           cost: 800000, desc: 'Nước mưa thấm từ mái tôn của cơ sở, không do khách gây ra.', liableParty: 'FACILITY' },
 ];
+
+// UC-24: ai chịu lỗi sự cố — lỗi khách bị trừ cọc (vượt cọc thành nợ), lỗi cơ sở hoàn cọc bình thường
+const LIABLE_OPTIONS = [
+  { value: 'CUSTOMER', label: 'Lỗi khách', hint: 'Trừ vào cọc', cls: 'border-[#FF4B4B] bg-[#FFF5F5] text-[#EA2B2B]' },
+  { value: 'FACILITY', label: 'Lỗi cơ sở', hint: 'Không tính khách', cls: 'border-[#1CB0F6] bg-[#DDF4FF] text-[#1899D6]' },
+];
+
+const MAINTENANCE_NOTE_MIN = 10;
 
 const EMPTY_CHECKIN_CHECKS = CHECKIN_CHECKLIST.reduce((acc, item) => ({ ...acc, [item.key]: false }), {});
 const INITIAL_CHECKOUT_CHECKS = {
@@ -185,6 +196,7 @@ function createMockEvidenceDataUrl(label) {
 
 // Vì sao người đang xem không lập được biên bản (null = lập được)
 function blockedReason(task, userId) {
+  if (task.taskType === 'MAINTENANCE') return null; // xét riêng trong MaintenancePanel (FM được đóng thẳng)
   if (task.taskType === 'REFUND') {
     if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
     return null;
@@ -249,12 +261,369 @@ function CodeBox({ icon, label, value, big }) {
   );
 }
 
-function newDamageItem(defaultTitle = '', defaultCost = 0, defaultDesc = '') {
+// UC-24: danh sách sự cố đã ghi nhận (chỉ đọc) — dùng ở biên bản nghiệm thu và phiếu bảo trì
+function DamageCaseList({ cases, onPreview }) {
+  return (
+    <div className="flex flex-col gap-3">
+      {cases.map((dc, idx) => {
+        const liable = LIABLE_OPTIONS.find(o => o.value === dc.liableParty) || LIABLE_OPTIONS[0];
+        return (
+          <div key={dc.id || idx} className="rounded-2xl border-2 border-[#FFE8CC] bg-[#FFFDF9] p-4 flex flex-col gap-2">
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xs font-black text-[#4B4B4B]">
+                #{idx + 1}. {dc.title}
+              </span>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                <span className={`duo-badge border text-[10px] whitespace-nowrap ${liable.cls}`}>
+                  {liable.label} · {liable.hint}
+                </span>
+                <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border border-[#FF4B4B] text-xs whitespace-nowrap">
+                  {formatCurrency(dc.estimatedCost)}
+                </span>
+              </div>
+            </div>
+            {dc.description && (
+              <p className="text-xs font-bold text-[#777777]">{dc.description}</p>
+            )}
+            {dc.evidenceImages && dc.evidenceImages.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {dc.evidenceImages.map((imgUrl, imgIdx) => (
+                  <button
+                    key={imgIdx}
+                    type="button"
+                    onClick={() => onPreview(imgUrl)}
+                    className="relative w-20 h-20 rounded-xl border-2 border-[#E5E5E5] overflow-hidden group cursor-pointer bg-white"
+                    title="Bấm để phóng to ảnh bằng chứng"
+                  >
+                    <img src={imgUrl} alt={`Evidence ${imgIdx + 1}`} className="w-full h-full object-cover" />
+                    <span className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <span className="material-symbols-outlined text-white text-[20px]">zoom_in</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// PR-O10: vì sao người đang xem chưa bấm "Sửa xong" được (null = được). FM đóng thẳng, không cần nhận việc.
+function maintenanceBlockedReason(task, userId, isManager) {
+  if (task.status === 'COMPLETED') return null;
+  if (task.status === 'CANCELLED') return 'Task bảo trì đã bị huỷ.';
+  if (isManager) return null;
+  if (!task.staffId) {
+    return task.status === 'OVERDUE'
+      ? 'Task đã quá hạn và chưa ai nhận — báo Quản lý cơ sở hoàn tất hoặc bấm "Mở lại kho".'
+      : 'Task chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
+  }
+  if (task.staffId !== userId) return `Task bảo trì đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
+  return null;
+}
+
+// PR-O10 / PR-Q9: phiếu bảo trì ô kho — sửa chữa sau trả kho có sự cố, hoặc dọn kho sau thanh lý
+function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onToast }) {
+  const [note, setNote] = useState('');
+  const [evidenceUrl, setEvidenceUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  // PR-Q10: dọn kho sau thanh lý → biên bản kiểm kê hàng của khách, lập hồ sơ lưu giữ 60 ngày
+  const [noGoodsLeft, setNoGoodsLeft] = useState(false);
+  const [inventoryNote, setInventoryNote] = useState('');
+  const [witnessNote, setWitnessNote] = useState('');
+  const [storageLocation, setStorageLocation] = useState('');
+  const [inventoryImages, setInventoryImages] = useState([]);
+
+  // Task cũ chưa có maintenanceReason: suy ra từ hợp đồng
+  const isLiquidation = task.maintenanceReason === 'LIQUIDATION'
+    || (!task.maintenanceReason && task.contractStatus === 'LIQUIDATED');
+  const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
+  const blocked = maintenanceBlockedReason(task, userId, isManager);
+  const noteValid = note.trim().length >= MAINTENANCE_NOTE_MIN && note.trim().length <= NOTES_MAX;
+  const inventoryError = !isLiquidation || noGoodsLeft ? null
+    : inventoryNote.trim().length < 10 ? 'Liệt kê hàng kiểm kê (tối thiểu 10 ký tự).'
+    : !witnessNote.trim() ? 'Ghi rõ người mở kho / chứng kiến.'
+    : !storageLocation.trim() ? 'Ghi rõ khu lưu giữ hàng.'
+    : inventoryImages.length === 0 ? 'Cần ít nhất 1 ảnh kiểm kê.'
+    : null;
+
+  const handleUploadInventory = (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    Promise.all(Array.from(files).map(file => uploadImageFile(file).then(data => data.url)))
+      .then(urls => setInventoryImages(prev => [...prev, ...urls]))
+      .catch(err => onToast({ type: 'error', message: err.response?.data?.message || 'Không tải được ảnh kiểm kê.' }))
+      .finally(() => setUploading(false));
+  };
+
+  const fillDemo = () => {
+    if (isLiquidation) {
+      setNote('Đã cùng Quản lý mở kho, kiểm kê, chụp ảnh, niêm phong hàng và chuyển sang khu lưu giữ. Ô đã dọn sạch.');
+      setNoGoodsLeft(false);
+      setInventoryNote('12 thùng carton đồ gia dụng (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp, 1 túi quần áo.');
+      setWitnessNote('Nhân viên kho + Quản lý cơ sở, có đại diện tổ dân phố chứng kiến');
+      setStorageLocation('Khu lưu giữ K2 - kệ 3');
+      setInventoryImages([
+        createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (1)'),
+        createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
+      ]);
+    } else {
+      setNote('Đã thay vách tôn mới, sửa khung, xử lý chống thấm trần và vệ sinh ô. Khoá SmartLock hoạt động bình thường.');
+    }
+  };
+
+  const handleUpload = (file) => {
+    if (!file) return;
+    setUploading(true);
+    uploadImageFile(file)
+      .then(data => setEvidenceUrl(data.url))
+      .catch(err => onToast({ type: 'error', message: err.response?.data?.message || 'Không tải được ảnh lên.' }))
+      .finally(() => setUploading(false));
+  };
+
+  const handleSubmit = () => {
+    setSubmitting(true);
+    const payload = { note: note.trim(), evidenceImageUrl: evidenceUrl || null };
+    if (isLiquidation) {
+      Object.assign(payload, noGoodsLeft
+        ? { noGoodsLeft: true }
+        : { inventoryNote: inventoryNote.trim(), witnessNote: witnessNote.trim(), storageLocation: storageLocation.trim(), inventoryImages });
+    }
+    completeMaintenanceTask(task.id, payload)
+      .then(data => {
+        onCompleted(data);
+        onToast({
+          type: 'success',
+          message: data.heldGoodsId
+            ? `Đã dọn xong ô ${data.storageUnitId}. Lập hồ sơ lưu giữ hàng #${data.heldGoodsId} đến ${formatDate(data.heldGoodsHoldUntil)}.`
+            : `Đã hoàn tất bảo trì. Ô ${data.storageUnitId} sẵn sàng cho thuê.`,
+        });
+      })
+      .catch(err => onToast({ type: 'error', message: err.response?.data?.message || 'Không hoàn tất được task bảo trì.' }))
+      .finally(() => {
+        setSubmitting(false);
+        setConfirmOpen(false);
+      });
+  };
+
+  return (
+    <div className="duo-card p-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-[#4B4B4B]">Phiếu bảo trì ô kho</h2>
+          <p className="text-xs font-bold text-[#AFAFAF]">
+            Ô {task.storageUnitId} · HĐ {task.contractCode} — xong việc thì ô quay về "Sẵn sàng cho thuê".
+          </p>
+        </div>
+        <span className={`duo-badge whitespace-nowrap border ${isLiquidation
+          ? 'bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]'
+          : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'}`}>
+          {isLiquidation ? 'Dọn kho sau thanh lý' : 'Sửa chữa sau trả kho'}
+        </span>
+      </div>
+
+      {task.note && (
+        <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-4">
+          <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Yêu cầu công việc</p>
+          <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line break-words">{task.note}</p>
+        </div>
+      )}
+
+      {isLiquidation && (
+        <div className="rounded-2xl bg-[#FFF8E1] border-2 border-[#FFC800] p-4 flex flex-col gap-1.5">
+          <p className="text-[11px] font-black uppercase text-[#B78900] flex items-center gap-1">
+            <span className="material-symbols-outlined text-[16px]">gavel</span>
+            Quy trình theo Điều khoản xử lý tài sản
+          </p>
+          {[
+            'Ít nhất 2 nhân sự cùng mở kho (Staff + Quản lý cơ sở).',
+            'Kiểm kê, chụp ảnh toàn bộ hàng của khách, lập biên bản có chữ ký người chứng kiến.',
+            'Hàng cấm / chất nguy hiểm / giấy tờ tuỳ thân: giao ngay công an hoặc UBND phường.',
+            'Niêm phong, chuyển hàng sang khu lưu giữ — lưu 60 ngày trước khi bán thanh lý.',
+          ].map(line => (
+            <p key={line} className="text-xs font-bold text-[#4B4B4B] flex gap-1.5">
+              <span className="text-[#B78900]">•</span>{line}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {task.damageCases?.length > 0 && (
+        <div>
+          <p className="text-sm font-black uppercase text-[#4B4B4B] tracking-wide mb-3">Sự cố cần khắc phục</p>
+          <DamageCaseList cases={task.damageCases} onPreview={onPreview} />
+        </div>
+      )}
+
+      {task.status === 'COMPLETED' ? (
+        <div className="rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4 flex flex-col gap-2">
+          <p className="text-sm font-black text-[#58A700] flex items-center gap-2">
+            <span className="material-symbols-outlined text-[22px]">verified</span>
+            Đã hoàn tất lúc {formatDateTime(task.completedAt)} — ô kho đã sẵn sàng cho thuê
+          </p>
+          {task.heldGoodsId && (
+            <p className="text-xs font-bold text-[#4B4B4B]">
+              Hàng của khách: hồ sơ lưu giữ #{task.heldGoodsId}, lưu đến hết ngày {formatDate(task.heldGoodsHoldUntil)}.
+              {isManager && <> <Link to="/manager/held-goods" className="text-[#1CB0F6] font-black hover:underline">Xem hàng đang lưu giữ</Link></>}
+            </p>
+          )}
+          {task.evidenceImageUrl && (
+            <button type="button" onClick={() => onPreview(task.evidenceImageUrl)}
+              className="w-28 h-28 rounded-xl border-2 border-[#58CC02] overflow-hidden bg-white cursor-pointer">
+              <img src={task.evidenceImageUrl} alt="Ảnh sau bảo trì" className="w-full h-full object-cover" />
+            </button>
+          )}
+        </div>
+      ) : blocked ? (
+        <div className="rounded-2xl border-2 border-dashed border-[#E5E5E5] p-6 flex flex-col items-center gap-2 text-center">
+          <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
+          <p className="text-sm font-black text-[#4B4B4B]">Chưa thể hoàn tất bảo trì</p>
+          <p className="text-xs font-bold text-[#777777] max-w-[360px]">{blocked}</p>
+        </div>
+      ) : (
+        <>
+          {task.status === 'OVERDUE' && (
+            <p className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-4 py-2 text-xs font-bold text-[#EA2B2B]">
+              Task đã quá hạn 21:00 {formatDateTime(task.dueAt)} — vẫn hoàn tất được, nhưng sẽ được ghi nhận là trễ.
+            </p>
+          )}
+          <label className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Đã làm những gì? *</span>
+              <button type="button"
+                onClick={fillDemo}
+                className="text-[11px] font-black text-[#1CB0F6] hover:underline cursor-pointer flex items-center gap-0.5">
+                <span className="material-symbols-outlined text-[14px]">auto_fix_high</span>Giả lập hoàn thiện
+              </button>
+            </span>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              rows={3}
+              placeholder={isLiquidation ? 'VD: Kiểm kê 12 thùng hàng, chuyển sang khu lưu giữ K2, dọn sạch ô...' : 'VD: Thay vách ngăn, sửa khoá, vệ sinh ô...'}
+              className="duo-input resize-none text-xs"
+            />
+            <span className={`text-[11px] font-bold self-end ${noteValid || !note ? 'text-[#AFAFAF]' : 'text-[#FF4B4B]'}`}>
+              {note.trim().length}/{NOTES_MAX} (tối thiểu {MAINTENANCE_NOTE_MIN})
+            </span>
+          </label>
+
+          {isLiquidation && (
+            <div className="rounded-2xl border-2 border-[#C084FC] bg-[#FAF5FF] p-4 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-black uppercase text-[#9333EA] flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                  Biên bản kiểm kê hàng của khách
+                </p>
+                <label className="flex items-center gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
+                  <input type="checkbox" checked={noGoodsLeft} onChange={e => setNoGoodsLeft(e.target.checked)} className="w-4 h-4 accent-[#9333EA]" />
+                  Ô trống, khách không để lại gì
+                </label>
+              </div>
+              {!noGoodsLeft && (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-black uppercase text-[#777777]">Danh sách hàng *</span>
+                    <textarea rows={3} maxLength={2000} value={inventoryNote} onChange={e => setInventoryNote(e.target.value)}
+                      placeholder="VD: 12 thùng carton (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp..." className="duo-input resize-none text-xs" />
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Người mở kho / chứng kiến *</span>
+                      <input type="text" maxLength={500} value={witnessNote} onChange={e => setWitnessNote(e.target.value)}
+                        placeholder="Ít nhất 2 người" className="duo-input text-xs" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Khu lưu giữ *</span>
+                      <input type="text" maxLength={100} value={storageLocation} onChange={e => setStorageLocation(e.target.value)}
+                        placeholder="VD: Khu K2 - kệ 3" className="duo-input text-xs" />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {inventoryImages.map((url, idx) => (
+                      <div key={idx} className="relative">
+                        <button type="button" onClick={() => onPreview(url)}
+                          className="w-16 h-16 rounded-xl border-2 border-[#E5E5E5] overflow-hidden bg-white cursor-pointer">
+                          <img src={url} alt={`Kiểm kê ${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                        <button type="button" onClick={() => setInventoryImages(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#FF4B4B] text-white text-[12px] font-black cursor-pointer leading-none">×</button>
+                      </div>
+                    ))}
+                    <label className="duo-btn-white px-3 py-2 text-xs gap-1.5 cursor-pointer">
+                      <span className="material-symbols-outlined text-[18px]">add_a_photo</span>
+                      Ảnh kiểm kê *
+                      <input type="file" accept="image/*" multiple className="hidden" disabled={uploading}
+                        onChange={e => { handleUploadInventory(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  </div>
+                  <p className="text-[11px] font-bold text-[#777777]">
+                    Hoàn tất → lập hồ sơ lưu giữ 60 ngày ở trang "Hàng đang lưu giữ" của Quản lý cơ sở.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[11px] font-black uppercase text-[#777777]">Ảnh sau khi xong (không bắt buộc)</span>
+            <div className="flex flex-wrap items-center gap-3">
+              {evidenceUrl && (
+                <button type="button" onClick={() => onPreview(evidenceUrl)}
+                  className="w-20 h-20 rounded-xl border-2 border-[#E5E5E5] overflow-hidden bg-white cursor-pointer">
+                  <img src={evidenceUrl} alt="Ảnh sau bảo trì" className="w-full h-full object-cover" />
+                </button>
+              )}
+              <label className="duo-btn-white px-3.5 py-2 text-xs gap-1.5 cursor-pointer">
+                <span className="material-symbols-outlined text-[18px]">{uploading ? 'hourglass_top' : 'add_a_photo'}</span>
+                {uploading ? 'Đang tải...' : evidenceUrl ? 'Đổi ảnh' : 'Tải ảnh lên'}
+                <input type="file" accept="image/*" className="hidden" disabled={uploading}
+                  onChange={e => { handleUpload(e.target.files?.[0]); e.target.value = ''; }} />
+              </label>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={!noteValid || Boolean(inventoryError) || uploading || submitting}
+            className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-[20px]">task_alt</span>
+            {doneLabel} — mở lại ô cho thuê
+          </button>
+          {inventoryError && noteValid && (
+            <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">{inventoryError}</p>
+          )}
+        </>
+      )}
+
+      <TaskConfirmDialog
+        open={confirmOpen}
+        icon="build"
+        title={`Xác nhận ${doneLabel.toLowerCase()}?`}
+        message={`Task bảo trì #${task.id} sẽ đóng và ô ${task.storageUnitId} chuyển sang "Sẵn sàng cho thuê" (AVAILABLE).`}
+        confirmLabel={doneLabel}
+        submitting={submitting}
+        onConfirm={handleSubmit}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </div>
+  );
+}
+
+function newDamageItem(defaultTitle = '', defaultCost = 0, defaultDesc = '', liableParty = 'CUSTOMER') {
   return {
     uid: Math.random().toString(36).slice(2, 9),
     title: defaultTitle,
     estimatedCost: defaultCost,
     description: defaultDesc,
+    liableParty,
     evidenceImages: [],
     urlInput: '',
   };
@@ -388,7 +757,7 @@ export default function StaffTaskDetailPage() {
 
   const handleAddDamageItem = (preset) => {
     if (preset) {
-      setDamageCases(prev => [...prev, newDamageItem(preset.title, preset.cost, preset.desc)]);
+      setDamageCases(prev => [...prev, newDamageItem(preset.title, preset.cost, preset.desc, preset.liableParty)]);
     } else {
       setDamageCases(prev => [...prev, newDamageItem('', 0, '')]);
     }
@@ -467,7 +836,13 @@ export default function StaffTaskDetailPage() {
   })();
 
   // Quyết toán tài chính theo bộ Business Rules mới (PR-O2, PR-O11, PR-O14, PR-Q3)
-  const totalDamageCost = damageCases.reduce((sum, item) => sum + (Number(item.estimatedCost) || 0), 0);
+  // UC-24: chỉ sự cố LỖI KHÁCH bị trừ vào cọc; lỗi cơ sở ghi nhận chi phí nội bộ
+  const totalDamageCost = damageCases
+    .filter(item => item.liableParty !== 'FACILITY')
+    .reduce((sum, item) => sum + (Number(item.estimatedCost) || 0), 0);
+  const facilityDamageCost = damageCases
+    .filter(item => item.liableParty === 'FACILITY')
+    .reduce((sum, item) => sum + (Number(item.estimatedCost) || 0), 0);
   const depositHeld = Number(task?.depositHeldAmount || 0);
   const basePrice = Number(task?.baseMonthlyPrice) || depositHeld;
 
@@ -568,6 +943,7 @@ export default function StaffTaskDetailPage() {
         title: d.title.trim(),
         description: d.description?.trim() || '',
         estimatedCost: Number(d.estimatedCost) || 0,
+        liableParty: d.liableParty,
         evidenceImages: d.evidenceImages,
       })),
     };
@@ -812,6 +1188,27 @@ export default function StaffTaskDetailPage() {
               description="Lùi giờ hẹn 49 giờ và ghi 2 lần gọi khách thất bại cách nhau 25 giờ. Sau đó đơn hiện ở tab No-Show với nút huỷ đã bật."
               onRun={() => simulateNoShow(task.reservationId)}
               onDone={() => loadTask()}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Demo: khách tới trả kho hôm nay / khách không tới trả kho (task nghiệm thu đang mở) */}
+      {task.taskType === 'CHECK_OUT' && task.contractStatus === 'TERMINATION_PENDING'
+        && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
+        <div className="flex flex-wrap items-start gap-3 mb-6">
+          <SimulationButton
+            label="Khách tới trả kho hôm nay"
+            description="Dời ngày hẹn trả kho về hôm nay (hạn 21:00) để nghiệm thu ngay, không phải chờ đúng ngày hẹn."
+            onRun={() => simulateCheckoutToday(task.id)}
+            onDone={() => loadTask()}
+          />
+          {isManager && task.contractId && (
+            <SimulationButton
+              label="Khách không tới trả kho (31 ngày)"
+              description="Hết 5 ngày ân hạn mà khách không tới: hợp đồng chuyển QUÁ HẠN 31 ngày (phí trễ chạm trần 50% cọc), huỷ task nghiệm thu. Sau đó vào màn Hợp đồng quá hạn để liên hệ và thanh lý."
+              onRun={() => simulateOverdue(task.contractId, 31)}
+              onDone={() => navigate('/manager/overdue')}
             />
           )}
         </div>
@@ -1266,6 +1663,16 @@ export default function StaffTaskDetailPage() {
                 </div>
               )}
             </div>
+          ) : task.taskType === 'MAINTENANCE' ? (
+            /* ================== PHIẾU BẢO TRÌ Ô KHO (PR-O10 / PR-Q9) ================== */
+            <MaintenancePanel
+              task={task}
+              userId={userId}
+              isManager={isManager}
+              onCompleted={data => setTask(data)}
+              onPreview={setPreviewImage}
+              onToast={setToast}
+            />
           ) : isSupport ? (
             /* ================== MÀN HÌNH XỬ LÝ YÊU CẦU HỖ TRỢ (SUPPORT - UC-27) ================== */
             <div className="duo-card p-6 flex flex-col gap-5">
@@ -1645,41 +2052,12 @@ export default function StaffTaskDetailPage() {
                       Ô kho nguyên vẹn, sạch sẽ — Không phát sinh sự cố hư hỏng.
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-3">
-                      {task.damageCases.map((dc, idx) => (
-                        <div key={dc.id || idx} className="rounded-2xl border-2 border-[#FFE8CC] bg-[#FFFDF9] p-4 flex flex-col gap-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-xs font-black text-[#4B4B4B]">
-                              #{idx + 1}. {dc.title}
-                            </span>
-                            <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border border-[#FF4B4B] text-xs whitespace-nowrap">
-                              {formatCurrency(dc.estimatedCost)}
-                            </span>
-                          </div>
-                          {dc.description && (
-                            <p className="text-xs font-bold text-[#777777]">{dc.description}</p>
-                          )}
-                          {dc.evidenceImages && dc.evidenceImages.length > 0 && (
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              {dc.evidenceImages.map((imgUrl, imgIdx) => (
-                                <button
-                                  key={imgIdx}
-                                  type="button"
-                                  onClick={() => setPreviewImage(imgUrl)}
-                                  className="relative w-20 h-20 rounded-xl border-2 border-[#E5E5E5] overflow-hidden group cursor-pointer bg-white"
-                                  title="Bấm để phóng to ảnh bằng chứng"
-                                >
-                                  <img src={imgUrl} alt={`Evidence ${imgIdx + 1}`} className="w-full h-full object-cover" />
-                                  <span className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <span className="material-symbols-outlined text-white text-[20px]">zoom_in</span>
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <DamageCaseList cases={task.damageCases} onPreview={setPreviewImage} />
+                  )}
+                  {Number(task.facilityDamageCost) > 0 && (
+                    <p className="mt-2 text-[11px] font-bold text-[#1899D6]">
+                      Cơ sở tự chịu {formatCurrency(task.facilityDamageCost)} cho các sự cố lỗi cơ sở — không trừ vào cọc của khách.
+                    </p>
                   )}
                 </div>
 
@@ -1774,23 +2152,56 @@ export default function StaffTaskDetailPage() {
                       setCoChecks({
                         identityVerified: true,
                         unitEmpty: true,
-                        unitClean: false,
+                        unitClean: true,
+                        lockIntact: false,
+                        customerSignatureConfirmed: true,
+                      });
+                      // Lỗi khách vượt cọc (3.000.000đ) + 1 lỗi cơ sở → demo nợ DAMAGE_FEE và phần cơ sở tự chịu
+                      const customerFault = newDamageItem(
+                        'Vỡ vách ngăn do va chạm khi chuyển đồ',
+                        3000000,
+                        'Vách tôn bị thủng, khung biến dạng — khách xác nhận do xe đẩy hàng va vào.'
+                      );
+                      customerFault.evidenceImages = [createMockEvidenceDataUrl('Vách ngăn bị vỡ tại ô ' + (task.storageUnitId || ''))];
+                      const facilityFault = newDamageItem(
+                        'Thấm dột mái / rỉ nước từ trần',
+                        800000,
+                        'Nước mưa thấm từ mái tôn của cơ sở, không do khách gây ra.',
+                        'FACILITY'
+                      );
+                      facilityFault.evidenceImages = [createMockEvidenceDataUrl('Vết thấm trần ô ' + (task.storageUnitId || ''))];
+                      setDamageCases([customerFault, facilityFault]);
+                    }}
+                    className="duo-btn-white px-3.5 py-2 text-xs gap-1.5"
+                    title="Điền nhanh 1 sự cố lỗi khách vượt cọc + 1 sự cố lỗi cơ sở, kèm ảnh mẫu"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-[#FF9600]">report_problem</span>
+                    Giả lập lỗi khách (vượt cọc)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCoChecks({
+                        identityVerified: true,
+                        unitEmpty: true,
+                        unitClean: true,
                         lockIntact: true,
                         customerSignatureConfirmed: true,
                       });
-                      const sample = newDamageItem(
-                        'Phí vệ sinh rác thải tồn đọng trong kho',
-                        150000,
-                        'Khách để lại thùng carton cũ và rác sinh hoạt chưa dọn sạch.'
+                      const facilityFault = newDamageItem(
+                        'Thấm dột mái / rỉ nước từ trần',
+                        800000,
+                        'Nước mưa thấm từ mái tôn của cơ sở, không do khách gây ra.',
+                        'FACILITY'
                       );
-                      sample.evidenceImages = [createMockEvidenceDataUrl('Rác tồn đọng tại ô ' + (task.storageUnitId || ''))];
-                      setDamageCases([sample]);
+                      facilityFault.evidenceImages = [createMockEvidenceDataUrl('Vết thấm trần ô ' + (task.storageUnitId || ''))];
+                      setDamageCases([facilityFault]);
                     }}
                     className="duo-btn-white px-3.5 py-2 text-xs gap-1.5"
-                    title="Điền nhanh trường hợp phát sinh sự cố kèm ảnh bằng chứng mẫu"
+                    title="Điền nhanh sự cố do cơ sở: ô vẫn vào bảo trì nhưng khách được hoàn cọc đầy đủ"
                   >
-                    <span className="material-symbols-outlined text-[18px] text-[#FF9600]">report_problem</span>
-                    Giả lập có sự cố
+                    <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">roofing</span>
+                    Giả lập lỗi cơ sở
                   </button>
                 </div>
               </div>
@@ -1899,7 +2310,7 @@ export default function StaffTaskDetailPage() {
                         onClick={() => handleAddDamageItem(p)}
                         className="px-2.5 py-1 rounded-xl bg-white border border-[#E5E5E5] hover:border-[#1CB0F6] text-[11px] font-bold text-[#4B4B4B] cursor-pointer transition-colors"
                       >
-                        + {p.title} ({formatCurrency(p.cost)})
+                        + {p.title} ({formatCurrency(p.cost)}){p.liableParty === 'FACILITY' ? ' · lỗi cơ sở' : ''}
                       </button>
                     ))}
                   </div>
@@ -1977,6 +2388,26 @@ export default function StaffTaskDetailPage() {
                             className="duo-input text-xs"
                           />
                         </label>
+
+                        {/* UC-24: ai chịu lỗi — quyết định có trừ vào cọc của khách không */}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[11px] font-black uppercase text-[#777777]">Lỗi do ai *</span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {LIABLE_OPTIONS.map(opt => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => handleUpdateDamageField(item.uid, 'liableParty', opt.value)}
+                                className={`rounded-xl border-2 px-3 py-2 text-left cursor-pointer transition-colors ${
+                                  item.liableParty === opt.value ? opt.cls : 'border-[#E5E5E5] bg-white text-[#AFAFAF]'
+                                }`}
+                              >
+                                <span className="block text-xs font-black">{opt.label}</span>
+                                <span className="block text-[10px] font-bold">{opt.hint}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
                         {/* Khu vực Upload ảnh bằng chứng */}
                         <div className="flex flex-col gap-2 pt-1">
@@ -2070,8 +2501,14 @@ export default function StaffTaskDetailPage() {
                 </div>
                 {totalDamageCost > 0 && (
                   <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
-                    <span>Tổng chi phí sự cố ({damageCases.length} hạng mục):</span>
+                    <span>Sự cố lỗi khách ({damageCases.filter(d => d.liableParty !== 'FACILITY').length} hạng mục):</span>
                     <span className="font-black text-[#FF4B4B]">- {formatCurrency(totalDamageCost)}</span>
+                  </div>
+                )}
+                {facilityDamageCost > 0 && (
+                  <div className="flex justify-between text-xs font-bold text-[#1899D6]">
+                    <span>Sự cố lỗi cơ sở (cơ sở tự chịu, không trừ cọc):</span>
+                    <span className="font-black">{formatCurrency(facilityDamageCost)}</span>
                   </div>
                 )}
                 {(estimatedGraceFee + estimatedLateFee) > 0 && (
@@ -2310,7 +2747,9 @@ export default function StaffTaskDetailPage() {
           isCheckOut
             ? `Hợp đồng ${task.contractCode} sẽ chuyển sang "Đã chấm dứt", thu hồi mã PIN/RFID. ${
                 conditionFailed || damageCases.length > 0
-                  ? `Ghi nhận ${damageCases.length} sự cố (tổng trừ: ${formatCurrency(totalDamageCost)}), ô kho chuyển sang "Bảo trì". `
+                  ? `Ghi nhận ${damageCases.length} sự cố (trừ cọc phần lỗi khách: ${formatCurrency(totalDamageCost)}${
+                      facilityDamageCost > 0 ? `, cơ sở tự chịu: ${formatCurrency(facilityDamageCost)}` : ''
+                    }), ô kho chuyển sang "Bảo trì" và sinh task bảo trì. `
                   : 'Ô kho nguyên vẹn sẽ chuyển sang "Trống (AVAILABLE)". '
               }Tổng tiền hoàn trả khách: ${formatCurrency(estimatedTotalRefund)}${
                 estimatedEarlyRentRefund > 0

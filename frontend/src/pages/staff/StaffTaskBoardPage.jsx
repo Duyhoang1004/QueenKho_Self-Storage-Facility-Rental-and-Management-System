@@ -9,6 +9,7 @@ const TYPE_LABEL = {
   CHECK_IN: 'check-in',
   CHECK_OUT: 'check-out',
   SUPPORT: 'hỗ trợ khách hàng',
+  MAINTENANCE: 'bảo trì ô kho',
 };
 
 // UC-16: Bảng công việc tại cơ sở (trang chính của nhân viên)
@@ -43,6 +44,9 @@ export default function StaffTaskBoardPage() {
     const isMyInProgress = task.status === 'IN_PROGRESS' && task.staffId === user.userId;
     const canHandover = (task.taskType === 'CHECK_IN' || task.taskType === 'CHECK_OUT') && isMyInProgress;
     const canResolveSupport = task.taskType === 'SUPPORT' && isMyInProgress;
+    // PR-O10: task bảo trì quá hạn vẫn hoàn tất được nên nhận cả OVERDUE của chính mình
+    const canMaintain = task.taskType === 'MAINTENANCE' && task.staffId === user.userId
+      && ['IN_PROGRESS', 'OVERDUE'].includes(task.status);
     const isOverdue = task.status === 'OVERDUE' || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) < new Date());
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -68,6 +72,11 @@ export default function StaffTaskBoardPage() {
           <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
             <span className="material-symbols-outlined text-[18px]">support_agent</span>
             Xử lý hỗ trợ
+          </Link>
+        ) : canMaintain ? (
+          <Link to={`/staff/tasks/${task.id}`} className="duo-btn-green px-4 py-2 text-xs gap-1.5 flex items-center">
+            <span className="material-symbols-outlined text-[18px]">build</span>
+            Mở phiếu bảo trì
           </Link>
         ) : (
           <Link to={`/staff/tasks/${task.id}`} className="duo-btn-gray px-4 py-2 text-xs gap-1.5 flex items-center">

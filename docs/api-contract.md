@@ -671,5 +671,69 @@ Bật / tắt: `queenkho.simulation.enabled` trong `application.yaml` (mặc đ�
 | `POST /api/v1/dev/simulation/tasks/{taskId}/arrive-today` | STAFF, FM (cùng cơ sở) | Task CHECK_IN + HĐ PENDING_CHECK_IN: ngày hẹn / ngày bắt đầu HĐ = hôm nay, ngày kết thúc = hôm nay + số tháng, task hạn 21:00 (sau 21h → 21:00 ngày mai), task quá hạn được mở lại | `409 SIMULATION_NOT_APPLICABLE`, `403 FORBIDDEN_FACILITY` |
 | `POST /api/v1/dev/simulation/reservations/{id}/expire-hold` | CUSTOMER (đơn của mình), FM | Đơn PENDING: lùi giờ tạo 16 phút rồi chạy ngay job huỷ giữ chỗ → `{ "status": "EXPIRED" }` | `409`, `403 FORBIDDEN_OWNER` |
 | `POST /api/v1/dev/simulation/reservations/{id}/trigger-noshow` | FM | Đơn UNIT_ASSIGNED chưa check-in: giờ hẹn lùi 49h, task CHECK_IN quá hạn, ghi 2 log `[CONTACT][FAILED]` cách nhau 25h → đơn hiện ở tab No-Show và đủ điều kiện | `409`, `403` |
-| `POST /api/v1/dev/simulation/contracts/{id}/make-overdue?days=3` | FM | HĐ ACTIVE / OVERDUE: hết hạn `days` ngày trước (start = end − số tháng), OVERDUE, tắt miễn phí trễ, huỷ link gia hạn đang chờ. `days=31` để vượt mốc thanh lý 30 ngày | `400 INVALID_INPUT` (days ngoài 1–90), `409`, `403` |
+| `POST /api/v1/dev/simulation/contracts/{id}/make-overdue?days=3` | FM | HĐ ACTIVE / OVERDUE: hết hạn `days` ngày trước (start = end − số tháng), OVERDUE, tắt miễn phí trễ, huỷ link gia hạn đang chờ. `days=31` để vượt mốc thanh lý 30 ngày. HĐ **TERMINATION_PENDING** = khách không tới trả kho: thêm đơn về UNIT_ASSIGNED, huỷ task CHECK_OUT (giống job PR-Q1), `days` phải > 5 (ân hạn) | `400 INVALID_INPUT` (days ngoài 1–90, hoặc ≤ 5 với HĐ chờ trả kho), `409`, `403` |
+| `POST /api/v1/dev/simulation/tasks/{taskId}/checkout-today` | STAFF, FM (cùng cơ sở) | Task CHECK_OUT + HĐ TERMINATION_PENDING: hạn task (= ngày hẹn trả kho) về 21:00 hôm nay, task quá hạn được mở lại → nghiệm thu được ngay | `409 SIMULATION_NOT_APPLICABLE`, `403` |
+| `POST /api/v1/dev/simulation/contracts/{id}/add-failed-contacts` | FM | HĐ OVERDUE: ghi 3 log `[OVERDUE_CONTACT] HĐ <mã>: [SIMULATION] Gọi khách không nghe máy...` (cách nhau 1 tuần) → đủ điều kiện liên hệ để thanh lý | `409`, `403` |
 | `POST /api/v1/dev/simulation/support-requests/{id}/auto-close` | CUSTOMER (ticket của mình), FM | Ticket RESOLVED: lùi thời điểm xử lý 4 ngày rồi chạy ngay job tự đóng → `{ "status": "CLOSED" }` | `409`, `403` |
+
+## Bảo trì sau trả kho + Điều khoản xử lý tài sản (27/10/2026)
+
+DB đang có dữ liệu: chạy `sql_script/Update_bao_tri.sql` (thêm `damage_cases.liable_party`, `reservations.terms_version` / `terms_accepted_at`). DB mới: `QueenKho.sql` / `QueenKho_full.sql` đã gộp sẵn.
+
+### UC-24 — Phân lỗi sự cố khi nghiệm thu (`POST /api/v1/staff-tasks/{id}/check-out`)
+
+- Mỗi phần tử `damageCases[]` **bắt buộc** thêm `"liableParty": "CUSTOMER" | "FACILITY"` → thiếu / sai: `400 INVALID_DAMAGE_ITEM`.
+- `CUSTOMER` (lỗi khách): trừ vào cọc, vượt cọc thành nợ `DAMAGE_FEE PENDING` như cũ. `FACILITY` (lỗi cơ sở): chỉ ghi nhận chi phí, **không** tính khách — cọc hoàn bình thường.
+- Có sự cố (kể cả chỉ lỗi cơ sở) → ô `MAINTENANCE` + sinh task `MAINTENANCE` (OPEN, hạn 21:00 sau 3 ngày).
+- Response chi tiết task (`GET /staff-tasks/{id}`): `damageCases[].liableParty`; `totalDamageCost` = phần lỗi khách; thêm `facilityDamageCost`. Task `MAINTENANCE` cũng trả `damageCases` của hợp đồng.
+- `GET /api/v1/contracts/{id}` (+ các API trả `CustomerContractResponse`): `damageFee` chỉ tính lỗi khách; thêm `facilityDamageFee`, `termsVersion`, `termsAcceptedAt`.
+
+### PR-O10 — Hoàn tất task bảo trì
+
+`POST /api/v1/staff-tasks/{id}/complete-maintenance` — STAFF đang giữ task, hoặc FM cùng cơ sở (đóng thẳng, không cần nhận việc; task quá hạn vẫn đóng được).
+
+```json
+{ "note": "Đã thay vách tôn, chống thấm trần", "evidenceImageUrl": "http://localhost:8080/uploads/x.png" }
+```
+- `note` bắt buộc 10–1000 ký tự; `evidenceImageUrl` không bắt buộc (upload qua `POST /api/v1/uploads`).
+- Thành công: task `COMPLETED` (ghi chú nối `[Hoàn tất bởi ...]`), ô `MAINTENANCE → AVAILABLE`, log `[MAINTENANCE_DONE]`. Trả `StaffTaskDetailResponse`.
+- Lỗi: `400 INVALID_INPUT` · `403 FORBIDDEN_ROLE` / `FORBIDDEN_FACILITY` · `409 TASK_NOT_MAINTENANCE` / `TASK_NOT_YOURS` / `TASK_ALREADY_COMPLETED` / `TASK_CANCELLED` / `TASK_NOT_IN_PROGRESS`.
+- Quyền: nhóm mới `TASK_MAINTENANCE` (STAFF + FM, phạm vi cơ sở).
+
+Thay đổi liên quan:
+- `PUT /api/v1/storage-units/{id}/status` `AVAILABLE` (FM "Mở lại kho"): tự đóng task `MAINTENANCE` còn mở của ô.
+- `GET /api/v1/storage-units...`: ô `MAINTENANCE` có task đang mở trả thêm `maintenanceTaskId`, `maintenanceReason` (`DAMAGE` / `LIQUIDATION`).
+
+### Điều khoản xử lý tài sản khi không trả kho
+
+- `POST /api/v1/reservations` body thêm `"acceptedTerms": true` (**bắt buộc**) → thiếu: `400 TERMS_NOT_ACCEPTED`. Backend lưu `terms_version = "v1"` + `terms_accepted_at`. Nội dung điều khoản: `frontend/src/components/AssetTermsModal.jsx`.
+- `POST /api/v1/contracts/{id}/liquidate`: cần ≥ 3 log liên hệ `[OVERDUE_CONTACT]` → thiếu: `409 NOT_ENOUGH_CONTACTS`. Thanh lý xong sinh task `MAINTENANCE` "Dọn ô sau thanh lý" (FM / Staff bấm "Dọn xong" → ô `AVAILABLE`).
+- `GET /api/v1/contracts/manager/overdue`: thêm `minContactsRequired` (3), `termsVersion` (NULL = đơn cũ chưa đồng ý → không được bán hàng).
+
+### PR-Q10 — Hàng lưu giữ sau thanh lý (PR B)
+
+DB: `Update_bao_tri.sql` mục 3–4 (cột `facility_tasks.maintenance_reason`, bảng `held_goods`).
+
+**Dọn xong task thanh lý** (`POST /staff-tasks/{id}/complete-maintenance`, task có `maintenanceReason = "LIQUIDATION"`) — body thêm biên bản kiểm kê:
+```json
+{ "note": "...", "inventoryNote": "12 thùng carton, 1 tủ lạnh mini", "witnessNote": "Staff 1 + FM",
+  "storageLocation": "Khu K2 - kệ 3", "inventoryImages": ["http://localhost:8080/uploads/a.png"] }
+```
+- Hoặc `"noGoodsLeft": true` nếu ô trống (không lập hồ sơ). Thiếu → `400 INVENTORY_REQUIRED`.
+- Thành công: lập `held_goods` `HOLDING`, `hold_until` = ngày thanh lý + 60. Chi tiết task trả thêm `maintenanceReason`, `heldGoodsId`, `heldGoodsStatus`, `heldGoodsHoldUntil`.
+
+**FM** (quyền `HELD_GOODS_MANAGE`, cơ sở theo token):
+
+| API | Mô tả |
+|---|---|
+| `GET /api/v1/held-goods?scope=HOLDING\|RESOLVED` | Danh sách: `contractCode`, khách, ô, `inventoryNote`, `evidenceImages[]`, `witnessNote`, `storageLocation`, `holdUntil`, `daysLeft`, `holdExpired`, `termsVersion`, `canSell`, `customerDebt`, `depositHeld`, kết quả xử lý (`proceedsAmount`, `debtOffsetAmount`, `refundAmount`, `resolvedNote`, `resolvedByName`, `resolvedAt`) |
+| `POST /api/v1/held-goods/{id}/resolve` | Body `{ "outcome": "RETURNED\|SOLD\|DESTROYED\|HANDED_TO_AUTHORITY", "note": "10–1000 ký tự", "proceedsAmount": 2000000 }` |
+
+Quy tắc `resolve`:
+- `RETURNED`: khách hết nợ `DAMAGE_FEE PENDING` (không thì `409 CUSTOMER_HAS_DEBT`); làm bất cứ lúc nào trong thời hạn.
+- `SOLD`: đã hết hạn (`409 HOLD_NOT_EXPIRED`) + khách đã đồng ý điều khoản (`409 TERMS_NOT_ACCEPTED`) + `proceedsAmount ≥ 0` (`400`). Tiền bán trừ nợ `DAMAGE_FEE PENDING` cũ nhất trước (đổi sang `SUCCESS`, method `GOODS_SALE`; trừ không hết thì tách khoản). Phần dư + cọc còn giữ (nếu FM chưa tạo yêu cầu hoàn cọc riêng) → 1 task `REFUND` cho FM + giao dịch `REFUND PENDING` (`REF-SALE-...`).
+- `DESTROYED`: đã hết hạn. `HANDED_TO_AUTHORITY`: bất cứ lúc nào.
+- Đã xử lý / 2 người bấm cùng lúc → `409 HELD_GOODS_ALREADY_RESOLVED`. Log `[GOODS_HELD]`, `[GOODS_<OUTCOME>]`.
+- `CustomerContractResponse` thêm `heldGoodsStatus`, `heldGoodsHoldUntil`, `heldGoodsLocation`.
+
+**Giả lập**: `POST /api/v1/dev/simulation/held-goods/{id}/expire-hold` (FM) — `hold_until` = hôm qua → bán / tiêu huỷ được ngay. `409` nếu đã xử lý, `403` khác cơ sở.

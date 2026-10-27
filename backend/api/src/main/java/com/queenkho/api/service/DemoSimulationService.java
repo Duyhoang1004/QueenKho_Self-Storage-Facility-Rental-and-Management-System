@@ -32,6 +32,7 @@ public class DemoSimulationService {
     private static final LocalTime CLOSING_TIME = LocalTime.of(21, 0);
     private static final LocalTime APPOINTMENT_TIME = LocalTime.of(9, 0);
     public static final int MAX_OVERDUE_DAYS = 90;
+    private static final int CHECKOUT_GRACE_DAYS = 5;
 
     private final JdbcTemplate jdbcTemplate;
     private final ReservationCleanupService reservationCleanupService;
@@ -100,6 +101,67 @@ public class DemoSimulationService {
         return result("Đã dời lịch hẹn về hôm nay, có thể check-in ngay", "dueAt", dueAt);
     }
 
+    // ---------- 1b. Flow 3: khách tới TRẢ kho hôm nay ----------
+    // Ngày hẹn trả kho = due_at của task CHECK_OUT → dời về 21:00 hôm nay để Staff nghiệm thu ngay (PR-O5).
+    @Transactional
+    public Map<String, Object> checkoutToday(Integer taskId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> task = row("SELECT id, task_type, status, contract_id, facility_id FROM facility_tasks WHERE id = ?",
+                taskId, "Không tìm thấy task");
+        requireSameFacility(actor, toInt(task.get("facility_id")));
+        if (!"CHECK_OUT".equals(task.get("task_type"))) {
+            throw notApplicable("Chỉ giả lập được cho task nghiệm thu trả kho (CHECK_OUT)");
+        }
+        if (!List.of("OPEN", "IN_PROGRESS", "OVERDUE").contains(String.valueOf(task.get("status")))) {
+            throw notApplicable("Task đã đóng, không cần giả lập");
+        }
+        Map<String, Object> contract = row("SELECT id, contract_code, status FROM rental_contracts WHERE id = ?",
+                task.get("contract_id"), "Không tìm thấy hợp đồng của task");
+        if (!"TERMINATION_PENDING".equals(contract.get("status"))) {
+            throw notApplicable("Hợp đồng không còn chờ trả kho");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime dueAt = now.toLocalTime().isBefore(CLOSING_TIME)
+                ? LocalDate.now().atTime(CLOSING_TIME) : LocalDate.now().plusDays(1).atTime(CLOSING_TIME);
+        jdbcTemplate.update(
+                "UPDATE facility_tasks SET due_at = ?, status = CASE WHEN status = 'OVERDUE' " +
+                        "THEN (CASE WHEN staff_id IS NULL THEN 'OPEN' ELSE 'IN_PROGRESS' END) ELSE status END WHERE id = ?",
+                Timestamp.valueOf(dueAt), taskId);
+
+        log(actor, "Khách tới trả kho hôm nay — HĐ " + contract.get("contract_code") + ", task #" + taskId,
+                "facility_tasks", taskId);
+        return result("Đã dời ngày trả kho về hôm nay, có thể nghiệm thu ngay", "dueAt", dueAt);
+    }
+
+    // ---------- 5b. Flow 6: FM đã gọi khách quá hạn 3 lần không được ----------
+    // Ghi 3 log [OVERDUE_CONTACT] (cùng định dạng ContractService) để đủ điều kiện thanh lý theo điều khoản.
+    @Transactional
+    public Map<String, Object> addFailedContacts(Integer contractId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> contract = row(
+                "SELECT rc.id, rc.contract_code, rc.status, su.facility_id FROM rental_contracts rc " +
+                        "JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
+                contractId, "Không tìm thấy hợp đồng");
+        requireSameFacility(actor, toInt(contract.get("facility_id")));
+        if (!"OVERDUE".equals(contract.get("status"))) {
+            throw notApplicable("Chỉ giả lập được cho hợp đồng đang quá hạn");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int attempts = ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION;
+        for (int i = 1; i <= attempts; i++) {
+            jdbcTemplate.update(
+                    "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) VALUES (?, ?, 'rental_contracts', ?, ?)",
+                    actor.id(),
+                    "[OVERDUE_CONTACT] HĐ " + contract.get("contract_code") + ": [SIMULATION] Gọi khách không nghe máy, đã nhắn SMS/email (lần " + i + ")",
+                    String.valueOf(contractId),
+                    Timestamp.valueOf(now.minusDays((long) (attempts - i) * 7)));
+        }
+        log(actor, "Ghi " + attempts + " lần liên hệ thất bại cho HĐ " + contract.get("contract_code"),
+                "rental_contracts", contractId);
+        return result("Đã ghi " + attempts + " lần liên hệ thất bại — đủ điều kiện liên hệ để thanh lý", "contacts", attempts);
+    }
+
     // ---------- 2. Flow 1: đơn chưa cọc quá 15 phút giữ chỗ ----------
     // Lùi giờ tạo đơn 16 phút rồi chạy NGAY job huỷ giữ chỗ (không phải chờ lịch chạy mỗi phút).
     @Transactional
@@ -166,8 +228,16 @@ public class DemoSimulationService {
                         "FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
                 contractId, "Không tìm thấy hợp đồng");
         requireSameFacility(actor, toInt(contract.get("facility_id")));
-        if (!List.of("ACTIVE", "OVERDUE").contains(String.valueOf(contract.get("status")))) {
-            throw notApplicable("Chỉ giả lập được cho hợp đồng đang thuê hoặc đang quá hạn");
+        String previousStatus = String.valueOf(contract.get("status"));
+        if (!List.of("ACTIVE", "OVERDUE", "TERMINATION_PENDING").contains(previousStatus)) {
+            throw notApplicable("Chỉ giả lập được cho hợp đồng đang thuê, chờ trả kho hoặc đang quá hạn");
+        }
+        boolean missedCheckout = "TERMINATION_PENDING".equals(previousStatus);
+        // PR-Q1: hẹn trả kho rồi thì còn 5 ngày ân hạn — chỉ quá hạn khi đã qua end_date + 5
+        if (missedCheckout && days <= CHECKOUT_GRACE_DAYS) {
+            throw new AccessException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Hợp đồng đã hẹn trả kho còn " + CHECKOUT_GRACE_DAYS + " ngày ân hạn — nhập từ "
+                            + (CHECKOUT_GRACE_DAYS + 1) + " ngày trở lên");
         }
         int months = Math.max(1, toInt(contract.get("billing_cycle_months")));
         LocalDate endDate = LocalDate.now().minusDays(days);
@@ -183,11 +253,40 @@ public class DemoSimulationService {
                 "UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL WHERE contract_id = ? " +
                         "AND payment_method = 'VNPAY' AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE') AND status = 'PENDING'",
                 contractId);
+        if (missedCheckout) {
+            // Giống job PR-Q1 (OverdueContractProcessor): đơn về UNIT_ASSIGNED, huỷ task CHECK_OUT khách không tới
+            jdbcTemplate.update("UPDATE reservations SET status = 'UNIT_ASSIGNED' " +
+                    "WHERE id = (SELECT reservation_id FROM rental_contracts WHERE id = ?)", contractId);
+            jdbcTemplate.update("UPDATE facility_tasks SET status = 'CANCELLED' WHERE contract_id = ? " +
+                    "AND task_type = 'CHECK_OUT' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')", contractId);
+        }
 
-        log(actor, "HĐ " + contract.get("contract_code") + " quá hạn " + days + " ngày (hết hạn " + endDate + ")",
+        log(actor, "HĐ " + contract.get("contract_code") + (missedCheckout ? " khách không tới trả kho," : "")
+                        + " quá hạn " + days + " ngày (hết hạn " + endDate + ")",
                 "rental_contracts", contractId);
-        return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ điều kiện thanh lý"
+        return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày thanh lý (cần thêm "
+                        + ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ)"
                 : "Hợp đồng quá hạn " + days + " ngày — đang tính phí trễ", "endDate", endDate);
+    }
+
+    // ---------- 5c. PR-Q10: hàng lưu giữ đã hết 60 ngày ----------
+    // Lùi hạn lưu giữ về hôm qua → FM bán thanh lý / tiêu huỷ được ngay.
+    @Transactional
+    public Map<String, Object> expireHeldGoods(Integer heldGoodsId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> goods = row("SELECT h.id, h.status, h.facility_id, rc.contract_code FROM held_goods h " +
+                        "JOIN rental_contracts rc ON rc.id = h.contract_id WHERE h.id = ?",
+                heldGoodsId, "Không tìm thấy hồ sơ lưu giữ hàng");
+        requireSameFacility(actor, toInt(goods.get("facility_id")));
+        if (!"HOLDING".equals(goods.get("status"))) {
+            throw notApplicable("Hồ sơ đã được xử lý, không cần giả lập");
+        }
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        jdbcTemplate.update("UPDATE held_goods SET hold_until = ? WHERE id = ?", yesterday, heldGoodsId);
+
+        log(actor, "Hàng lưu giữ HĐ " + goods.get("contract_code") + " hết hạn 60 ngày (hạn " + yesterday + ")",
+                "held_goods", heldGoodsId);
+        return result("Đã hết hạn lưu giữ — có thể bán thanh lý hoặc tiêu huỷ", "holdUntil", yesterday);
     }
 
     // ---------- 6. Flow 7: ticket đã xử lý quá 3 ngày → hệ thống tự đóng ----------

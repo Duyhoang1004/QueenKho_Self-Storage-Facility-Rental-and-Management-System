@@ -9,7 +9,7 @@ import {
   waiveLateFee,
 } from '../../services/contractService'
 import SimulationButton from '../../components/SimulationButton'
-import { simulateOverdue } from '../../services/simulationService'
+import { simulateFailedContacts, simulateOverdue } from '../../services/simulationService'
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -392,7 +392,7 @@ export default function OverdueContractsPage() {
                             </button>
                           )}
 
-                          {c.canLiquidate ? (
+                          {c.canLiquidate && (c.contactCount || 0) >= (c.minContactsRequired || 3) ? (
                             <button
                               type="button"
                               onClick={() => handleOpenLiquidateModal(c)}
@@ -405,12 +405,16 @@ export default function OverdueContractsPage() {
                             <button
                               type="button"
                               disabled
-                              title={`Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện thanh lý`}
+                              title={c.canLiquidate
+                                ? `Cần ghi nhận ít nhất ${c.minContactsRequired || 3} lần liên hệ khách trước khi thanh lý (Điều khoản xử lý tài sản)`
+                                : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện thanh lý`}
                               className="px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed flex items-center gap-1"
                             >
                               <span className="material-symbols-outlined text-[15px]">gavel</span>
                               <span>Thanh lý</span>
-                              <span className="text-[9px] font-normal lowercase">({daysLeft}d)</span>
+                              <span className="text-[9px] font-normal lowercase">
+                                ({c.canLiquidate ? `${c.contactCount || 0}/${c.minContactsRequired || 3} liên hệ` : `${daysLeft}d`})
+                              </span>
                             </button>
                           )}
 
@@ -420,6 +424,15 @@ export default function OverdueContractsPage() {
                               label="31 ngày"
                               description={`Cho HĐ #${c.contractCode} quá hạn 31 ngày để vượt mốc thanh lý 30 ngày.`}
                               onRun={() => simulateOverdue(c.contractId, 31)}
+                              onDone={() => fetchContracts()}
+                            />
+                          )}
+                          {/* Demo: đã gọi khách 3 lần không được → đủ điều kiện liên hệ để thanh lý */}
+                          {c.canLiquidate && (c.contactCount || 0) < (c.minContactsRequired || 3) && (
+                            <SimulationButton
+                              label="3 lần liên hệ"
+                              description={`Ghi ${c.minContactsRequired || 3} lần gọi khách HĐ #${c.contractCode} không nghe máy (cách nhau 1 tuần) để đủ điều kiện thanh lý theo điều khoản.`}
+                              onRun={() => simulateFailedContacts(c.contractId)}
                               onDone={() => fetchContracts()}
                             />
                           )}
@@ -664,6 +677,26 @@ export default function OverdueContractsPage() {
                 <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-xs font-bold flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px]">error</span>
                   <span>{liquidateError}</span>
+                </div>
+              )}
+
+              {/* Điều khoản xử lý tài sản: khách đã đồng ý chưa → có được bán thanh lý hàng sau 60 ngày lưu giữ không */}
+              {liquidateContractTarget.termsVersion ? (
+                <div className="p-3 rounded-xl bg-[#D7FFB8]/50 border border-[#58CC02] text-xs font-bold text-[#4B4B4B] flex gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-[#58A700]">verified</span>
+                  <span>
+                    Khách đã đồng ý <b>Điều khoản xử lý tài sản ({liquidateContractTarget.termsVersion})</b> khi đặt kho:
+                    sau thanh lý sẽ mở kho, kiểm kê, lưu giữ hàng 60 ngày, quá hạn được bán thanh lý để trừ nợ.
+                    Hệ thống sẽ sinh task <b>Dọn kho sau thanh lý</b>.
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-[#FFF8E1] border border-[#FFC800] text-xs font-bold text-[#4B4B4B] flex gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-[#B78900]">warning</span>
+                  <span>
+                    Đơn cũ — khách <b>chưa đồng ý</b> điều khoản xử lý tài sản: chỉ được lưu giữ hàng và trả lại khách
+                    hoặc giao cơ quan chức năng, <b>không được bán</b>. Hệ thống vẫn sinh task Dọn kho sau thanh lý.
+                  </span>
                 </div>
               )}
 

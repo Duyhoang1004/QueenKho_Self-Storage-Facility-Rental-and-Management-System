@@ -2,6 +2,7 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.CompleteMaintenanceRequest;
 import com.queenkho.api.dto.CompleteRefundRequest;
 import com.queenkho.api.dto.ContactReportRequest;
 import com.queenkho.api.dto.DamageCaseResponse;
@@ -13,6 +14,7 @@ import com.queenkho.api.dto.StaffTaskDetailResponse;
 import com.queenkho.api.dto.StaffTaskResponse;
 import com.queenkho.api.entity.DamageCase;
 import com.queenkho.api.entity.HandoverRecord;
+import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StaffTask;
 import com.queenkho.api.entity.StorageUnit;
@@ -21,6 +23,7 @@ import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.DamageCaseRepository;
 import com.queenkho.api.repository.FacilityRepository;
+import com.queenkho.api.repository.HeldGoodsRepository;
 import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.ReservationRepository;
@@ -55,6 +58,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 @Service
 public class StaffTaskService {
@@ -75,6 +79,10 @@ public class StaffTaskService {
     private static final String IMG_DELIMITER = "\n|||\n";
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
+    // UC-24: ai chịu lỗi sự cố — CUSTOMER trừ cọc, FACILITY cơ sở tự chịu
+    private static final List<String> LIABLE_PARTIES = List.of("CUSTOMER", "FACILITY");
+    // PR-O10: số ngày cho task bảo trì (sửa chữa thường lâu hơn 1 ngày)
+    private static final int MAINTENANCE_DUE_DAYS = 3;
 
     @Autowired
     private StaffTaskRepository staffTaskRepository;
@@ -105,6 +113,12 @@ public class StaffTaskService {
 
     @Autowired
     private ActivityLogService activityLogService;
+
+    @Autowired
+    private HeldGoodsService heldGoodsService;
+
+    @Autowired
+    private HeldGoodsRepository heldGoodsRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -172,6 +186,26 @@ public class StaffTaskService {
             cancelOpenTasks(contractId, "SUPPORT");
         } catch (Exception ignored) {
         }
+    }
+
+    // PR-O10 / PR-Q9: sinh task MAINTENANCE cho ô cần sửa (nghiệm thu có sự cố) hoặc cần dọn (sau thanh lý).
+    // Hạn 21:00 sau 3 ngày; ô quay về AVAILABLE khi task được đóng ("Sửa xong" / "Mở lại kho").
+    // reason: DAMAGE (sự cố trả kho) / LIQUIDATION (dọn kho sau thanh lý — "Dọn xong" bắt buộc kiểm kê hàng, PR-Q10)
+    @Transactional
+    public void createMaintenanceTask(RentalContract contract, String reason, String note) {
+        if (contract == null || contract.getStorageUnit() == null) return;
+        if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(contract.getId(), "MAINTENANCE", OPEN_STATUSES)) {
+            return;
+        }
+        StaffTask task = new StaffTask();
+        task.setFacilityId(contract.getStorageUnit().getFacility().getId());
+        task.setContract(contract);
+        task.setTaskType("MAINTENANCE");
+        task.setMaintenanceReason(reason);
+        task.setStatus("OPEN");
+        task.setDueAt(computeDueAt(LocalDate.now().plusDays(MAINTENANCE_DUE_DAYS)));
+        task.setNote(note != null && note.length() > 1000 ? note.substring(0, 997) + "..." : note);
+        staffTaskRepository.save(task);
     }
 
     private void createTask(RentalContract contract, String taskType, LocalDate appointmentDate, String note) {
@@ -1040,8 +1074,10 @@ public class StaffTaskService {
         record.setNotes(notes);
         handoverRecordRepository.save(record);
 
-        // 5. UC-24: Lưu danh sách sự cố hư hỏng (nếu có) và tính tổng chi phí đền bù
+        // 5. UC-24: Lưu danh sách sự cố hư hỏng (nếu có).
+        // totalDamageCost = chỉ phần LỖI KHÁCH (trừ cọc); lỗi cơ sở ghi nhận chi phí nhưng không tính khách.
         BigDecimal totalDamageCost = BigDecimal.ZERO;
+        BigDecimal facilityDamageCost = BigDecimal.ZERO;
         List<CheckOutRequest.DamageItemRequest> rawDamages = request.getDamageCases() != null
                 ? request.getDamageCases()
                 : Collections.emptyList();
@@ -1050,9 +1086,14 @@ public class StaffTaskService {
 
         for (CheckOutRequest.DamageItemRequest item : rawDamages) {
             BigDecimal cost = item.getEstimatedCost() != null ? item.getEstimatedCost() : BigDecimal.ZERO;
-            totalDamageCost = totalDamageCost.add(cost);
+            boolean customerFault = "CUSTOMER".equals(item.getLiableParty());
+            if (customerFault) {
+                totalDamageCost = totalDamageCost.add(cost);
+            } else {
+                facilityDamageCost = facilityDamageCost.add(cost);
+            }
             String titleTrimmed = item.getTitle().trim();
-            damageSummaryTitles.add(titleTrimmed);
+            damageSummaryTitles.add(titleTrimmed + (customerFault ? " (lỗi khách)" : " (lỗi cơ sở)"));
 
             DamageCase dc = new DamageCase();
             dc.setContract(contract);
@@ -1062,6 +1103,7 @@ public class StaffTaskService {
                     ? item.getDescription().trim()
                     : null);
             dc.setEstimatedCost(cost);
+            dc.setLiableParty(item.getLiableParty());
             dc.setEvidenceImageUrls(serializeEvidenceImages(item.getEvidenceImages()));
             damageCaseRepository.save(dc);
         }
@@ -1078,21 +1120,12 @@ public class StaffTaskService {
                 unit.setStatus("MAINTENANCE");
                 storageUnitRepository.save(unit);
 
-                // Sinh task MAINTENANCE cho cơ sở để theo dõi sửa chữa / vệ sinh
-                StaffTask maintTask = new StaffTask();
-                maintTask.setFacilityId(task.getFacilityId());
-                maintTask.setContract(contract);
-                maintTask.setTaskType("MAINTENANCE");
-                maintTask.setStatus("OPEN");
-                maintTask.setDueAt(computeDueAt(LocalDate.now().plusDays(1)));
-                String maintNote = "Khắc phục sự cố sau trả kho ô " + unit.getId()
-                        + " (HĐ " + contract.getContractCode() + "): "
-                        + String.join(", ", damageSummaryTitles);
-                if (maintNote.length() > 1000) {
-                    maintNote = maintNote.substring(0, 997) + "...";
-                }
-                maintTask.setNote(maintNote);
-                staffTaskRepository.save(maintTask);
+                // Sinh task MAINTENANCE cho cơ sở để theo dõi sửa chữa / vệ sinh (PR-O10)
+                String issues = damageSummaryTitles.isEmpty()
+                        ? (!Boolean.TRUE.equals(request.getUnitClean()) ? "ô chưa sạch" : "khoá / vách không nguyên vẹn")
+                        : String.join(", ", damageSummaryTitles);
+                createMaintenanceTask(contract, "DAMAGE", "Khắc phục sự cố sau trả kho ô " + unit.getId()
+                        + " (HĐ " + contract.getContractCode() + "): " + issues);
             } else {
                 unit.setStatus("AVAILABLE");
                 storageUnitRepository.save(unit);
@@ -1215,7 +1248,9 @@ public class StaffTaskService {
         try {
             String logMsg = "[CHECK_OUT] Nghiệm thu HĐ " + contract.getContractCode()
                     + ", ô " + (unit != null ? unit.getId() : "—")
-                    + (hasDamage ? " (" + rawDamages.size() + " sự cố, phí " + vndFmt.format(totalDamageCost) + "đ)" : " (Nguyên vẹn)")
+                    + (hasDamage ? " (" + rawDamages.size() + " sự cố, khách chịu " + vndFmt.format(totalDamageCost) + "đ"
+                            + (facilityDamageCost.compareTo(BigDecimal.ZERO) > 0 ? ", cơ sở chịu " + vndFmt.format(facilityDamageCost) + "đ" : "")
+                            + ")" : " (Nguyên vẹn)")
                     + ", tổng hoàn: " + vndFmt.format(refundAmount) + "đ"
                     + (calc.getEarlyRentRefund().compareTo(BigDecimal.ZERO) > 0 ? " (gồm " + vndFmt.format(calc.getEarlyRentRefund()) + "đ tiền thuê trả sớm)" : "");
             if (logMsg.length() > 500) {
@@ -1233,6 +1268,156 @@ public class StaffTaskService {
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    // ================== PR-O10: HOÀN TẤT TASK BẢO TRÌ Ô KHO ==================
+
+    // Staff đang giữ task, hoặc FM của cơ sở (đóng thẳng, không cần nhận việc) bấm "Sửa xong" / "Dọn xong".
+    // 1 transaction: task COMPLETED + ô MAINTENANCE → AVAILABLE + log.
+    @Transactional
+    public StaffTaskDetailResponse completeMaintenanceTask(Integer taskId, Integer userId, CompleteMaintenanceRequest request) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        String role = user.getRole() != null ? user.getRole().getName() : "";
+        boolean isManager = "FACILITY_MANAGER".equals(role);
+        if (!isManager && !"STAFF".equals(role)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                    "Chỉ nhân viên hoặc quản lý cơ sở mới được hoàn tất bảo trì");
+        }
+        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
+        if (!"MAINTENANCE".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_MAINTENANCE", "Task này không phải task bảo trì ô kho");
+        }
+
+        String workNote = request != null && request.getNote() != null ? request.getNote().trim() : "";
+        if (workNote.length() < 10 || workNote.length() > 1000) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Ghi chú công việc đã làm bắt buộc, từ 10 đến 1000 ký tự");
+        }
+        String evidence = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()
+                ? request.getEvidenceImageUrl().trim() : null;
+        if (evidence != null && evidence.length() > 1000) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Link ảnh sau sửa tối đa 1000 ký tự");
+        }
+
+        // PR-Q10: dọn kho sau thanh lý → bắt buộc biên bản kiểm kê (trừ khi ô trống, khách không để lại gì)
+        boolean cleanup = "LIQUIDATION".equals(task.getMaintenanceReason());
+        boolean recordGoods = cleanup && !Boolean.TRUE.equals(request.getNoGoodsLeft());
+        List<String> inventoryImages = request.getInventoryImages() == null ? Collections.emptyList()
+                : request.getInventoryImages().stream().filter(s -> s != null && !s.isBlank()).map(String::trim).toList();
+        if (recordGoods) {
+            validateInventory(request, inventoryImages);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        String fullNote = appendTaskNote(task.getNote(), "[Hoàn tất bởi " + (isManager ? "Quản lý " : "")
+                + user.getFullName() + " lúc " + now.format(TS_FMT) + ": " + workNote + "]");
+
+        // UPDATE có điều kiện: chống bấm đúp, chống đóng task đã huỷ / đã xong, Staff phải đúng người giữ
+        int updated = isManager
+                ? staffTaskRepository.completeMaintenanceByManager(taskId, now, fullNote, evidence)
+                : staffTaskRepository.completeMaintenanceByStaff(taskId, userId, now, fullNote, evidence);
+        if (updated == 0) {
+            throw explainMaintenanceFailure(taskId, userId);
+        }
+
+        StaffTask done = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
+        if (unit != null && "MAINTENANCE".equals(unit.getStatus())) {
+            unit.setStatus("AVAILABLE");
+            storageUnitRepository.save(unit);
+        }
+
+        // PR-Q10: hàng của khách chuyển sang khu lưu giữ → lập hồ sơ lưu giữ 60 ngày
+        if (recordGoods && done.getContract() != null) {
+            heldGoodsService.createFromCleanup(done, done.getContract(), user,
+                    request.getInventoryNote().trim(), inventoryImages,
+                    request.getWitnessNote().trim(), request.getStorageLocation().trim());
+        }
+
+        activityLogService.log(
+                user.getId(),
+                "[MAINTENANCE_DONE] " + user.getFullName() + " hoàn tất bảo trì task #" + taskId
+                        + (unit != null ? ", ô " + unit.getId() + " sẵn sàng cho thuê" : "") + ": " + workNote,
+                "facility_tasks",
+                String.valueOf(taskId)
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    // PR-Q10: biên bản kiểm kê hàng của khách khi dọn kho sau thanh lý
+    private void validateInventory(CompleteMaintenanceRequest request, List<String> images) {
+        String inventory = request.getInventoryNote() != null ? request.getInventoryNote().trim() : "";
+        if (inventory.length() < 10 || inventory.length() > 2000) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED",
+                    "Danh sách hàng kiểm kê bắt buộc, từ 10 đến 2000 ký tự (hoặc đánh dấu \"Ô trống, không còn hàng\")");
+        }
+        String witness = request.getWitnessNote() != null ? request.getWitnessNote().trim() : "";
+        if (witness.isEmpty() || witness.length() > 500) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED",
+                    "Ghi rõ người mở kho / người chứng kiến (ít nhất 2 người, tối đa 500 ký tự)");
+        }
+        String location = request.getStorageLocation() != null ? request.getStorageLocation().trim() : "";
+        if (location.isEmpty() || location.length() > 100) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Ghi rõ khu lưu giữ hàng (tối đa 100 ký tự)");
+        }
+        if (images.isEmpty()) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Bắt buộc ít nhất 1 ảnh kiểm kê hàng của khách");
+        }
+    }
+
+    // PR-O10: FM bấm "Mở lại kho" (UC-06) khi ô còn task bảo trì đang mở → đóng luôn task, tránh task treo / quá hạn mãi.
+    @Transactional
+    public int closeOpenMaintenanceForUnit(String unitId, Integer actorId) {
+        List<StaffTask> tasks = staffTaskRepository.findMaintenanceByUnitAndStatusIn(unitId, OPEN_STATUSES);
+        if (tasks.isEmpty()) return 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (StaffTask t : tasks) {
+            t.setStatus("COMPLETED");
+            t.setCompletedAt(now);
+            t.setNote(appendTaskNote(t.getNote(), "[FM mở lại kho lúc " + now.format(TS_FMT) + "]"));
+            activityLogService.log(actorId != null ? actorId : 1,
+                    "[MAINTENANCE_DONE] Đóng task bảo trì #" + t.getId() + " do Quản lý mở lại ô " + unitId,
+                    "facility_tasks", String.valueOf(t.getId()));
+        }
+        staffTaskRepository.saveAll(tasks);
+        return tasks.size();
+    }
+
+    // PR-O10: task bảo trì đang mở mới nhất của 1 ô (dùng ở danh mục ô kho UC-06)
+    @Transactional(readOnly = true)
+    public Optional<StaffTask> findOpenMaintenanceTask(String unitId) {
+        return staffTaskRepository.findMaintenanceByUnitAndStatusIn(unitId, OPEN_STATUSES).stream()
+                .max(Comparator.comparing(StaffTask::getId));
+    }
+
+    private StaffTaskException explainMaintenanceFailure(Integer taskId, Integer staffId) {
+        StaffTask current = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        String status = current.getStatus();
+        if ("COMPLETED".equals(status)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_COMPLETED", "Task bảo trì đã được hoàn tất trước đó");
+        }
+        if ("CANCELLED".equals(status)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_CANCELLED", "Task bảo trì đã bị huỷ");
+        }
+        if (current.getStaff() != null && !current.getStaff().getId().equals(staffId)) {
+            return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_YOURS",
+                    "Task bảo trì đang do " + current.getStaff().getFullName() + " phụ trách");
+        }
+        return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
+                "Bạn cần bấm \"Nhận việc\" trước khi hoàn tất bảo trì");
+    }
+
+    // Nối thêm 1 đoạn vào ghi chú task, cắt còn 1000 ký tự (giới hạn cột note)
+    private static String appendTaskNote(String original, String suffix) {
+        String merged = (original == null || original.isBlank() ? "" : original + " | ") + suffix;
+        return merged.length() > 1000 ? merged.substring(0, 997) + "..." : merged;
     }
 
     private void validateCheckOutRequest(CheckOutRequest request) {
@@ -1289,6 +1474,12 @@ public class StaffTaskService {
             if (item.getEstimatedCost() == null || item.getEstimatedCost().compareTo(BigDecimal.ZERO) < 0) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_DAMAGE_ITEM",
                         "Chi phí đền bù của sự cố #" + idx + " phải lớn hơn hoặc bằng 0");
+            }
+            // UC-24: bắt buộc chọn ai chịu lỗi — quyết định có trừ cọc khách hay không
+            // (List.of(...).contains(null) ném NPE → kiểm tra null trước)
+            if (item.getLiableParty() == null || !LIABLE_PARTIES.contains(item.getLiableParty())) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_DAMAGE_ITEM",
+                        "Sự cố #" + idx + " chưa chọn lỗi do khách (CUSTOMER) hay do cơ sở (FACILITY)");
             }
             List<String> validPhotos = item.getEvidenceImages() == null ? Collections.emptyList()
                     : item.getEvidenceImages().stream().filter(s -> s != null && !s.isBlank()).toList();
@@ -1435,10 +1626,13 @@ public class StaffTaskService {
                     .orElse(null);
         }
 
-        // UC-24: Lấy danh sách sự cố hư hỏng (nếu là task CHECK_OUT hoặc REFUND của hợp đồng)
+        // UC-24: Lấy danh sách sự cố hư hỏng (task CHECK_OUT, hoặc REFUND / MAINTENANCE của hợp đồng).
+        // totalDamageCost = phần lỗi khách (trừ cọc); facilityDamageCost = phần cơ sở tự chịu.
         List<DamageCaseResponse> damageResponses = Collections.emptyList();
         BigDecimal totalDamageCost = BigDecimal.ZERO;
-        if ("CHECK_OUT".equals(task.getTaskType()) || ("REFUND".equals(task.getTaskType()) && contract != null)) {
+        BigDecimal facilityDamageCost = BigDecimal.ZERO;
+        if ("CHECK_OUT".equals(task.getTaskType())
+                || (("REFUND".equals(task.getTaskType()) || "MAINTENANCE".equals(task.getTaskType())) && contract != null)) {
             List<DamageCase> cases = "CHECK_OUT".equals(task.getTaskType())
                     ? damageCaseRepository.findByTask_IdOrderByIdAsc(task.getId())
                     : damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());
@@ -1448,12 +1642,17 @@ public class StaffTaskService {
             List<DamageCaseResponse> mapped = new ArrayList<>();
             for (DamageCase dc : cases) {
                 BigDecimal cost = dc.getEstimatedCost() != null ? dc.getEstimatedCost() : BigDecimal.ZERO;
-                totalDamageCost = totalDamageCost.add(cost);
+                if ("FACILITY".equals(dc.getLiableParty())) {
+                    facilityDamageCost = facilityDamageCost.add(cost);
+                } else {
+                    totalDamageCost = totalDamageCost.add(cost);
+                }
                 mapped.add(DamageCaseResponse.builder()
                         .id(dc.getId())
                         .title(dc.getTitle())
                         .description(dc.getDescription())
                         .estimatedCost(cost)
+                        .liableParty(dc.getLiableParty())
                         .evidenceImages(parseEvidenceImages(dc.getEvidenceImageUrls()))
                         .createdAt(dc.getCreatedAt())
                         .build());
@@ -1502,6 +1701,11 @@ public class StaffTaskService {
             }
         }
 
+        // PR-Q10: task dọn kho sau thanh lý đã lập hồ sơ lưu giữ hàng
+        HeldGoods heldGoods = "MAINTENANCE".equals(task.getTaskType())
+                ? heldGoodsRepository.findFirstByTaskId(task.getId()).orElse(null)
+                : null;
+
         boolean urgent = sr != null
                 ? SupportRequestService.isUrgentIssue(sr.getIssueType())
                 : ("SUPPORT".equals(task.getTaskType()) && taskNote != null && taskNote.contains("[KHẨN]"));
@@ -1540,6 +1744,11 @@ public class StaffTaskService {
                 .handoverRecord(handover)
                 .damageCases(damageResponses)
                 .totalDamageCost(totalDamageCost)
+                .facilityDamageCost(facilityDamageCost)
+                .maintenanceReason(task.getMaintenanceReason())
+                .heldGoodsId(heldGoods != null ? heldGoods.getId() : null)
+                .heldGoodsStatus(heldGoods != null ? heldGoods.getStatus() : null)
+                .heldGoodsHoldUntil(heldGoods != null ? heldGoods.getHoldUntil() : null)
                 .refundAmount(refundAmount)
                 .excessDebtAmount(excessDebtAmount)
                 .depositRefund(depositRefund)
@@ -1971,7 +2180,8 @@ public class StaffTaskService {
             BigDecimal dmg = BigDecimal.ZERO;
             List<DamageCase> cases = damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());
             for (DamageCase dc : cases) {
-                if (dc.getEstimatedCost() != null) {
+                // Chỉ phần lỗi khách bị trừ vào cọc (UC-24)
+                if (dc.getEstimatedCost() != null && !"FACILITY".equals(dc.getLiableParty())) {
                     dmg = dmg.add(dc.getEstimatedCost());
                 }
             }

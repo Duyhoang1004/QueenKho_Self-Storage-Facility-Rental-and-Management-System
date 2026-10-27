@@ -543,9 +543,22 @@ export default function StorageManagementPage() {
                               Đang sử dụng
                             </span>
                           ) : isMaintenance ? (
-                            <span className="duo-badge bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
-                              Bảo trì
-                            </span>
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="duo-badge bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]">
+                                Bảo trì
+                              </span>
+                              {/* PR-O10: ô vào bảo trì do sự cố trả kho / thanh lý → có task đang mở */}
+                              {unit.maintenanceTaskId && (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/manager/tasks/${unit.maintenanceTaskId}`)}
+                                  className="text-[10px] font-black text-[#1CB0F6] hover:underline cursor-pointer whitespace-nowrap"
+                                  title="Mở phiếu bảo trì"
+                                >
+                                  {unit.maintenanceReason === 'LIQUIDATION' ? 'Chờ dọn' : 'Chờ sửa'} · task #{unit.maintenanceTaskId}
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-[#AFAFAF]">{unit.status}</span>
                           )}
@@ -841,6 +854,18 @@ export default function StorageManagementPage() {
                 <p className="text-[11px] font-bold text-[#AFAFAF] italic">
                   * Hệ thống sẽ tự động kiểm tra số suất khả dụng (PR-M10). Nếu hết suất trống đã cọc, thao tác sẽ bị chặn.
                 </p>
+              </div>
+            )}
+
+            {/* PR-O10: mở lại ô đang có task bảo trì → task được đóng luôn */}
+            {statusModal.targetStatus === 'AVAILABLE' && statusModal.unit.maintenanceTaskId && (
+              <div className="rounded-xl bg-[#FFF8E1] border-2 border-[#FFC800] px-4 py-3 text-xs font-bold text-[#4B4B4B] flex gap-2">
+                <span className="material-symbols-outlined text-[18px] text-[#B78900]">info</span>
+                <span>
+                  Ô đang có task bảo trì <b>#{statusModal.unit.maintenanceTaskId}</b>{' '}
+                  ({statusModal.unit.maintenanceReason === 'LIQUIDATION' ? 'dọn kho sau thanh lý' : 'sửa sự cố sau trả kho'}).
+                  Mở lại kho sẽ <b>đóng luôn task này</b>. Nên để nhân viên bấm "Sửa xong" trên phiếu bảo trì để lưu ghi chú công việc.
+                </span>
               </div>
             )}
 

@@ -1,7 +1,9 @@
 package com.queenkho.api.controller;
 
 import com.queenkho.api.dto.CustomerContractResponse;
+import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
+import com.queenkho.api.repository.HeldGoodsRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.security.CurrentUser;
 import com.queenkho.api.security.CurrentUserProvider;
@@ -21,6 +23,9 @@ public class ContractController {
 
     @Autowired
     private RentalContractRepository rentalContractRepository;
+
+    @Autowired
+    private HeldGoodsRepository heldGoodsRepository;
 
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
@@ -139,11 +144,19 @@ public class ContractController {
         BigDecimal damageFee = BigDecimal.ZERO;
         try {
             damageFee = jdbcTemplate.queryForObject(
-                    "SELECT COALESCE(SUM(estimated_cost), 0) FROM damage_cases WHERE contract_id = ?",
+                    "SELECT COALESCE(SUM(estimated_cost), 0) FROM damage_cases WHERE contract_id = ? AND liable_party = 'CUSTOMER'",
                     BigDecimal.class,
                     rc.getId());
         } catch (Exception ignored) {
         }
+        // PR-Q10: hàng của khách lưu giữ sau thanh lý (nếu có)
+        HeldGoods heldGoods = heldGoodsRepository.findFirstByContract_IdOrderByIdDesc(rc.getId()).orElse(null);
+
+        // UC-24: sự cố lỗi cơ sở — chỉ hiển thị cho khách biết, không trừ cọc
+        BigDecimal facilityDamageFee = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(estimated_cost), 0) FROM damage_cases WHERE contract_id = ? AND liable_party = 'FACILITY'",
+                BigDecimal.class,
+                rc.getId());
         if (damageFee == null || damageFee.compareTo(BigDecimal.ZERO) == 0) {
             try {
                 String refundNote = jdbcTemplate.queryForObject(
@@ -241,7 +254,13 @@ public class ContractController {
                 estimatedOverdueDepositRefund,
                 su.getFacility() != null ? su.getFacility().getId() : null,
                 Boolean.TRUE.equals(rc.getLateFeeWaived()) && "OVERDUE".equalsIgnoreCase(rc.getStatus()),
-                rc.getLateFeeWaiverNote());
+                rc.getLateFeeWaiverNote(),
+                facilityDamageFee,
+                rc.getReservation().getTermsVersion(),
+                rc.getReservation().getTermsAcceptedAt(),
+                heldGoods != null ? heldGoods.getStatus() : null,
+                heldGoods != null ? heldGoods.getHoldUntil() : null,
+                heldGoods != null ? heldGoods.getStorageLocation() : null);
     }
 
     // GET /api/v1/contracts?managerId=3

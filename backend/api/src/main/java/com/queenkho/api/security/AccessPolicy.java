@@ -63,6 +63,11 @@ public class AccessPolicy {
                 "Flow 2 / 3 / 7: lập biên bản, cấp PIN / thẻ, ghi sự cố, cấp lại PIN", scopes("STAFF", FACILITY));
         group("TASK_MANAGE", "Giao / gỡ việc, gia hạn hỗ trợ, xác nhận hoàn tiền",
                 "Flow 5: phân công nhân viên cho bàn giao, nghiệm thu, hỗ trợ", scopes("FACILITY_MANAGER", FACILITY));
+        group("TASK_MAINTENANCE", "Bảo trì ô kho: sửa xong / dọn xong",
+                "PR-O10: đóng task bảo trì sau trả kho có sự cố hoặc sau thanh lý, ô quay về sẵn sàng cho thuê",
+                scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
+        group("HELD_GOODS_MANAGE", "Hàng lưu giữ sau thanh lý",
+                "PR-Q10: trả khách, bán thanh lý, tiêu huỷ, giao cơ quan chức năng", scopes("FACILITY_MANAGER", FACILITY));
         group("RESERVATION_MANAGE", "Duyệt đơn, gán ô, No-Show, dời lịch",
                 "Flow 1 / 2: gán ô đúng loại cho đơn đã cọc", scopes("FACILITY_MANAGER", FACILITY));
         group("CONTRACT_MANAGE", "Quá hạn: liên hệ, miễn phí trễ, thanh lý",
@@ -85,8 +90,8 @@ public class AccessPolicy {
         group("ADMIN_AUDIT", "Nhật ký hoạt động & lịch sử đăng nhập",
                 "Theo dõi ai làm gì, đăng nhập lúc nào, từ đâu", scopes("ADMIN", SYSTEM));
         // Demo: nút "⚡ Giả lập" tua thời gian (tắt bằng queenkho.simulation.enabled=false)
-        group("DEV_SIM_CHECKIN", "Giả lập demo: khách tới nhận kho hôm nay",
-                "Dời lịch hẹn về hôm nay để check-in ngay", scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
+        group("DEV_SIM_CHECKIN", "Giả lập demo: khách tới nhận / trả kho hôm nay",
+                "Dời lịch hẹn về hôm nay để check-in / nghiệm thu trả kho ngay", scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
         group("DEV_SIM_CUSTOMER", "Giả lập demo: giữ chỗ 15 phút, ticket tự đóng",
                 "Tua giờ để thấy job tự huỷ đơn / tự đóng ticket", scopes("CUSTOMER", OWN, "FACILITY_MANAGER", FACILITY));
         group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, thanh lý",
@@ -152,10 +157,15 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/check-out", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-support", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/reset-pin", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/complete-maintenance", "TASK_MAINTENANCE");
         rule("GET", "/api/v1/staff-tasks", "TASK_BOARD");
         rule("GET", "/api/v1/staff-tasks/{id:\\d+}", "TASK_BOARD");
         rule("POST", "/api/v1/staff-tasks/{id}/claim", "TASK_BOARD");
         rule("POST", "/api/v1/staff-tasks/{id}/contact-report", "TASK_BOARD");
+
+        // Hàng lưu giữ sau thanh lý
+        rule("GET", "/api/v1/held-goods", "HELD_GOODS_MANAGE");
+        rule("POST", "/api/v1/held-goods/{id}/resolve", "HELD_GOODS_MANAGE");
 
         // Cơ sở: ô kho, nhân viên, báo cáo
         rule(null, "/api/v1/storage-units/**", "STORAGE_MANAGE");
@@ -184,6 +194,9 @@ public class AccessPolicy {
         // Demo giả lập
         rule("GET", "/api/v1/dev/simulation/status", AUTHENTICATED);
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/arrive-today", "DEV_SIM_CHECKIN");
+        rule("POST", "/api/v1/dev/simulation/tasks/{id}/checkout-today", "DEV_SIM_CHECKIN");
+        rule("POST", "/api/v1/dev/simulation/contracts/{id}/add-failed-contacts", "DEV_SIM_MANAGER");
+        rule("POST", "/api/v1/dev/simulation/held-goods/{id}/expire-hold", "DEV_SIM_MANAGER");
         rule("POST", "/api/v1/dev/simulation/reservations/{id}/expire-hold", "DEV_SIM_CUSTOMER");
         rule("POST", "/api/v1/dev/simulation/support-requests/{id}/auto-close", "DEV_SIM_CUSTOMER");
         rule("POST", "/api/v1/dev/simulation/reservations/{id}/trigger-noshow", "DEV_SIM_MANAGER");

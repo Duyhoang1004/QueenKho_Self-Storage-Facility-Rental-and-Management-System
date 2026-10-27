@@ -60,4 +60,12 @@ public class Reservation {
     // NULL ở đơn rất cũ → PricingService tính lại theo bảng mặc định.
     @Column(name = "rent_discount_percent")
     private Integer rentDiscountPercent;
+
+    // Điều khoản xử lý tài sản khi không trả kho mà khách đã đồng ý lúc đặt kho.
+    // NULL = đơn tạo trước khi có điều khoản → khi thanh lý không được bán hàng của khách.
+    @Column(name = "terms_version")
+    private String termsVersion;
+
+    @Column(name = "terms_accepted_at")
+    private java.time.LocalDateTime termsAcceptedAt;
 }

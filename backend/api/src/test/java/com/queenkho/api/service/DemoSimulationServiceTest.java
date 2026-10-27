@@ -200,6 +200,91 @@ class DemoSimulationServiceTest {
         assertEquals("FORBIDDEN_FACILITY", code(() -> service.makeOverdue(9, 3, fm)));
     }
 
+    @Test
+    @DisplayName("Khách không tới trả kho 31 ngày: OVERDUE, đơn về UNIT_ASSIGNED, huỷ task CHECK_OUT (giống job PR-Q1)")
+    void makeOverdueFromMissedCheckout() {
+        activeContract("TERMINATION_PENDING", 1);
+
+        service.makeOverdue(9, 31, fm);
+
+        verify(jdbcTemplate).update(contains("status = 'OVERDUE', late_fee_waived = 0"), any(LocalDate.class), any(LocalDate.class), eq(9));
+        verify(jdbcTemplate).update(contains("UPDATE reservations SET status = 'UNIT_ASSIGNED'"), eq(9));
+        verify(jdbcTemplate).update(contains("task_type = 'CHECK_OUT'"), eq(9));
+        verify(activityLogService).log(eq(6), contains("không tới trả kho"), eq("rental_contracts"), eq("9"));
+    }
+
+    @Test
+    @DisplayName("Khách không tới trả kho: còn trong 5 ngày ân hạn → 400, chưa đổi gì")
+    void makeOverdueMissedCheckoutRespectsGrace() {
+        activeContract("TERMINATION_PENDING", 1);
+        assertEquals("INVALID_INPUT", code(() -> service.makeOverdue(9, 5, fm)));
+        verify(jdbcTemplate, never()).update(contains("UPDATE rental_contracts"), any(), any(), any());
+    }
+
+    // ---------- 1b. khách tới trả kho hôm nay ----------
+
+    @Test
+    @DisplayName("Khách tới trả kho hôm nay: hạn task CHECK_OUT về 21:00, task quá hạn được mở lại, có log")
+    void checkoutTodayMovesDueDate() {
+        rows("FROM facility_tasks", map("id", 51, "task_type", "CHECK_OUT", "status", "OVERDUE", "contract_id", 9, "facility_id", 1));
+        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", "TERMINATION_PENDING"));
+
+        service.checkoutToday(51, staff);
+
+        verify(jdbcTemplate).update(contains("WHEN status = 'OVERDUE'"), any(Timestamp.class), eq(51));
+        verify(activityLogService).log(eq(12), contains("trả kho hôm nay"), eq("facility_tasks"), eq("51"));
+    }
+
+    @Test
+    @DisplayName("Khách tới trả kho hôm nay: task CHECK_IN / HĐ không chờ trả kho → 409")
+    void checkoutTodayGuards() {
+        rows("FROM facility_tasks", map("id", 51, "task_type", "CHECK_IN", "status", "OPEN", "contract_id", 9, "facility_id", 1));
+        assertEquals("SIMULATION_NOT_APPLICABLE", code(() -> service.checkoutToday(51, staff)));
+
+        rows("FROM facility_tasks", map("id", 51, "task_type", "CHECK_OUT", "status", "OPEN", "contract_id", 9, "facility_id", 1));
+        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", "ACTIVE"));
+        assertEquals("SIMULATION_NOT_APPLICABLE", code(() -> service.checkoutToday(51, staff)));
+    }
+
+    // ---------- 5b. đủ 3 lần liên hệ trước thanh lý ----------
+
+    @Test
+    @DisplayName("Ghi 3 lần liên hệ thất bại: 3 log [OVERDUE_CONTACT] đúng định dạng ContractService")
+    void addFailedContactsWritesThreeLogs() {
+        rows("FROM rental_contracts rc", map("id", 9, "contract_code", "HD-1", "status", "OVERDUE", "facility_id", 1));
+
+        service.addFailedContacts(9, fm);
+
+        verify(jdbcTemplate, times(3)).update(contains("INSERT INTO activity_logs"), eq(6),
+                startsWith("[OVERDUE_CONTACT] HĐ HD-1: "), eq("9"), any(Timestamp.class));
+    }
+
+    @Test
+    @DisplayName("Ghi liên hệ: HĐ không quá hạn → 409, HĐ cơ sở khác → 403")
+    void addFailedContactsGuards() {
+        rows("FROM rental_contracts rc", map("id", 9, "contract_code", "HD-1", "status", "ACTIVE", "facility_id", 1));
+        assertEquals("SIMULATION_NOT_APPLICABLE", code(() -> service.addFailedContacts(9, fm)));
+
+        rows("FROM rental_contracts rc", map("id", 9, "contract_code", "HD-1", "status", "OVERDUE", "facility_id", 2));
+        assertEquals("FORBIDDEN_FACILITY", code(() -> service.addFailedContacts(9, fm)));
+    }
+
+    // ---------- 5c. hàng lưu giữ hết hạn ----------
+
+    @Test
+    @DisplayName("Hết hạn lưu giữ: hold_until = hôm qua; hồ sơ đã xử lý → 409; cơ sở khác → 403")
+    void expireHeldGoods() {
+        rows("FROM held_goods", map("id", 5, "status", "HOLDING", "facility_id", 1, "contract_code", "HD-1"));
+        service.expireHeldGoods(5, fm);
+        verify(jdbcTemplate).update(contains("UPDATE held_goods SET hold_until"), eq(LocalDate.now().minusDays(1)), eq(5));
+
+        rows("FROM held_goods", map("id", 5, "status", "SOLD", "facility_id", 1, "contract_code", "HD-1"));
+        assertEquals("SIMULATION_NOT_APPLICABLE", code(() -> service.expireHeldGoods(5, fm)));
+
+        rows("FROM held_goods", map("id", 5, "status", "HOLDING", "facility_id", 2, "contract_code", "HD-1"));
+        assertEquals("FORBIDDEN_FACILITY", code(() -> service.expireHeldGoods(5, fm)));
+    }
+
     // ---------- 6. ticket tự đóng ----------
 
     @Test

@@ -114,6 +114,35 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
                         @Param("staffId") Integer staffId,
                         @Param("now") LocalDateTime now);
 
+    // PR-O10: Staff đóng task MAINTENANCE mình đang giữ. Quá hạn vẫn đóng được (sửa chữa có thể kéo dài),
+    // nên không so due_at — chỉ chặn bấm đúp / task đã huỷ bằng điều kiện status.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now, t.note = :note, " +
+            "t.evidenceImageUrl = :evidence " +
+            "WHERE t.id = :taskId AND t.taskType = 'MAINTENANCE' AND t.status IN ('IN_PROGRESS', 'OVERDUE') " +
+            "AND t.staff.id = :staffId")
+    int completeMaintenanceByStaff(@Param("taskId") Integer taskId,
+                                   @Param("staffId") Integer staffId,
+                                   @Param("now") LocalDateTime now,
+                                   @Param("note") String note,
+                                   @Param("evidence") String evidence);
+
+    // PR-O10: FM đóng thẳng task MAINTENANCE (không cần nhận việc, kể cả task chưa ai nhận / đã quá hạn)
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now, t.note = :note, " +
+            "t.evidenceImageUrl = :evidence " +
+            "WHERE t.id = :taskId AND t.taskType = 'MAINTENANCE' AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')")
+    int completeMaintenanceByManager(@Param("taskId") Integer taskId,
+                                     @Param("now") LocalDateTime now,
+                                     @Param("note") String note,
+                                     @Param("evidence") String evidence);
+
+    // PR-O10: task MAINTENANCE còn mở của 1 ô (đi qua hợp đồng cũ của ô) — FM "Mở lại kho" thì đóng luôn
+    @Query("SELECT t FROM StaffTask t JOIN FETCH t.contract c WHERE t.taskType = 'MAINTENANCE' " +
+            "AND c.storageUnit.id = :unitId AND t.status IN :statuses")
+    List<StaffTask> findMaintenanceByUnitAndStatusIn(@Param("unitId") String unitId,
+                                                     @Param("statuses") Collection<String> statuses);
+
     // UC-08 / PR-A2, PR-A3, PR-06: Staff có đang giữ task chưa xong không (IN_PROGRESS hoặc OVERDUE đã nhận)
     boolean existsByStaff_IdAndStatusIn(Integer staffId, List<String> statuses);
 }

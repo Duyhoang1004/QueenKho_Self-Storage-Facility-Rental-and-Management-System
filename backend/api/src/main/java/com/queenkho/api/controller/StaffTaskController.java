@@ -2,6 +2,7 @@ package com.queenkho.api.controller;
 
 import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.CompleteMaintenanceRequest;
 import com.queenkho.api.dto.ExtendSupportTaskRequest;
 import com.queenkho.api.dto.ResolveSupportTaskRequest;
 import com.queenkho.api.exception.StaffTaskException;
@@ -113,6 +114,18 @@ public class StaffTaskController {
                                       @RequestBody(required = false) CheckOutRequest request) {
         try {
             return ResponseEntity.ok(staffTaskService.checkOut(id, staffId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // PR-O10: Staff đang giữ task / FM bấm "Sửa xong" cho task bảo trì → ô quay về AVAILABLE
+    // POST /api/v1/staff-tasks/12/complete-maintenance   body: { "note": "...", "evidenceImageUrl": "..." }
+    @PostMapping("/{id}/complete-maintenance")
+    public ResponseEntity<?> completeMaintenance(@PathVariable Integer id,
+                                                 @RequestBody(required = false) CompleteMaintenanceRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.completeMaintenanceTask(id, currentUser.require().id(), request));
         } catch (StaffTaskException e) {
             return toError(e);
         }

@@ -343,6 +343,16 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
 
+    // PR-O10: task bảo trì quá hạn không giao lại được → FM mở phiếu và tự bấm "Sửa xong / Dọn xong"
+    if (task.taskType === 'MAINTENANCE' && isTaskOverdue) {
+      return (
+        <Link to={detailUrl} className="duo-btn-green px-4 py-2 text-xs gap-1.5">
+          <span className="material-symbols-outlined text-[18px]">build</span>
+          Hoàn tất bảo trì
+        </Link>
+      )
+    }
+
     // Flow 5: task chưa ai nhận → Manager chủ động giao cho nhân viên
     if (task.status === 'OPEN' && !isTaskOverdue) {
       return (

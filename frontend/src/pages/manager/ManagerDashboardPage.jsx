@@ -87,7 +87,7 @@ export default function ManagerDashboardPage() {
               <span>/</span>
               <span>{facility?.name || `Cơ sở #${selectedFacilityId}`}</span>
               <span>/</span>
-              <span className="text-[#58CC02]">Bảng điều khiển (UC-30)</span>
+              <span className="text-[#58CC02]">Bảng điều khiển</span>
             </div>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">

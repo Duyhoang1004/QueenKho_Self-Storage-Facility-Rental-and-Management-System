@@ -204,7 +204,7 @@ export default function ManagerStaffPage() {
               <span>/</span>
               <span>{currentFacilityName}</span>
               <span>/</span>
-              <span className="text-[#1CB0F6]">Điều Phối Nhân Sự (UC-32)</span>
+              <span className="text-[#1CB0F6]">Điều Phối Nhân Sự</span>
             </div>
             <div className="flex items-center gap-3 mt-1 flex-wrap">
               <h1 className="text-3xl font-black text-[#4B4B4B] tracking-tight">

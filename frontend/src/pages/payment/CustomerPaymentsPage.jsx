@@ -109,7 +109,7 @@ export default function CustomerPaymentsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b-2 border-[#E5E5E5]">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="duo-badge bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]">UC-20</span>
+            
             <h1 className="text-2xl md:text-3xl font-black text-[#4B4B4B] tracking-tight">Thanh toán</h1>
           </div>
           <p className="text-xs font-bold text-[#777777] mt-1">

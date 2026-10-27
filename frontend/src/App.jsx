@@ -4,6 +4,10 @@ import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
 
+// Import Landing Page công khai & Public Navbar
+import PublicLandingPage from './pages/public/PublicLandingPage';
+import PublicNavbar from './components/PublicNavbar';
+
 // Import cho chức năng Tìm kiếm & Khám phá kho (UC-09)
 import SearchLandingPage from './pages/search/SearchLandingPage';
 import SearchResultsPage from './pages/search/SearchResultsPage';
@@ -55,6 +59,60 @@ import BomUnitTypesPage from './pages/bom/BomUnitTypesPage';
 import BomRentalPoliciesPage from './pages/bom/BomRentalPoliciesPage';
 import BomRevenuePage from './pages/bom/BomRevenuePage';
 
+/**
+ * Điều hướng thông minh cho trang chủ:
+ * - Khách vãng lai (chưa đăng nhập): Render PublicLandingPage show sản phẩm và vị trí kho.
+ * - Khách hàng (đã đăng nhập): Render HomePage bên trong CustomerLayout.
+ */
+function HomeDispatcher() {
+  const userStr = sessionStorage.getItem('user');
+  let isCustomer = false;
+  try {
+    const user = JSON.parse(userStr || '{}');
+    isCustomer = user.role === 'CUSTOMER';
+  } catch {}
+
+  if (isCustomer) {
+    return (
+      <CustomerLayout>
+        <HomePage />
+      </CustomerLayout>
+    );
+  }
+
+  return <PublicLandingPage />;
+}
+
+/**
+ * Điều hướng cho các trang khám phá kho:
+ * - Khách đã đăng nhập: Hiển thị bên trong CustomerLayout (có Sidebar + Header).
+ * - Khách chưa đăng nhập: Hiển thị với PublicNavbar trên cùng mà không bị ép đăng nhập.
+ */
+function DiscoveryRoute({ Component }) {
+  const userStr = sessionStorage.getItem('user');
+  let isCustomer = false;
+  try {
+    const user = JSON.parse(userStr || '{}');
+    isCustomer = user.role === 'CUSTOMER';
+  } catch {}
+
+  if (isCustomer) {
+    return (
+      <CustomerLayout>
+        <Component />
+      </CustomerLayout>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white text-[#4B4B4B] flex flex-col font-sans">
+      <PublicNavbar />
+      <main className="flex-1 w-full">
+        <Component />
+      </main>
+    </div>
+  );
+}
 
 export default function App() {
   return (
@@ -62,14 +120,15 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       
-      {/* ========== Customer Portal ========== */}
-      <Route element={<CustomerLayout />}>
-        <Route path="/" element={<HomePage />} />
-        
-        {/* UC-09: Tìm kiếm & Khám phá kho (Landing Page) */}
-        <Route path="/tim-va-dat-kho" element={<SearchLandingPage />} />
-        <Route path="/tim-va-dat-kho/ket-qua" element={<SearchResultsPage />} />
+      {/* ========== Trang chủ công khai / Customer Dashboard ========== */}
+      <Route path="/" element={<HomeDispatcher />} />
 
+      {/* ========== Khám phá kho công khai (cho cả khách vãng lai và đã đăng nhập) ========== */}
+      <Route path="/tim-va-dat-kho" element={<DiscoveryRoute Component={SearchLandingPage} />} />
+      <Route path="/tim-va-dat-kho/ket-qua" element={<DiscoveryRoute Component={SearchResultsPage} />} />
+
+      {/* ========== Customer Portal (BẮT BUỘC ĐĂNG NHẬP) ========== */}
+      <Route element={<CustomerLayout />}>
         {/* UC-10: Đặt chỗ kho */}
         <Route path="/booking" element={<CreateReservationPage />} />
         <Route path="/booking/confirmation" element={<ReservationConfirmationPage />} />

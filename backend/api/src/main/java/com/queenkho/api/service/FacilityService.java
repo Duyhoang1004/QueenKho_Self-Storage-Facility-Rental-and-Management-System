@@ -47,6 +47,7 @@ public class FacilityService {
     private JdbcTemplate jdbcTemplate;
 
     private static final List<String> PENDING_STATUSES = List.of("PENDING", "DEPOSIT_PAID");
+    private static final List<String> SUCCESSFUL_STATUSES = List.of("DEPOSIT_PAID", "UNIT_ASSIGNED", "COMPLETED", "TERMINATION_PENDING");
 
     // ──────────────────────────────────────────────────────
     // UC-09 API 1: Lấy tất cả cơ sở ACTIVE kèm tổng số ô trống
@@ -99,10 +100,15 @@ public class FacilityService {
             Map<Integer, Long> pendingMap = toMap(
                 reservationRepository.countPendingGroupedByUnitType(f.getId(), PENDING_STATUSES));
 
+            // Batch query: lấy tổng số lượt đặt & hợp đồng thành công grouped by unitType (để xếp hạng Hot)
+            Map<Integer, Long> successfulMap = toMap(
+                reservationRepository.countSuccessfulGroupedByUnitType(f.getId(), SUCCESSFUL_STATUSES));
+
             for (UnitType ut : unitTypes) {
                 long physical = physicalMap.getOrDefault(ut.getId(), 0L);
                 long pending = pendingMap.getOrDefault(ut.getId(), 0L);
                 int available = (int) Math.max(0, physical - pending);
+                int totalBookings = (int) successfulMap.getOrDefault(ut.getId(), 0L).longValue();
 
                 // Chỉ hiển thị nếu còn slot
                 if (available > 0) {
@@ -112,11 +118,19 @@ public class FacilityService {
                         ut.getId(), ut.getName(), ut.getAreaSqm(),
                         ut.getBasePriceMonthly(), ut.getDimensions(),
                         ut.getSuggestedCapacity(), ut.getFeatures(),
-                        available
+                        available, totalBookings
                     ));
                 }
             }
         }
+
+        // Tiêu chí sắp xếp "Hot nhất": Xếp theo tổng lượt thuê thành công (totalBookings) giảm dần.
+        // Tie-breaker: Nếu bằng nhau thì ưu tiên kho còn nhiều ô trống hơn (availableCount) giảm dần.
+        results.sort((a, b) -> {
+            int cmp = Integer.compare(b.getTotalBookings(), a.getTotalBookings());
+            if (cmp != 0) return cmp;
+            return Integer.compare(b.getAvailableCount(), a.getAvailableCount());
+        });
 
         return new PageImpl<>(results, pageable, facilityPage.getTotalElements());
     }
@@ -149,6 +163,8 @@ public class FacilityService {
             storageUnitRepository.countGroupedByUnitType(facilityId, "AVAILABLE"));
         Map<Integer, Long> pendingMap = toMap(
             reservationRepository.countPendingGroupedByUnitType(facilityId, PENDING_STATUSES));
+        Map<Integer, Long> successfulMap = toMap(
+            reservationRepository.countSuccessfulGroupedByUnitType(facilityId, SUCCESSFUL_STATUSES));
 
         // Tạo danh sách slot cho mỗi unit type có mặt tại cơ sở
         List<FacilityAvailabilityResponse.UnitTypeSlot> slots = new ArrayList<>();
@@ -162,12 +178,13 @@ public class FacilityService {
             long physical = availableMap.getOrDefault(ut.getId(), 0L);
             long pending = pendingMap.getOrDefault(ut.getId(), 0L);
             int available = (int) Math.max(0, physical - pending);
+            int totalBookings = (int) successfulMap.getOrDefault(ut.getId(), 0L).longValue();
 
             slots.add(new FacilityAvailabilityResponse.UnitTypeSlot(
                 ut.getId(), ut.getName(), ut.getAreaSqm(),
                 ut.getBasePriceMonthly(), ut.getDimensions(),
                 ut.getSuggestedCapacity(), ut.getFeatures(),
-                (int) total, available
+                (int) total, available, totalBookings
             ));
         }
 

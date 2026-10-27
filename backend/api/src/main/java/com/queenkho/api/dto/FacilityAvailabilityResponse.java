@@ -41,5 +41,7 @@ public class FacilityAvailabilityResponse {
         private String features;
         private int totalUnits;
         private int availableCount;
+        private int totalBookings;
     }
 }
+

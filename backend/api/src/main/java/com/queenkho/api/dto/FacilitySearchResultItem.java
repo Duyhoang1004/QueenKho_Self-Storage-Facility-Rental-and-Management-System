@@ -22,4 +22,6 @@ public class FacilitySearchResultItem {
     private String suggestedCapacity;
     private String features;
     private int availableCount;
+    private int totalBookings;
 }
+

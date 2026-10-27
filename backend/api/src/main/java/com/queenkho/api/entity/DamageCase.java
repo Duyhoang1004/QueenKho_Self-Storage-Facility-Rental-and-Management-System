@@ -35,6 +35,10 @@ public class DamageCase {
     @Column(name = "estimated_cost", nullable = false, precision = 12, scale = 2)
     private BigDecimal estimatedCost = BigDecimal.ZERO;
 
+    // UC-24: CUSTOMER = lỗi khách (trừ cọc, vượt cọc thành nợ) / FACILITY = lỗi cơ sở (không tính khách)
+    @Column(name = "liable_party", nullable = false, length = 20)
+    private String liableParty = "CUSTOMER";
+
     @Column(name = "evidence_image_urls")
     private String evidenceImageUrls;
 

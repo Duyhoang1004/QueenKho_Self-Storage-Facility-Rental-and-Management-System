@@ -24,6 +24,9 @@ import com.queenkho.api.entity.StaffTask;
 @Service
 public class ContractService {
 
+    // Điều khoản xử lý tài sản: số lần liên hệ khách tối thiểu trước khi được thanh lý hợp đồng quá hạn
+    public static final int MIN_CONTACTS_BEFORE_LIQUIDATION = 3;
+
     @Autowired
     private RentalContractRepository rentalContractRepository;
 
@@ -387,6 +390,7 @@ public class ContractService {
                 "c.status, " +
                 "c.late_fee_waived, " +
                 "c.late_fee_waiver_note, " +
+                "(SELECT r.terms_version FROM reservations r WHERE r.id = c.reservation_id) AS terms_version, " +
                 "ISNULL(al.contact_count, 0) AS contact_count, " +
                 "al.last_contact_at, " +
                 "al.last_contact_action, " +
@@ -495,6 +499,8 @@ public class ContractService {
                     .status(status)
                     .lateFeeWaived(lateFeeWaived && "OVERDUE".equalsIgnoreCase(status))
                     .lateFeeWaiverNote(rs.getString("late_fee_waiver_note"))
+                    .minContactsRequired(MIN_CONTACTS_BEFORE_LIQUIDATION)
+                    .termsVersion(rs.getString("terms_version"))
                     .build();
         }, targetFacilityId, targetStatus);
     }
@@ -552,6 +558,15 @@ public class ContractService {
                 actionText,
                 String.valueOf(contract.getId())
         );
+    }
+
+    // Số lần FM đã ghi nhận liên hệ khách quá hạn (log [OVERDUE_CONTACT] của hợp đồng)
+    int countOverdueContacts(Integer contractId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM activity_logs WHERE target_entity = 'rental_contracts' " +
+                        "AND target_id = CAST(? AS NVARCHAR(50)) AND LEFT(action, 17) = '[OVERDUE_CONTACT]'",
+                Integer.class, contractId);
+        return count != null ? count : 0;
     }
 
     /**
@@ -653,6 +668,12 @@ public class ContractService {
             throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
                     "Hợp đồng chưa đủ số ngày để thanh lý (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
         }
+        // Điều khoản xử lý tài sản (mục 2): phải liên hệ khách đủ số lần trước khi thanh lý
+        int contactCount = countOverdueContacts(contract.getId());
+        if (contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
+            throw new ContractException(HttpStatus.CONFLICT, "NOT_ENOUGH_CONTACTS",
+                    "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi thanh lý (hiện có: " + contactCount + ")");
+        }
 
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal lateFee = lateFeeCalc.getLateFeeAmount(); // Đã trần 50% cọc
@@ -682,6 +703,13 @@ public class ContractService {
         // 4. Hủy task CHECK_OUT đang mở nếu có (UC-16)
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
         staffTaskService.closeOpenSupportTicketsAndTasks(contract.getId());
+
+        // 4b. PR-Q9: sinh task "Dọn kho sau thanh lý" — mở kho, kiểm kê, chuyển hàng của khách sang khu lưu giữ
+        if (contract.getStorageUnit() != null) {
+            staffTaskService.createMaintenanceTask(contract, "LIQUIDATION", "Dọn ô " + contract.getStorageUnit().getId()
+                    + " sau thanh lý HĐ " + contract.getContractCode()
+                    + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển sang khu lưu giữ");
+        }
 
         // 5. Ghi 1 giao dịch payment_transactions loại LATE_FEE, phương thức DEPOSIT_OFFSET, trạng thái SUCCESS
         String feeTxnCode = "LATE-OFF-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000);

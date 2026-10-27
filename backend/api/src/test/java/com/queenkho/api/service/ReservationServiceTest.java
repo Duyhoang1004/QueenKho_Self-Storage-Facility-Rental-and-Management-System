@@ -80,6 +80,7 @@ class ReservationServiceTest {
 
     private CreateReservationRequest validRequest(int months) {
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setFacilityId(1);
         request.setUnitTypeId(1);
@@ -125,6 +126,7 @@ class ReservationServiceTest {
     @DisplayName("UC-10.1: Tao don dat cho thanh cong voi gia coc 100% gia thue 1 thang")
     void testCreateReservation_Success() {
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setFacilityId(1);
         request.setUnitTypeId(1);
@@ -165,6 +167,7 @@ class ReservationServiceTest {
     @DisplayName("UC-10.2: Chan dat cho neu ngay bat dau trong qua khu")
     void testCreateReservation_StartDateInPast_ThrowsException() {
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setStartDate(LocalDate.now().minusDays(1));
         request.setDurationMonths(1);
@@ -178,6 +181,7 @@ class ReservationServiceTest {
     @DisplayName("UC-10.3: Chan dat cho neu thoi gian thue nho hon 1 thang")
     void testCreateReservation_DurationZero_ThrowsException() {
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setStartDate(LocalDate.now().plusDays(1));
         request.setDurationMonths(0);
@@ -191,6 +195,7 @@ class ReservationServiceTest {
     @DisplayName("UC-10.4: Chan dat cho neu khach hang dang no qua han hoac no boi thuong")
     void testCreateReservation_CustomerHasDebt_ThrowsConflict() {
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setStartDate(LocalDate.now().plusDays(1));
         request.setDurationMonths(2);
@@ -214,6 +219,7 @@ class ReservationServiceTest {
         testUnitType.setStatus("INACTIVE");
 
         CreateReservationRequest request = new CreateReservationRequest();
+        request.setAcceptedTerms(true);
         request.setCustomerId(1);
         request.setFacilityId(1);
         request.setUnitTypeId(1);

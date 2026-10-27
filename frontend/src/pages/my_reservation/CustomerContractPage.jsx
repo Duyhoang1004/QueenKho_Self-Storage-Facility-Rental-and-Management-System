@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getContractByReservation, cancelCheckout } from "../../services/contractService";
 import { getVnpayStatus } from "../../services/vnpayService";
 import ContractOptionsModal from "../../components/ContractOptionsModal";
+import AssetTermsModal from "../../components/AssetTermsModal";
 
 function formatVND(v) {
   if (v == null) return "—";
@@ -81,6 +82,7 @@ export default function CustomerContractPage() {
 
   const [toastMessage, setToastMessage] = useState("");
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
   const [optionsModalTab, setOptionsModalTab] = useState('renew');
 
   const fetchContract = () => {
@@ -299,6 +301,11 @@ export default function CustomerContractPage() {
                 </span>
               )}
               ) đã được quản lý cơ sở chuyển hoàn cho bạn.
+              {Number(contract.facilityDamageFee) > 0 && (
+                <span className="block mt-1 text-[#1899D6]">
+                  Sự cố do cơ sở ({formatVND(contract.facilityDamageFee)}) do QueenKho chịu — không trừ vào cọc của bạn.
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -323,7 +330,45 @@ export default function CustomerContractPage() {
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
               Hợp đồng đã bị thanh lý do quá hạn kéo dài; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong>; vui lòng đến cơ sở làm việc với quản lý.
+              {!contract.heldGoodsStatus && (
+                <>
+                  {" "}Nhân viên sẽ mở kho, kiểm kê và lưu giữ hàng của bạn <strong>60 ngày</strong>; quá thời hạn sẽ được xử lý theo{" "}
+                  <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
+                    Điều khoản xử lý tài sản
+                  </button>.
+                </>
+              )}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* PR-Q10: hàng của khách đang lưu giữ / đã xử lý sau thanh lý */}
+      {contract.heldGoodsStatus && (
+        <div className="bg-[#FAF5FF] border-2 border-[#C084FC] rounded-2xl p-5 flex items-start gap-4">
+          <span className="material-symbols-outlined text-[#9333EA] text-[28px]">inventory_2</span>
+          <div className="flex flex-col gap-1 text-xs font-bold text-[#4B4B4B] leading-relaxed">
+            <span className="text-base font-black text-[#9333EA]">Hàng của bạn sau thanh lý</span>
+            {contract.heldGoodsStatus === "HOLDING" ? (
+              <span>
+                Đang được lưu giữ tại <strong>{contract.heldGoodsLocation}</strong> đến hết ngày{" "}
+                <strong className="text-[#FF4B4B]">{formatDate(contract.heldGoodsHoldUntil)}</strong>. Vui lòng đến cơ sở,
+                thanh toán các khoản còn nợ để nhận lại. Quá hạn, hàng sẽ được xử lý theo{" "}
+                <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
+                  Điều khoản xử lý tài sản
+                </button>{" "}
+                (bán thanh lý, phần dư được hoàn lại cho bạn).
+              </span>
+            ) : (
+              <span>
+                {{
+                  RETURNED: "Bạn đã nhận lại hàng.",
+                  SOLD: "Hàng đã được bán thanh lý theo điều khoản; phần dư (nếu có) sẽ được quản lý cơ sở hoàn cho bạn.",
+                  DESTROYED: "Hàng không còn giá trị đã được tiêu huỷ có biên bản theo điều khoản.",
+                  HANDED_TO_AUTHORITY: "Hàng đã được giao cho cơ quan chức năng theo quy định.",
+                }[contract.heldGoodsStatus]}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -447,6 +492,19 @@ export default function CustomerContractPage() {
                   label="Ngày kết thúc"
                   value={formatDate(contract.endDate)}
                 />
+              </div>
+
+              {/* Điều khoản xử lý tài sản khi không trả kho — khách đã đồng ý lúc đặt kho */}
+              <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[#E5E5E5] px-4 py-3">
+                <span className="text-xs font-bold text-[#4B4B4B] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-[#B78900]">gavel</span>
+                  {contract.termsVersion
+                    ? `Đã đồng ý Điều khoản xử lý tài sản (${contract.termsVersion}) lúc ${new Date(contract.termsAcceptedAt).toLocaleString("vi-VN")}`
+                    : "Hợp đồng tạo trước khi có Điều khoản xử lý tài sản"}
+                </span>
+                <button type="button" onClick={() => setTermsOpen(true)} className="text-xs font-black text-[#1CB0F6] hover:underline cursor-pointer whitespace-nowrap">
+                  Xem điều khoản
+                </button>
               </div>
 
               {/* Bảng phân bổ chi tiết các khoản tiền đã đóng */}
@@ -886,6 +944,8 @@ export default function CustomerContractPage() {
           </div>
         </div>
       )}
+
+      <AssetTermsModal open={termsOpen} onClose={() => setTermsOpen(false)} />
     </div>
   );
 }

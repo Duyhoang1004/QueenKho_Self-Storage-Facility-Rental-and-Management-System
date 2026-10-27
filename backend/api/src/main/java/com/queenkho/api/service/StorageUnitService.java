@@ -30,6 +30,7 @@ public class StorageUnitService {
     private final RentalContractRepository rentalContractRepository;
     private final ReservationRepository reservationRepository;
     private final ActivityLogService activityLogService;
+    private final StaffTaskService staffTaskService;
 
     /**
      * UC-06: Lấy danh sách ô kho có lọc và tính toán thống kê KPI theo cơ sở
@@ -90,7 +91,7 @@ public class StorageUnitService {
                     .currentContract(contractInfo)
                     .canDelete(canDelete)
                     .build();
-        }).collect(Collectors.toList());
+        }).map(this::withMaintenanceInfo).collect(Collectors.toList());
 
         // Tính toán các chỉ số KPI trước khi lọc
         int totalUnits = allDetails.size();
@@ -191,7 +192,7 @@ public class StorageUnitService {
             }
         }
 
-        return StorageUnitDetailResponse.builder()
+        return withMaintenanceInfo(StorageUnitDetailResponse.builder()
                 .id(unit.getId())
                 .facilityId(facility != null ? facility.getId() : null)
                 .facilityName(facility != null ? facility.getName() : "")
@@ -208,7 +209,20 @@ public class StorageUnitService {
                 .overdue(isOverdue)
                 .currentContract(contractInfo)
                 .canDelete(canDelete)
-                .build();
+                .build());
+    }
+
+    // PR-O10: gắn task bảo trì đang mở (nếu có) cho ô MAINTENANCE để FM phân biệt "chờ sửa sự cố / chờ dọn
+    // sau thanh lý" với ô tự khoá bảo trì bằng tay
+    private StorageUnitDetailResponse withMaintenanceInfo(StorageUnitDetailResponse detail) {
+        if (!"MAINTENANCE".equalsIgnoreCase(detail.getStatus())) {
+            return detail;
+        }
+        staffTaskService.findOpenMaintenanceTask(detail.getId()).ifPresent(task -> {
+            detail.setMaintenanceTaskId(task.getId());
+            detail.setMaintenanceReason("LIQUIDATION".equals(task.getMaintenanceReason()) ? "LIQUIDATION" : "DAMAGE");
+        });
+        return detail;
     }
 
     /**
@@ -347,6 +361,11 @@ public class StorageUnitService {
 
         unit.setStatus(targetStatus);
         storageUnitRepository.save(unit);
+
+        // PR-O10: "Mở lại kho" khi ô còn task bảo trì (sau trả kho có sự cố / thanh lý) → đóng luôn task đó
+        if ("AVAILABLE".equals(targetStatus)) {
+            staffTaskService.closeOpenMaintenanceForUnit(id, actorUserId);
+        }
 
         String noteStr = request.getNote() != null && !request.getNote().isBlank() ? " (Ghi chú: " + request.getNote().trim() + ")" : "";
         activityLogService.log(

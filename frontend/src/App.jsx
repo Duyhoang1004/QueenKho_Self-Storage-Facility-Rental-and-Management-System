@@ -31,6 +31,7 @@ import CustomerContractsPage from './pages/manager/CustomerContractsPage';
 import ContractDetailPage from './pages/manager/ContractDetailPage';
 import ManagerTaskBoardPage from './pages/manager/ManagerTaskBoardPage';
 import OverdueContractsPage from './pages/manager/OverdueContractsPage';
+import HeldGoodsPage from './pages/manager/HeldGoodsPage';
 import ManagerStaffPage from './pages/manager/ManagerStaffPage';
 import ManagerReportsPage from './pages/manager/ManagerReportsPage';
 
@@ -90,6 +91,7 @@ export default function App() {
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
         <Route path="/manager/overdue" element={<OverdueContractsPage />} />
+        <Route path="/manager/held-goods" element={<HeldGoodsPage />} />
         <Route path="/manager/customers" element={<CustomerContractsPage />} />
         <Route path="/manager/contracts/:id" element={<ContractDetailPage />} />
         <Route path="/manager/tasks" element={<ManagerTaskBoardPage key="tasks" initialTypeFilter="ALL" />} />

@@ -53,4 +53,8 @@ public class StaffTask {
 
     @Column(name = "evidence_image_url", length = 1000)
     private String evidenceImageUrl;
+
+    // Task MAINTENANCE: DAMAGE (sự cố sau trả kho) / LIQUIDATION (dọn kho sau thanh lý)
+    @Column(name = "maintenance_reason", length = 20)
+    private String maintenanceReason;
 }

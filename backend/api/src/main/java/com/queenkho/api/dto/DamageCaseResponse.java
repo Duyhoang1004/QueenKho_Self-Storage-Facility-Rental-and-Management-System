@@ -15,6 +15,7 @@ public class DamageCaseResponse {
     private String title;
     private String description;
     private BigDecimal estimatedCost;
+    private String liableParty; // CUSTOMER / FACILITY
     private List<String> evidenceImages;
     private LocalDateTime createdAt;
 }

@@ -1,6 +1,9 @@
 USE QueenKhoDB;
 GO
 
+-- Bảng con trỏ tới facility_tasks / rental_contracts phải xoá trước
+IF OBJECT_ID('held_goods', 'U') IS NOT NULL DELETE FROM held_goods;
+IF OBJECT_ID('damage_cases', 'U') IS NOT NULL DELETE FROM damage_cases;
 DELETE FROM facility_tasks;
 DELETE FROM handover_records;
 DELETE FROM rental_contracts;

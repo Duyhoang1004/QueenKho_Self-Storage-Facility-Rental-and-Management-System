@@ -31,6 +31,7 @@ public class CheckOutRequest {
         private String title;
         private String description;
         private BigDecimal estimatedCost;
+        private String liableParty;          // Bắt buộc: CUSTOMER (lỗi khách, trừ cọc) / FACILITY (lỗi cơ sở)
         private List<String> evidenceImages; // Danh sách ảnh bằng chứng (URL hoặc base64 data URI)
     }
 }

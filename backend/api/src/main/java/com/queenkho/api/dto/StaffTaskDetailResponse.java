@@ -56,7 +56,14 @@ public class StaffTaskDetailResponse {
 
     // UC-24: Danh sách sự cố hư hỏng & quyết toán cọc khi trả kho
     private List<DamageCaseResponse> damageCases;
-    private BigDecimal totalDamageCost;
+    private BigDecimal totalDamageCost;     // Tổng phí sự cố LỖI KHÁCH (trừ vào cọc)
+    private BigDecimal facilityDamageCost;  // Tổng chi phí sự cố LỖI CƠ SỞ (cơ sở tự chịu, không tính khách)
+
+    // PR-O10 / PR-Q10: task MAINTENANCE — DAMAGE (sửa sự cố) / LIQUIDATION (dọn kho sau thanh lý) + hồ sơ lưu giữ hàng
+    private String maintenanceReason;
+    private Integer heldGoodsId;
+    private String heldGoodsStatus;
+    private LocalDate heldGoodsHoldUntil;
     private BigDecimal refundAmount;
     private BigDecimal excessDebtAmount;
 

@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
+import AssetTermsModal from '../../components/AssetTermsModal'
 
 function buildUnit(availability, unitTypeId) {
   const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
@@ -59,6 +60,9 @@ export default function CreateReservationPage() {
   const [selectedMonths, setSelectedMonths] = useState(3)
   const [startDate, setStartDate] = useState('')
   const [agreed, setAgreed] = useState(false)
+  // Điều khoản xử lý tài sản khi không trả kho — bắt buộc, backend lưu phiên bản + thời điểm đồng ý
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [termsOpen, setTermsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [voucherCode, setVoucherCode] = useState('')
@@ -178,6 +182,10 @@ export default function CreateReservationPage() {
       setError('Bạn cần đồng ý với cam kết lưu trữ trước khi tiếp tục.')
       return
     }
+    if (!termsAccepted) {
+      setError('Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi tiếp tục.')
+      return
+    }
     if (!startDate) {
       setError('Vui lòng chọn ngày bắt đầu nhận kho.')
       return
@@ -197,6 +205,7 @@ export default function CreateReservationPage() {
         unitTypeId: unit.unitTypeId,
         startDate,
         durationMonths: selectedMonths,
+        acceptedTerms: termsAccepted,
       })
       const paymentData = await createVnpayPayment(response.id)
       
@@ -499,6 +508,34 @@ export default function CreateReservationPage() {
                 theo quy định của pháp luật và nội quy QueenKho.
               </label>
             </div>
+
+            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (căn cứ để bán thanh lý hàng sau thanh lý HĐ) */}
+            <div className="flex items-start gap-3 mt-3">
+              <input
+                type="checkbox"
+                id="termsAccepted"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-1 w-5 h-5 accent-[#58CC02] cursor-pointer"
+              />
+              <label htmlFor="termsAccepted" className="text-xs font-bold text-[#4B4B4B] cursor-pointer leading-relaxed">
+                Tôi đã đọc và đồng ý{' '}
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); setTermsOpen(true) }}
+                  className="font-black text-[#1CB0F6] underline cursor-pointer"
+                >
+                  Điều khoản xử lý tài sản khi không trả kho
+                </button>
+                : quá hạn 30 ngày sẽ bị thanh lý hợp đồng, hàng được lưu giữ 60 ngày rồi{' '}
+                <span className="font-black text-[#FF4B4B]">bán thanh lý để trừ nợ</span>.
+              </label>
+            </div>
+            <AssetTermsModal
+              open={termsOpen}
+              onClose={() => setTermsOpen(false)}
+              onAccept={() => { setTermsAccepted(true); setTermsOpen(false) }}
+            />
           </div>
 
           {error && (

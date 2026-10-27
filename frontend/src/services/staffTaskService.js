@@ -84,6 +84,13 @@ export async function completeRefundTask(taskId, userId, payload) {
   return res.data
 }
 
+// PR-O10: Staff đang giữ task / FM bấm "Sửa xong" cho task bảo trì → ô quay về AVAILABLE
+// payload: { note, evidenceImageUrl? }
+export async function completeMaintenanceTask(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/complete-maintenance`, payload)
+  return res.data
+}
+
 // Upload file ảnh (biên lai hoàn cọc, nghiệm thu)
 export async function uploadImageFile(file) {
   const formData = new FormData()

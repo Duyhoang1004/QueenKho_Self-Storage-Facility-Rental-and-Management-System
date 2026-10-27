@@ -40,5 +40,9 @@ public class OverdueContractManagerResponse {
     // Flow 6: FM đã miễn phí trễ cho đợt quá hạn này (kèm lý do, người, thời điểm)
     private Boolean lateFeeWaived;
     private String lateFeeWaiverNote;
+
+    // Điều khoản xử lý tài sản: số lần liên hệ tối thiểu trước khi thanh lý + phiên bản khách đã đồng ý (NULL = đơn cũ)
+    private Integer minContactsRequired;
+    private String termsVersion;
 }
 

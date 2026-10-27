@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
@@ -58,4 +59,14 @@ public class CustomerContractResponse {
     private Integer facilityId;                      // để FE lấy bảng giá / ưu đãi gia hạn của cơ sở
     private Boolean lateFeeWaived;                   // FM đã miễn phí trễ cho đợt quá hạn này
     private String lateFeeWaiverNote;
+
+    // === UC-24 / Điều khoản xử lý tài sản ===
+    private BigDecimal facilityDamageFee;            // Chi phí sự cố lỗi cơ sở (không tính khách)
+    private String termsVersion;                     // Phiên bản điều khoản khách đã đồng ý (NULL = đơn cũ)
+    private LocalDateTime termsAcceptedAt;
+
+    // === PR-Q10: hàng lưu giữ sau thanh lý (NULL nếu không có) ===
+    private String heldGoodsStatus;                  // HOLDING / RETURNED / SOLD / DESTROYED / HANDED_TO_AUTHORITY
+    private LocalDate heldGoodsHoldUntil;
+    private String heldGoodsLocation;
 }

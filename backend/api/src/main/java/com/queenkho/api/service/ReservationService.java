@@ -32,6 +32,10 @@ import java.util.Random;
 
 @Service
 public class ReservationService {
+    // Phiên bản "Điều khoản xử lý tài sản khi không trả kho" (nội dung ở FE: components/AssetTermsModal.jsx).
+    // Đổi nội dung điều khoản → tăng version để biết khách nào đồng ý bản nào.
+    public static final String ASSET_TERMS_VERSION = "v1";
+
     @Autowired
     private ReservationRepository reservationRepository;
 
@@ -269,6 +273,11 @@ public class ReservationService {
         if (request.getDurationMonths() == null || request.getDurationMonths() <= 0) {
             throw new IllegalArgumentException("Thời gian thuê phải tối thiểu 1 tháng");
         }
+        // Điều khoản xử lý tài sản khi không trả kho: căn cứ để cơ sở được bán thanh lý hàng sau khi thanh lý HĐ
+        if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
+            throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "TERMS_NOT_ACCEPTED",
+                    "Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi đặt kho");
+        }
 
         // Kiem tra khach hang
         User customer = userRepository.findById(request.getCustomerId())
@@ -345,6 +354,8 @@ public class ReservationService {
         reservation.setDurationMonths(request.getDurationMonths());
         reservation.setDepositAmount(depositAmount);
         reservation.setRentDiscountPercent(rentDiscountPercent);
+        reservation.setTermsVersion(ASSET_TERMS_VERSION);
+        reservation.setTermsAcceptedAt(LocalDateTime.now());
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
         reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());

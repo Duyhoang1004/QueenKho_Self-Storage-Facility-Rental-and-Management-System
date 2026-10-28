@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class VnpayService {
+    // UC-20 / PR-O9 / PR-Q14: khoản nợ khách tự trả online (phí sự cố vượt cọc, phí chiếm dụng vượt cọc)
+    static final Set<String> DEBT_TYPES = Set.of("DAMAGE_FEE", "OVERSTAY_FEE");
+
     @Value("${vnpay.tmn-code:}") private String tmnCode; 
     @Value("${vnpay.hash-secret:}") private String hashSecret;
     @Value("${vnpay.pay-url:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}") private String payUrl;
@@ -37,16 +40,19 @@ public class VnpayService {
     private final StaffTaskService staffTasks;
     private final PricingService pricing;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final RenewalPolicyService renewalPolicy;
 
     public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
                         ReservationRepository reservations, StaffTaskService staffTasks,
-                        PricingService pricing, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                        PricingService pricing, org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                        RenewalPolicyService renewalPolicy) {
         this.payments = payments;
         this.contracts = contracts;
         this.reservations = reservations;
         this.staffTasks = staffTasks;
         this.pricing = pricing;
         this.jdbcTemplate = jdbcTemplate;
+        this.renewalPolicy = renewalPolicy;
     }
 
     @Transactional
@@ -123,6 +129,8 @@ public class VnpayService {
             throw new com.queenkho.api.exception.ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_RENEWABLE",
                     "Hợp đồng đang ở trạng thái " + c.getStatus() + ", không thể gia hạn.");
         }
+        // PR-R10 / PR-R11: quá hạn chót gia hạn ưu tiên (end_date − 3) mà ô đã có khách khác đặt trước → 409
+        renewalPolicy.assertRenewable(c);
 
         // Flow 6 / PR-Q6: báo giá dùng chung với màn hình (GET /contracts/{id}/renewal-quote) và CHỐT CỨNG
         // số tiền tại thời điểm tạo link: tiền thuê theo % ưu đãi gia hạn của BOM + phí trễ (0 nếu FM đã miễn)
@@ -148,6 +156,12 @@ public class VnpayService {
             payments.createPending(lateFeeRef, customerId, reservationId, id, "LATE_FEE", lateFeeAmount, m);
         }
 
+        // PR-Q14: dòng phụ OVERSTAY_FEE ("OS" + ref) cho phí chiếm dụng các ngày đã quá hạn
+        BigDecimal overstayAmount = quote.overstayFeeAmount() != null ? quote.overstayFeeAmount() : BigDecimal.ZERO;
+        if (overstayAmount.compareTo(BigDecimal.ZERO) > 0) {
+            payments.createPending("OS" + ref, customerId, reservationId, id, "OVERSTAY_FEE", overstayAmount, m);
+        }
+
         // vnp_TxnRef chỉ giữ mã của dòng chính (để khớp với callback URL hiện có). Tiền gửi sang VNPAY vnp_Amount là TỔNG (tiền thuê + phí trễ chốt cứng)
         return Map.of(
             "orderId", ref, 
@@ -155,7 +169,8 @@ public class VnpayService {
             "amount", totalAmount, 
             "depositAmount", BigDecimal.ZERO,
             "rentAmount", rentAmount,
-            "lateFeeAmount", lateFeeAmount
+            "lateFeeAmount", lateFeeAmount,
+            "overstayFeeAmount", overstayAmount
         );
     }
     
@@ -170,7 +185,7 @@ public class VnpayService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu khoản cần thanh toán");
         }
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT id, user_id, amount, status, payment_type, payment_method FROM payment_transactions " +
+                "SELECT id, user_id, amount, status, payment_type, payment_method, renewal_months FROM payment_transactions " +
                         "WITH (UPDLOCK, ROWLOCK) WHERE id = ?", paymentId);
         if (rows.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khoản cần thanh toán");
@@ -179,8 +194,9 @@ public class VnpayService {
         if (!Objects.equals(actorUserId, ((Number) debt.get("user_id")).intValue())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền thanh toán khoản này");
         }
-        if (!"DAMAGE_FEE".equals(debt.get("payment_type")) || !"VNPAY".equals(debt.get("payment_method"))
-                || !"PENDING".equals(debt.get("status"))) {
+        // renewal_months != NULL → dòng phụ của link gia hạn đang chờ, không phải khoản nợ
+        if (!DEBT_TYPES.contains(String.valueOf(debt.get("payment_type"))) || !"VNPAY".equals(debt.get("payment_method"))
+                || !"PENDING".equals(debt.get("status")) || debt.get("renewal_months") != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Khoản này không còn ở trạng thái chờ thanh toán");
         }
         String ref = "QKF" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase();
@@ -248,7 +264,7 @@ public class VnpayService {
         
         String path = switch (String.valueOf(p.get("payment_type"))) {
             case "DEPOSIT" -> "/booking/confirmation";
-            case "DAMAGE_FEE" -> "/thanh-toan";
+            case "DAMAGE_FEE", "OVERSTAY_FEE" -> "/thanh-toan";
             default -> "/kho-cua-toi/hop-dong/" + p.get("reservation_id");
         };
         return frontendUrl + path + "?orderId=" + encode(ref) + "&vnpResponse=" + encode(params.getOrDefault("vnp_ResponseCode", ""));
@@ -281,7 +297,7 @@ public class VnpayService {
         boolean vnpaySuccess = "00".equals(p.get("vnp_ResponseCode"))
                 && "00".equals(p.get("vnp_TransactionStatus"));
 
-        boolean isDebt = "DAMAGE_FEE".equals(db.get("payment_type"));
+        boolean isDebt = DEBT_TYPES.contains(String.valueOf(db.get("payment_type")));
 
         if (!vnpaySuccess) {
             if ("PENDING".equals(currentStatus) && isDebt) {
@@ -437,18 +453,30 @@ public class VnpayService {
         return !LocalDateTime.now(LateFeeService.VIETNAM_ZONE).isBefore(createdAt.plusMinutes(15));
     }
 
+    // Dòng chính + các dòng phụ đi kèm: "LF" + ref (phí trễ), "OS" + ref (phí chiếm dụng, PR-Q14)
+    private static final List<String> SUB_PAYMENT_PREFIXES = List.of("LF", "OS");
+
     private void updatePaymentGroup(String ref, String status) {
         payments.updatePayment(ref, status);
-        var lateFeeDb = payments.findPayment("LF" + ref, true);
-        if (lateFeeDb != null) payments.updatePayment("LF" + ref, status);
+        for (String prefix : SUB_PAYMENT_PREFIXES) {
+            var sub = payments.findPayment(prefix + ref, true);
+            if (sub != null) payments.updatePayment(prefix + ref, status);
+        }
+    }
+
+    private BigDecimal subPaymentsAmount(String ref) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (String prefix : SUB_PAYMENT_PREFIXES) {
+            var sub = payments.findPayment(prefix + ref, false);
+            if (sub != null && sub.get("amount") != null) {
+                total = total.add((BigDecimal) sub.get("amount"));
+            }
+        }
+        return total;
     }
 
     private BigDecimal paymentGroupAmount(String ref, Map<String, Object> payment) {
-        BigDecimal total = (BigDecimal) payment.get("amount");
-        var lateFeeDb = payments.findPayment("LF" + ref, false);
-        if (lateFeeDb != null && lateFeeDb.get("amount") != null) {
-            total = total.add((BigDecimal) lateFeeDb.get("amount"));
-        }
+        BigDecimal total = ((BigDecimal) payment.get("amount")).add(subPaymentsAmount(ref));
         return total.setScale(0, RoundingMode.HALF_UP);
     }
 
@@ -554,13 +582,10 @@ public class VnpayService {
             BigDecimal receivedAmount = new BigDecimal(p.getOrDefault("vnp_Amount", "-1"));
             BigDecimal expectedAmount = (BigDecimal) db.get("amount");
 
-            // PR-Q6: Đối soát tổng tiền: nếu có dòng phụ LATE_FEE ("LF" + ref) đi kèm, cộng thêm vào expectedAmount
+            // PR-Q6 / PR-Q14: Đối soát tổng tiền: cộng các dòng phụ LATE_FEE ("LF" + ref) và OVERSTAY_FEE ("OS" + ref)
             String ref = (String) db.get("transaction_code");
             if (ref != null && ref.startsWith("QKR")) {
-                var lateFeeDb = payments.findPayment("LF" + ref, false);
-                if (lateFeeDb != null && lateFeeDb.get("amount") != null) {
-                    expectedAmount = expectedAmount.add((BigDecimal) lateFeeDb.get("amount"));
-                }
+                expectedAmount = expectedAmount.add(subPaymentsAmount(ref));
             }
 
             BigDecimal expectedVnpAmount = expectedAmount.multiply(BigDecimal.valueOf(100));

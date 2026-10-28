@@ -19,7 +19,7 @@ import java.util.List;
 @Service
 public class RentalPolicyService {
     private static final int LATE_FEE_CAP_PERCENT = 50;
-    private static final int LIQUIDATION_DAYS = 30;
+    private static final int LIQUIDATION_DAYS = 15; // PR-Q8 (27/10/2026): bản cũ 30 ngày
     private final RentalPolicyRepository policies;
     private final FacilityRepository facilities;
     private final UserRepository users;
@@ -64,7 +64,7 @@ public class RentalPolicyService {
             p.getCreatedAt(), p.getCreatedBy() == null ? "Hệ thống" : p.getCreatedBy().getFullName(),
             p.getBookingDiscount3m(), p.getBookingDiscount6m(), p.getBookingDiscount12m(),
             p.getRenewalDiscount3m(), p.getRenewalDiscount6m(), p.getRenewalDiscount12m(),
-            p.isAllowLateFeeWaiver());
+            p.isAllowLateFeeWaiver(), p.getOverstayPercent(), p.getHeldGoodsFeePercent());
     }
 
     @Transactional(readOnly = true)
@@ -124,6 +124,11 @@ public class RentalPolicyService {
         policy.setRenewalDiscount12m(pick(request.renewalDiscount12m(), current == null ? null : current.getRenewalDiscount12m(), 10));
         policy.setAllowLateFeeWaiver(request.allowLateFeeWaiver() != null ? request.allowLateFeeWaiver()
             : current == null || current.isAllowLateFeeWaiver());
+        // PR-Q14 / PR-Q15: % phí chiếm dụng và phí lưu giữ hàng — không gửi thì kế thừa bản đang hiệu lực
+        policy.setOverstayPercent(pick(request.overstayPercent(), current == null ? null : current.getOverstayPercent(),
+            LateFeeService.DEFAULT_OVERSTAY_PERCENT));
+        policy.setHeldGoodsFeePercent(pick(request.heldGoodsFeePercent(), current == null ? null : current.getHeldGoodsFeePercent(),
+            LateFeeService.DEFAULT_HELD_GOODS_FEE_PERCENT));
         policy.setCreatedBy(user);
         policies.saveAndFlush(policy);
         entityManager.refresh(policy);

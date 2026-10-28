@@ -18,7 +18,7 @@ import java.util.Map;
  *
  * Tất cả số liệu tài chính tuân theo quy tắc PR-M7:
  *  - Doanh thu = tổng giao dịch status = 'SUCCESS' trong kỳ
- *  - DEPOSIT và MONTHLY_RENT ➔ rentalRevenue
+ *  - DEPOSIT, MONTHLY_RENT và OVERSTAY_FEE (phí chiếm dụng / lưu giữ hàng, PR-Q14/Q15) ➔ rentalRevenue
  *  - LATE_FEE và DAMAGE_FEE  ➔ feesRevenue
  *  - REFUND                  ➔ refundDisbursed (âm với doanh thu ròng)
  *  - Quỹ cọc đang giữ         = deposit_held_amount của HĐ đang ACTIVE / OVERDUE / TERMINATION_PENDING
@@ -43,7 +43,7 @@ public class BomRevenueService {
                 "SELECT COALESCE(SUM(p.amount), 0) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
-                        + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT')"
+                        + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')"
                         + dateFilter + facilityWhere);
 
         BigDecimal feesRevenue = querySum(
@@ -77,7 +77,7 @@ public class BomRevenueService {
                 "SELECT COUNT(*) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
-                        + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','LATE_FEE','DAMAGE_FEE')"
+                        + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE')"
                         + dateFilter + facilityWhere);
 
         long refundCount = queryCount(
@@ -113,7 +113,7 @@ public class BomRevenueService {
 
         String sql =
                 "SELECT MONTH(p.paid_at) AS m,"
-                + " COALESCE(SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT') THEN p.amount ELSE 0 END), 0) AS rent,"
+                + " COALESCE(SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE') THEN p.amount ELSE 0 END), 0) AS rent,"
                 + " COALESCE(SUM(CASE WHEN p.payment_type IN ('LATE_FEE','DAMAGE_FEE')  THEN p.amount ELSE 0 END), 0) AS fees,"
                 + " COALESCE(SUM(CASE WHEN p.payment_type = 'REFUND'                    THEN p.amount ELSE 0 END), 0) AS refund"
                 + " FROM payment_transactions p"
@@ -167,7 +167,7 @@ public class BomRevenueService {
         String sql =
                 "SELECT f.id AS fid, f.name AS fname,"
                 + " COALESCE(("
-                + "   SELECT SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','LATE_FEE','DAMAGE_FEE') THEN p.amount"
+                + "   SELECT SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE') THEN p.amount"
                 + "                   WHEN p.payment_type = 'REFUND' THEN -p.amount ELSE 0 END)"
                 + "   FROM payment_transactions p"
                 + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
@@ -234,7 +234,7 @@ public class BomRevenueService {
                 + "   LEFT JOIN storage_units su ON su.id = rc.storage_unit_id"
                 + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
                 + "   WHERE COALESCE(su.unit_type_id, res.unit_type_id) = ut.id"
-                + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT')"
+                + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')"
                 +       facFilter
                 + " ), 0) AS revenue,"
                 + " (SELECT COUNT(DISTINCT rc.id)"
@@ -479,7 +479,7 @@ public class BomRevenueService {
         BigDecimal prevRental = querySum(
                 "SELECT COALESCE(SUM(p.amount),0) FROM payment_transactions p"
                         + facilityJoin
-                        + " WHERE p.status='SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','LATE_FEE','DAMAGE_FEE')"
+                        + " WHERE p.status='SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE')"
                         + prevDateFilter + facilityWhere);
         BigDecimal prevRefund = querySum(
                 "SELECT COALESCE(SUM(p.amount),0) FROM payment_transactions p"

@@ -1,5 +1,7 @@
 package com.queenkho.api.controller;
 
+import com.queenkho.api.service.LateFeeService;
+import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.dto.CustomerContractResponse;
 import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
@@ -48,6 +50,9 @@ public class ContractController {
 
     @Autowired
     private com.queenkho.api.service.PricingService pricingService;
+
+    @Autowired
+    private RenewalPolicyService renewalPolicyService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -110,12 +115,21 @@ public class ContractController {
         Boolean isMaxLateFeeReached = false;
         Boolean isPinLocked = false;
         Boolean canLiquidate = false;
-        Integer liquidationDaysThreshold = 30;
+        Integer liquidationDaysThreshold = LateFeeService.DEFAULT_LIQUIDATION_DAYS;
         BigDecimal estimatedOverdueDepositRefund = deposit;
         BigDecimal estimatedDepositRefund = deposit;
+        // PR-Q14: phí chiếm dụng
+        BigDecimal overstayDailyAmount = BigDecimal.ZERO;
+        BigDecimal overstayFeeAmount = BigDecimal.ZERO;
+        BigDecimal totalOverdueCharge = BigDecimal.ZERO;
+        BigDecimal amountBeyondDeposit = BigDecimal.ZERO;
 
         if ("OVERDUE".equalsIgnoreCase(rc.getStatus())) {
             var lateCalc = lateFeeService.calculateLateFee(rc);
+            overstayDailyAmount = lateCalc.getOverstayDailyAmount();
+            overstayFeeAmount = lateCalc.getOverstayFeeAmount();
+            totalOverdueCharge = lateCalc.getTotalOverdueCharge();
+            amountBeyondDeposit = lateCalc.getAmountBeyondDeposit();
             overdueDays = lateCalc.getOverdueDays();
             lateFeeAmount = lateCalc.getLateFeeAmount();
             maxLateFeeAmount = lateCalc.getMaxLateFeeAmount();
@@ -124,7 +138,7 @@ public class ContractController {
             canLiquidate = lateCalc.isCanLiquidate();
             liquidationDaysThreshold = lateCalc.getLiquidationDaysThreshold();
             estimatedOverdueDepositRefund = lateCalc.getEstimatedDepositRefund();
-            estimatedDepositRefund = deposit.subtract(lateFeeAmount);
+            estimatedDepositRefund = deposit.subtract(totalOverdueCharge);
             if (estimatedDepositRefund.compareTo(BigDecimal.ZERO) < 0) {
                 estimatedDepositRefund = BigDecimal.ZERO;
             }
@@ -267,7 +281,11 @@ public class ContractController {
                 su.getFacility() != null ? su.getFacility().getAddress() : null,
                 su.getFacility() != null ? su.getFacility().getHotline() : null,
                 rc.getCustomer().getEmail(),
-                rc.getCustomer().getCccd());
+                rc.getCustomer().getCccd(),
+                overstayDailyAmount,
+                overstayFeeAmount,
+                totalOverdueCharge,
+                amountBeyondDeposit);
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -391,6 +409,15 @@ public class ContractController {
                 .map(rc -> ResponseEntity.ok((Object) com.queenkho.api.service.PricingService.PACKAGES.stream()
                         .map(months -> pricingService.quoteRenewal(rc, months))
                         .toList()))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // PR-R10 / PR-R11: còn gia hạn được không (hạn chót ưu tiên end_date − 3, ô đã có người đặt trước chưa) + hạn mới từng gói
+    @GetMapping("/{id}/renewal-eligibility")
+    public ResponseEntity<?> getRenewalEligibility(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        return rentalContractRepository.findDetailById(id)
+                .map(rc -> ResponseEntity.ok((Object) renewalPolicyService.checkEligibility(rc)))
                 .orElse(ResponseEntity.notFound().build());
     }
 

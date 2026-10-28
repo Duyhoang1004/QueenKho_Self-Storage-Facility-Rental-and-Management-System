@@ -43,6 +43,7 @@ public record CustomerPaymentsResponse(
             String facilityName,
             long overdueDays,
             BigDecimal lateFeeAmount,
-            boolean lateFeeWaived
+            boolean lateFeeWaived,
+            BigDecimal overstayFeeAmount // PR-Q14: phí chiếm dụng tính đến hôm nay
     ) {}
 }

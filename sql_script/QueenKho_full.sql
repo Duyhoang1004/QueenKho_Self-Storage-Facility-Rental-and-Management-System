@@ -120,21 +120,24 @@ CREATE TABLE rental_policy (
     cancel_free_hours           INT NOT NULL DEFAULT 24,
     late_fee_percent_per_day    INT NOT NULL DEFAULT 10,
     late_fee_max_percent        INT NOT NULL DEFAULT 50,
-    liquidation_days            INT NOT NULL DEFAULT 30,
-    booking_discount_3m         INT NOT NULL DEFAULT 5,    -- % ưu đãi gói đặt mới 3/6/12 tháng (Flow 4)
+    liquidation_days            INT NOT NULL DEFAULT 15,   -- PR-Q8 (27/10/2026): quá hạn quá 15 ngày thì FM được thanh lý (bản cũ 30)
+    booking_discount_3m        INT NOT NULL DEFAULT 5,    -- % ưu đãi gói đặt mới 3/6/12 tháng (Flow 4)
     booking_discount_6m         INT NOT NULL DEFAULT 10,
     booking_discount_12m        INT NOT NULL DEFAULT 15,
     renewal_discount_3m         INT NOT NULL DEFAULT 0,    -- % ưu đãi gói gia hạn 3/6/12 tháng
     renewal_discount_6m         INT NOT NULL DEFAULT 5,
     renewal_discount_12m        INT NOT NULL DEFAULT 10,
     allow_late_fee_waiver       BIT NOT NULL DEFAULT 1,    -- FM được miễn phí trễ cho khách
-    version                     INT NOT NULL DEFAULT 1,
+    overstay_percent            INT NOT NULL DEFAULT 150,  -- PR-Q14: phí chiếm dụng mỗi ngày quá hạn = giá ngày × % (không trần)
+    held_goods_fee_percent      INT NOT NULL DEFAULT 20,   -- PR-Q15: phí lưu giữ hàng sau thanh lý mỗi ngày = giá ngày × %
+    version                    INT NOT NULL DEFAULT 1,
     is_active                   BIT NOT NULL DEFAULT 0,
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     created_by_user_id          INT NULL,
     CONSTRAINT UQ_rentalpolicy_facility_version UNIQUE (facility_id, version),
     CONSTRAINT CK_rentalpolicy_values CHECK (deposit_month_multiplier BETWEEN 1 AND 3 AND cancel_fee_percent BETWEEN 0 AND 100 AND cancel_free_hours >= 0 AND late_fee_percent_per_day BETWEEN 0 AND 100 AND late_fee_max_percent BETWEEN late_fee_percent_per_day AND 100 AND liquidation_days >= 1),
     CONSTRAINT CK_rentalpolicy_discounts CHECK (booking_discount_3m BETWEEN 0 AND 50 AND booking_discount_6m BETWEEN 0 AND 50 AND booking_discount_12m BETWEEN 0 AND 50 AND renewal_discount_3m BETWEEN 0 AND 50 AND renewal_discount_6m BETWEEN 0 AND 50 AND renewal_discount_12m BETWEEN 0 AND 50),
+    CONSTRAINT CK_rentalpolicy_overstay CHECK (overstay_percent BETWEEN 100 AND 300 AND held_goods_fee_percent BETWEEN 0 AND 100),
     CONSTRAINT FK_rentalpolicy_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     CONSTRAINT FK_rentalpolicy_facility FOREIGN KEY (facility_id) REFERENCES facilities(id)
 );
@@ -211,7 +214,7 @@ CREATE TABLE payment_transactions (
     user_id             INT NOT NULL,
     reservation_id      INT NULL,        -- đặt cọc gắn với reservation
     contract_id         INT NULL,        -- tiền thuê / gia hạn gắn với contract
-    payment_type        NVARCHAR(30) NOT NULL,   -- DEPOSIT / MONTHLY_RENT / REFUND / LATE_FEE
+    payment_type        NVARCHAR(30) NOT NULL,   -- DEPOSIT / MONTHLY_RENT / REFUND / LATE_FEE / DAMAGE_FEE / OVERSTAY_FEE (phí chiếm dụng + phí lưu giữ hàng)
     payment_method      NVARCHAR(30) NOT NULL,   -- VNPAY / MOMO / BANK_TRANSFER / CASH
     amount              DECIMAL(12,2) NOT NULL,
     renewal_months      INT NULL,                -- gói gia hạn 1 / 3 / 6 / 12 tháng; không suy ra từ transaction_code
@@ -351,6 +354,7 @@ CREATE TABLE held_goods (
     proceeds_amount     DECIMAL(12,2) NULL,                       -- Tiền bán thanh lý (SOLD)
     debt_offset_amount  DECIMAL(12,2) NULL,                       -- Phần tiền bán dùng trừ nợ của khách
     refund_amount       DECIMAL(12,2) NULL,                       -- Phần hoàn khách (dư tiền bán + cọc còn giữ)
+    storage_fee_amount  DECIMAL(12,2) NULL,                       -- PR-Q15: phí lưu giữ hàng đã tính khi chốt hồ sơ
     resolved_note       NVARCHAR(1000) NULL,
     resolved_by         INT NULL,
     resolved_at         DATETIME2 NULL,
@@ -441,12 +445,12 @@ GO
 /* ---------- rental_policy: phiên bản đầu tiên cho mỗi cơ sở ---------- */
 SET IDENTITY_INSERT rental_policy ON;
 INSERT INTO rental_policy (id, facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_percent_per_day, late_fee_max_percent, liquidation_days, is_active) VALUES
-    (1, 1, N'Chính sách Kho Tân Bình - Tiêu chuẩn',   1, 50, 24, 10, 50, 30, 1),
-    (2, 2, N'Chính sách Kho Bình Thạnh - Tiêu chuẩn', 1, 50, 24, 10, 50, 30, 1),
-    (3, 3, N'Chính sách Kho Thủ Đức - Tiêu chuẩn',    1, 50, 24, 10, 50, 30, 1),
-    (4, 4, N'Chính sách Kho Gò Vấp - Tiêu chuẩn',     1, 50, 24, 10, 50, 30, 1),
-    (5, 5, N'Chính sách Kho Cầu Giấy - Tiêu chuẩn',   1, 50, 24, 10, 50, 30, 1),
-    (6, 6, N'Chính sách Kho Quận 7 - Tiêu chuẩn',     1, 50, 24, 10, 50, 30, 1);
+    (1, 1, N'Chính sách Kho Tân Bình - Tiêu chuẩn',   1, 50, 24, 10, 50, 15, 1),
+    (2, 2, N'Chính sách Kho Bình Thạnh - Tiêu chuẩn', 1, 50, 24, 10, 50, 15, 1),
+    (3, 3, N'Chính sách Kho Thủ Đức - Tiêu chuẩn',    1, 50, 24, 10, 50, 15, 1),
+    (4, 4, N'Chính sách Kho Gò Vấp - Tiêu chuẩn',     1, 50, 24, 10, 50, 15, 1),
+    (5, 5, N'Chính sách Kho Cầu Giấy - Tiêu chuẩn',   1, 50, 24, 10, 50, 15, 1),
+    (6, 6, N'Chính sách Kho Quận 7 - Tiêu chuẩn',     1, 50, 24, 10, 50, 15, 1);
 SET IDENTITY_INSERT rental_policy OFF;
 GO
 

@@ -183,7 +183,7 @@ class DemoSimulationServiceTest {
 
         LocalDate end = LocalDate.now().minusDays(31);
         verify(jdbcTemplate).update(contains("status = 'OVERDUE', late_fee_waived = 0"), eq(end.minusMonths(6)), eq(end), eq(9));
-        verify(jdbcTemplate).update(contains("payment_type IN ('MONTHLY_RENT', 'LATE_FEE')"), eq(9));
+        verify(jdbcTemplate).update(contains("payment_type IN ('MONTHLY_RENT', 'LATE_FEE', 'OVERSTAY_FEE')"), eq(9));
         assertTrue(String.valueOf(result.get("message")).contains("thanh lý"));
     }
 

@@ -58,6 +58,7 @@ class MaintenanceTaskTest {
     @Mock HeldGoodsService heldGoodsService;
     @Mock HeldGoodsRepository heldGoodsRepository;
 
+    @Mock LateFeeService lateFeeService;
     @InjectMocks StaffTaskService service;
 
     User manager;

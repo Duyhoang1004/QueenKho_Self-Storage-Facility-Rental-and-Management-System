@@ -124,6 +124,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/contracts/{id}/request-checkout", "CUSTOMER_RENTAL");
         rule("POST", "/api/v1/contracts/{id}/cancel-checkout", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/contracts/{id}/renewal-quote", "CUSTOMER_RENTAL");
+        rule("GET", "/api/v1/contracts/{id}/renewal-eligibility", "CUSTOMER_RENTAL"); // PR-R10 / PR-R11
         rule("POST", "/api/payments/vnpay/create-renewal", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/payments/my", "CUSTOMER_PAYMENT");
         rule("POST", "/api/payments/vnpay/create-debt", "CUSTOMER_PAYMENT");

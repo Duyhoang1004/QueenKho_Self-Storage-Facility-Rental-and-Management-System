@@ -306,7 +306,7 @@ export default function BomRevenuePage() {
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       // Lọc theo tab
-      if (activeTab === 'rent' && !['DEPOSIT', 'MONTHLY_RENT'].includes(t.paymentType)) return false;
+      if (activeTab === 'rent' && !['DEPOSIT', 'MONTHLY_RENT', 'OVERSTAY_FEE'].includes(t.paymentType)) return false;
       if (activeTab === 'fees' && !['LATE_FEE', 'DAMAGE_FEE'].includes(t.paymentType)) return false;
       if (activeTab === 'refund' && t.paymentType !== 'REFUND') return false;
 
@@ -927,7 +927,7 @@ export default function BomRevenuePage() {
                       <td className="py-3.5 px-5">
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-xl text-[10px] font-black uppercase border ${
-                            tx.paymentType === 'MONTHLY_RENT'
+                            tx.paymentType === 'MONTHLY_RENT' || tx.paymentType === 'OVERSTAY_FEE'
                               ? 'bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]'
                               : tx.paymentType === 'DEPOSIT'
                               ? 'bg-[#EBFBF0] text-[#188838] border-[#A3E5B5]'
@@ -942,6 +942,8 @@ export default function BomRevenuePage() {
                             ? 'Cọc giữ chỗ'
                             : tx.paymentType === 'LATE_FEE'
                             ? 'Phí quá hạn'
+                            : tx.paymentType === 'OVERSTAY_FEE'
+                            ? 'Phí chiếm dụng'
                             : tx.paymentType === 'DAMAGE_FEE'
                             ? 'Bồi thường'
                             : 'Hoàn tiền'}

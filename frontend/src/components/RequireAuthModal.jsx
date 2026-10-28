@@ -11,7 +11,8 @@ export default function RequireAuthModal({ isOpen, onClose, target }) {
   if (!isOpen) return null
 
   const bookingUrl = target?.facilityId && target?.unitTypeId
-    ? `/booking?facilityId=${target.facilityId}&unitTypeId=${target.unitTypeId}`
+    // PR-R11: giữ ngày nhận kho tối thiểu khi đặt trước ô "sắp trống"
+    ? `/booking?facilityId=${target.facilityId}&unitTypeId=${target.unitTypeId}${target.availableFrom ? `&from=${target.availableFrom}` : ''}`
     : '/tim-va-dat-kho'
 
   const handleLogin = () => {

@@ -31,6 +31,14 @@ public class RefundCalculationResult {
     private long daysPastEndDate;
     private BigDecimal graceFee;
     private BigDecimal lateFee;
+    private BigDecimal overstayFee;        // PR-Q14: phí chiếm dụng khi lỡ ân hạn (0 nếu đơn trước điều khoản v2)
+
+    // Phân bổ cọc theo thứ tự: sự cố → ân hạn / phí trễ → phí chiếm dụng
+    private BigDecimal damageOffset;
+    private BigDecimal feeOffset;
+    private BigDecimal overstayOffset;
+    private BigDecimal damageDebtAmount;   // sự cố vượt cọc → nợ DAMAGE_FEE
+    private BigDecimal overstayDebtAmount; // phí chiếm dụng vượt cọc → nợ OVERSTAY_FEE
 
     private BigDecimal depositHeld;
     private BigDecimal totalDamageCost;

@@ -44,5 +44,9 @@ public class OverdueContractManagerResponse {
     // Điều khoản xử lý tài sản: số lần liên hệ tối thiểu trước khi thanh lý + phiên bản khách đã đồng ý (NULL = đơn cũ)
     private Integer minContactsRequired;
     private String termsVersion;
+
+    // PR-Q14: phí chiếm dụng (0 nếu đơn trước điều khoản v2) + tổng phải trả cho đợt quá hạn
+    private BigDecimal overstayFeeAmount;
+    private BigDecimal totalOverdueCharge;
 }
 

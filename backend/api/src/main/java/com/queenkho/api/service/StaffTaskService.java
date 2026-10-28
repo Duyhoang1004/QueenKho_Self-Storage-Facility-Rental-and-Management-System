@@ -123,6 +123,9 @@ public class StaffTaskService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private LateFeeService lateFeeService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -1151,10 +1154,12 @@ public class StaffTaskService {
         RefundCalculationResult calc = calculateCheckoutRefund(contract, now.toLocalDate(), totalDamageCost);
         BigDecimal depositHeld = calc.getDepositHeld();
         BigDecimal refundAmount = calc.getTotalRefundAmount();
-        BigDecimal excessDebt = calc.getExcessDebtAmount();
-        BigDecimal damageOffset = totalDamageCost.min(depositHeld);
-        BigDecimal graceOrLateFee = calc.getGraceFee().add(calc.getLateFee());
-        BigDecimal feeOffset = graceOrLateFee.min(depositHeld.subtract(damageOffset).max(BigDecimal.ZERO));
+        BigDecimal damageOffset = calc.getDamageOffset();
+        BigDecimal feeOffset = calc.getFeeOffset();
+        BigDecimal overstayOffset = calc.getOverstayOffset();
+        // Nợ còn lại sau khi đã cấn trừ tiền thuê trả sớm (nếu có): phí chiếm dụng tách riêng loại OVERSTAY_FEE
+        BigDecimal overstayDebt = calc.getOverstayDebtAmount().min(calc.getExcessDebtAmount());
+        BigDecimal excessDebt = calc.getExcessDebtAmount().subtract(overstayDebt);
 
         Integer customerId = contract.getCustomer().getId();
         Integer reservationId = contract.getReservation() != null ? contract.getReservation().getId() : null;
@@ -1184,6 +1189,24 @@ public class StaffTaskService {
                         feeTxnCode, customerId, reservationId, contract.getId(), feeOffset);
             } catch (Exception ignored) {
             }
+        }
+
+        // 8b'. PR-Q14: phí chiếm dụng trừ vào cọc (OVERSTAY_FEE - DEPOSIT_OFFSET) + phần vượt cọc thành nợ PENDING
+        if (overstayOffset.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'DEPOSIT_OFFSET', ?, 'SUCCESS', SYSDATETIME())",
+                    "OS-OFF-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), overstayOffset);
+        }
+        if (overstayDebt.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'VNPAY', ?, 'PENDING', NULL)",
+                    "OS-DEBT-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), overstayDebt);
         }
 
         // 8c. Nếu chi phí vượt quá tiền cọc → tạo khoản nợ PENDING (PR-O9)
@@ -2150,6 +2173,7 @@ public class StaffTaskService {
         long daysPast = 0;
         BigDecimal graceFee = BigDecimal.ZERO;
         BigDecimal lateFee = BigDecimal.ZERO;
+        BigDecimal overstayFee = BigDecimal.ZERO;
 
         if (overdueOrGrace) {
             daysPast = ChronoUnit.DAYS.between(endDate, actualDate);
@@ -2162,13 +2186,25 @@ public class StaffTaskService {
                 long billableDays = Math.min(daysPast, 5);
                 BigDecimal percent = new BigDecimal("0.10").multiply(BigDecimal.valueOf(billableDays));
                 lateFee = depositHeld.multiply(percent).setScale(0, RoundingMode.HALF_UP);
+                // PR-Q14: lỡ ân hạn → ngoài phí trễ còn trả phí chiếm dụng cho MỌI ngày quá hạn (thay phí ân hạn)
+                BigDecimal fee = lateFeeService.overstayFee(contract, daysPast);
+                overstayFee = fee != null ? fee : BigDecimal.ZERO;
             }
         }
 
-        // 3. Quyết toán hoàn cọc (PR-O11)
-        BigDecimal totalDepositDeductions = totalDamageCost.add(graceFee).add(lateFee);
-        BigDecimal depositRefund = depositHeld.subtract(totalDepositDeductions).max(BigDecimal.ZERO);
-        BigDecimal excessDebt = totalDepositDeductions.subtract(depositHeld).max(BigDecimal.ZERO);
+        // 3. Quyết toán hoàn cọc (PR-O11): cọc trừ lần lượt sự cố → phí ân hạn / phí trễ → phí chiếm dụng.
+        // Phí trễ không bao giờ vượt cọc (PR-Q3); sự cố và phí chiếm dụng vượt cọc thì thành khoản nợ.
+        BigDecimal remainingDeposit = depositHeld;
+        BigDecimal damageOffset = totalDamageCost.min(remainingDeposit);
+        remainingDeposit = remainingDeposit.subtract(damageOffset);
+        BigDecimal feeOffset = graceFee.add(lateFee).min(remainingDeposit);
+        remainingDeposit = remainingDeposit.subtract(feeOffset);
+        BigDecimal overstayOffset = overstayFee.min(remainingDeposit);
+        remainingDeposit = remainingDeposit.subtract(overstayOffset);
+        BigDecimal depositRefund = remainingDeposit;
+        BigDecimal damageDebt = totalDamageCost.subtract(damageOffset);
+        BigDecimal overstayDebt = overstayFee.subtract(overstayOffset);
+        BigDecimal excessDebt = damageDebt.add(overstayDebt);
 
         BigDecimal totalRefund = depositRefund.add(earlyRentRefund);
         if (excessDebt.compareTo(BigDecimal.ZERO) > 0) {
@@ -2195,6 +2231,9 @@ public class StaffTaskService {
         }
         if (lateFee.compareTo(BigDecimal.ZERO) > 0) {
             desc.append(" - Phí trễ ").append(vndFmt.format(lateFee)).append("đ (").append(daysPast).append(" ngày)");
+        }
+        if (overstayFee.compareTo(BigDecimal.ZERO) > 0) {
+            desc.append(" - Phí chiếm dụng ").append(daysPast).append(" ngày: ").append(vndFmt.format(overstayFee)).append("đ");
         }
         desc.append(" => Cọc hoàn: ").append(vndFmt.format(depositRefund)).append("đ");
 
@@ -2223,6 +2262,12 @@ public class StaffTaskService {
                 .daysPastEndDate(daysPast)
                 .graceFee(graceFee)
                 .lateFee(lateFee)
+                .overstayFee(overstayFee)
+                .damageOffset(damageOffset)
+                .feeOffset(feeOffset)
+                .overstayOffset(overstayOffset)
+                .damageDebtAmount(damageDebt)
+                .overstayDebtAmount(overstayDebt)
                 .depositHeld(depositHeld)
                 .totalDamageCost(totalDamageCost)
                 .depositRefund(depositRefund)

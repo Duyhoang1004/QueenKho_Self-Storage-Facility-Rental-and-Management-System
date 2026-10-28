@@ -737,3 +737,42 @@ Quy tắc `resolve`:
 - `CustomerContractResponse` thêm `heldGoodsStatus`, `heldGoodsHoldUntil`, `heldGoodsLocation`.
 
 **Giả lập**: `POST /api/v1/dev/simulation/held-goods/{id}/expire-hold` (FM) — `hold_until` = hôm qua → bán / tiêu huỷ được ngay. `409` nếu đã xử lý, `403` khác cơ sở.
+
+---
+
+## Gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (27/10/2026)
+
+> Rule: `business-rules.md` D-12, PR-R10 → R12, PR-Q8, PR-Q14, PR-Q15. ⚠️ Sau khi pull: chạy `sql_script/Update_gia_han_doanh_thu.sql` (DB cũ) hoặc chạy lại `QueenKho_full.sql` (DB mới) — backend `ddl-auto: validate` sẽ không khởi động nếu thiếu cột.
+
+### API mới — `GET /api/v1/contracts/{id}/renewal-eligibility` (khách chủ HĐ, nhóm quyền `CUSTOMER_RENTAL`)
+```json
+{
+  "contractId": 31, "status": "ACTIVE", "endDate": "2026-10-28",
+  "priorityDeadline": "2026-10-25",   // end_date − 3: hết ngày này là hạn chót gia hạn ưu tiên
+  "daysUntilDeadline": -2,            // âm = đã qua hạn chót
+  "window": "LATE",                   // PRIORITY | LATE | CLOSED
+  "renewable": false,
+  "unitReleasing": true,              // ô đang được tính "sắp trống" cho đơn đặt mới
+  "blockedReason": "Đã quá hạn chót gia hạn ưu tiên (25/10/2026) và ô kho này đã có khách khác đặt trước. ...",
+  "packages": [ { "months": 1, "newEndDate": "2026-11-28" }, { "months": 3, "newEndDate": "2027-01-28" }, ... ]
+}
+```
+
+### Thay đổi API cũ
+| API | Thay đổi |
+|---|---|
+| `POST /api/payments/vnpay/create-renewal` | Cửa sổ muộn mà ô đã có người đặt trước → `409 { "error": "RENEWAL_UNIT_RESERVED" }`. HĐ `OVERDUE` (điều khoản v2): tạo thêm dòng phụ `OVERSTAY_FEE` mã `OS` + `orderId`; response thêm `overstayFeeAmount`; `amount` = thuê + phí trễ + phí chiếm dụng |
+| `GET /api/v1/contracts/{id}/renewal-quote` | Mỗi gói thêm `overstayFeeAmount`; `totalAmount` đã cộng phí này |
+| `GET /api/v1/contracts?reservationId=` (chi tiết HĐ khách) | Thêm `overstayDailyAmount`, `overstayFeeAmount`, `totalOverdueCharge`, `amountBeyondDeposit`; `estimatedDepositRefund` / `estimatedOverdueDepositRefund` trừ cả phí chiếm dụng; `liquidationDaysThreshold` mặc định 15 |
+| `GET /api/v1/contracts/manager/overdue` (FM) | Thêm `overstayFeeAmount`, `totalOverdueCharge` (HĐ đã thanh lý: lấy từ giao dịch `OS-…`) |
+| `POST /api/v1/contracts/{id}/liquidate` (FM) | Response thêm `overstayFeeAmount`, `overstayDebtAmount`; ghi `OVERSTAY_FEE` `DEPOSIT_OFFSET` (mã `OS-OFF-…`) + nợ `OVERSTAY_FEE` `VNPAY` `PENDING` (mã `OS-DEBT-…`) |
+| `GET /api/v1/payments/my` | `overdueContracts[]` thêm `overstayFeeAmount`; `debts[]` gồm cả `OVERSTAY_FEE` (`renewalMonths` = null) |
+| `POST /api/payments/vnpay/create-debt` | Nhận cả khoản nợ `OVERSTAY_FEE` (trừ dòng phụ của link gia hạn) |
+| `POST /api/v1/reservations` | Số suất cộng ô "sắp trống" có ngày giao ≤ `startDate`. Hết suất → `409 NO_AVAILABILITY`, message báo ngày nhận kho sớm nhất; đơn mới lưu `termsVersion = "v2"` |
+| `GET /api/v1/reservations/{id}/cancel-preview` + `POST .../cancel` | Đơn `DEPOSIT_PAID` chưa gán ô mà đã tới `startDate` → `penaltyAmount = 0`, hoàn 100% (PR-R12) |
+| `GET /api/v1/facilities/search`, `GET /api/v1/facilities/{id}/availability` | Mỗi loại kho thêm `availableFrom` (yyyy-MM-dd): `null` = còn ô ngay; có giá trị = hết ô, nhận kho được từ ngày này. Loại kho có `availableFrom` vẫn hiện dù `availableCount = 0` |
+| `GET/POST /api/v1/rental-policies/...` | Thêm `overstayPercent` (100–300, mặc định 150), `heldGoodsFeePercent` (0–100, mặc định 20); không gửi = kế thừa bản đang hiệu lực. Phiên bản mới `liquidationDays = 15` |
+| `GET /api/v1/held-goods` | Thêm `storageFeePerDay`, `heldDays`, `estimatedStorageFee` (đang HOLDING), `storageFeeAmount` (đã chốt); `customerDebt` gồm cả nợ `OVERSTAY_FEE` |
+| `POST /api/v1/held-goods/{id}/resolve` | Body thêm `storageFeeCollected` (boolean) — `RETURNED` mà cọc không đủ trả phí lưu giữ thì bắt buộc `true`, nếu không `409 STORAGE_FEE_UNPAID` |
+| Báo cáo doanh thu (BOM / FM) | `OVERSTAY_FEE` tính vào **doanh thu thuê** (`rentalRevenue`) |
+| `POST /api/v1/staff-tasks/{id}/check-out` | Lỡ ân hạn (> `end_date` + 5) → trừ thêm phí chiếm dụng; vượt cọc → nợ `OVERSTAY_FEE` riêng với nợ `DAMAGE_FEE` |

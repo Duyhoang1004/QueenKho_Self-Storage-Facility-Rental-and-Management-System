@@ -42,6 +42,8 @@ public class FacilityAvailabilityResponse {
         private String features;
         private int totalUnits;
         private int availableCount;
+        private int totalBookings;
         private LocalDate availableFrom; // PR-R11: null = còn ô ngay; có giá trị = chỉ nhận được từ ngày này
     }
 }
+

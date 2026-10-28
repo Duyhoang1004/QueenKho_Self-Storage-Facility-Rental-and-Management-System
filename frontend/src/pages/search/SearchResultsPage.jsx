@@ -1,3 +1,4 @@
+import RequireAuthModal from '../../components/RequireAuthModal'
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
@@ -34,6 +35,10 @@ export default function SearchResultsPage() {
   const [onlyAvailable, setOnlyAvailable] = useState(false)
   const [selectedFeatures, setSelectedFeatures] = useState([])
   const [sortOption, setSortOption] = useState('hot')
+
+  // Auth modal for guest visitors
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [pendingBookingTarget, setPendingBookingTarget] = useState(null)
 
   // Data
   const [results, setResults] = useState([])
@@ -108,6 +113,7 @@ export default function SearchResultsPage() {
             suggestedCapacity: slot.suggestedCapacity,
             features: slot.features,
             availableCount: slot.availableCount,
+            totalBookings: slot.totalBookings, // UC-09: tiêu chí "Hot nhất" khi xem theo 1 cơ sở
             availableFrom: slot.availableFrom,
           }))
         setResults(items)
@@ -180,7 +186,13 @@ export default function SearchResultsPage() {
       })
     }
 
-    if (sortOption === 'price_asc') {
+    if (sortOption === 'hot') {
+      list.sort((a, b) => {
+        const diff = (b.totalBookings || 0) - (a.totalBookings || 0)
+        if (diff !== 0) return diff
+        return (b.availableCount || 0) - (a.availableCount || 0)
+      })
+    } else if (sortOption === 'price_asc') {
       list.sort((a, b) => a.basePriceMonthly - b.basePriceMonthly)
     } else if (sortOption === 'price_desc') {
       list.sort((a, b) => b.basePriceMonthly - a.basePriceMonthly)
@@ -192,8 +204,24 @@ export default function SearchResultsPage() {
   }, [results, onlyAvailable, selectedFeatures, sortOption])
 
   // PR-R11: hết ô ngay nhưng có ô sắp trống → trang đặt kho chỉ cho chọn ngày nhận từ availableFrom
-  function handleBooking(facilityId, unitTypeId, availableFrom) {
-    navigate(`/booking?facilityId=${facilityId}&unitTypeId=${unitTypeId}${availableFrom ? `&from=${availableFrom}` : ''}`)
+  function bookingUrl(item) {
+    return `/booking?facilityId=${item.facilityId}&unitTypeId=${item.unitTypeId}${item.availableFrom ? `&from=${item.availableFrom}` : ''}`
+  }
+
+  function handleBooking(item) {
+    const userStr = sessionStorage.getItem('user');
+    let isCustomer = false;
+    try {
+      const u = JSON.parse(userStr || '{}');
+      isCustomer = Boolean(u && u.userId && u.role === 'CUSTOMER');
+    } catch {}
+
+    if (isCustomer) {
+      navigate(bookingUrl(item));
+    } else {
+      setPendingBookingTarget(item);
+      setAuthModalOpen(true);
+    }
   }
 
   function getUnitTypeName(id) {
@@ -304,19 +332,33 @@ export default function SearchResultsPage() {
                 <span>Còn trống</span>
               </button>
 
-              {/* Nút 3: [Kho đạt chuẩn] */}
-              <button
-                type="button"
-                onClick={() => setSortOption('hot')}
-                className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
-                  sortOption === 'hot'
-                    ? 'bg-[#FFE8CC] border-2 border-b-4 border-[#E58800] text-[#E58800]'
-                    : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
-                }`}
-              >
-                <span className="text-sm mr-1">🔥</span>
-                <span>Hot nhất</span>
-              </button>
+              {/* Nút 3: [Hot nhất với Tooltip khi rê chuột] */}
+              <div className="relative group/hot inline-block">
+                <button
+                  type="button"
+                  onClick={() => setSortOption('hot')}
+                  className={`duo-btn px-4 py-2 text-xs rounded-2xl ${
+                    sortOption === 'hot'
+                      ? 'bg-[#FFE8CC] border-2 border-b-4 border-[#E58800] text-[#E58800]'
+                      : 'bg-white border-2 border-b-4 border-[#E5E5E5] text-[#4B4B4B] hover:bg-[#F7F7F7]'
+                  }`}
+                >
+                  <span className="text-sm mr-1">🔥</span>
+                  <span>Hot nhất</span>
+                </button>
+
+                {/* Tooltip Duolingo hiện nhẹ khi rê chuột */}
+                <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-80 p-3.5 bg-[#2B2B2B] text-white text-[11px] font-bold rounded-2xl shadow-2xl opacity-0 group-hover/hot:opacity-100 transition-all duration-200 z-50 flex flex-col gap-1.5 text-center scale-95 group-hover/hot:scale-100">
+                  <div className="flex items-center justify-center gap-1.5 text-[#FF9600] font-black uppercase tracking-wider text-[11px]">
+                    <span>🔥</span>
+                    <span>Tiêu chí đánh giá Hot</span>
+                  </div>
+                  <span className="leading-relaxed text-gray-200">
+                    Được đánh giá theo: <strong className="text-white">Tổng số lượt khách đã đặt cọc & chốt thuê thành công</strong> (kho có nhiều lượt thuê nhất xếp đầu; nếu bằng nhau ưu tiên kho còn nhiều ô trống hơn).
+                  </span>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#2B2B2B]"></div>
+                </div>
+              </div>
 
               {/* Nút 4: [Xem theo giá v] */}
               <div className="relative">
@@ -576,17 +618,34 @@ export default function SearchResultsPage() {
               Sắp xếp theo:
             </span>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSortOption('hot')}
-                className={`duo-btn px-3 py-1.5 text-xs rounded-xl ${
-                  sortOption === 'hot'
-                    ? 'bg-[#FFE8CC] border-2 border-[#FF9600] text-[#E58800]'
-                    : 'duo-btn-gray'
-                }`}
-              >
-                Hot nhất
-              </button>
+              <div className="relative group/sortHot inline-block">
+                <button
+                  type="button"
+                  onClick={() => setSortOption('hot')}
+                  className={`duo-btn px-3.5 py-1.5 text-xs rounded-xl flex items-center gap-1.5 ${
+                    sortOption === 'hot'
+                      ? 'bg-[#FFE8CC] border-2 border-[#FF9600] text-[#E58800] font-black'
+                      : 'duo-btn-gray'
+                  }`}
+                >
+                  <span>🔥 Hot nhất</span>
+                  <span className="text-[10px] bg-white text-[#E58800] px-1.5 py-0.2 rounded-full border border-[#FF9600]/30 font-bold">
+                    Lượt thuê cao
+                  </span>
+                </button>
+
+                {/* Tooltip khi rê chuột */}
+                <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-80 p-3.5 bg-[#2B2B2B] text-white text-[11px] font-bold rounded-2xl shadow-2xl opacity-0 group-hover/sortHot:opacity-100 transition-all duration-200 z-50 text-center scale-95 group-hover/sortHot:scale-100 leading-relaxed flex flex-col gap-1.5">
+                  <div className="flex items-center justify-center gap-1.5 text-[#FF9600] font-black uppercase tracking-wider text-[11px]">
+                    <span>🔥</span>
+                    <span>Tiêu chí đánh giá Hot</span>
+                  </div>
+                  <span className="text-gray-200">
+                    Được đánh giá theo: <strong className="text-white">Tổng số lượt khách đã đặt cọc & chốt thuê thành công</strong> (kho có nhiều lượt thuê nhất xếp đầu; nếu bằng nhau ưu tiên kho còn nhiều ô trống hơn).
+                  </span>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#2B2B2B]"></div>
+                </div>
+              </div>
 
               <button
                 type="button"
@@ -672,25 +731,35 @@ export default function SearchResultsPage() {
               >
                 <div>
                   {/* Card Header */}
-                  <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b-2 border-[#E5E5E5]">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="material-symbols-outlined text-[18px] text-[#58CC02]">apartment</span>
-                      <span className="text-xs font-black text-[#4B4B4B] truncate">{item.facilityName}</span>
-                    </div>
-                    {item.availableCount > 0 ? (
-                      <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 ${
-                        item.availableCount > 2
-                          ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
-                          : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
-                      }`}>
-                        Còn {item.availableCount} ô
-                      </span>
-                    ) : (
-                      // PR-R11: ô của khách cũ đã qua hạn chót gia hạn → đặt trước, nhận kho từ ngày này
-                      <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]">
-                        Trống từ {formatShortDate(item.availableFrom)}
-                      </span>
+                  <div className="mb-3 pb-2.5 border-b-2 border-[#E5E5E5] space-y-1.5">
+                    {idx === 0 && sortOption === 'hot' && (
+                      <div className="flex items-center">
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 bg-[#FFE8CC] text-[#E58800] border-[#FF9600] flex items-center gap-1">
+                          <span>🏆</span>
+                          <span>Top 1 lượt thuê</span>
+                        </span>
+                      </div>
                     )}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="material-symbols-outlined text-[18px] text-[#58CC02] shrink-0">apartment</span>
+                        <span className="text-xs font-black text-[#4B4B4B]">{item.facilityName}</span>
+                      </div>
+                      {item.availableCount > 0 ? (
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 shrink-0 ${
+                          item.availableCount > 2
+                            ? 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]'
+                            : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
+                        }`}>
+                          Còn {item.availableCount} ô
+                        </span>
+                      ) : (
+                        // PR-R11: ô của khách cũ đã qua hạn chót gia hạn → đặt trước, nhận kho từ ngày này
+                        <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase border-2 shrink-0 bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]">
+                          Trống từ {formatShortDate(item.availableFrom)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <h3 className="text-lg font-black text-[#4B4B4B] group-hover:text-[#1CB0F6] transition-colors">
@@ -723,7 +792,7 @@ export default function SearchResultsPage() {
                   </div>
 
                   <button
-                    onClick={() => handleBooking(item.facilityId, item.unitTypeId, item.availableFrom)}
+                    onClick={() => handleBooking(item)}
                     className="duo-btn-green px-5 py-2.5 text-xs tracking-wider"
                   >
                     ĐẶT KHO
@@ -733,6 +802,13 @@ export default function SearchResultsPage() {
             ))}
           </div>
         )}
+
+        {/* POP-UP YÊU CẦU ĐĂNG NHẬP / ĐĂNG KÝ CHO KHÁCH VÃNG LAI */}
+        <RequireAuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          target={pendingBookingTarget}
+        />
 
       </div>
     </div>

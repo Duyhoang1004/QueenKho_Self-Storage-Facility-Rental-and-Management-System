@@ -9,10 +9,10 @@ import java.util.List;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Integer> {
 
-        // UC-12: Lấy danh sách đơn đặt của 1 customer, mới nhất xếp trước
+    // UC-12: Lấy danh sách đơn đặt của 1 customer, mới nhất xếp trước
     List<Reservation> findByCustomer_IdOrderByCreatedAtDesc(Integer customerId);
 
-        // UC-13: đơn đã cọc nhưng chưa gán ô, cũ nhất xếp trước (hàng đợi xử lý)
+    // UC-13: đơn đã cọc nhưng chưa gán ô, cũ nhất xếp trước (hàng đợi xử lý)
     List<Reservation> findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(
         Integer facilityId, String status);
 
@@ -27,6 +27,15 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
            "AND r.storageUnitId IS NULL " +
            "GROUP BY r.unitType.id")
     List<Object[]> countPendingGroupedByUnitType(
+        @Param("facilityId") Integer facilityId,
+        @Param("statuses") List<String> statuses);
+
+    // UC-09: Đếm số lượt chốt đặt kho & hợp đồng thành công theo từng loại kho của cơ sở (tiêu chí Hot nhất)
+    @Query("SELECT r.unitType.id, COUNT(r) FROM Reservation r " +
+           "WHERE r.facility.id = :facilityId " +
+           "AND r.status IN :statuses " +
+           "GROUP BY r.unitType.id")
+    List<Object[]> countSuccessfulGroupedByUnitType(
         @Param("facilityId") Integer facilityId,
         @Param("statuses") List<String> statuses);
 

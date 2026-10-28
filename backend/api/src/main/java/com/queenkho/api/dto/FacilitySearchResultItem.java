@@ -23,5 +23,7 @@ public class FacilitySearchResultItem {
     private String suggestedCapacity;
     private String features;
     private int availableCount;
+    private int totalBookings;
     private LocalDate availableFrom; // PR-R11: hết ô trống nhưng có ô "sắp trống" → nhận kho được từ ngày này (null = có ô ngay)
 }
+

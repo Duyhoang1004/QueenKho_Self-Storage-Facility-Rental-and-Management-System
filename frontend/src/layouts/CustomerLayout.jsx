@@ -13,7 +13,7 @@ const customerMenuItems = [
   { icon: 'contact_support', label: 'Hỗ trợ', path: '/ho-tro' },
 ];
 
-export default function CustomerLayout() {
+export default function CustomerLayout({ children }) {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -21,20 +21,28 @@ export default function CustomerLayout() {
   useEffect(() => {
     const userStr = sessionStorage.getItem('user');
     if (!userStr) {
-      navigate('/login', { replace: true });
+      const current = window.location.pathname + window.location.search;
+      const redirectParam = current && current !== '/' ? `?redirect=${encodeURIComponent(current)}` : '';
+      navigate(`/login${redirectParam}`, { replace: true });
       return;
     }
 
-    const user = JSON.parse(userStr);
+    let user;
+    try {
+      user = JSON.parse(userStr);
+    } catch {
+      clearSession();
+      navigate('/login', { replace: true });
+      return;
+    }
     
-    // Role nội bộ có portal riêng (Staff, FM, Admin) → chuyển về portal đó
+    // Role nội bộ có portal riêng (Staff, FM, Admin, BOM) → chuyển về portal đó
     const homePath = getHomePath(user.role);
     if (user.role !== 'CUSTOMER' && homePath !== '/') {
       navigate(homePath, { replace: true });
       return;
     }
 
-    // Role chưa có portal (BOM) thì đẩy ra đăng nhập
     if (user.role !== 'CUSTOMER') {
       alert('Bạn không có quyền truy cập trang này!');
       clearSession();
@@ -61,7 +69,7 @@ export default function CustomerLayout() {
 
   const handleLogout = () => {
     clearSession();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   };
 
   if (!currentUser) return null;
@@ -85,7 +93,7 @@ export default function CustomerLayout() {
           sidebarCollapsed={sidebarCollapsed}
         />
         <main className="w-full pt-20 bg-[#FFFFFF] min-h-screen">
-          <Outlet />
+          {children || <Outlet />}
         </main>
       </div>
     </div>

@@ -8,6 +8,10 @@ import {
   getRevenueTransactions,
 } from '../../services/revenueService'
 import { getOverdueContracts } from '../../services/contractService'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
+const OVERDUE_PAGE_SIZE = 4
 
 // Flow 5 (UC-30 mở rộng): Báo cáo cơ sở cho Facility Manager — ô trống / đang thuê, doanh thu,
 // tỷ lệ sử dụng, quá hạn. Dùng lại API doanh thu của BOM; backend tự khoá facilityId = cơ sở của FM (PR-90),
@@ -80,6 +84,8 @@ export default function ManagerReportsPage() {
   const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1)
   const [reloadTick, setReloadTick] = useState(0)
   const [result, setResult] = useState({ key: null, data: null, error: '' })
+  const [txPage, setTxPage] = useState(1)
+  const [overduePage, setOverduePage] = useState(1)
 
   const queryKey = JSON.stringify({ period, year, month, quarter, reloadTick })
   const loading = result.key !== queryKey
@@ -119,6 +125,20 @@ export default function ManagerReportsPage() {
   const overview = data?.overview
   const overdue = data?.overdue || []
   const overdueFeeTotal = overdue.reduce((sum, c) => sum + (c.lateFeeWaived ? 0 : Number(c.lateFeeAmount || 0)), 0)
+
+  const totalTxPages = Math.max(1, Math.ceil(transactions.length / PAGE_SIZE))
+  const safeTxPage = Math.min(txPage, totalTxPages)
+  const paginatedTransactions = transactions.slice(
+    (safeTxPage - 1) * PAGE_SIZE,
+    safeTxPage * PAGE_SIZE
+  )
+
+  const totalOverduePages = Math.max(1, Math.ceil(overdue.length / OVERDUE_PAGE_SIZE))
+  const safeOverduePage = Math.min(overduePage, totalOverduePages)
+  const paginatedOverdue = overdue.slice(
+    (safeOverduePage - 1) * OVERDUE_PAGE_SIZE,
+    safeOverduePage * OVERDUE_PAGE_SIZE
+  )
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8 flex flex-col gap-6">
@@ -268,34 +288,62 @@ export default function ManagerReportsPage() {
             </section>
 
             {/* Quá hạn */}
-            <section className="duo-card p-5 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-black text-[#4B4B4B]">Hợp đồng quá hạn ({overdue.length})</h2>
-                <Link to="/manager/overdue" className="text-xs font-black text-[#1CB0F6] hover:underline">Xử lý →</Link>
-              </div>
-              <p className="text-xs font-bold text-[#777777]">Phí trễ đang tích luỹ: <span className="font-black text-[#FF4B4B]">{formatVND(overdueFeeTotal)}</span></p>
-              {overdue.length === 0 && <p className="text-xs font-bold text-[#AFAFAF]">Không có hợp đồng quá hạn 🎉</p>}
-              {overdue.slice(0, 6).map((c) => (
-                <div key={c.contractId} className="flex items-center justify-between gap-3 border-b-2 border-[#F7F7F7] pb-2 last:border-b-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-[#4B4B4B] truncate">#{c.contractCode} · {c.customerName}</p>
-                    <p className="text-[11px] font-bold text-[#AFAFAF]">Ô {c.storageUnitId} · quá hạn {c.overdueDays} ngày</p>
-                  </div>
-                  <span className={`text-xs font-black ${c.lateFeeWaived ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
-                    {c.lateFeeWaived ? 'Đã miễn phí trễ' : formatVND(c.lateFeeAmount)}
-                  </span>
+            <section className="duo-card overflow-hidden flex flex-col justify-between">
+              <div>
+                <ListBoxHeader
+                  icon="event_busy"
+                  title="Hợp đồng quá hạn"
+                  subtitle={`Phí trễ đang tích luỹ: ${formatVND(overdueFeeTotal)}`}
+                  count={overdue.length}
+                  countLabel="hợp đồng"
+                  accentColor="bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]"
+                  rightSlot={
+                    <Link to="/manager/overdue" className="text-xs font-black text-[#1CB0F6] hover:underline">
+                      Xử lý →
+                    </Link>
+                  }
+                />
+                <div className="p-4 flex flex-col gap-2.5">
+                  {overdue.length === 0 && <p className="text-xs font-bold text-[#AFAFAF]">Không có hợp đồng quá hạn 🎉</p>}
+                  {paginatedOverdue.map((c) => (
+                    <div key={c.contractId} className="flex items-center justify-between gap-3 rounded-xl border border-[#F0F0F0] bg-[#FAFAFA] px-3.5 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-[#4B4B4B] truncate">#{c.contractCode} · {c.customerName}</p>
+                        <p className="text-[11px] font-bold text-[#AFAFAF]">Ô {c.storageUnitId} · quá hạn {c.overdueDays} ngày</p>
+                      </div>
+                      <span className={`text-xs font-black whitespace-nowrap ${c.lateFeeWaived ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
+                        {c.lateFeeWaived ? 'Đã miễn phí trễ' : formatVND(c.lateFeeAmount)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+              {overdue.length > 0 && (
+                <PaginationBar
+                  currentPage={safeOverduePage}
+                  totalItems={overdue.length}
+                  pageSize={OVERDUE_PAGE_SIZE}
+                  onPageChange={setOverduePage}
+                  itemLabel="hợp đồng"
+                />
+              )}
             </section>
           </div>
 
           {/* Giao dịch */}
-          <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-black text-[#4B4B4B]">Giao dịch gần nhất</h2>
-            <div className="duo-card overflow-x-auto">
+          <section className="duo-card overflow-hidden">
+            <ListBoxHeader
+              icon="receipt_long"
+              title="Giao dịch gần nhất"
+              subtitle="Chi tiết các giao dịch thanh toán, hoàn tiền và khấu trừ tại cơ sở"
+              count={transactions.length}
+              countLabel="giao dịch"
+              accentColor="bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]"
+            />
+            <div className="overflow-x-auto">
               <table className="w-full min-w-[860px] text-sm">
                 <thead>
-                  <tr className="border-b-2 border-[#E5E5E5]">
+                  <tr className="border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
                     {['Thời gian', 'Khách hàng', 'Hợp đồng', 'Loại', 'Phương thức', 'Số tiền'].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{h}</th>
                     ))}
@@ -305,8 +353,8 @@ export default function ManagerReportsPage() {
                   {transactions.length === 0 && (
                     <tr><td colSpan={6} className="px-4 py-10 text-center text-sm font-black text-[#AFAFAF]">Chưa có giao dịch</td></tr>
                   )}
-                  {transactions.slice(0, 15).map((t) => (
-                    <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0">
+                  {paginatedTransactions.map((t) => (
+                    <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0 hover:bg-[#FAFAFA]">
                       <td className="px-4 py-3 whitespace-nowrap font-bold text-[#777777]">{formatTime(t.paidAt)}</td>
                       <td className="px-4 py-3 font-bold text-[#4B4B4B]">{t.customerName || '—'}</td>
                       <td className="px-4 py-3 font-mono text-xs font-bold text-[#777777]">{t.contractCode || '—'}</td>
@@ -320,8 +368,14 @@ export default function ManagerReportsPage() {
                 </tbody>
               </table>
             </div>
-            {transactions.length > 15 && (
-              <p className="text-xs font-bold text-[#AFAFAF]">Hiển thị 15 / {transactions.length} giao dịch — bấm "Xuất CSV" để lấy đầy đủ.</p>
+            {transactions.length > 0 && (
+              <PaginationBar
+                currentPage={safeTxPage}
+                totalItems={transactions.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setTxPage}
+                itemLabel="giao dịch"
+              />
             )}
           </section>
         </div>

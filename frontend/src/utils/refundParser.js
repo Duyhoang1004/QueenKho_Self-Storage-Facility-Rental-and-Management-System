@@ -165,9 +165,9 @@ export function parseRefundNote(note) {
       if (note.includes('50%')) {
         res.isPenalty50 = true;
         res.policyBadge = 'Khấu trừ 50% tiền cọc';
-        res.policyApplied = 'Khấu trừ 50% tiền cọc (hủy sát giờ < 24h)';
-        res.penaltyNote = `Đã trừ phạt hủy trễ (50% tiền cọc): ${res.penaltyAmount}`;
-        res.footerNote = '* Lưu ý: Hủy trong vòng 24h trước giờ hẹn nhận kho sẽ khấu trừ 50% tiền cọc theo quy định.';
+        res.policyApplied = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+        res.penaltyNote = `Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%: ${res.penaltyAmount})`;
+        res.footerNote = '* Lưu ý: Khách hủy đơn trễ trong 24h trước thời điểm nhận kho sẽ bị trừ 50% tiền cọc theo quy định.';
       } else {
         res.isPenalty50 = true;
         res.policyBadge = 'Khấu trừ phí hủy đơn';

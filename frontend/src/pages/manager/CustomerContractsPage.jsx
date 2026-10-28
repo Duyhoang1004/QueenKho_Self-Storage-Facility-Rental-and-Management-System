@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getContractsByManager } from '../../services/contractService'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -34,6 +37,7 @@ export default function CustomerContractsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
 
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
   const managerId = user.userId
@@ -52,6 +56,10 @@ export default function CustomerContractsPage() {
     c.contractCode?.toLowerCase().includes(search.toLowerCase()) ||
     c.storageUnitId?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedContracts = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const stats = {
     total:   contracts.length,
@@ -102,7 +110,7 @@ export default function CustomerContractsPage() {
             type="text"
             placeholder="Tìm theo tên khách hàng, mã hợp đồng, mã ô kho..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setCurrentPage(1) }}
             className="duo-input w-full pl-11 text-xs"
           />
         </div>
@@ -110,6 +118,14 @@ export default function CustomerContractsPage() {
 
       {/* Table Duolingo Card */}
       <div className="duo-card overflow-hidden">
+        <ListBoxHeader
+          icon="description"
+          title="Danh sách hợp đồng khách hàng"
+          currentPage={safePage}
+          totalPages={totalPages}
+          pageSize={PAGE_SIZE}
+          itemLabel="hợp đồng"
+        />
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3">
             <span className="material-symbols-outlined text-[#58CC02] text-[36px] animate-spin">
@@ -145,7 +161,7 @@ export default function CustomerContractsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-[#E5E5E5] text-xs font-bold text-[#4B4B4B]">
-                {filtered.map(c => {
+                {paginatedContracts.map(c => {
                   const statusInfo = STATUS_MAP[c.status] || { label: c.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' }
                   return (
                     <tr key={c.contractId} className="hover:bg-[#FDFDFD] transition-colors">
@@ -222,13 +238,15 @@ export default function CustomerContractsPage() {
           </div>
         )}
 
-        {/* Footer count */}
+        {/* Footer pagination */}
         {!loading && !error && filtered.length > 0 && (
-          <div className="border-t-2 border-[#E5E5E5] px-6 py-3 bg-[#FAFAFA]">
-            <p className="text-xs font-bold text-[#AFAFAF]">
-              Hiển thị <span className="font-black text-[#4B4B4B]">{filtered.length}</span> / {contracts.length} hợp đồng
-            </p>
-          </div>
+          <PaginationBar
+            currentPage={safePage}
+            totalItems={filtered.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={p => setCurrentPage(p)}
+            itemLabel="hợp đồng"
+          />
         )}
       </div>
     </div>

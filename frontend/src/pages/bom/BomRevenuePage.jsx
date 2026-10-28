@@ -8,6 +8,9 @@ import {
   getOccupancyReport
 } from '../../services/revenueService';
 import { getAllFacilities } from '../../services/facilityService';
+import PaginationBar from '../../components/PaginationBar';
+
+const PAGE_SIZE = 5;
 
 // Format tiền tệ VNĐ
 const formatVND = (amount) => {
@@ -67,6 +70,7 @@ export default function BomRevenuePage() {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'rent' | 'fees' | 'refund'
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [breakdownView, setBreakdownView] = useState('facility'); // 'facility' | 'unitType'
   const [selectedTransaction, setSelectedTransaction] = useState(null); // Modal đối soát PR-O15
   const [hoveredBar, setHoveredBar] = useState(null);
@@ -321,6 +325,13 @@ export default function BomRevenuePage() {
       return true;
     });
   }, [transactions, activeTab, searchTerm]);
+
+  const totalTxPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE));
+  const safeTxPage = Math.min(currentPage, totalTxPages);
+  const paginatedTransactions = filteredTransactions.slice(
+    (safeTxPage - 1) * PAGE_SIZE,
+    safeTxPage * PAGE_SIZE
+  );
 
   // Hàm xuất CSV đối soát (BOM Audit Export)
   const handleExportCSV = () => {
@@ -834,7 +845,10 @@ export default function BomRevenuePage() {
                 <input
                   type="text"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   placeholder="Tìm mã GD, tên khách, mã FT..."
                   className="pl-9 pr-3 py-2 border-2 border-[#E5E5E5] rounded-xl text-xs font-bold text-[#4B4B4B] focus:outline-none focus:border-[#1CB0F6] w-[220px]"
                 />
@@ -843,7 +857,7 @@ export default function BomRevenuePage() {
               <div className="flex items-center p-1 rounded-xl bg-[#EFEFEF]">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('all')}
+                  onClick={() => { setActiveTab('all'); setCurrentPage(1); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
                     activeTab === 'all' ? 'bg-white text-[#1CB0F6] shadow-xs' : 'text-[#777777]'
                   }`}
@@ -852,7 +866,7 @@ export default function BomRevenuePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('rent')}
+                  onClick={() => { setActiveTab('rent'); setCurrentPage(1); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
                     activeTab === 'rent' ? 'bg-white text-[#58CC02] shadow-xs' : 'text-[#777777]'
                   }`}
@@ -861,7 +875,7 @@ export default function BomRevenuePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('fees')}
+                  onClick={() => { setActiveTab('fees'); setCurrentPage(1); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
                     activeTab === 'fees' ? 'bg-white text-[#FF9600] shadow-xs' : 'text-[#777777]'
                   }`}
@@ -870,7 +884,7 @@ export default function BomRevenuePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('refund')}
+                  onClick={() => { setActiveTab('refund'); setCurrentPage(1); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase transition-all ${
                     activeTab === 'refund' ? 'bg-white text-[#FF4B4B] shadow-xs' : 'text-[#777777]'
                   }`}
@@ -904,7 +918,7 @@ export default function BomRevenuePage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTransactions.map((tx) => (
+                  paginatedTransactions.map((tx) => (
                     <tr key={tx.id} className="hover:bg-[#F9FCFF] transition-colors">
                       <td className="py-3.5 px-5">
                         <div className="flex flex-col">
@@ -991,6 +1005,15 @@ export default function BomRevenuePage() {
               </tbody>
             </table>
           </div>
+          {filteredTransactions.length > 0 && (
+            <PaginationBar
+              currentPage={safeTxPage}
+              totalItems={filteredTransactions.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemLabel="giao dịch"
+            />
+          )}
         </div>
 
         {/* 7. Modal Chi Tiết Đối Soát Chứng Từ (PR-O15 & PR-M7) */}

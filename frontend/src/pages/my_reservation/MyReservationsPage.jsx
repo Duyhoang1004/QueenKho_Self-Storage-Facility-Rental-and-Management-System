@@ -6,6 +6,9 @@ import CancelReservationModal from "../../components/CancelReservationModal";
 import { createVnpayPayment } from "../../services/vnpayService";
 import SimulationButton from "../../components/SimulationButton";
 import { simulateExpireHold } from "../../services/simulationService";
+import PaginationBar, { ListBoxHeader } from "../../components/PaginationBar";
+
+const PAGE_SIZE = 5;
 
 const STATUS_META = {
   PENDING: {
@@ -118,6 +121,7 @@ export default function MyReservationsPage() {
     userId ? "" : "Bạn cần đăng nhập để xem đơn đặt chỗ.",
   );
   const [filter, setFilter] = useState("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [retryingId, setRetryingId] = useState(null);
 
@@ -315,6 +319,13 @@ export default function MyReservationsPage() {
     });
   }, [reservations, filter]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleReservations.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedReservations = visibleReservations.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  );
+
   return (
     <div className="max-w-[1240px] w-full mx-auto px-6 py-6 flex flex-col gap-6">
       {/* Breadcrumb */}
@@ -376,13 +387,24 @@ export default function MyReservationsPage() {
 
       {/* Bảng danh sách */}
       <div className="duo-card overflow-hidden">
+        <ListBoxHeader
+          icon="receipt_long"
+          title="Danh sách đơn đặt chỗ"
+          subtitle="Theo dõi trạng thái đơn đặt chỗ và hợp đồng thuê kho"
+          count={visibleReservations.length}
+          countLabel="đơn đặt chỗ"
+          accentColor="bg-[#D7FFB8] text-[#58A700] border-[#58CC02]"
+        />
         {/* Bộ lọc trạng thái */}
         <div className="px-4 py-3 bg-[#FAFAFA] border-b-2 border-[#E5E5E5] flex flex-wrap items-center gap-2">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
+              onClick={() => {
+                setFilter(f.key);
+                setCurrentPage(1);
+              }}
               className={`px-4 py-1.5 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                 filter === f.key
                   ? "bg-[#58CC02] border-2 border-b-4 border-[#58A700] text-white shadow-xs"
@@ -473,7 +495,7 @@ export default function MyReservationsPage() {
                 </tr>
               </thead>
               <tbody className="text-[13px] font-bold text-[#4B4B4B]">
-                {visibleReservations.map((r, index) => {
+                {paginatedReservations.map((r, index) => {
                   const meta = STATUS_META[r.status] || {
                     label: r.status,
                     className:
@@ -481,7 +503,7 @@ export default function MyReservationsPage() {
                   };
                   const diffDays = getDaysUntilExpiry(r);
                   const isExpiringSoon = diffDays !== null && diffDays <= 3;
-                  const isLast = index === visibleReservations.length - 1;
+                  const isLast = index === paginatedReservations.length - 1;
                   const dt = formatDateTimeSplit(r.createdAt);
 
                   // 1. Số tháng thực tế (đồng bộ theo hợp đồng nếu đã gia hạn)
@@ -687,6 +709,15 @@ export default function MyReservationsPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && !error && visibleReservations.length > 0 && (
+          <PaginationBar
+            currentPage={safePage}
+            totalItems={visibleReservations.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemLabel="đơn đặt chỗ"
+          />
         )}
       </div>
 

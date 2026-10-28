@@ -4,6 +4,9 @@ import { getHeldGoods, resolveHeldGoods } from '../../services/heldGoodsService'
 import SimulationButton from '../../components/SimulationButton'
 import AssetTermsModal from '../../components/AssetTermsModal'
 import { simulateExpireHeldGoods } from '../../services/simulationService'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
 
 // PR-Q10: Hàng của khách lưu giữ sau thanh lý — Điều khoản xử lý tài sản khi không trả kho (v1)
 // Lưu giữ 60 ngày → khách nhận lại (hết nợ) / bán thanh lý (hết hạn + đã đồng ý điều khoản) / tiêu huỷ (hết hạn)
@@ -70,6 +73,8 @@ export default function HeldGoodsPage() {
   const [toast, setToast] = useState('')
   const [preview, setPreview] = useState(null)
   const [termsOpen, setTermsOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'grid'
 
   // Modal xử lý
   const [modal, setModal] = useState(null) // { item, outcome }
@@ -89,7 +94,11 @@ export default function HeldGoodsPage() {
   }, [tab, reloadKey])
 
   const reload = () => { setLoading(true); setReloadKey((k) => k + 1) }
-  const switchTab = (next) => { if (next !== tab) { setLoading(true); setTab(next) } }
+  const switchTab = (next) => { if (next !== tab) { setLoading(true); setTab(next); setCurrentPage(1) } }
+
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedItems = items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const openModal = (item, outcome) => {
     setModal({ item, outcome })
@@ -180,130 +189,208 @@ export default function HeldGoodsPage() {
         <div className="rounded-2xl bg-[#FFF5F5] border-2 border-[#FFDFDF] px-4 py-3 text-xs font-black text-[#FF4B4B]">{error}</div>
       )}
 
-      {loading ? (
-        <div className="duo-card p-10 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải...</div>
-      ) : items.length === 0 ? (
-        <div className="duo-card p-10 flex flex-col items-center gap-2 text-center">
-          <span className="material-symbols-outlined text-[48px] text-[#E5E5E5]">inventory_2</span>
-          <p className="text-sm font-black text-[#4B4B4B]">
-            {tab === 'HOLDING' ? 'Không có hàng nào đang lưu giữ.' : 'Chưa có hồ sơ nào được xử lý.'}
-          </p>
-          <p className="text-xs font-bold text-[#AFAFAF] max-w-[420px]">
-            Hồ sơ được lập khi nhân viên bấm "Dọn xong" task dọn kho sau thanh lý, kèm biên bản kiểm kê.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {items.map((item) => (
-            <div key={item.id} className={`duo-card p-5 flex flex-col gap-3.5 ${tab === 'HOLDING' && item.holdExpired ? 'border-[#FF4B4B]' : ''}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-black text-[#4B4B4B]">HĐ {item.contractCode} · ô {item.storageUnitId}</p>
-                  <p className="text-xs font-bold text-[#777777]">{item.customerName} · {item.customerPhone}</p>
-                </div>
-                {tab === 'HOLDING' ? <HoldBadge item={item} /> : (
-                  <span className={`duo-badge border-2 whitespace-nowrap ${OUTCOMES[item.status]?.badge || ''}`}>
-                    {OUTCOMES[item.status]?.label || item.status}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Khu lưu giữ</p>
-                  <p className="font-black text-[#4B4B4B]">{item.storageLocation}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Lưu đến hết ngày</p>
-                  <p className="font-black text-[#4B4B4B]">{formatDate(item.holdUntil)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Nợ còn lại của khách</p>
-                  <p className={`font-black ${Number(item.customerDebt) > 0 ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>{formatVND(item.customerDebt)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Điều khoản</p>
-                  <p className={`font-black ${item.termsVersion ? 'text-[#58A700]' : 'text-[#B78900]'}`}>
-                    {item.termsVersion ? `Đã đồng ý (${item.termsVersion})` : 'Đơn cũ — không được bán'}
-                  </p>
-                </div>
-                {/* PR-Q15: phí lưu giữ hàng (chỉ đơn đồng ý điều khoản v2) */}
-                {Number(item.storageFeePerDay) > 0 && (
-                  <div className="col-span-2">
-                    <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Phí lưu giữ</p>
-                    <p className="font-black text-[#4B4B4B]">
-                      {formatVND(item.storageFeePerDay)}/ngày · đã lưu {item.heldDays} ngày ·{' '}
-                      <span className="text-[#FF4B4B]">
-                        {tab === 'HOLDING' ? `tạm tính ${formatVND(item.estimatedStorageFee)}` : `đã thu ${formatVND(item.storageFeeAmount)}`}
-                      </span>
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-3.5 flex flex-col gap-2">
-                <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Biên bản kiểm kê</p>
-                <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">{item.inventoryNote}</p>
-                <p className="text-[11px] font-bold text-[#777777]">
-                  Chứng kiến: {item.witnessNote} · Lập bởi {item.createdByName} lúc {formatDateTime(item.createdAt)}
-                  {item.taskId && <> · <Link to={`/manager/tasks/${item.taskId}`} className="text-[#1CB0F6] hover:underline">task #{item.taskId}</Link></>}
-                </p>
-                {item.evidenceImages?.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {item.evidenceImages.map((url, idx) => (
-                      <button key={idx} type="button" onClick={() => setPreview(url)}
-                        className="w-16 h-16 rounded-xl border-2 border-[#E5E5E5] overflow-hidden bg-white cursor-pointer">
-                        <img src={url} alt={`Kiểm kê ${idx + 1}`} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {tab === 'HOLDING' ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {Object.entries(OUTCOMES).map(([key, meta]) => {
-                    const reason = blockReason(item, key)
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        disabled={Boolean(reason)}
-                        title={reason || meta.label}
-                        onClick={() => openModal(item, key)}
-                        className={`${meta.btn} px-3 py-2 text-[11px] gap-1 disabled:opacity-40 disabled:cursor-not-allowed`}
-                      >
-                        <span className="material-symbols-outlined text-[16px]">{meta.icon}</span>
-                        {meta.label}
-                      </button>
-                    )
-                  })}
-                  {!item.holdExpired && (
-                    <SimulationButton
-                      label="Hết hạn lưu giữ"
-                      description={`Lùi hạn lưu giữ hàng HĐ ${item.contractCode} về hôm qua (đã qua 60 ngày) để bán thanh lý / tiêu huỷ được ngay.`}
-                      onRun={() => simulateExpireHeldGoods(item.id)}
-                      onDone={reload}
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-2xl border-2 border-[#E5E5E5] p-3.5 flex flex-col gap-1.5 text-xs">
-                  <p className="font-bold text-[#4B4B4B] whitespace-pre-line">{item.resolvedNote}</p>
-                  {item.status === 'SOLD' && (
-                    <p className="font-bold text-[#777777]">
-                      Bán {formatVND(item.proceedsAmount)} · trừ nợ {formatVND(item.debtOffsetAmount)} ·{' '}
-                      <span className="text-[#1899D6] font-black">hoàn khách {formatVND(item.refundAmount)}</span>
-                      {Number(item.refundAmount) > 0 && <> (<Link to="/manager/refunds" className="text-[#1CB0F6] hover:underline">xem task hoàn tiền</Link>)</>}
-                    </p>
-                  )}
-                  <p className="text-[11px] font-bold text-[#AFAFAF]">{item.resolvedByName} · {formatDateTime(item.resolvedAt)}</p>
-                </div>
-              )}
+      <div className="duo-card overflow-hidden">
+        <ListBoxHeader
+          icon="inventory_2"
+          title={tab === 'HOLDING' ? 'Danh sách hàng đang lưu giữ' : 'Hồ sơ hàng đã xử lý'}
+          subtitle="Lưu giữ 60 ngày theo Điều khoản xử lý tài sản"
+          count={items.length}
+          countLabel="hồ sơ"
+          accentColor="bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]"
+          rightSlot={
+            <div className="flex items-center p-1 rounded-xl bg-white border-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-black uppercase flex items-center gap-1 cursor-pointer transition-all ${
+                  viewMode === 'list' ? 'bg-[#1CB0F6] text-white' : 'text-[#777777] hover:text-[#4B4B4B]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">view_agenda</span>
+                <span>Thuôn dài</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-black uppercase flex items-center gap-1 cursor-pointer transition-all ${
+                  viewMode === 'grid' ? 'bg-[#1CB0F6] text-white' : 'text-[#777777] hover:text-[#4B4B4B]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">grid_view</span>
+                <span>Lưới 2 cột</span>
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          }
+        />
+
+        {loading ? (
+          <div className="p-12 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải...</div>
+        ) : items.length === 0 ? (
+          <div className="p-12 flex flex-col items-center gap-2 text-center">
+            <span className="material-symbols-outlined text-[48px] text-[#E5E5E5]">inventory_2</span>
+            <p className="text-sm font-black text-[#4B4B4B]">
+              {tab === 'HOLDING' ? 'Không có hàng nào đang lưu giữ.' : 'Chưa có hồ sơ nào được xử lý.'}
+            </p>
+            <p className="text-xs font-bold text-[#AFAFAF] max-w-[420px]">
+              Hồ sơ được lập khi nhân viên bấm "Dọn xong" task dọn kho sau thanh lý, kèm biên bản kiểm kê.
+            </p>
+          </div>
+        ) : (
+          <div className={`p-4 ${viewMode === 'list' ? 'flex flex-col gap-3' : 'grid grid-cols-1 lg:grid-cols-2 gap-4'}`}>
+            {paginatedItems.map((item) => (
+              <div
+                key={item.id}
+                className={`rounded-2xl border-2 border-b-4 bg-white p-4 transition-all ${
+                  tab === 'HOLDING' && item.holdExpired
+                    ? 'border-[#FF4B4B]'
+                    : 'border-[#E5E5E5] hover:border-[#1CB0F6]'
+                } ${viewMode === 'list' ? 'flex flex-col lg:flex-row lg:items-center justify-between gap-4' : 'flex flex-col gap-3.5'}`}
+              >
+                {/* Cột trái: Thông tin hợp đồng, khách hàng, khu lưu giữ & biên bản */}
+                <div className="flex-1 min-w-0 flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-xl bg-[#F3E8FF] border border-[#C084FC] text-[#9333EA] font-mono text-xs font-black">
+                        HĐ {item.contractCode}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-xl bg-[#DDF4FF] border border-[#84D8FF] text-[#1CB0F6] font-mono text-xs font-black">
+                        Ô {item.storageUnitId}
+                      </span>
+                      <span className="text-sm font-black text-[#4B4B4B]">
+                        {item.customerName}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-[#777777]">
+                        · {item.customerPhone}
+                      </span>
+                    </div>
+                    {tab === 'HOLDING' ? (
+                      <HoldBadge item={item} />
+                    ) : (
+                      <span className={`duo-badge border-2 whitespace-nowrap ${OUTCOMES[item.status]?.badge || ''}`}>
+                        {OUTCOMES[item.status]?.label || item.status}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dải thông số ngang thuôn dài */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-[#FAFAFA] border border-[#EFEFEF] rounded-xl px-3.5 py-2.5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Khu lưu giữ</p>
+                      <p className="font-black text-[#4B4B4B] truncate">{item.storageLocation}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Lưu đến hết ngày</p>
+                      <p className="font-black text-[#4B4B4B]">{formatDate(item.holdUntil)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Nợ còn lại của khách</p>
+                      <p className={`font-black ${Number(item.customerDebt) > 0 ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
+                        {formatVND(item.customerDebt)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Điều khoản</p>
+                      <p className={`font-black ${item.termsVersion ? 'text-[#58A700]' : 'text-[#B78900]'}`}>
+                        {item.termsVersion ? `Đã đồng ý (${item.termsVersion})` : 'Đơn cũ — không bán'}
+                      </p>
+                    </div>
+                    {/* PR-Q15: phí lưu giữ hàng (chỉ đơn đồng ý điều khoản v2) */}
+                    {Number(item.storageFeePerDay) > 0 && (
+                      <div className="col-span-2 sm:col-span-4 pt-1 border-t border-[#EAEAEA]">
+                        <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Phí lưu giữ</p>
+                        <p className="font-black text-[#4B4B4B]">
+                          {formatVND(item.storageFeePerDay)}/ngày · đã lưu {item.heldDays} ngày ·{' '}
+                          <span className="text-[#FF4B4B]">
+                            {tab === 'HOLDING' ? `tạm tính ${formatVND(item.estimatedStorageFee)}` : `đã thu ${formatVND(item.storageFeeAmount)}`}
+                          </span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Biên bản kiểm kê thu gọn */}
+                  <div className="rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Biên bản kiểm kê</p>
+                      <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">{item.inventoryNote}</p>
+                      <p className="text-[11px] font-bold text-[#777777] mt-0.5">
+                        Chứng kiến: {item.witnessNote} · Lập bởi {item.createdByName} lúc {formatDateTime(item.createdAt)}
+                        {item.taskId && <> · <Link to={`/manager/tasks/${item.taskId}`} className="text-[#1CB0F6] hover:underline">task #{item.taskId}</Link></>}
+                      </p>
+                    </div>
+                    {item.evidenceImages?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        {item.evidenceImages.map((url, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setPreview(url)}
+                            className="w-12 h-12 rounded-xl border-2 border-[#E5E5E5] overflow-hidden bg-white cursor-pointer hover:border-[#1CB0F6]"
+                          >
+                            <img src={url} alt={`Kiểm kê ${idx + 1}`} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Cột phải: Các nút hành động hoặc kết quả xử lý */}
+                {tab === 'HOLDING' ? (
+                  <div className={`flex flex-wrap items-center gap-2 ${viewMode === 'list' ? 'lg:w-[250px] lg:flex-col lg:items-stretch shrink-0 lg:border-l-2 lg:border-[#F0F0F0] lg:pl-4' : ''}`}>
+                    {Object.entries(OUTCOMES).map(([key, meta]) => {
+                      const reason = blockReason(item, key)
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={Boolean(reason)}
+                          title={reason || meta.label}
+                          onClick={() => openModal(item, key)}
+                          className={`${meta.btn} px-3 py-2 text-[11px] gap-1.5 justify-center disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">{meta.icon}</span>
+                          {meta.label}
+                        </button>
+                      )
+                    })}
+                    {!item.holdExpired && (
+                      <SimulationButton
+                        label="Hết hạn lưu giữ"
+                        description={`Lùi hạn lưu giữ hàng HĐ ${item.contractCode} về hôm qua (đã qua 60 ngày) để bán thanh lý / tiêu huỷ được ngay.`}
+                        onRun={() => simulateExpireHeldGoods(item.id)}
+                        onDone={reload}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <div className={`rounded-2xl border-2 border-[#E5E5E5] p-3.5 flex flex-col gap-1.5 text-xs ${viewMode === 'list' ? 'lg:w-[320px] shrink-0' : ''}`}>
+                    <p className="font-bold text-[#4B4B4B] whitespace-pre-line">{item.resolvedNote}</p>
+                    {item.status === 'SOLD' && (
+                      <p className="font-bold text-[#777777]">
+                        Bán {formatVND(item.proceedsAmount)} · trừ nợ {formatVND(item.debtOffsetAmount)} ·{' '}
+                        <span className="text-[#1899D6] font-black">hoàn khách {formatVND(item.refundAmount)}</span>
+                        {Number(item.refundAmount) > 0 && <> (<Link to="/manager/refunds" className="text-[#1CB0F6] hover:underline">xem task hoàn tiền</Link>)</>}
+                      </p>
+                    )}
+                    <p className="text-[11px] font-bold text-[#AFAFAF]">{item.resolvedByName} · {formatDateTime(item.resolvedAt)}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!loading && items.length > 0 && (
+          <PaginationBar
+            currentPage={safePage}
+            totalItems={items.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemLabel="hồ sơ"
+          />
+        )}
+      </div>
 
       {/* Modal chốt cách xử lý */}
       {modal && (

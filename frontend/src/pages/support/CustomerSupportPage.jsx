@@ -11,6 +11,9 @@ import {
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import SimulationButton from '../../components/SimulationButton';
 import { simulateTicketAutoClose } from '../../services/simulationService';
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
+
+const PAGE_SIZE = 5;
 
 export const ISSUE_TYPE_META = {
   LOCK_ISSUE: {
@@ -126,6 +129,7 @@ export default function CustomerSupportPage() {
   const [activeTab, setActiveTab] = useState('ALL');
   const [contractFilter, setContractFilter] = useState(initialContractId || '');
   const [keyword, setKeyword] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Modal tạo ticket
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -363,6 +367,13 @@ export default function CustomerSupportPage() {
       });
   }, [tickets, activeTab, contractFilter, keyword]);
 
+  const totalPages = Math.max(1, Math.ceil(visibleTickets.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedTickets = visibleTickets.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
+
   return (
     <div className="max-w-[1200px] mx-auto px-6 md:px-8 py-8 flex flex-col gap-6">
       {/* Header */}
@@ -498,7 +509,10 @@ export default function CustomerSupportPage() {
             <button
               key={t.key}
               type="button"
-              onClick={() => setActiveTab(t.key)}
+              onClick={() => {
+                setActiveTab(t.key);
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-2xl border-2 border-b-4 text-xs font-black uppercase tracking-wide transition-all cursor-pointer ${
                 activeTab === t.key
                   ? 'bg-[#DDF4FF] border-[#84D8FF] text-[#1CB0F6]'
@@ -519,7 +533,10 @@ export default function CustomerSupportPage() {
             <input
               type="text"
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Tìm theo mã ticket (SR-xxxxxx), mã hợp đồng, mã ô kho, nội dung..."
               className="duo-input w-full pl-11 text-xs"
             />
@@ -527,7 +544,10 @@ export default function CustomerSupportPage() {
 
           <select
             value={contractFilter}
-            onChange={(e) => setContractFilter(e.target.value)}
+            onChange={(e) => {
+              setContractFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="duo-input text-xs md:w-72 cursor-pointer"
           >
             <option value="">Tất cả hợp đồng</option>
@@ -540,44 +560,54 @@ export default function CustomerSupportPage() {
         </div>
       </div>
 
-      {/* Danh sách Ticket */}
-      {loading ? (
-        <div className="duo-card flex flex-col items-center justify-center py-16 gap-3">
-          <span className="material-symbols-outlined text-[#58CC02] text-[36px] animate-spin">progress_activity</span>
-          <span className="text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách yêu cầu hỗ trợ...</span>
-        </div>
-      ) : error ? (
-        <div className="duo-card border-[#FFDFDF] bg-[#FFF5F5] p-6 flex flex-col items-center gap-2 text-center">
-          <span className="material-symbols-outlined text-[#FF4B4B] text-[36px]">error</span>
-          <p className="text-sm font-black text-[#FF4B4B]">{error}</p>
-        </div>
-      ) : visibleTickets.length === 0 ? (
-        <div className="duo-card flex flex-col items-center justify-center py-16 gap-3 text-center">
-          <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">inbox</span>
-          <p className="text-base font-black text-[#4B4B4B]">Chưa có yêu cầu hỗ trợ nào trong mục này</p>
-          <p className="text-xs font-bold text-[#777777] max-w-md">
-            Khi gặp sự cố về khóa thông minh, mã PIN, vệ sinh hoặc cơ sở vật chất tại ô kho, bạn có thể bấm nút &ldquo;Gửi yêu cầu hỗ trợ&rdquo; để nhân viên cơ sở xử lý ngay.
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {visibleTickets.map((ticket) => {
-            const issue = ISSUE_TYPE_META[ticket.issueType] || ISSUE_TYPE_META.OTHER;
-            const status = TICKET_STATUS_META[ticket.status] || TICKET_STATUS_META.OPEN;
-            const isResolved = ticket.status === 'RESOLVED';
-            const isOpen = ticket.status === 'OPEN';
+      {/* Danh sách Ticket đặt trong khung có phân trang */}
+      <div className="duo-card overflow-hidden">
+        <ListBoxHeader
+          icon="support_agent"
+          title="Danh sách yêu cầu hỗ trợ"
+          subtitle="Theo dõi tiến độ xử lý sự cố từ nhân viên cơ sở"
+          count={visibleTickets.length}
+          countLabel="yêu cầu"
+          accentColor="bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]"
+        />
 
-            return (
-              <div
-                key={ticket.id}
-                className={`duo-card p-5 md:p-6 flex flex-col gap-4 transition-all ${
-                  isResolved
-                    ? 'border-[#FF9600] bg-[#FFFDF9]'
-                    : ticket.urgent && ticket.status !== 'CLOSED'
-                    ? 'border-[#FF4B4B]'
-                    : ''
-                }`}
-              >
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <span className="material-symbols-outlined text-[#58CC02] text-[36px] animate-spin">progress_activity</span>
+            <span className="text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách yêu cầu hỗ trợ...</span>
+          </div>
+        ) : error ? (
+          <div className="bg-[#FFF5F5] p-6 flex flex-col items-center gap-2 text-center">
+            <span className="material-symbols-outlined text-[#FF4B4B] text-[36px]">error</span>
+            <p className="text-sm font-black text-[#FF4B4B]">{error}</p>
+          </div>
+        ) : visibleTickets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">inbox</span>
+            <p className="text-base font-black text-[#4B4B4B]">Chưa có yêu cầu hỗ trợ nào trong mục này</p>
+            <p className="text-xs font-bold text-[#777777] max-w-md">
+              Khi gặp sự cố về khóa thông minh, mã PIN, vệ sinh hoặc cơ sở vật chất tại ô kho, bạn có thể bấm nút &ldquo;Gửi yêu cầu hỗ trợ&rdquo; để nhân viên cơ sở xử lý ngay.
+            </p>
+          </div>
+        ) : (
+          <div className="p-4 flex flex-col gap-3">
+            {paginatedTickets.map((ticket) => {
+              const issue = ISSUE_TYPE_META[ticket.issueType] || ISSUE_TYPE_META.OTHER;
+              const status = TICKET_STATUS_META[ticket.status] || TICKET_STATUS_META.OPEN;
+              const isResolved = ticket.status === 'RESOLVED';
+              const isOpen = ticket.status === 'OPEN';
+
+              return (
+                <div
+                  key={ticket.id}
+                  className={`rounded-2xl border-2 border-b-4 bg-white p-4 md:p-5 flex flex-col gap-3.5 transition-all ${
+                    isResolved
+                      ? 'border-[#FF9600] bg-[#FFFDF9]'
+                      : ticket.urgent && ticket.status !== 'CLOSED'
+                      ? 'border-[#FF4B4B]'
+                      : 'border-[#E5E5E5] hover:border-[#1CB0F6]'
+                  }`}
+                >
                 {/* Dòng trên: Mã ticket, loại sự cố, nhãn khẩn & trạng thái */}
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
@@ -728,6 +758,17 @@ export default function CustomerSupportPage() {
           })}
         </div>
       )}
+
+        {!loading && !error && visibleTickets.length > 0 && (
+          <PaginationBar
+            currentPage={safePage}
+            totalItems={visibleTickets.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemLabel="yêu cầu hỗ trợ"
+          />
+        )}
+      </div>
 
       {/* ==================== MODAL TẠO TICKET MỚI (PR-51, PR-S1, PR-S2) ==================== */}
       {showCreateModal && (

@@ -278,7 +278,7 @@ export default function TaskBoard({
           <span>công việc</span>
         </div>
 
-        {totalPages > 1 && (
+        {totalPages >= 1 && (
           <div className="flex items-center gap-1.5 flex-wrap justify-center">
             {/* Về trang đầu << */}
             <button

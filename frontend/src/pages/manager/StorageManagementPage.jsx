@@ -7,6 +7,9 @@ import {
   deleteStorageUnit
 } from '../../services/storageUnitService';
 import { getAllUnitTypes } from '../../services/facilityService';
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
+
+const PAGE_SIZE = 5;
 
 export default function StorageManagementPage() {
   const navigate = useNavigate();
@@ -45,6 +48,7 @@ export default function StorageManagementPage() {
   const [floorFilter, setFloorFilter] = useState('ALL');
   const [unitTypeFilter, setUnitTypeFilter] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
 
   // 4. Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -113,8 +117,16 @@ export default function StorageManagementPage() {
   };
 
   useEffect(() => {
+    setCurrentPage(1);
     fetchStorageUnits();
   }, [facilityId, statusFilter, floorFilter, unitTypeFilter, searchKeyword]);
+
+  const totalPages = Math.max(1, Math.ceil((data.units?.length || 0) / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedUnits = (data.units || []).slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   // Xử lý tạo ô kho mới (PR-M9)
   const handleCreateUnit = async (e) => {
@@ -453,6 +465,14 @@ export default function StorageManagementPage() {
 
         {/* 3. High-Density Inventory Table (Duo-Card Style) */}
         <div className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="inventory_2"
+            title="Danh sách ô kho tại cơ sở"
+            subtitle={`Tỉ lệ lấp đầy ${data.occupancyRate}% · Đồng bộ trực tiếp từ SQL Server`}
+            count={data.units.length}
+            countLabel="ô kho"
+            accentColor="bg-[#D7FFB8] text-[#58A700] border-[#58CC02]"
+          />
           {loading ? (
             <div className="flex flex-col items-center justify-center p-16 gap-3">
               <span className="material-symbols-outlined text-[36px] text-[#58CC02] animate-spin">
@@ -495,7 +515,7 @@ export default function StorageManagementPage() {
                   </tr>
                 </thead>
                 <tbody className="text-xs font-bold text-[#4B4B4B] divide-y-2 divide-[#E5E5E5]">
-                  {data.units.map((unit) => {
+                  {paginatedUnits.map((unit) => {
                     const isAvailable = unit.status === 'AVAILABLE';
                     const isMaintenance = unit.status === 'MAINTENANCE';
                     const isOccupied = unit.status === 'OCCUPIED';
@@ -658,18 +678,16 @@ export default function StorageManagementPage() {
             </div>
           )}
 
-          {/* Footer Metadata Strip */}
-          <div className="px-6 py-4 bg-[#FAFAFA] border-t-2 border-[#E5E5E5] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-bold text-[#AFAFAF]">
-            <div>
-              Hiển thị <span className="font-black text-[#4B4B4B]">{data.units.length}</span> trên tổng số{' '}
-              <span className="font-black text-[#4B4B4B]">{data.totalUnits}</span> ô kho • Tỉ lệ lấp đầy:{' '}
-              <span className="font-black text-[#58CC02]">{data.occupancyRate}%</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[#58A700]">
-              <span className="material-symbols-outlined text-[16px]">verified</span>
-              <span className="text-[11px] font-black uppercase">Đồng bộ trực tiếp từ SQL Server</span>
-            </div>
-          </div>
+          {/* Footer Metadata Strip + Pagination */}
+          {!loading && !errorMsg && data.units.length > 0 && (
+            <PaginationBar
+              currentPage={safePage}
+              totalItems={data.units.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemLabel="ô kho"
+            />
+          )}
         </div>
 
       </div>

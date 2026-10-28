@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getMyPayments } from '../../services/paymentService'
 import { createVnpayDebt } from '../../services/vnpayService'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
+const DEBT_PAGE_SIZE = 3
 
 // UC-20 (PR-50): khách xem MỌI giao dịch của mình và trả các khoản còn nợ.
 //  - Phí sự cố / phí chiếm dụng vượt cọc (DAMAGE_FEE / OVERSTAY_FEE) → trả ngay qua VNPAY tại đây; trả xong được đặt kho mới.
@@ -62,6 +66,8 @@ export default function CustomerPaymentsPage() {
   const [payError, setPayError] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [showFailed, setShowFailed] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [debtPage, setDebtPage] = useState(1)
 
   // Kết quả trả về từ VNPAY (/thanh-toan?orderId=...&vnpResponse=00)
   const vnpResponse = searchParams.get('vnpResponse')
@@ -104,6 +110,26 @@ export default function CustomerPaymentsPage() {
   const summary = state.data?.summary
   const debts = state.data?.debts || []
   const overdue = state.data?.overdueContracts || []
+
+  const actionableItems = useMemo(() => {
+    const dItems = debts.map((d) => ({ kind: 'DEBT', key: `debt-${d.id}`, data: d }))
+    const oItems = overdue.map((c) => ({ kind: 'OVERDUE', key: `overdue-${c.contractId}`, data: c }))
+    return [...dItems, ...oItems]
+  }, [debts, overdue])
+
+  const totalDebtPages = Math.max(1, Math.ceil(actionableItems.length / DEBT_PAGE_SIZE))
+  const safeDebtPage = Math.min(debtPage, totalDebtPages)
+  const paginatedActionable = actionableItems.slice(
+    (safeDebtPage - 1) * DEBT_PAGE_SIZE,
+    safeDebtPage * DEBT_PAGE_SIZE
+  )
+
+  const totalTxPages = Math.max(1, Math.ceil(transactions.length / PAGE_SIZE))
+  const safeTxPage = Math.min(currentPage, totalTxPages)
+  const paginatedTransactions = transactions.slice(
+    (safeTxPage - 1) * PAGE_SIZE,
+    safeTxPage * PAGE_SIZE
+  )
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 md:px-8 py-8 flex flex-col gap-6">
@@ -161,72 +187,114 @@ export default function CustomerPaymentsPage() {
       )}
 
       {/* Khoản cần thanh toán */}
-      {state.data && (debts.length > 0 || overdue.length > 0) && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-lg font-black text-[#4B4B4B]">Khoản cần thanh toán</h2>
-          {payError && <p className="text-sm font-black text-[#FF4B4B]">{payError}</p>}
+      {state.data && actionableItems.length > 0 && (
+        <section className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="warning"
+            title="Khoản cần thanh toán"
+            subtitle="Thanh toán công nợ sự cố hoặc gia hạn hợp đồng quá hạn"
+            count={actionableItems.length}
+            countLabel="khoản"
+            accentColor="bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]"
+          />
+          {payError && <p className="px-5 pt-3 text-sm font-black text-[#FF4B4B]">{payError}</p>}
 
-          {debts.map((debt) => (
-            <div key={debt.id} className="duo-card p-5 border-2 border-[#FF4B4B] flex flex-col md:flex-row md:items-center gap-4">
-              <span className="material-symbols-outlined text-[32px] text-[#FF4B4B]">construction</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-[#4B4B4B]">{debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
-                <p className="text-xs font-bold text-[#777777]">
-                  {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — phát sinh khi nghiệm thu trả kho
-                </p>
-              </div>
-              <span className="text-xl font-black text-[#EA2B2B]">{formatVND(debt.amount)}</span>
-              <button
-                onClick={() => handlePayDebt(debt)}
-                disabled={payingId != null}
-                className="duo-btn-green px-5 py-3 text-xs disabled:opacity-50"
-              >
-                {payingId === debt.id ? 'ĐANG TẠO LINK...' : 'THANH TOÁN VNPAY'}
-              </button>
-            </div>
-          ))}
-
-          {overdue.map((c) => (
-            <div key={c.contractId} className="duo-card p-5 border-2 border-[#FF9600] flex flex-col md:flex-row md:items-center gap-4">
-              <span className="material-symbols-outlined text-[32px] text-[#FF9600]">event_busy</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-black text-[#4B4B4B]">Hợp đồng {c.contractCode} quá hạn {c.overdueDays} ngày</p>
-                <p className="text-xs font-bold text-[#777777]">
-                  {c.facilityName} — gia hạn để mở lại mã PIN.{' '}
-                  {c.lateFeeWaived ? 'Quản lý đã miễn phí trễ cho bạn.' : `Phí trễ hiện tại ${formatVND(c.lateFeeAmount)}.`}{Number(c.overstayFeeAmount) > 0 ? ` Phí chiếm dụng ô ${formatVND(c.overstayFeeAmount)} (tăng mỗi ngày).` : ''}
-                </p>
-              </div>
-              {c.reservationId && (
-                <Link to={`/kho-cua-toi/hop-dong/${c.reservationId}`} className="duo-btn-orange px-5 py-3 text-xs">
-                  GIA HẠN NGAY
-                </Link>
-              )}
-            </div>
-          ))}
+          <div className="p-4 flex flex-col gap-3">
+            {paginatedActionable.map((item) => {
+              if (item.kind === 'DEBT') {
+                const debt = item.data
+                return (
+                  <div key={item.key} className="rounded-2xl bg-white p-4 border-2 border-b-4 border-[#FF4B4B] flex flex-col md:flex-row md:items-center gap-4">
+                    <span className="material-symbols-outlined text-[30px] text-[#FF4B4B]">construction</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-black text-[#4B4B4B]">{debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
+                      <p className="text-xs font-bold text-[#777777]">
+                        {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — phát sinh khi nghiệm thu trả kho
+                      </p>
+                    </div>
+                    <span className="text-xl font-black text-[#EA2B2B]">{formatVND(debt.amount)}</span>
+                    <button
+                      onClick={() => handlePayDebt(debt)}
+                      disabled={payingId != null}
+                      className="duo-btn-green px-5 py-3 text-xs disabled:opacity-50"
+                    >
+                      {payingId === debt.id ? 'ĐANG TẠO LINK...' : 'THANH TOÁN VNPAY'}
+                    </button>
+                  </div>
+                )
+              }
+              const c = item.data
+              return (
+                <div key={item.key} className="rounded-2xl bg-white p-4 border-2 border-b-4 border-[#FF9600] flex flex-col md:flex-row md:items-center gap-4">
+                  <span className="material-symbols-outlined text-[30px] text-[#FF9600]">event_busy</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-black text-[#4B4B4B]">Hợp đồng {c.contractCode} quá hạn {c.overdueDays} ngày</p>
+                    <p className="text-xs font-bold text-[#777777]">
+                      {c.facilityName} — gia hạn để mở lại mã PIN.{' '}
+                      {c.lateFeeWaived ? 'Quản lý đã miễn phí trễ cho bạn.' : `Phí trễ hiện tại ${formatVND(c.lateFeeAmount)}.`}{Number(c.overstayFeeAmount) > 0 ? ` Phí chiếm dụng ô ${formatVND(c.overstayFeeAmount)} (tăng mỗi ngày).` : ''}
+                    </p>
+                  </div>
+                  {c.reservationId && (
+                    <Link to={`/kho-cua-toi/hop-dong/${c.reservationId}`} className="duo-btn-orange px-5 py-3 text-xs">
+                      GIA HẠN NGAY
+                    </Link>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <PaginationBar
+            currentPage={safeDebtPage}
+            totalItems={actionableItems.length}
+            pageSize={DEBT_PAGE_SIZE}
+            onPageChange={setDebtPage}
+            itemLabel="khoản cần thanh toán"
+          />
         </section>
       )}
 
       {/* Lịch sử giao dịch */}
       {state.data && (
-        <section className="flex flex-col gap-3">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <h2 className="text-lg font-black text-[#4B4B4B]">Lịch sử giao dịch</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="duo-input text-sm">
-                <option value="ALL">Tất cả loại</option>
-                {Object.entries(TYPE_LABELS).map(([code, t]) => <option key={code} value={code}>{t.label}</option>)}
-              </select>
-              <label className="flex items-center gap-2 text-xs font-bold text-[#777777] cursor-pointer">
-                <input type="checkbox" checked={showFailed} onChange={(e) => setShowFailed(e.target.checked)} />
-                Hiện giao dịch thất bại
-              </label>
-            </div>
-          </div>
+        <section className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="receipt_long"
+            title="Lịch sử giao dịch"
+            subtitle="Chi tiết tất cả giao dịch thanh toán, hoàn tiền và khấu trừ cọc"
+            count={transactions.length}
+            countLabel="giao dịch"
+            accentColor="bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]"
+            rightSlot={
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={typeFilter}
+                  onChange={(e) => {
+                    setTypeFilter(e.target.value)
+                    setCurrentPage(1)
+                  }}
+                  className="duo-input text-xs py-1.5"
+                >
+                  <option value="ALL">Tất cả loại</option>
+                  {Object.entries(TYPE_LABELS).map(([code, t]) => <option key={code} value={code}>{t.label}</option>)}
+                </select>
+                <label className="flex items-center gap-1.5 text-xs font-bold text-[#777777] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showFailed}
+                    onChange={(e) => {
+                      setShowFailed(e.target.checked)
+                      setCurrentPage(1)
+                    }}
+                  />
+                  Hiện GD thất bại
+                </label>
+              </div>
+            }
+          />
 
-          <div className="duo-card overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
               <thead>
-                <tr className="border-b-2 border-[#E5E5E5]">
+                <tr className="border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
                   {['Thời gian', 'Loại', 'Đơn / Hợp đồng', 'Phương thức', 'Số tiền', 'Trạng thái'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{h}</th>
                   ))}
@@ -238,12 +306,12 @@ export default function CustomerPaymentsPage() {
                     <td colSpan={6} className="px-4 py-12 text-center text-sm font-black text-[#AFAFAF]">Chưa có giao dịch nào</td>
                   </tr>
                 )}
-                {transactions.map((t) => {
+                {paginatedTransactions.map((t) => {
                   const type = TYPE_LABELS[t.paymentType] || { label: t.paymentType, icon: 'receipt' }
                   const status = STATUS_STYLES[t.status] || STATUS_STYLES.PENDING
                   const isRefund = t.paymentType === 'REFUND'
                   return (
-                    <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0">
+                    <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0 hover:bg-[#FAFAFA]">
                       <td className="px-4 py-3 whitespace-nowrap font-bold text-[#777777]">{formatTime(t.paidAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 font-black text-[#4B4B4B]">
@@ -269,6 +337,15 @@ export default function CustomerPaymentsPage() {
               </tbody>
             </table>
           </div>
+          {transactions.length > 0 && (
+            <PaginationBar
+              currentPage={safeTxPage}
+              totalItems={transactions.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemLabel="giao dịch"
+            />
+          )}
         </section>
       )}
     </div>

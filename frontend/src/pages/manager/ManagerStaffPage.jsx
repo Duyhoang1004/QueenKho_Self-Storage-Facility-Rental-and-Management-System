@@ -7,6 +7,9 @@ import {
   resetFacilityStaffPassword
 } from '../../services/facilityStaffService';
 import { getAllFacilities } from '../../services/facilityService';
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
+
+const PAGE_SIZE = 5;
 
 export default function ManagerStaffPage() {
   const navigate = useNavigate();
@@ -42,6 +45,7 @@ export default function ManagerStaffPage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'LOCKED'
   const [workloadFilter, setWorkloadFilter] = useState('ALL'); // 'ALL' | 'BUSY' | 'IDLE'
+  const [currentPage, setCurrentPage] = useState(1);
 
   // 4. State Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -84,6 +88,10 @@ export default function ManagerStaffPage() {
     fetchStaff();
   }, [fetchStaff]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedFacilityId, searchKeyword, statusFilter, workloadFilter]);
+
   // Hiển thị toast thông báo
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -111,6 +119,13 @@ export default function ManagerStaffPage() {
 
     return matchKw && matchStatus && matchWorkload;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredStaff.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedStaff = filteredStaff.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  );
 
   // Xử lý tạo nhân viên mới (PR-22, PR-M12)
   const handleCreateStaff = async (e) => {
@@ -379,7 +394,15 @@ export default function ManagerStaffPage() {
         </div>
 
         {/* Bảng Danh Sách Nhân Viên */}
-        <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl overflow-hidden shadow-xs">
+        <div className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="groups"
+            title="Danh sách nhân viên trực thuộc"
+            subtitle={`Phân công ca trực & nhiệm vụ tại ${currentFacilityName}`}
+            count={filteredStaff.length}
+            countLabel="nhân viên"
+            accentColor="bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]"
+          />
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-[#AFAFAF]">
               <span className="material-symbols-outlined text-[36px] animate-spin text-[#1CB0F6]">
@@ -418,7 +441,7 @@ export default function ManagerStaffPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-[#E5E5E5] text-xs font-bold text-[#4B4B4B]">
-                  {filteredStaff.map((staff) => {
+                  {paginatedStaff.map((staff) => {
                     const initials = staff.fullName
                       ? staff.fullName.split(' ').map(n => n[0]).slice(-2).join('').toUpperCase()
                       : 'NV';
@@ -554,6 +577,15 @@ export default function ManagerStaffPage() {
                 </tbody>
               </table>
             </div>
+          )}
+          {!loading && !error && filteredStaff.length > 0 && (
+            <PaginationBar
+              currentPage={safePage}
+              totalItems={filteredStaff.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+              itemLabel="nhân viên"
+            />
           )}
         </div>
       </div>

@@ -3,6 +3,9 @@ import { getPendingReservations, getOverdueNoShowReservations } from '../../serv
 import AssignUnitModal from '../../components/AssignUnitModal'
 import NoShowModal from '../../components/NoShowModal'
 import RescheduleModal from '../../components/RescheduleModal'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
 
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
@@ -52,6 +55,8 @@ function readUserId() {
 export default function PendingReservationsPage() {
   const userId = readUserId()
   const [activeTab, setActiveTab] = useState('pending')
+  const [pendingPage, setPendingPage] = useState(1)
+  const [overduePage, setOverduePage] = useState(1)
 
   // Tab 1: đơn chờ gán ô
   const [items, setItems] = useState([])
@@ -133,6 +138,20 @@ export default function PendingReservationsPage() {
       setToast(null)
     }, 4500)
   }
+
+  const totalPendingPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const safePendingPage = Math.min(pendingPage, totalPendingPages)
+  const paginatedPending = items.slice(
+    (safePendingPage - 1) * PAGE_SIZE,
+    safePendingPage * PAGE_SIZE
+  )
+
+  const totalOverduePages = Math.max(1, Math.ceil(overdueItems.length / PAGE_SIZE))
+  const safeOverduePage = Math.min(overduePage, totalOverduePages)
+  const paginatedOverdue = overdueItems.slice(
+    (safeOverduePage - 1) * PAGE_SIZE,
+    safeOverduePage * PAGE_SIZE
+  )
 
   return (
     <div className="max-w-[1200px] mx-auto px-8 py-8">
@@ -221,6 +240,14 @@ export default function PendingReservationsPage() {
         {/* Bảng danh sách Duolingo Card */}
         {activeTab === 'pending' && (
         <div className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="pending_actions"
+            title="Hàng đợi đơn chờ gán ô kho"
+            subtitle="Khách đã thanh toán cọc — cần chỉ định mã ô kho thực tế"
+            count={items.length}
+            countLabel="đơn chờ"
+            accentColor="bg-[#FFE8CC] text-[#E58800] border-[#FF9600]"
+          />
           {loading && <p className="p-8 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách hàng đợi...</p>}
 
           {!loading && error && (
@@ -260,7 +287,7 @@ export default function PendingReservationsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-[#E5E5E5] text-xs font-bold text-[#4B4B4B]">
-                  {items.map((r) => {
+                  {paginatedPending.map((r) => {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FDFDFD] transition-colors">
@@ -313,12 +340,29 @@ export default function PendingReservationsPage() {
               </table>
             </div>
           )}
+          {!loading && !error && items.length > 0 && (
+            <PaginationBar
+              currentPage={safePendingPage}
+              totalItems={items.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPendingPage}
+              itemLabel="đơn chờ"
+            />
+          )}
         </div>
         )}
 
         {/* Tab Quá hạn No-Show */}
         {activeTab === 'overdue' && (
         <div className="duo-card overflow-hidden">
+          <ListBoxHeader
+            icon="warning"
+            title="Danh sách đơn quá hạn nhận kho (Vắng mặt)"
+            subtitle="Xử lý dời lịch hoặc ghi nhận khách không đến nhận kho"
+            count={overdueItems.length}
+            countLabel="đơn quá hạn"
+            accentColor="bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]"
+          />
           {overdueLoading && <p className="p-8 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải danh sách quá hạn...</p>}
 
           {!overdueLoading && overdueError && (
@@ -351,7 +395,7 @@ export default function PendingReservationsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-[#FFDFDF] text-xs font-bold text-[#4B4B4B]">
-                  {overdueItems.map((r) => {
+                  {paginatedOverdue.map((r) => {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FFF8F8] transition-colors">
@@ -455,6 +499,15 @@ export default function PendingReservationsPage() {
                 </tbody>
               </table>
             </div>
+          )}
+          {!overdueLoading && !overdueError && overdueItems.length > 0 && (
+            <PaginationBar
+              currentPage={safeOverduePage}
+              totalItems={overdueItems.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setOverduePage}
+              itemLabel="đơn quá hạn"
+            />
           )}
         </div>
         )}

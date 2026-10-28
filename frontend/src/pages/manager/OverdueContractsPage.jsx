@@ -10,6 +10,9 @@ import {
 } from '../../services/contractService'
 import SimulationButton from '../../components/SimulationButton'
 import { simulateFailedContacts, simulateOverdue } from '../../services/simulationService'
+import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+
+const PAGE_SIZE = 5
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -48,6 +51,7 @@ export default function OverdueContractsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const [successToast, setSuccessToast] = useState('')
 
   // Modal 1: Ghi chú liên hệ
@@ -114,6 +118,10 @@ export default function OverdueContractsPage() {
   useEffect(() => {
     fetchContracts()
   }, [managerId, activeTab])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeTab, search])
 
   // Xử lý mở Modal Ghi chú liên hệ
   const handleOpenContactModal = async (c) => {
@@ -213,6 +221,12 @@ export default function OverdueContractsPage() {
     (c.customerPhone || '').includes(search) ||
     (c.storageUnitId || '').toLowerCase().includes(search.toLowerCase())
   )
+  const totalPages = Math.max(1, Math.ceil(filteredContracts.length / PAGE_SIZE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginatedContracts = filteredContracts.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE
+  )
 
   // PR-Q9 / PR-Q14: thanh lý trừ cọc phí trễ + phí chiếm dụng; vượt cọc thành nợ OVERSTAY_FEE của khách
   const liquidationCharge = liquidateContractTarget
@@ -304,6 +318,18 @@ export default function OverdueContractsPage() {
 
       {/* Table Content */}
       <div className="duo-card overflow-hidden">
+        <ListBoxHeader
+          icon={activeTab === 'OVERDUE' ? 'warning' : 'gavel'}
+          title={activeTab === 'OVERDUE' ? 'Hợp đồng đang quá hạn' : 'Hợp đồng đã thanh lý'}
+          subtitle="Theo dõi công nợ, lịch sử đôn đốc và thanh lý"
+          count={filteredContracts.length}
+          countLabel="hợp đồng"
+          accentColor={
+            activeTab === 'OVERDUE'
+              ? 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
+              : 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]'
+          }
+        />
         {loading ? (
           <div className="flex flex-col items-center justify-center p-16 gap-3">
             <span className="material-symbols-outlined text-[36px] text-[#58CC02] animate-spin">
@@ -338,7 +364,7 @@ export default function OverdueContractsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-[#F0F0F0]">
-                {filteredContracts.map((c) => {
+                {paginatedContracts.map((c) => {
                   const daysLeft = (c.liquidationDaysThreshold || 7) - (c.overdueDays || 0)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
@@ -475,7 +501,7 @@ export default function OverdueContractsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-[#F0F0F0]">
-                {filteredContracts.map((c) => {
+                {paginatedContracts.map((c) => {
                   const held = Number(c.depositHeldAmount || 0)
                   const isRefunding = refundSubmittingId === c.contractId
                   return (
@@ -544,6 +570,15 @@ export default function OverdueContractsPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && filteredContracts.length > 0 && (
+          <PaginationBar
+            currentPage={safePage}
+            totalItems={filteredContracts.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+            itemLabel="hợp đồng"
+          />
         )}
       </div>
 

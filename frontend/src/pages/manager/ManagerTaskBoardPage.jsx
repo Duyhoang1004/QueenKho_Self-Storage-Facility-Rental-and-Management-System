@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
-import { assignStaffTask, unassignStaffTask, completeRefundTask, extendSupportTask } from '../../services/staffTaskService'
+import { assignStaffTask, unassignStaffTask, completeRefundTask, extendSupportTask, uploadImageFile } from '../../services/staffTaskService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
 
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
@@ -233,6 +233,10 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     // PR-O15: Bắt buộc bằng chứng trước khi hoàn tất
     if (refundMethod === 'BANK_TRANSFER' && !bankTransactionCode.trim()) {
       setRefundError('Bắt buộc nhập mã giao dịch ngân hàng (mã FT) khi chuyển khoản hoàn tiền.')
+      return
+    }
+    if (refundMethod === 'BANK_TRANSFER' && !evidenceImageUrl.trim()) {
+      setRefundError('Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.')
       return
     }
     if (refundMethod === 'CASH' && !cashReceiptConfirmed) {
@@ -663,17 +667,51 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                     BOM / Kế toán sẽ đối soát tiền hoàn thông qua mã FT này.
                   </span>
                 </div>
-                <div>
-                  <label className="text-[11px] font-black uppercase text-[#026AA2] block mb-1">
-                    Link ảnh ủy nhiệm chi / Biên lai (Tùy chọn):
-                  </label>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-black uppercase text-[#026AA2]">
+                      Ảnh biên lai chuyển tiền <span className="text-[#FF4B4B]">*</span>:
+                    </label>
+                    <label className="duo-btn-white px-3 py-1 text-xs gap-1 cursor-pointer flex items-center">
+                      <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">upload_file</span>
+                      Tải ảnh biên lai
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const res = await uploadImageFile(file);
+                            if (res?.url) setEvidenceImageUrl(res.url);
+                          } catch (err) {
+                            setRefundError('Không thể tải file ảnh lên máy chủ, vui lòng thử lại.');
+                          }
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
                   <input
                     type="text"
-                    placeholder="Dán link ảnh screenshot giao dịch (nếu có)..."
+                    placeholder="Hoặc dán link URL ảnh biên lai tại đây..."
                     value={evidenceImageUrl}
                     onChange={e => setEvidenceImageUrl(e.target.value)}
                     className="duo-input w-full text-xs bg-white"
                   />
+                  {evidenceImageUrl && (
+                    <div className="relative w-24 h-24 rounded-xl border-2 border-[#84D8FF] overflow-hidden bg-white mt-1">
+                      <img src={evidenceImageUrl} alt="Biên lai chuyển khoản" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setEvidenceImageUrl('')}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#FF4B4B] text-white flex items-center justify-center text-xs font-black cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -718,7 +756,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </button>
               <button
                 onClick={handleCompleteRefund}
-                disabled={submitting}
+                disabled={submitting || (refundMethod === 'BANK_TRANSFER' && (!bankTransactionCode.trim() || !evidenceImageUrl.trim())) || (refundMethod === 'CASH' && !cashReceiptConfirmed)}
                 className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">check_circle</span>

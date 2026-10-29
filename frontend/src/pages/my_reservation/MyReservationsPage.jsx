@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
+import AssetTermsModal from "../../components/AssetTermsModal";
 import { createVnpayPayment } from "../../services/vnpayService";
 import SimulationButton from "../../components/SimulationButton";
 import { simulateExpireHold } from "../../services/simulationService";
@@ -124,6 +125,7 @@ export default function MyReservationsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [retryingId, setRetryingId] = useState(null);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -348,15 +350,27 @@ export default function MyReservationsPage() {
             ô kho.
           </p>
         </div>
-        <Link
-          to="/tim-va-dat-kho"
-          className="duo-btn-green px-5 py-3 text-xs tracking-wider flex items-center gap-1.5 self-start sm:self-auto shadow-sm shrink-0"
-        >
-          <span className="material-symbols-outlined text-[18px]">
-            add_circle
-          </span>
-          <span>ĐẶT KHO MỚI</span>
-        </Link>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setTermsOpen(true)}
+            className="duo-btn-white px-4 py-3 text-xs tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px] text-[#B78900]">
+              gavel
+            </span>
+            <span>ĐIỀU KHOẢN THUÊ</span>
+          </button>
+          <Link
+            to="/tim-va-dat-kho"
+            className="duo-btn-green px-5 py-3 text-xs tracking-wider flex items-center gap-1.5 shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              add_circle
+            </span>
+            <span>ĐẶT KHO MỚI</span>
+          </Link>
+        </div>
       </div>
 
       {/* Thẻ thống kê */}
@@ -726,6 +740,11 @@ export default function MyReservationsPage() {
         onClose={() => setIsCancelModalOpen(false)}
         reservation={selectedResToCancel}
         onSuccess={handleCancelSuccess}
+      />
+
+      <AssetTermsModal
+        open={termsOpen}
+        onClose={() => setTermsOpen(false)}
       />
     </div>
   );

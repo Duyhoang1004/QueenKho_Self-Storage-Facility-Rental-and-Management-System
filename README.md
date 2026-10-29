@@ -136,6 +136,16 @@ Script sẽ tự động:
 > Các file cũ (`QueenKho.sql`, `QueenKhoDuLieuMau_UC09.sql`, `rental_policies_data.sql`, `Update_activity_logs.sql`, `setup_test_env.sql`) đã được gộp vào `QueenKho_full.sql`.  
 > Khi thêm bảng / cột mới: sửa **`QueenKho_full.sql`** (backend dùng `ddl-auto: validate` nên schema phải khớp Entity).
 
+#### Phương án 2: DB "mới mở cửa" — `sql_script/QueenKho_TongHop.sql` (29/10/2026)
+Dùng khi muốn test / demo từ đầu với DB **sạch**: chạy file này thay cho `QueenKho_full.sql` (cũng **xoá và tạo lại `QueenKhoDB`**).
+
+- Schema giống hệt `QueenKho_full.sql` (đã đối chiếu với DB đang chạy: cột, ràng buộc, index, khoá ngoại khớp 100%), kèm **trigger hoàn cọc bản mới nhất** từ `UC28_setup.sql` (hợp đồng `LIQUIDATED` giữ nguyên trạng thái khi hoàn tiền).
+- Chỉ có dữ liệu bắt buộc: 5 vai trò, 6 cơ sở, 6 loại kho, 6 chính sách thuê (v1 đang áp dụng), **42 ô kho đều `AVAILABLE`**, 28 tài khoản nội bộ (6 FM, 18 Staff, 1 BOM, 2 Admin, 1 `system`).
+- **Không có tài khoản khách hàng**, đơn đặt chỗ, hợp đồng, thanh toán, task, ticket, nhật ký → khách tự đăng ký ở `/register` rồi đặt kho như thật.
+- Chạy bằng `sqlcmd`: `sqlcmd -S localhost -U sa -P 12345 -f 65001 -i sql_script/QueenKho_TongHop.sql`
+- Kiểm tra: `SELECT r.name, COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id GROUP BY r.name;` → `ADMIN 3` (gồm `system`), `BOM 1`, `FACILITY_MANAGER 6`, `STAFF 18`, không có `CUSTOMER`.
+- Sửa schema thì sửa **cả 2 file** `QueenKho_full.sql` và `QueenKho_TongHop.sql` để không lệch nhau.
+
 ### Bước 2: Kiểm tra
 ```sql
 USE QueenKhoDB;

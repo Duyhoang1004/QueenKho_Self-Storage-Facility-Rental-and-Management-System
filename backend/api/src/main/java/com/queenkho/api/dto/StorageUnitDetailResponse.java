@@ -33,6 +33,15 @@ public class StorageUnitDetailResponse {
     private Integer maintenanceTaskId;
     private String maintenanceReason; // DAMAGE (sự cố sau trả kho) / LIQUIDATION (dọn kho sau thanh lý)
 
+    // UC-06 mặt bằng: vị trí theo ô lưới 0.5m (null = chưa đặt) + kích thước mặc định theo loại kho
+    private Integer mapX;
+    private Integer mapY;
+    private Integer mapW;
+    private Integer mapH;
+    private String mapDoor;
+    private Integer defaultMapW;
+    private Integer defaultMapH;
+
     @Data
     @Builder
     @NoArgsConstructor

@@ -79,12 +79,54 @@ CREATE TABLE storage_units (
     zone            NVARCHAR(20) NULL,
     room_number     NVARCHAR(20) NULL,
     status          NVARCHAR(30) NOT NULL DEFAULT 'AVAILABLE', -- AVAILABLE / RESERVED / OCCUPIED / MAINTENANCE
+    -- UC-06 mặt bằng: vị trí + kích thước theo ô lưới (1 ô = 0.5m), NULL = chưa đặt trên mặt bằng
+    map_x           INT NULL,
+    map_y           INT NULL,
+    map_w           INT NULL,
+    map_h           INT NULL,
+    map_door        NVARCHAR(10) NULL,                         -- phía cửa: TOP / BOTTOM / LEFT / RIGHT
     CONSTRAINT FK_storageunits_facility FOREIGN KEY (facility_id)  REFERENCES facilities(id),
-    CONSTRAINT FK_storageunits_unittype FOREIGN KEY (unit_type_id) REFERENCES unit_types(id)
+    CONSTRAINT FK_storageunits_unittype FOREIGN KEY (unit_type_id) REFERENCES unit_types(id),
+    CONSTRAINT CK_storageunits_map CHECK (
+        (map_x IS NULL AND map_y IS NULL AND map_w IS NULL AND map_h IS NULL)
+        OR (map_x >= 0 AND map_y >= 0 AND map_w > 0 AND map_h > 0)),
+    CONSTRAINT CK_storageunits_mapdoor CHECK (map_door IS NULL OR map_door IN ('TOP', 'BOTTOM', 'LEFT', 'RIGHT'))
 );
 GO
 CREATE INDEX IX_storageunits_facility ON storage_units(facility_id);
 CREATE INDEX IX_storageunits_unittype ON storage_units(unit_type_id);
+GO
+
+/* ---------- 5b. facility_floors (UC-06: mặt bằng từng tầng, tên khớp storage_units.floor) ---------- */
+CREATE TABLE facility_floors (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    facility_id     INT NOT NULL,
+    name            NVARCHAR(20) NOT NULL,
+    grid_width      INT NOT NULL DEFAULT 56,   -- số ô lưới ngang (56 = 28m)
+    grid_height     INT NOT NULL DEFAULT 40,   -- số ô lưới dọc  (40 = 20m)
+    sort_order      INT NOT NULL DEFAULT 0,
+    CONSTRAINT FK_facilityfloors_facility FOREIGN KEY (facility_id) REFERENCES facilities(id),
+    CONSTRAINT UQ_facilityfloors_name UNIQUE (facility_id, name),
+    CONSTRAINT CK_facilityfloors_grid CHECK (grid_width BETWEEN 10 AND 200 AND grid_height BETWEEN 10 AND 200)
+);
+GO
+
+/* ---------- 5c. floor_fixtures (UC-06: lối đi, cửa, thang, văn phòng trên mặt bằng) ---------- */
+CREATE TABLE floor_fixtures (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    floor_id        INT NOT NULL,
+    fixture_type    NVARCHAR(20) NOT NULL,     -- AISLE / ENTRANCE / STAIRS / ELEVATOR / OFFICE
+    label           NVARCHAR(50) NULL,
+    map_x           INT NOT NULL,
+    map_y           INT NOT NULL,
+    map_w           INT NOT NULL,
+    map_h           INT NOT NULL,
+    CONSTRAINT FK_floorfixtures_floor FOREIGN KEY (floor_id) REFERENCES facility_floors(id) ON DELETE CASCADE,
+    CONSTRAINT CK_floorfixtures_type CHECK (fixture_type IN ('AISLE', 'ENTRANCE', 'STAIRS', 'ELEVATOR', 'OFFICE')),
+    CONSTRAINT CK_floorfixtures_rect CHECK (map_x >= 0 AND map_y >= 0 AND map_w > 0 AND map_h > 0)
+);
+GO
+CREATE INDEX IX_floorfixtures_floor ON floor_fixtures(floor_id);
 GO
 
 /* ---------- 6. rental_policy ---------- */

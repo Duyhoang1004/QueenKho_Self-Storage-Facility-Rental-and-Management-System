@@ -69,3 +69,48 @@ export const deleteStorageUnit = async (id, actorUserId) => {
   return response.data;
 };
 
+/**
+ * UC-06 mặt bằng: tất cả tầng + vật cố định của cơ sở (vị trí ô kho nằm trong getStorageUnits)
+ * @returns {Promise<{ facilityId, cellMeters, floors: [{ id, name, gridWidth, gridHeight, sortOrder, fixtures }] }>}
+ */
+export const getFacilityLayout = async (facilityId) => {
+  const response = await api.get('/storage-units/layout', { params: { facilityId } });
+  return response.data;
+};
+
+/**
+ * UC-06: Tạo mặt bằng tầng mới
+ * @param {Object} data { name, gridWidth, gridHeight } — kích thước theo ô lưới 0.5m
+ */
+export const createFloor = async (facilityId, data) => {
+  const response = await api.post('/storage-units/layout/floors', data, { params: { facilityId } });
+  return response.data;
+};
+
+/**
+ * UC-06: Đổi tên / kích thước tầng
+ * @param {Object} data { name, gridWidth, gridHeight }
+ */
+export const updateFloor = async (floorId, data) => {
+  const response = await api.put(`/storage-units/layout/floors/${floorId}`, data);
+  return response.data;
+};
+
+/**
+ * UC-06: Xoá tầng (chỉ khi tầng không còn ô kho)
+ */
+export const deleteFloor = async (floorId) => {
+  const response = await api.delete(`/storage-units/layout/floors/${floorId}`);
+  return response.data;
+};
+
+/**
+ * UC-06: Lưu mặt bằng 1 tầng
+ * @param {Object} data { units: [{ unitId, x, y, w, h, door }], fixtures: [{ type, label, x, y, w, h }] }
+ *   units: ô cần đặt / dời (x = null → gỡ khỏi mặt bằng); fixtures: danh sách mới, thay toàn bộ
+ */
+export const saveFloorPlan = async (floorId, data) => {
+  const response = await api.put(`/storage-units/layout/floors/${floorId}/plan`, data);
+  return response.data;
+};
+

@@ -31,6 +31,7 @@ public class StorageUnitService {
     private final ReservationRepository reservationRepository;
     private final ActivityLogService activityLogService;
     private final StaffTaskService staffTaskService;
+    private final FloorPlanService floorPlanService;
 
     /**
      * UC-06: Lấy danh sách ô kho có lọc và tính toán thống kê KPI theo cơ sở
@@ -90,6 +91,13 @@ public class StorageUnitService {
                     .overdue(isOverdue)
                     .currentContract(contractInfo)
                     .canDelete(canDelete)
+                    .mapX(unit.getMapX())
+                    .mapY(unit.getMapY())
+                    .mapW(unit.getMapW())
+                    .mapH(unit.getMapH())
+                    .mapDoor(unit.getMapDoor())
+                    .defaultMapW(FloorPlanService.defaultSize(ut)[0])
+                    .defaultMapH(FloorPlanService.defaultSize(ut)[1])
                     .build();
         }).map(this::withMaintenanceInfo).collect(Collectors.toList());
 
@@ -209,6 +217,13 @@ public class StorageUnitService {
                 .overdue(isOverdue)
                 .currentContract(contractInfo)
                 .canDelete(canDelete)
+                .mapX(unit.getMapX())
+                .mapY(unit.getMapY())
+                .mapW(unit.getMapW())
+                .mapH(unit.getMapH())
+                .mapDoor(unit.getMapDoor())
+                .defaultMapW(FloorPlanService.defaultSize(ut)[0])
+                .defaultMapH(FloorPlanService.defaultSize(ut)[1])
                 .build());
     }
 
@@ -257,15 +272,27 @@ public class StorageUnitService {
             throw new FacilityException(HttpStatus.CONFLICT, "DUPLICATE_UNIT_CODE", "Mã ô kho " + unitId + " đã tồn tại trong hệ thống");
         }
 
-        StorageUnit unit = new StorageUnit(
-                unitId,
-                facility,
-                unitType,
-                request.getFloor().trim(),
-                zone,
-                cleanRoom,
-                "AVAILABLE"
-        );
+        StorageUnit unit = new StorageUnit();
+        unit.setId(unitId);
+        unit.setFacility(facility);
+        unit.setUnitType(unitType);
+        unit.setFloor(request.getFloor().trim());
+        unit.setZone(zone);
+        unit.setRoomNumber(cleanRoom);
+        unit.setStatus("AVAILABLE");
+
+        // UC-06: đặt luôn vị trí trên mặt bằng nếu FM đã chọn chỗ (tầng phải có mặt bằng, không chồng ô khác)
+        if (request.getMapX() != null) {
+            floorPlanService.applyPlacement(unit, UnitPlacementDto.builder()
+                    .unitId(unitId)
+                    .x(request.getMapX())
+                    .y(request.getMapY())
+                    .w(request.getMapW())
+                    .h(request.getMapH())
+                    .door(request.getMapDoor())
+                    .build(), unit.getFloor());
+            floorPlanService.validateNewUnitPlacement(facilityId, unit.getFloor(), unit);
+        }
 
         storageUnitRepository.save(unit);
 
@@ -308,6 +335,10 @@ public class StorageUnitService {
         }
 
         if (request.getFloor() != null && !request.getFloor().isBlank()) {
+            // UC-06: chuyển sang tầng khác → vị trí cũ không còn đúng, ô về danh sách "chưa đặt" của tầng mới
+            if (unit.getFloor() == null || !unit.getFloor().trim().equalsIgnoreCase(request.getFloor().trim())) {
+                unit.clearMapPosition();
+            }
             unit.setFloor(request.getFloor().trim());
         }
         if (request.getZone() != null && !request.getZone().isBlank()) {

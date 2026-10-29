@@ -776,3 +776,43 @@ Quy tắc `resolve`:
 | `POST /api/v1/held-goods/{id}/resolve` | Body thêm `storageFeeCollected` (boolean) — `RETURNED` mà cọc không đủ trả phí lưu giữ thì bắt buộc `true`, nếu không `409 STORAGE_FEE_UNPAID` |
 | Báo cáo doanh thu (BOM / FM) | `OVERSTAY_FEE` tính vào **doanh thu thuê** (`rentalRevenue`) |
 | `POST /api/v1/staff-tasks/{id}/check-out` | Lỡ ân hạn (> `end_date` + 5) → trừ thêm phí chiếm dụng; vượt cọc → nợ `OVERSTAY_FEE` riêng với nợ `DAMAGE_FEE` |
+
+---
+
+## UC-06 — Sơ đồ mặt bằng ô kho (29/10/2026)
+
+> Chi tiết thiết kế: `update_map.md`. ⚠️ Sau khi pull: chạy `sql_script/Update_mat_bang.sql` (DB cũ, giữ dữ liệu) hoặc chạy lại `QueenKho_full.sql` / `QueenKho_TongHop.sql` (DB mới) — backend `ddl-auto: validate` sẽ không khởi động nếu thiếu bảng `facility_floors`, `floor_fixtures`.
+
+Lưới: **1 ô = 0.5m**, toạ độ `(x, y)` là góc trên-trái tính bằng ô lưới. Mọi API dưới đây thuộc nhóm quyền `STORAGE_MANAGE` (chỉ `FACILITY_MANAGER`, cơ sở của mình — `facilityId` bị filter ghi đè theo token, `floorId` kiểm tra bằng `OwnershipGuard.checkFacilityFloor`).
+
+### API mới
+| API | Mô tả |
+|---|---|
+| `GET /api/v1/storage-units/layout?facilityId=` | Mặt bằng cơ sở: `{ facilityId, cellMeters: 0.5, floors: [{ id, name, gridWidth, gridHeight, sortOrder, fixtures: [{ id, type, label, x, y, w, h }] }] }`. Vị trí ô kho lấy từ `GET /storage-units` |
+| `POST /api/v1/storage-units/layout/floors?facilityId=` | Tạo tầng. Body `{ name, gridWidth, gridHeight }` (10–200 ô). Trùng tên → `409 DUPLICATE_FLOOR` |
+| `PUT /api/v1/storage-units/layout/floors/{floorId}` | Đổi tên / kích thước. Đổi tên → đổi luôn `storage_units.floor` của các ô thuộc tầng. Thu nhỏ làm ô / vật cố định ra ngoài → `400 MAP_OUT_OF_BOUNDS` |
+| `DELETE /api/v1/storage-units/layout/floors/{floorId}` | Xoá tầng (kèm vật cố định). Còn ô kho thuộc tầng → `409 FLOOR_HAS_UNITS` |
+| `PUT /api/v1/storage-units/layout/floors/{floorId}/plan` | Lưu mặt bằng 1 tầng trong 1 giao dịch (xem dưới) |
+
+`PUT .../plan` body:
+```json
+{
+  "units": [
+    { "unitId": "KV-TB-A106", "x": 37, "y": 5, "w": 5, "h": 5, "door": "BOTTOM" },  // đặt / dời; w,h bỏ trống = mặc định theo loại kho
+    { "unitId": "KV-TB-C105", "x": null }                                              // gỡ khỏi mặt bằng
+  ],
+  "fixtures": [ { "type": "AISLE", "label": "Lối đi A – B", "x": 12, "y": 10, "w": 44, "h": 4 } ]  // thay TOÀN BỘ
+}
+```
+- `type`: `AISLE` / `ENTRANCE` / `STAIRS` / `ELEVATOR` / `OFFICE`; `door`: `TOP` / `BOTTOM` / `LEFT` / `RIGHT`.
+- Ô đang thuộc tầng khác được đặt vào tầng này → `storage_units.floor` đổi theo.
+- Kiểm tra cả tầng sau khi áp dụng: ra ngoài mặt bằng, 2 ô chồng nhau, ô đè vật cố định → `400 MAP_CONFLICT` (message liệt kê tối đa 5 lỗi), không lưu gì.
+- Lỗi khác: `UNIT_NOT_IN_FACILITY`, `DUPLICATE_PLACEMENT`, `INVALID_FIXTURE_TYPE`, `INVALID_DOOR_SIDE`, `INVALID_SIZE`, `FLOOR_NOT_FOUND`.
+- Ghi nhật ký `[FLOOR_CREATE]`, `[FLOOR_UPDATE]`, `[FLOOR_DELETE]`, `[FLOOR_PLAN]` (`target_entity = facility_floors`).
+
+### Thay đổi API cũ
+| API | Thay đổi |
+|---|---|
+| `GET /api/v1/storage-units`, `GET /api/v1/storage-units/{id}` | Mỗi ô thêm `mapX`, `mapY`, `mapW`, `mapH`, `mapDoor` (null = chưa đặt) và `defaultMapW`, `defaultMapH` (kích thước theo `unit_types.dimensions`) |
+| `POST /api/v1/storage-units` | Body thêm tuỳ chọn `mapX`, `mapY`, `mapW`, `mapH`, `mapDoor`. Có `mapX` mà tầng chưa có mặt bằng → `400 FLOOR_HAS_NO_MAP`; chồng ô / vật cố định → `400 MAP_CONFLICT` |
+| `PUT /api/v1/storage-units/{id}` | Đổi sang tầng khác → xoá vị trí cũ (ô về danh sách "chưa đặt") |

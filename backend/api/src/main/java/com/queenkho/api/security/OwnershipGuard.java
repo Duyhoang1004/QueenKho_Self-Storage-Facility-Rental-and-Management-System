@@ -41,6 +41,12 @@ public class OwnershipGuard {
                 "Ô kho không thuộc về bạn", "Ô kho không thuộc cơ sở của bạn");
     }
 
+    // UC-06: mặt bằng tầng thuộc cơ sở nào
+    public void checkFacilityFloor(Integer floorId) {
+        check(first("SELECT NULL AS customer_id, facility_id FROM facility_floors WHERE id = ?", floorId),
+                "Mặt bằng không thuộc về bạn", "Mặt bằng không thuộc cơ sở của bạn");
+    }
+
     public void checkFacility(Integer facilityId) {
         CurrentUser user = currentUser.require();
         if (user.isFacilityScoped() && !Objects.equals(user.facilityId(), facilityId)) {

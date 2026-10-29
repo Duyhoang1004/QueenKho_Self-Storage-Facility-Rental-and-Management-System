@@ -24,5 +24,12 @@ public class CreateStorageUnitRequest {
 
     @NotBlank(message = "Số phòng không được để trống")
     private String roomNumber;
+
+    // UC-06: vị trí trên mặt bằng tầng (tuỳ chọn). mapW/mapH bỏ trống = kích thước mặc định theo loại kho
+    private Integer mapX;
+    private Integer mapY;
+    private Integer mapW;
+    private Integer mapH;
+    private String mapDoor;
 }
 

@@ -45,7 +45,7 @@ public class CustomerPaymentService {
             throw new IllegalArgumentException("Thiếu thông tin khách hàng");
         }
         List<CustomerPaymentsResponse.PaymentItem> transactions = jdbcTemplate.query(
-                "SELECT p.id, p.transaction_code, p.payment_type, p.payment_method, p.amount, p.status, p.paid_at, " +
+                "SELECT p.id, p.transaction_code, p.bank_transaction_code, p.payment_type, p.payment_method, p.amount, p.status, p.paid_at, " +
                         "p.renewal_months, r.id AS reservation_id, r.reservation_code, p.contract_id, c.contract_code, " +
                         "f.name AS facility_name, ut.name AS unit_type_name " +
                         MY_PAYMENTS + "ORDER BY p.id DESC",
@@ -54,6 +54,7 @@ public class CustomerPaymentService {
                     return new CustomerPaymentsResponse.PaymentItem(
                             rs.getInt("id"),
                             rs.getString("transaction_code"),
+                            rs.getString("bank_transaction_code"),
                             rs.getString("payment_type"),
                             rs.getString("payment_method"),
                             rs.getBigDecimal("amount"),

@@ -281,7 +281,7 @@ public class BomRevenueService {
                 + " COALESCE(f.name, N'Hệ thống') AS facilityName,"
                 + " rc.contract_code,"
                 + " p.payment_type, p.payment_method,"
-                + " p.transaction_code AS bank_transaction_code,"
+                + " COALESCE(p.bank_transaction_code, p.transaction_code) AS bank_transaction_code,"
                 + " p.amount, p.status,"
                 + " ft.evidence_image_url,"
                 + " ft.note"

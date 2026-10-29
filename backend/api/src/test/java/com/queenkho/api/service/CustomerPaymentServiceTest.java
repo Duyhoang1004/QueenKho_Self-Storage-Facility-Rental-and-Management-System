@@ -27,7 +27,7 @@ class CustomerPaymentServiceTest {
     @Mock LateFeeService lateFeeService;
 
     private static PaymentItem item(int id, String type, String method, String amount, String status) {
-        return new PaymentItem(id, "TX" + id, type, method, new BigDecimal(amount), status, null, null,
+        return new PaymentItem(id, "TX" + id, "FT" + id, type, method, new BigDecimal(amount), status, null, null,
                 1, "RES-1", 2, "HD-1", "Tân Bình", "Mini M");
     }
 

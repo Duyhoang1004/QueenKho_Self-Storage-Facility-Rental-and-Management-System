@@ -220,6 +220,7 @@ CREATE TABLE payment_transactions (
     renewal_months      INT NULL,                -- gói gia hạn 1 / 3 / 6 / 12 tháng; không suy ra từ transaction_code
     status              NVARCHAR(30) NOT NULL DEFAULT 'PENDING', -- PENDING / SUCCESS / FAILED / REFUNDED
     paid_at             DATETIME2 NULL,
+    bank_transaction_code NVARCHAR(100) NULL,    -- Mã giao dịch từ ngân hàng (FT... hoặc vnp_BankTranNo / vnp_TransactionNo)
     CONSTRAINT FK_payments_user        FOREIGN KEY (user_id)        REFERENCES users(id),
     CONSTRAINT FK_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id),
     CONSTRAINT FK_payments_contract    FOREIGN KEY (contract_id)    REFERENCES rental_contracts(id),

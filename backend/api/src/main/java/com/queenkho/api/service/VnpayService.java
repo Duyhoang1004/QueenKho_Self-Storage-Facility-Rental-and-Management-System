@@ -317,10 +317,16 @@ public class VnpayService {
             return Map.of("RspCode", "02", "Message", "Already confirmed");
         }
 
+        String bankTranNo = p.get("vnp_BankTranNo");
+        String vnpayTranNo = p.get("vnp_TransactionNo");
+        String bankTranCode = (bankTranNo != null && !bankTranNo.trim().isEmpty())
+                ? bankTranNo.trim()
+                : (vnpayTranNo != null && !vnpayTranNo.trim().isEmpty() ? vnpayTranNo.trim() : null);
+
         // PR-B6 / PR-R5: giao dịch cũ đã FAILED nhưng VNPAY báo thành công muộn.
         // Ghi nhận tiền đã thu và chuyển toàn bộ sang quy trình hoàn tiền, không áp dụng đơn/gia hạn lần nữa.
         if ("FAILED".equals(currentStatus)) {
-            updatePaymentGroup(ref, "SUCCESS");
+            updatePaymentGroup(ref, "SUCCESS", bankTranCode);
             createLatePaymentRefund(ref, db, "IPN thành công về sau khi link đã hết hiệu lực hoặc đã được thay thế");
             return Map.of("RspCode", "00", "Message", "Success");
         }
@@ -334,14 +340,14 @@ public class VnpayService {
             jdbcTemplate.update(
                     "UPDATE reservations SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING'",
                     reservationId);
-            updatePaymentGroup(ref, "SUCCESS");
+            updatePaymentGroup(ref, "SUCCESS", bankTranCode);
             createLatePaymentRefund(ref, db, "IPN thành công sau 15 phút giữ chỗ");
             return Map.of("RspCode", "00", "Message", "Success");
         }
 
         if (isDebt) {
             // UC-20: trả xong khoản nợ → khách hết bị chặn đặt kho mới (PR-Q12 đếm DAMAGE_FEE PENDING)
-            updatePaymentGroup(ref, "SUCCESS");
+            updatePaymentGroup(ref, "SUCCESS", bankTranCode);
             logPayment(db, "[DEBT_PAID] Khách thanh toán phí sự cố " + ((BigDecimal) db.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString()
                     + "đ qua VNPAY (" + ref + ")");
             return Map.of("RspCode", "00", "Message", "Success");
@@ -350,12 +356,12 @@ public class VnpayService {
         String err = "DEPOSIT".equals(db.get("payment_type")) ? settleDeposit(ref, db) : settleRenewal(ref, db);
 
         if (err != null) {
-            updatePaymentGroup(ref, "SUCCESS");
+            updatePaymentGroup(ref, "SUCCESS", bankTranCode);
             createLatePaymentRefund(ref, db, err);
             return Map.of("RspCode", "00", "Message", "Success");
         }
 
-        updatePaymentGroup(ref, "SUCCESS");
+        updatePaymentGroup(ref, "SUCCESS", bankTranCode);
         logPayment(db, "[VNPAY] Thanh toán " + ref + " thành công");
         return Map.of("RspCode", "00", "Message", "Success");
     }
@@ -457,10 +463,24 @@ public class VnpayService {
     private static final List<String> SUB_PAYMENT_PREFIXES = List.of("LF", "OS");
 
     private void updatePaymentGroup(String ref, String status) {
-        payments.updatePayment(ref, status);
+        updatePaymentGroup(ref, status, null);
+    }
+
+    private void updatePaymentGroup(String ref, String status, String bankTranCode) {
+        if (bankTranCode != null && !bankTranCode.isBlank()) {
+            payments.updatePayment(ref, status, bankTranCode);
+        } else {
+            payments.updatePayment(ref, status);
+        }
         for (String prefix : SUB_PAYMENT_PREFIXES) {
             var sub = payments.findPayment(prefix + ref, true);
-            if (sub != null) payments.updatePayment(prefix + ref, status);
+            if (sub != null) {
+                if (bankTranCode != null && !bankTranCode.isBlank()) {
+                    payments.updatePayment(prefix + ref, status, bankTranCode);
+                } else {
+                    payments.updatePayment(prefix + ref, status);
+                }
+            }
         }
     }
 

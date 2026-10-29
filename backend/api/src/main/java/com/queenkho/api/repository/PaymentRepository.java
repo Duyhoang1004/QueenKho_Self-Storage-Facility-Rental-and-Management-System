@@ -33,15 +33,11 @@ public class PaymentRepository {
         }
     }
 
-
-
     public void updateReservationToDepositPaid(Integer reservationId, BigDecimal depositAmount) {
         jdbcTemplate.update(
                 "UPDATE reservations SET status = 'DEPOSIT_PAID', total_deposit_paid = ? WHERE id = ?",
                 depositAmount, reservationId);
     }
-
-
 
     public void createPending(String ref, Object userId, Integer reservationId, Integer contractId,
                               String type, BigDecimal amount) {
@@ -69,7 +65,7 @@ public class PaymentRepository {
     public Map<String, Object> paymentStatus(String ref) {
         try {
             return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, p.amount AS payment_amount, p.paid_at, " +
-                    "p.reservation_id, r.reservation_code, r.start_date, r.duration_months, r.deposit_amount, r.storage_unit_id, " +
+                    "p.bank_transaction_code, p.reservation_id, r.reservation_code, r.start_date, r.duration_months, r.deposit_amount, r.storage_unit_id, " +
                     "r.status AS reservation_status, u.full_name AS customer_name, u.phone AS customer_phone, " +
                     "u.email AS customer_email, u.cccd AS customer_cccd, f.name AS facility_name, " +
                     "f.address AS facility_address, f.hotline AS facility_hotline, ut.name AS unit_type_name, " +
@@ -105,12 +101,17 @@ public class PaymentRepository {
     }
 
     public void updatePayment(String ref, String status) {
-        jdbcTemplate.update("UPDATE payment_transactions SET status = ?, paid_at = CASE WHEN ? = 'FAILED' THEN NULL ELSE SYSDATETIME() END " +
-                "WHERE transaction_code = ? AND payment_method = 'VNPAY'", status, status, ref);
+        updatePayment(ref, status, null);
+    }
+
+    public void updatePayment(String ref, String status, String bankTransactionCode) {
+        jdbcTemplate.update("UPDATE payment_transactions SET status = ?, " +
+                "paid_at = CASE WHEN ? = 'FAILED' THEN NULL ELSE SYSDATETIME() END, " +
+                "bank_transaction_code = COALESCE(?, bank_transaction_code) " +
+                "WHERE transaction_code = ? AND payment_method = 'VNPAY'", status, status, bankTransactionCode, ref);
     }
 
     public void updateReservationToCancelled(Integer reservationId) {
         jdbcTemplate.update("UPDATE reservations SET status = 'CANCELLED' WHERE id = ?", reservationId);
     }
 }
-

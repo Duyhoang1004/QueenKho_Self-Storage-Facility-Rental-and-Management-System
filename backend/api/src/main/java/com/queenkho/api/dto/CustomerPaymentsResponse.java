@@ -22,6 +22,7 @@ public record CustomerPaymentsResponse(
     public record PaymentItem(
             Integer id,
             String transactionCode,
+            String bankTransactionCode,
             String paymentType,
             String paymentMethod,
             BigDecimal amount,

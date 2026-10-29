@@ -686,6 +686,12 @@ BEGIN
         ALTER TABLE payment_transactions ADD renewal_months INT NULL;
         PRINT N'   [+] Đã thêm cột renewal_months vào payment_transactions.';
     END
+
+    IF COL_LENGTH('payment_transactions', 'bank_transaction_code') IS NULL
+    BEGIN
+        ALTER TABLE payment_transactions ADD bank_transaction_code NVARCHAR(100) NULL;
+        PRINT N'   [+] Đã thêm cột bank_transaction_code vào payment_transactions.';
+    END
 END
 GO
 

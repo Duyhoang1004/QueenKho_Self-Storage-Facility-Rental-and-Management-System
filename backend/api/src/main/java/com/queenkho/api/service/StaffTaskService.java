@@ -1963,6 +1963,9 @@ public class StaffTaskService {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_EVIDENCE_REQUIRED",
                         "Bắt buộc xác nhận khách hàng đã ký nhận tiền mặt tại quầy");
             }
+            if (ftCode.isEmpty()) {
+                ftCode = "CASH-" + task.getId();
+            }
         } else {
             if (!hasEvidenceImg) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_EVIDENCE_REQUIRED",
@@ -2003,7 +2006,7 @@ public class StaffTaskService {
 
         // Chỉ chuyển SUCCESS đúng giao dịch REFUND của task này (BUG-06 / K08: trước đây task không gắn HĐ
         // update MỌI REFUND PENDING của cả cơ sở → đơn khác chưa được hoàn cũng thành "đã hoàn")
-        markRefundTransactionsSucceeded(task, method);
+        markRefundTransactionsSucceeded(task, method, ftCode);
 
         // Ghi activity log (PR-A8, PR-A9)
         try {
@@ -2061,6 +2064,40 @@ public class StaffTaskService {
                             "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code NOT LIKE 'REF-LATE-%' " +
                             "AND reservation_id = (SELECT id FROM reservations WHERE reservation_code = ?)",
                     method, reservationCode.group(1));
+        }
+        return 0;
+    }
+
+    int markRefundTransactionsSucceeded(StaffTask task, String method, String bankTranCode) {
+        if (bankTranCode == null || bankTranCode.isBlank()) {
+            return markRefundTransactionsSucceeded(task, method);
+        }
+        String note = task.getNote() != null ? task.getNote() : "";
+        java.util.regex.Matcher lateRef = REFUND_ORIGINAL_REF.matcher(note);
+        if (lateRef.find()) {
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME(), bank_transaction_code = ? " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code = ?",
+                    method, bankTranCode, "REF-LATE-" + lateRef.group(1));
+        }
+        if (task.getContract() != null) {
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME(), bank_transaction_code = ? " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND contract_id = ? " +
+                            "AND transaction_code NOT LIKE 'REF-LATE-%'",
+                    method, bankTranCode, task.getContract().getId());
+        }
+        java.util.regex.Matcher reservationCode = REFUND_RESERVATION_CODE.matcher(note);
+        if (reservationCode.find()) {
+            try {
+                jdbcTemplate.update("UPDATE reservations SET status = 'REFUNDED' WHERE reservation_code = ?", reservationCode.group(1));
+            } catch (Exception ignored) {
+            }
+            return jdbcTemplate.update(
+                    "UPDATE payment_transactions SET status = 'SUCCESS', payment_method = ?, paid_at = SYSDATETIME(), bank_transaction_code = ? " +
+                            "WHERE payment_type = 'REFUND' AND status = 'PENDING' AND transaction_code NOT LIKE 'REF-LATE-%' " +
+                            "AND reservation_id = (SELECT id FROM reservations WHERE reservation_code = ?)",
+                    method, bankTranCode, reservationCode.group(1));
         }
         return 0;
     }

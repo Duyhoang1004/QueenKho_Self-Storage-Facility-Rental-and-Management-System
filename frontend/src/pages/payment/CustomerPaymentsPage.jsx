@@ -319,6 +319,11 @@ export default function CustomerPaymentsPage() {
                           {type.label}{t.renewalMonths ? ` ${t.renewalMonths} tháng` : ''}
                         </div>
                         <div className="text-[11px] font-bold text-[#AFAFAF] font-mono">{t.transactionCode}</div>
+                        {t.bankTransactionCode && (
+                          <div className="text-[10px] font-bold text-[#FF9600] font-mono" title="Mã giao dịch ngân hàng / Cổng thanh toán">
+                            FT: {t.bankTransactionCode}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="font-bold text-[#4B4B4B]">{t.contractCode || t.reservationCode || '—'}</div>

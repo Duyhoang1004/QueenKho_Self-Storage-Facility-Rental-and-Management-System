@@ -302,20 +302,6 @@ public class ReservationService {
         User customer = userRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
 
-        // Cập nhật CCCD và SĐT nếu khách có nhập lúc đặt kho
-        boolean customerUpdated = false;
-        if (request.getCccd() != null && !request.getCccd().isBlank()) {
-            customer.setCccd(request.getCccd().trim());
-            customerUpdated = true;
-        }
-        if (request.getPhone() != null && !request.getPhone().isBlank()) {
-            customer.setPhone(request.getPhone().trim());
-            customerUpdated = true;
-        }
-        if (customerUpdated) {
-            customer = userRepository.save(customer);
-        }
-
         // PR-B3 / PR-Q12: Kiểm tra nợ của khách hàng trước khi cho phép đặt chỗ mới
         Map<String, Object> debtCheck = jdbcTemplate.queryForMap(
                 "SELECT " +

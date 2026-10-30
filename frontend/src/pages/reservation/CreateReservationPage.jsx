@@ -97,7 +97,7 @@ export default function CreateReservationPage() {
   const [customerInfo, setCustomerInfo] = useState({
     fullName: sessionUser.fullName || '',
     phone: sessionUser.phone || '',
-    cccd: sessionUser.cccd || '',
+    cccd: '',
     email: sessionUser.email || '',
     address: '',
   })
@@ -213,15 +213,7 @@ export default function CreateReservationPage() {
         startDate,
         durationMonths: selectedMonths,
         acceptedTerms: termsAccepted,
-        phone: customerInfo.phone?.trim(),
-        cccd: customerInfo.cccd?.trim(),
       })
-      // Đồng bộ thông tin SĐT và CCCD mới nhất vào phiên đăng nhập hiện tại
-      sessionStorage.setItem('user', JSON.stringify({
-        ...sessionUser,
-        phone: customerInfo.phone?.trim() || sessionUser.phone,
-        cccd: customerInfo.cccd?.trim() || sessionUser.cccd,
-      }))
       const paymentData = await createVnpayPayment(response.id)
       
       sessionStorage.setItem('queenkhoPaymentContext', JSON.stringify({

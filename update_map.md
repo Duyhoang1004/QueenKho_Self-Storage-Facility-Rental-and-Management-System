@@ -239,3 +239,23 @@ PUT    /api/v1/storage-units/layout/floors/{floorId}/plan  lưu vị trí ô + v
 | `pages/my_reservation/CustomerContractPage.jsx`, `pages/staff/StaffTaskDetailPage.jsx` | Gắn bản đồ |
 
 **Test:** `FloorPlanServiceTest` thêm 2 test (ẩn thông tin ô khác + chỉ dẫn lối đi; ô chưa đặt; khách xem HĐ đã kết thúc → 409 còn Staff vẫn xem được). `AccessPolicyTest` thêm 1 test phân quyền theo vai trò.
+
+---
+
+## 10. Chọn ô trên mặt bằng khi gán ô (UC-14, 30/10/2026)
+
+> Nhánh `feature/uc14-ban-do-gan-o`. Chỉ sửa FE, không đổi DB / API.
+
+- Modal **Gán ô kho** (màn hình "Đơn chờ gán ô" của FM) có thêm cột **"Chọn trên mặt bằng"** bên phải danh sách thẻ.
+- Ô gán được (trống, đúng loại khách đặt; lấy từ `GET /reservations/{id}/available-units`) tô xanh và bấm được. Các ô khác vẫn giữ màu trạng thái nhưng mờ đi và không bấm được, để FM vẫn thấy ô nào đang thuê hay bảo trì.
+- Chọn trên bản đồ hay trong danh sách thì bên kia tự cập nhật theo; chọn trên bản đồ thì danh sách tự cuộn tới thẻ của ô đó. Bấm lại ô đang chọn thì vẫn giữ lựa chọn.
+- Có nhiều tầng thì hiện tab tầng kèm số ô gán được, và tự mở tầng chứa ô đang chọn.
+- Ô gán được nhưng chưa có vị trí trên mặt bằng: được liệt kê dưới bản đồ, chọn trong danh sách như cũ.
+- Cơ sở chưa có mặt bằng, hoặc tải mặt bằng lỗi: modal giữ nguyên dạng cũ, chỉ có danh sách.
+
+| File | Thay đổi |
+|---|---|
+| `components/UnitPickerMap.jsx` | **Mới** — bản đồ chọn ô (tab tầng, ô gán được / không gán được) |
+| `components/AssignUnitModal.jsx` | Tải mặt bằng + toàn bộ ô của cơ sở, bố cục 2 cột khi có mặt bằng, đồng bộ lựa chọn |
+
+**Đã thử:** FM Tân Bình gán đơn thử. A101–A104 bấm được; A105 tạm khoá bảo trì thì bị mờ. Bấm A103 trên bản đồ thì danh sách chọn theo và cuộn tới, xác nhận thì hợp đồng tạo đúng ô A103. Dữ liệu thử đã xoá.

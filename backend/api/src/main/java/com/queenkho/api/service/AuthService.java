@@ -57,7 +57,7 @@ public class AuthService {
                 : facilityRepository.findById(user.getFacilityId()).map(Facility::getName).orElse(null);
 
         return new LoginResponse(token, user.getRole().getName(), user.getId(), user.getFullName(),
-                user.getFacilityId(), facilityName, user.getPhone(), user.getCccd());
+                user.getFacilityId(), facilityName);
 
     }
 

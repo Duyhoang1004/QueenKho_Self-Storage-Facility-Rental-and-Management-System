@@ -18,6 +18,4 @@ public class CreateReservationRequest {
     private LocalDate startDate;
     private Integer durationMonths;
     private Boolean acceptedTerms; // Bắt buộc true: khách đồng ý điều khoản xử lý tài sản khi không trả kho
-    private String phone;
-    private String cccd;
 }

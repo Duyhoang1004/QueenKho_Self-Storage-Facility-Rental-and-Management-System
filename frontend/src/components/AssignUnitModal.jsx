@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { getAvailableUnits, assignStorageUnit } from '../services/reservationService'
+import { getFacilityLayout, getStorageUnits } from '../services/storageUnitService'
+import UnitPickerMap from './UnitPickerMap'
 
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
@@ -20,6 +22,31 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   const [autoNotify, setAutoNotify] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  // UC-14: mặt bằng cơ sở để chọn ô trên bản đồ (không tải được thì chỉ dùng danh sách)
+  const [mapData, setMapData] = useState({ forId: null, layout: null, units: [] })
+
+  useEffect(() => {
+    if (!isOpen || !reservation) return undefined
+    let cancelled = false
+    const facilityId = JSON.parse(sessionStorage.getItem('user') || '{}').facilityId
+    Promise.all([getFacilityLayout(facilityId), getStorageUnits({ facilityId })])
+      .then(([layout, list]) => {
+        if (!cancelled) setMapData({ forId: reservation.id, layout, units: list.units || [] })
+      })
+      .catch(() => {
+        if (!cancelled) setMapData({ forId: reservation.id, layout: null, units: [] })
+      })
+    return () => { cancelled = true }
+  }, [isOpen, reservation])
+
+  const selectableIds = useMemo(() => new Set(units.map(u => u.id)), [units])
+  const showMap = !!reservation && mapData.forId === reservation.id && (mapData.layout?.floors?.length || 0) > 0
+
+  // Chọn ô trên bản đồ → cuộn danh sách tới thẻ của ô đó
+  const selectFromMap = (unitId) => {
+    setSelectedUnitId(unitId)
+    document.getElementById(`assign-unit-${unitId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }
 
   useEffect(() => {
     if (!isOpen || !reservation) return
@@ -71,7 +98,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div className="duo-card bg-white w-full max-w-[620px] shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+      <div className={`duo-card bg-white w-full ${showMap ? 'max-w-[1180px]' : 'max-w-[620px]'} shadow-2xl flex flex-col overflow-hidden max-h-[92vh]`}>
         
         {/* Modal Header */}
         <div className="px-6 py-4 flex items-center justify-between border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
@@ -96,8 +123,9 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto flex flex-col gap-5">
+        {/* Modal Body: thông tin + danh sách ô (trái), bản đồ mặt bằng (phải) */}
+        <div className={`p-6 overflow-y-auto ${showMap ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,560px)_minmax(0,1fr)] gap-6 items-start' : ''}`}>
+        <div className="flex flex-col gap-5 min-w-0">
           {/* Summary Box */}
           <div className="bg-[#F7F7F7] border-2 border-[#E5E5E5] p-4 rounded-2xl grid grid-cols-3 gap-3 text-left">
             <div>
@@ -157,6 +185,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
                   return (
                     <label
                       key={unit.id}
+                      id={`assign-unit-${unit.id}`}
                       onClick={() => setSelectedUnitId(unit.id)}
                       className={`duo-btn p-3 flex items-center justify-between rounded-2xl cursor-pointer text-left h-auto ${
                         isSelected
@@ -235,6 +264,23 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
               Tự động gửi SMS & Zalo thông báo kèm mã mở khóa SmartLock cho khách hàng.
             </label>
           </div>
+        </div>
+
+        {showMap && (
+          <div className="flex flex-col gap-2 min-w-0">
+            <label className="text-xs font-black uppercase tracking-wider text-[#4B4B4B] flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">map</span>
+              Chọn trên mặt bằng
+            </label>
+            <UnitPickerMap
+              layout={mapData.layout}
+              units={mapData.units}
+              selectableIds={selectableIds}
+              selectedId={selectedUnitId}
+              onSelect={selectFromMap}
+            />
+          </div>
+        )}
         </div>
 
         {/* Modal Footer */}

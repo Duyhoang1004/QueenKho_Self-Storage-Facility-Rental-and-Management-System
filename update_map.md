@@ -206,3 +206,36 @@ PUT    /api/v1/storage-units/layout/floors/{floorId}/plan  lưu vị trí ô + v
 - Chưa có ảnh bản vẽ thật làm nền mặt bằng.
 - Lưu mặt bằng là "ai lưu sau thắng": 2 FM cùng sửa một tầng thì bản lưu sau đè bản trước, vì chưa có khoá phiên bản.
 - Layout `ManagerLayout` chưa thu gọn sidebar trên điện thoại (lỗi có từ trước), nên trên màn hình nhỏ bản đồ khá chật; dùng nút thu phóng và cuộn ngang trong khung.
+
+---
+
+## 9. Bản đồ chỉ xem cho khách & nhân viên (30/10/2026)
+
+> Nhánh `feature/uc06-xem-vi-tri-o-kho`. Không đổi DB.
+
+**Ai thấy, ở đâu**
+| Vai trò | Màn hình | Khi nào |
+|---|---|---|
+| Khách | `/kho-cua-toi/hop-dong/:id`, mục "Ô kho đã thuê" → "Vị trí ô kho trong cơ sở" | Hợp đồng `PENDING_CHECK_IN` / `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING` |
+| Staff | `/staff/tasks/:id`, thẻ "Vị trí ô trên mặt bằng" | Task có hợp đồng (check-in, trả kho, hỗ trợ, bảo trì) |
+| FM | `/manager/tasks/:id` (dùng chung trang chi tiết task) | Như Staff |
+
+**Hiển thị**
+- Dòng chỉ dẫn: `Tầng 1 · Khu A · Phòng 103 · cửa quay ra Lối đi A – B`. Phần "cửa quay ra …" lấy từ vật cố định nằm sát cạnh có cửa của ô.
+- Mặt bằng tầng: ô của hợp đồng màu xanh dương nhấp nháy. Các ô khác là **khối xám không mã, không trạng thái**, để khách không biết ô nào đang có người thuê. Lối đi, cửa vào, thang hiện như bản FM.
+- Bản đồ tự co theo bề ngang màn hình, cuộn ngang được nếu quá hẹp.
+- Ô chưa đặt vị trí, hoặc tầng chưa có mặt bằng, chỉ hiện dòng chỉ dẫn kèm câu "Cơ sở chưa cập nhật sơ đồ cho ô này".
+
+**Thay đổi code**
+| File | Thay đổi |
+|---|---|
+| `dto/UnitLocationResponse.java` | **Mới** |
+| `service/FloorPlanService.java` | + `getUnitLocation`, `fixtureInFrontOfDoor`, `locationHint` |
+| `controller/ContractController.java` | + `GET /api/v1/contracts/{id}/unit-location` |
+| `security/AccessPolicy.java` | + luật cho API trên, nhóm `CONTRACT_VIEW` |
+| `components/UnitLocationMap.jsx` | **Mới** — bản đồ chỉ xem |
+| `components/FloorPlanCanvas.jsx` | Ô có thể đặt riêng màu / icon, và đánh dấu không bấm được (`tileClass`, `icon`, `inert`) |
+| `services/contractService.js` | + `getUnitLocation` |
+| `pages/my_reservation/CustomerContractPage.jsx`, `pages/staff/StaffTaskDetailPage.jsx` | Gắn bản đồ |
+
+**Test:** `FloorPlanServiceTest` thêm 2 test (ẩn thông tin ô khác + chỉ dẫn lối đi; ô chưa đặt; khách xem HĐ đã kết thúc → 409 còn Staff vẫn xem được). `AccessPolicyTest` thêm 1 test phân quyền theo vai trò.

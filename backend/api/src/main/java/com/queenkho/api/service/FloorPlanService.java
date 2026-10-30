@@ -4,8 +4,10 @@ import com.queenkho.api.dto.*;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.FacilityFloor;
 import com.queenkho.api.entity.FloorFixture;
+import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.entity.UnitType;
+import com.queenkho.api.exception.ContractException;
 import com.queenkho.api.exception.FacilityException;
 import com.queenkho.api.repository.FacilityFloorRepository;
 import com.queenkho.api.repository.FacilityRepository;
@@ -296,6 +298,97 @@ public class FloorPlanService {
         }
     }
 
+    // ──────────────────────────────────────────────────────
+    // Vị trí ô theo hợp đồng (khách / nhân viên chỉ xem)
+    // ──────────────────────────────────────────────────────
+
+    // Khách chỉ xem khi hợp đồng còn giữ ô
+    public static final List<String> CUSTOMER_VISIBLE_STATUSES =
+            List.of("PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING");
+
+    /**
+     * UC-06: Vị trí ô của hợp đồng trên mặt bằng tầng, kèm 1 dòng chỉ dẫn.
+     * Ô khác trên tầng chỉ trả hình khối (không mã, không trạng thái) để khách không biết ô nào đang có người thuê.
+     * customerView = true: hợp đồng đã kết thúc → 409 CONTRACT_NOT_ACTIVE. Staff / FM xem mọi trạng thái.
+     */
+    @Transactional(readOnly = true)
+    public UnitLocationResponse getUnitLocation(RentalContract contract, boolean customerView) {
+        if (customerView && !CUSTOMER_VISIBLE_STATUSES.contains(contract.getStatus())) {
+            throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_ACTIVE",
+                    "Hợp đồng đã kết thúc nên không còn xem được vị trí ô kho");
+        }
+        StorageUnit unit = contract.getStorageUnit();
+        Facility facility = unit.getFacility();
+        UnitLocationResponse.UnitLocationResponseBuilder builder = UnitLocationResponse.builder()
+                .contractId(contract.getId())
+                .unitId(unit.getId())
+                .unitTypeName(unit.getUnitType() != null ? unit.getUnitType().getName() : null)
+                .areaSqm(unit.getUnitType() != null ? unit.getUnitType().getAreaSqm() : null)
+                .facilityName(facility.getName())
+                .floor(unit.getFloor())
+                .zone(unit.getZone())
+                .roomNumber(unit.getRoomNumber());
+
+        Optional<FacilityFloor> floorOpt = unit.isPlacedOnMap() && unit.getFloor() != null
+                ? facilityFloorRepository.findByFacility_IdAndNameIgnoreCase(facility.getId(), unit.getFloor().trim())
+                : Optional.empty();
+        if (floorOpt.isEmpty()) {
+            return builder.placed(false).locationHint(locationHint(unit, null)).build();
+        }
+
+        FacilityFloor floor = floorOpt.get();
+        List<FloorFixture> fixtures = floorFixtureRepository.findByFloor_IdOrderByIdAsc(floor.getId());
+        List<UnitLocationResponse.Rect> otherUnits = unitsOnFloor(facility.getId(), floor.getName()).stream()
+                .filter(u -> u.isPlacedOnMap() && !u.getId().equals(unit.getId()))
+                .sorted(Comparator.comparing(StorageUnit::getMapY).thenComparing(StorageUnit::getMapX))
+                .map(FloorPlanService::toLocationRect)
+                .toList();
+
+        return builder
+                .placed(true)
+                .unit(toLocationRect(unit))
+                .door(unit.getMapDoor())
+                .locationHint(locationHint(unit, fixtureInFrontOfDoor(unit, fixtures)))
+                .floorPlan(UnitLocationResponse.FloorPlan.builder()
+                        .name(floor.getName())
+                        .gridWidth(floor.getGridWidth())
+                        .gridHeight(floor.getGridHeight())
+                        .cellMeters(CELL_METERS)
+                        .fixtures(fixtures.stream().map(FloorPlanService::toFixtureDto).toList())
+                        .otherUnits(otherUnits)
+                        .build())
+                .build();
+    }
+
+    // Vật cố định ngay trước cửa ô (dải 1 ô lưới sát cạnh có cửa), thường là lối đi
+    static FloorFixture fixtureInFrontOfDoor(StorageUnit u, List<FloorFixture> fixtures) {
+        String door = u.getMapDoor() != null ? u.getMapDoor() : "BOTTOM";
+        Rect strip = switch (door) {
+            case "TOP" -> new Rect(u.getMapX(), u.getMapY() - 1, u.getMapW(), 1);
+            case "LEFT" -> new Rect(u.getMapX() - 1, u.getMapY(), 1, u.getMapH());
+            case "RIGHT" -> new Rect(u.getMapX() + u.getMapW(), u.getMapY(), 1, u.getMapH());
+            default -> new Rect(u.getMapX(), u.getMapY() + u.getMapH(), u.getMapW(), 1);
+        };
+        return fixtures.stream().filter(f -> strip.overlaps(rectOf(f))).findFirst().orElse(null);
+    }
+
+    // "Tầng 1 · Khu A · Phòng 103 · cửa quay ra Lối đi A – B"
+    static String locationHint(StorageUnit u, FloorFixture inFront) {
+        List<String> parts = new ArrayList<>();
+        if (u.getFloor() != null && !u.getFloor().isBlank()) parts.add(u.getFloor().trim());
+        if (u.getZone() != null && !u.getZone().isBlank()) parts.add("Khu " + u.getZone().trim());
+        if (u.getRoomNumber() != null && !u.getRoomNumber().isBlank()) parts.add("Phòng " + u.getRoomNumber().trim());
+        if (inFront != null) {
+            String name = inFront.getLabel() != null ? inFront.getLabel() : fixtureName(inFront);
+            parts.add("cửa quay ra " + name);
+        }
+        return String.join(" · ", parts);
+    }
+
+    private static UnitLocationResponse.Rect toLocationRect(StorageUnit u) {
+        return UnitLocationResponse.Rect.builder().x(u.getMapX()).y(u.getMapY()).w(u.getMapW()).h(u.getMapH()).build();
+    }
+
     // Đặt vị trí cho ô (kích thước bỏ trống = mặc định theo loại kho, cửa bỏ trống = giữ cũ hoặc BOTTOM)
     void applyPlacement(StorageUnit unit, UnitPlacementDto p, String floorName) {
         int[] size = defaultSize(unit.getUnitType());
@@ -436,17 +529,19 @@ public class FloorPlanService {
                 .gridWidth(floor.getGridWidth())
                 .gridHeight(floor.getGridHeight())
                 .sortOrder(floor.getSortOrder())
-                .fixtures(fixtures.stream()
-                        .map(f -> FloorFixtureDto.builder()
-                                .id(f.getId())
-                                .type(f.getFixtureType())
-                                .label(f.getLabel())
-                                .x(f.getMapX())
-                                .y(f.getMapY())
-                                .w(f.getMapW())
-                                .h(f.getMapH())
-                                .build())
-                        .toList())
+                .fixtures(fixtures.stream().map(FloorPlanService::toFixtureDto).toList())
+                .build();
+    }
+
+    private static FloorFixtureDto toFixtureDto(FloorFixture f) {
+        return FloorFixtureDto.builder()
+                .id(f.getId())
+                .type(f.getFixtureType())
+                .label(f.getLabel())
+                .x(f.getMapX())
+                .y(f.getMapY())
+                .w(f.getMapW())
+                .h(f.getMapH())
                 .build();
     }
 }

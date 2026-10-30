@@ -172,10 +172,12 @@ export default function FloorPlanCanvas({
         );
       })}
 
-      {/* Ô kho */}
+      {/* Ô kho (tileClass / icon / inert: dùng cho bản đồ chỉ xem của khách, Staff) */}
       {units.map(unit => {
         const key = `u:${unit.id}`;
         const style = DISPLAY_STATES[unit.state] || DISPLAY_STATES.UNKNOWN;
+        const tileClass = unit.tileClass || style.tile;
+        const icon = unit.icon === undefined ? style.icon : unit.icon;
         const pixelW = unit.w * cellSize;
         const pixelH = unit.h * cellSize;
         return (
@@ -183,19 +185,20 @@ export default function FloorPlanCanvas({
             key={key}
             type="button"
             title={unit.title}
-            aria-label={`${unit.id}: ${style.label}`}
+            tabIndex={unit.inert ? -1 : undefined}
+            aria-label={unit.ariaLabel || `${unit.id}: ${style.label}`}
             aria-pressed={selectedKey === key}
             onClick={!editable && !pickMode ? () => onSelect?.(selectedKey === key ? null : key) : undefined}
             onPointerDown={editable ? (e) => startDrag(e, key, unit, 'move') : undefined}
             onPointerMove={editable ? moveDrag : undefined}
             onPointerUp={editable ? endDrag : undefined}
-            className={`absolute rounded-sm border-2 flex flex-col items-center justify-center overflow-hidden transition-[box-shadow,opacity] ${style.tile} ${
+            className={`absolute rounded-sm border-2 flex flex-col items-center justify-center overflow-hidden transition-[box-shadow,opacity] ${tileClass} ${
               editable ? 'cursor-move' : 'cursor-pointer hover:brightness-95'
-            } ${pickMode ? 'pointer-events-none' : ''} ${unit.dimmed ? 'opacity-25' : ''} ${ringClass(key)}`}
+            } ${pickMode || unit.inert ? 'pointer-events-none' : ''} ${unit.dimmed ? 'opacity-25' : ''} ${ringClass(key)}`}
             style={box(unit)}
           >
-            {pixelW >= 30 && pixelH >= 34 && (
-              <span className="material-symbols-outlined text-[14px] leading-none">{style.icon}</span>
+            {icon && pixelW >= 30 && pixelH >= 34 && (
+              <span className="material-symbols-outlined text-[14px] leading-none">{icon}</span>
             )}
             <span
               className={`font-black font-mono leading-none ${pixelW >= 40 ? 'text-[10px]' : 'text-[8px]'} ${

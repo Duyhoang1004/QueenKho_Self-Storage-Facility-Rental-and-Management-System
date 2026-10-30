@@ -1,5 +1,6 @@
 package com.queenkho.api.controller;
 
+import com.queenkho.api.service.FloorPlanService;
 import com.queenkho.api.service.LateFeeService;
 import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.dto.CustomerContractResponse;
@@ -53,6 +54,9 @@ public class ContractController {
 
     @Autowired
     private RenewalPolicyService renewalPolicyService;
+
+    @Autowired
+    private FloorPlanService floorPlanService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -418,6 +422,16 @@ public class ContractController {
         ownershipGuard.checkContract(id);
         return rentalContractRepository.findDetailById(id)
                 .map(rc -> ResponseEntity.ok((Object) renewalPolicyService.checkEligibility(rc)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // UC-06: vị trí ô của hợp đồng trên mặt bằng (khách: HĐ còn giữ ô; Staff / FM: HĐ thuộc cơ sở của mình)
+    @GetMapping("/{id}/unit-location")
+    public ResponseEntity<?> getUnitLocation(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        boolean customerView = currentUser.require().hasRole("CUSTOMER");
+        return rentalContractRepository.findDetailById(id)
+                .map(rc -> ResponseEntity.ok((Object) floorPlanService.getUnitLocation(rc, customerView)))
                 .orElse(ResponseEntity.notFound().build());
     }
 

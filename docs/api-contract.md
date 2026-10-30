@@ -816,3 +816,22 @@ Lưới: **1 ô = 0.5m**, toạ độ `(x, y)` là góc trên-trái tính bằng
 | `GET /api/v1/storage-units`, `GET /api/v1/storage-units/{id}` | Mỗi ô thêm `mapX`, `mapY`, `mapW`, `mapH`, `mapDoor` (null = chưa đặt) và `defaultMapW`, `defaultMapH` (kích thước theo `unit_types.dimensions`) |
 | `POST /api/v1/storage-units` | Body thêm tuỳ chọn `mapX`, `mapY`, `mapW`, `mapH`, `mapDoor`. Có `mapX` mà tầng chưa có mặt bằng → `400 FLOOR_HAS_NO_MAP`; chồng ô / vật cố định → `400 MAP_CONFLICT` |
 | `PUT /api/v1/storage-units/{id}` | Đổi sang tầng khác → xoá vị trí cũ (ô về danh sách "chưa đặt") |
+
+### UC-06 (30/10/2026) — Bản đồ chỉ xem cho khách & nhân viên
+`GET /api/v1/contracts/{id}/unit-location` — nhóm quyền `CONTRACT_VIEW` (khách: HĐ của mình; Staff / FM: HĐ thuộc cơ sở của mình; kiểm tra bằng `OwnershipGuard.checkContract`).
+```json
+{
+  "contractId": 31, "unitId": "KV-TB-A103", "unitTypeName": "Kho Tiêu Chuẩn", "areaSqm": 6.00,
+  "facilityName": "QueenKho Tân Bình", "floor": "Tầng 1", "zone": "A", "roomNumber": "103",
+  "locationHint": "Tầng 1 · Khu A · Phòng 103 · cửa quay ra Lối đi A – B",
+  "placed": true,                                  // false = ô chưa đặt / tầng chưa có mặt bằng → unit, floorPlan = null
+  "unit": { "x": 22, "y": 5, "w": 5, "h": 5 }, "door": "BOTTOM",
+  "floorPlan": {
+    "name": "Tầng 1", "gridWidth": 56, "gridHeight": 40, "cellMeters": 0.5,
+    "fixtures": [ { "id": 5, "type": "AISLE", "label": "Lối đi A – B", "x": 12, "y": 10, "w": 44, "h": 4 } ],
+    "otherUnits": [ { "x": 12, "y": 5, "w": 5, "h": 5 } ]   // chỉ hình khối: không mã ô, không trạng thái, không khách
+  }
+}
+```
+- Khách gọi khi HĐ không ở `PENDING_CHECK_IN` / `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING` → `409 CONTRACT_NOT_ACTIVE`. Staff / FM xem mọi trạng thái.
+- FE: trang `/kho-cua-toi/hop-dong/:reservationId` (mục "Ô kho đã thuê") và `/staff/tasks/:id`, `/manager/tasks/:id` (task có hợp đồng).

@@ -1,6 +1,7 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.repository.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class VnpayService {
     private final PricingService pricing;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final RenewalPolicyService renewalPolicy;
+    @Autowired private NotificationService notificationService;
 
     public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
                         ReservationRepository reservations, StaffTaskService staffTasks,
@@ -372,6 +374,24 @@ public class VnpayService {
         
         if (r != null && "PENDING".equals(r.get("status"))) { 
             payments.updateReservationToDepositPaid(id, (BigDecimal) r.get("deposit_amount"));
+            if (notificationService != null) {
+                Integer facilityId = (Integer) r.get("facility_id");
+                String reservationCode = (String) r.get("reservation_code");
+                String customerName = "Khách hàng";
+                try {
+                    var userRow = jdbcTemplate.queryForMap("SELECT full_name FROM users WHERE id = ?", r.get("customer_id"));
+                    if (userRow != null && userRow.get("full_name") != null) {
+                        customerName = userRow.get("full_name").toString();
+                    }
+                } catch (Exception ignored) {}
+                notificationService.notifyFacilityManagers(
+                    facilityId,
+                    "Đơn đặt kho mới chờ gán ô",
+                    "Khách hàng " + customerName + " vừa cọc đơn " + (reservationCode != null ? reservationCode : ("#" + id)) + ". Đang chờ duyệt gán ô kho!",
+                    "BOOKING",
+                    "/manager/pending"
+                );
+            }
             return null; 
         }
         return "Invalid status";

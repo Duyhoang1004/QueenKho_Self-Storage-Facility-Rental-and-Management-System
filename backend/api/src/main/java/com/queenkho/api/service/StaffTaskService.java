@@ -115,6 +115,9 @@ public class StaffTaskService {
     private ActivityLogService activityLogService;
 
     @Autowired
+    private NotificationService notificationService;
+
+    @Autowired
     private HeldGoodsService heldGoodsService;
 
     @Autowired
@@ -541,6 +544,14 @@ public class StaffTaskService {
                         + (previousStaffName != null ? " (thay " + previousStaffName + ")" : ""),
                 "facility_tasks",
                 String.valueOf(task.getId())
+        );
+
+        if (notificationService != null) notificationService.notifyStaff(
+                staff.getId(),
+                "Phân công task mới",
+                "Bạn vừa được phân công task " + task.getTaskType() + " #" + task.getId() + "!",
+                "TASK",
+                "/staff?highlightTaskId=" + task.getId()
         );
 
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
@@ -1118,6 +1129,16 @@ public class StaffTaskService {
         // 6. Cập nhật trạng thái ô kho (PR-O7, PR-O10):
         // Không có sự cố → AVAILABLE; Có sự cố → MAINTENANCE + sinh task MAINTENANCE
         StorageUnit unit = contract.getStorageUnit();
+        if (hasDamage) {
+            String unitId = unit != null ? unit.getId() : "";
+            if (notificationService != null) notificationService.notifyFacilityManagers(
+                task.getFacilityId(),
+                "Sự cố hư hại khoang lưu trữ",
+                "Nhân viên vừa báo cáo sự cố hư hại tại khoang " + unitId + " cần duyệt bồi thường.",
+                "DAMAGE",
+                "/manager/tasks"
+            );
+        }
         if (unit != null) {
             if (hasDamage) {
                 unit.setStatus("MAINTENANCE");

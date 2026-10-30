@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getPendingReservations, getOverdueNoShowReservations } from '../../services/reservationService'
 import AssignUnitModal from '../../components/AssignUnitModal'
 import NoShowModal from '../../components/NoShowModal'
@@ -264,9 +265,32 @@ export default function PendingReservationsPage() {
           )}
 
           {!loading && !error && items.length === 0 && (
-            <div className="p-12 flex flex-col items-center gap-2 text-center">
-              <span className="material-symbols-outlined text-[48px] text-[#58CC02]">task_alt</span>
-              <p className="text-sm font-black text-[#4B4B4B]">Tuyệt vời! Không còn đơn nào chờ gán kho.</p>
+            <div className="p-12 flex flex-col items-center text-center max-w-lg mx-auto">
+              <div className="w-16 h-16 rounded-3xl bg-[#D7FFB8] border-2 border-b-4 border-[#58CC02] flex items-center justify-center text-[#58A700] mb-4 shadow-sm">
+                <span className="material-symbols-outlined text-[36px]">task_alt</span>
+              </div>
+              <h3 className="text-lg font-black text-[#4B4B4B]">
+                Tuyệt vời! Không còn đơn nào chờ gán ô kho
+              </h3>
+              <p className="text-xs font-bold text-[#777777] mt-2 leading-relaxed">
+                Tất cả các đơn cọc đều đã được phân bổ ô lưu trữ thành công. Khi đã gán ô, hệ thống tự động sinh Hợp đồng thuê và chuyển sang Bảng công việc cho nhân viên thực hiện Check-in.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+                <Link
+                  to="/manager/tasks"
+                  className="duo-btn-green px-5 py-2.5 text-xs flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[16px]">assignment</span>
+                  <span>XEM TASKBOARD CHECK-IN</span>
+                </Link>
+                <Link
+                  to="/manager/customers"
+                  className="duo-btn-white px-5 py-2.5 text-xs flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[16px]">description</span>
+                  <span>QUẢN LÝ HỢP ĐỒNG</span>
+                </Link>
+              </div>
             </div>
           )}
 

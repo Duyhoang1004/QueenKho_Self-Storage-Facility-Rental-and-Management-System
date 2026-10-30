@@ -114,6 +114,7 @@ public class AccessPolicy {
 
         // Đăng nhập là được
         rule("POST", "/api/v1/uploads", AUTHENTICATED);
+        rule(null, "/api/v1/notifications/**", AUTHENTICATED);
 
         // Khách hàng
         rule("POST", "/api/v1/reservations", "CUSTOMER_BOOKING");

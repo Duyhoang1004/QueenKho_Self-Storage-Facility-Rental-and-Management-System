@@ -29,6 +29,9 @@ public class AuthController {
     @Autowired
     private SessionTokenService sessionTokenService;
 
+    @Autowired
+    private com.queenkho.api.service.NotificationService notificationService;
+
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody(required = false) LoginRequest request,
                                                HttpServletRequest http) {
@@ -37,6 +40,9 @@ public class AuthController {
             LoginResponse response = authService.login(request);
             // Admin: lịch sử đăng nhập (lỗi ghi lịch sử không làm hỏng đăng nhập)
             loginHistoryService.recordSuccess(response.getUserId(), email, http);
+            if ("ADMIN".equals(response.getRole())) {
+                if (notificationService != null) notificationService.generateAdminLoginSummary(response.getUserId());
+            }
             return ResponseEntity.ok(response);
         } catch (AuthException ex) {
             // Thiếu email / mật khẩu là lỗi nhập liệu, không tính là 1 lần đăng nhập

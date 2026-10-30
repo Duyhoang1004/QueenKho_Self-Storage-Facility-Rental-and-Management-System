@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { getStaffTasks } from '../services/staffTaskService'
 import { parseRefundNote } from '../utils/refundParser'
 
@@ -126,6 +127,27 @@ export default function TaskBoard({
   const [lastUpdated, setLastUpdated] = useState(null)
   const [viewLayout, setViewLayout] = useState(defaultLayout)
   const [currentPage, setCurrentPage] = useState(1)
+  const [searchParams] = useSearchParams()
+  const highlightParam = searchParams.get('highlightTaskId')
+  const [activeHighlightId, setActiveHighlightId] = useState(null)
+
+  useEffect(() => {
+    if (!highlightParam) return
+    setActiveHighlightId(String(highlightParam))
+    const timer = setTimeout(() => {
+      const el = document.getElementById("task-card-" + highlightParam)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 350)
+    const clearTimer = setTimeout(() => {
+      setActiveHighlightId(null)
+    }, 5000)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(clearTimer)
+    }
+  }, [highlightParam, tasks])
   const listRef = useRef(null)
 
   // Cập nhật khi defaultLayout thay đổi
@@ -558,7 +580,8 @@ export default function TaskBoard({
                 return (
                   <div
                     key={task.id}
-                    className={`bg-white border-2 border-b-4 rounded-2xl p-4 transition-all hover:border-[#1CB0F6] hover:shadow-xs flex flex-col gap-2.5 ${
+                    id={`task-card-${task.id}`}
+                    className={`bg-white border-2 border-b-4 rounded-2xl p-4 transition-all hover:border-[#1CB0F6] hover:shadow-xs flex flex-col gap-2.5 ${String(activeHighlightId) === String(task.id) ? 'ring-4 ring-[#58CC02] ring-offset-2 animate-pulse border-[#58CC02] shadow-xl scale-[1.01] ' : ''}${
                       task.status === 'OVERDUE' || (task.urgent && ['OPEN', 'IN_PROGRESS'].includes(task.status))
                         ? 'border-[#FF4B4B] bg-[#FFFBFB]'
                         : isMine
@@ -809,7 +832,8 @@ export default function TaskBoard({
                 return (
                   <div
                     key={task.id}
-                    className={`duo-card p-5 flex flex-col gap-3.5 ${
+                    id={`task-card-${task.id}`}
+                    className={`duo-card p-5 flex flex-col gap-3.5 transition-all ${String(activeHighlightId) === String(task.id) ? 'ring-4 ring-[#58CC02] ring-offset-2 animate-pulse border-[#58CC02] shadow-xl scale-[1.01] ' : ''}${
                       task.status === 'OVERDUE' || (task.urgent && ['OPEN', 'IN_PROGRESS'].includes(task.status))
                         ? 'border-[#FF4B4B]'
                         : isMine

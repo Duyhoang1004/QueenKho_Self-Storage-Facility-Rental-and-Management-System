@@ -19,6 +19,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Inte
         return findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, limit));
     }
 
+    long countByUserId(Integer userId);
+
     long countByUserIdAndIsReadFalse(Integer userId);
 
     Optional<Notification> findByIdAndUserId(Integer id, Integer userId);

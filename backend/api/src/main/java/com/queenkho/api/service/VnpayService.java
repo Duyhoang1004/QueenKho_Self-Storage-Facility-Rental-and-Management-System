@@ -389,7 +389,7 @@ public class VnpayService {
                     "Đơn đặt kho mới chờ gán ô",
                     "Khách hàng " + customerName + " vừa cọc đơn " + (reservationCode != null ? reservationCode : ("#" + id)) + ". Đang chờ duyệt gán ô kho!",
                     "BOOKING",
-                    "/manager/pending-assignments"
+                    "/manager/pending"
                 );
             }
             return null; 

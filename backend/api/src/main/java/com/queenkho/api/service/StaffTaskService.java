@@ -1136,7 +1136,7 @@ public class StaffTaskService {
                 "Sự cố hư hại khoang lưu trữ",
                 "Nhân viên vừa báo cáo sự cố hư hại tại khoang " + unitId + " cần duyệt bồi thường.",
                 "DAMAGE",
-                "/manager/task-board?type=DAMAGE"
+                "/manager/tasks"
             );
         }
         if (unit != null) {

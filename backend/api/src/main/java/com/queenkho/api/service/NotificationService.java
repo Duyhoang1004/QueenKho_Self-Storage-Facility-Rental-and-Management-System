@@ -98,6 +98,16 @@ public class NotificationService {
         if (adminId == null) return;
 
         try {
+            // Tránh spam nếu đã tạo thông báo tóm tắt trong vòng 30 phút qua
+            Integer recentSummaryCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = 'ADMIN_SUMMARY' AND created_at >= DATEADD(MINUTE, -30, SYSDATETIME())",
+                    Integer.class,
+                    adminId
+            );
+            if (recentSummaryCount != null && recentSummaryCount > 0) {
+                return;
+            }
+
             // Tìm thời điểm đăng nhập thành công trước đó (bỏ qua lần đăng nhập vừa tạo)
             List<LocalDateTime> previousLogins = jdbcTemplate.query(
                     "SELECT created_at FROM login_history WHERE user_id = ? AND event_type = 'LOGIN_SUCCESS' ORDER BY created_at DESC",
@@ -129,7 +139,7 @@ public class NotificationService {
             String title = "Tóm tắt hoạt động hệ thống";
             String message = String.format("Chào mừng trở lại! Kể từ lần đăng nhập cuối, hệ thống ghi nhận %d lượt đăng nhập và %d thao tác mới.", n, m);
 
-            sendNotification(adminId, title, message, "ADMIN_SUMMARY", "/admin/audit-logs");
+            sendNotification(adminId, title, message, "ADMIN_SUMMARY", "/admin/logs");
         } catch (Exception e) {
             System.err.println("[NotificationService] ⚠️ Lỗi khi sinh tóm tắt Admin: " + e.getMessage());
         }
@@ -138,10 +148,11 @@ public class NotificationService {
     @Transactional
     public void checkAndSeedUserNotificationsIfEmpty(Integer userId) {
         if (userId == null) return;
-        long count = notificationRepository.countByUserIdAndIsReadFalse(userId);
-        if (count > 0) return; // Đã có thông báo chưa đọc
+        // Kiểm tra TỔNG số thông báo đã có (kể cả đã đọc) — nếu đã có thì KHÔNG sinh lại để tránh lặp và cộng dồn
+        long totalCount = notificationRepository.countByUserId(userId);
+        if (totalCount > 0) return;
 
-        // Nếu tổng thông báo rỗng, tiến hành khởi tạo mẫu theo đúng role
+        // Nếu người dùng hoàn toàn chưa có thông báo nào, khởi tạo mẫu 1 lần duy nhất theo đúng role
         User user = userRepository.findById(userId).orElse(null);
         if (user == null || user.getRole() == null) return;
 
@@ -164,25 +175,25 @@ public class NotificationService {
                     "OVERDUE", "/kho-cua-toi/hop-dong/1?action=pay-overdue");
 
         } else if ("FACILITY_MANAGER".equals(role)) {
-            // 1. Đơn cọc mới chờ duyệt gán ô
+            // 1. Đơn cọc mới chờ duyệt gán ô -> dẫn về /manager/pending
             sendNotification(userId, "Đơn đặt kho mới chờ gán ô",
                     "Khách hàng NGUYEN VAN C vừa cọc đơn RES-739909. Đang chờ duyệt gán ô kho!",
-                    "BOOKING", "/manager/pending-assignments");
+                    "BOOKING", "/manager/pending");
 
             // 2. Chờ hoàn tiền cọc
             sendNotification(userId, "Yêu cầu hoàn tiền cọc",
                     "Đơn RES-108234 bị huỷ — Chờ hoàn tiền cọc 500.000đ cho khách!",
-                    "REFUND", "/manager/task-board?type=REFUND");
+                    "REFUND", "/manager/refunds");
 
             // 3. Hư hại kho khi nghiệm thu
             sendNotification(userId, "Sự cố hư hại khoang lưu trữ",
                     "Nhân viên vừa báo cáo sự cố hư hại tại khoang KV-BT-A103 (Ước tính: 350.000đ) cần duyệt bồi thường.",
-                    "DAMAGE", "/manager/task-board?type=DAMAGE");
+                    "DAMAGE", "/manager/tasks");
 
             // 4. Hợp đồng quá hạn 15 ngày
             sendNotification(userId, "Hợp đồng quá hạn đủ điều kiện thanh lý",
                     "Hợp đồng HD-991779 đã quá hạn 15 ngày! Bạn có quyền mở kho và lập biên bản thanh lý.",
-                    "LIQUIDATION", "/manager/task-board?type=OVERDUE");
+                    "LIQUIDATION", "/manager/overdue");
 
         } else if ("STAFF".equals(role)) {
             // Tìm 1 task mở có trong cơ sở để highlight chính xác task thật
@@ -207,7 +218,7 @@ public class NotificationService {
         } else if ("ADMIN".equals(role)) {
             sendNotification(userId, "Tóm tắt hoạt động hệ thống",
                     "Chào mừng trở lại! Kể từ lần đăng nhập cuối, hệ thống ghi nhận 12 lượt đăng nhập và 28 thao tác mới.",
-                    "ADMIN_SUMMARY", "/admin/audit-logs");
+                    "ADMIN_SUMMARY", "/admin/logs");
 
             sendNotification(userId, "Tài khoản nhân viên mới",
                     "Quản lý cơ sở Tân Bình vừa tạo thêm 1 tài khoản nhân viên mới: Nguyen Van Staff (stafftanbinh3@gmail.com).",

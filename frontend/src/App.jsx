@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
@@ -159,6 +159,8 @@ export default function App() {
         <Route path="/manager/refunds/:id" element={<StaffTaskDetailPage />} />
         <Route path="/manager/staff" element={<ManagerStaffPage />} />
         <Route path="/manager/reports" element={<ManagerReportsPage />} />
+        <Route path="/manager/pending-assignments" element={<Navigate to="/manager/pending" replace />} />
+        <Route path="/manager/task-board" element={<Navigate to="/manager/tasks" replace />} />
       </Route>
 
       {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}
@@ -174,6 +176,7 @@ export default function App() {
         <Route path="/admin/roles" element={<AdminRolesPage />} />
         <Route path="/admin/logs" element={<AdminLogsPage />} />
         <Route path="/admin/login-history" element={<AdminLoginHistoryPage />} />
+        <Route path="/admin/audit-logs" element={<Navigate to="/admin/logs" replace />} />
       </Route>
 
       {/* ========== BOM Portal (UC-04, UC-05, UC-07, UC-29) ========== */}

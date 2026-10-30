@@ -758,7 +758,7 @@ public class ReservationService {
                     "Yêu cầu hoàn tiền cọc",
                     "Đơn " + reservation.getReservationCode() + " bị huỷ — Chờ hoàn tiền cọc " + refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ cho khách!",
                     "REFUND",
-                    "/manager/task-board?type=REFUND"
+                    "/manager/refunds"
             );
         }
 

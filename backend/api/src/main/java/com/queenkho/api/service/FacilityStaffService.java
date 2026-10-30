@@ -49,6 +49,9 @@ public class FacilityStaffService {
     private ActivityLogService activityLogService;
 
     @Autowired
+    private NotificationService notificationService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     /**
@@ -169,6 +172,10 @@ public class FacilityStaffService {
                 String.format("[STAFF_CREATE] Quản lý tạo nhân viên mới: %s (%s) tại cơ sở %s", fullName, email, facility.getName()),
                 "users",
                 String.valueOf(newStaff.getId()));
+
+        if (notificationService != null) notificationService.notifyAdmins("Có tài khoản nhân viên mới vừa được tạo",
+                "Quản lý cơ sở " + facility.getName() + " vừa tạo thêm 1 tài khoản nhân viên mới: " + fullName + " (" + email + ").",
+                "STAFF_CREATED", "/admin/users");
 
         return FacilityStaffResponse.builder()
                 .id(newStaff.getId())

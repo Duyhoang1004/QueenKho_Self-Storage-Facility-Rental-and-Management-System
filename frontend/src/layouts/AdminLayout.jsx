@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { clearSession, getHomePath } from '../services/authService';
+import NotificationDropdown from '../components/NotificationDropdown';
 
 // Portal quản trị hệ thống (ADMIN) — khung cho UC-03, UC-08, UC-31
 const adminMenuItems = [
@@ -109,6 +110,7 @@ export default function AdminLayout() {
           </div>
 
           <div className="flex items-center gap-3">
+            <NotificationDropdown />
             <div className="flex items-center gap-2.5 p-1 rounded-2xl">
               <div className="w-10 h-10 rounded-2xl bg-[#CE82FF] border-b-2 border-[#A559D9] text-white flex items-center justify-center font-black text-sm">
                 {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'A'}

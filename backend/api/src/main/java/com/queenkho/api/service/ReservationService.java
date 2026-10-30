@@ -74,6 +74,9 @@ public class ReservationService {
     @Autowired
     private RenewalPolicyService renewalPolicyService;
 
+    @Autowired
+    private NotificationService notificationService;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
@@ -298,6 +301,20 @@ public class ReservationService {
         // Kiem tra khach hang
         User customer = userRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
+
+        // Cập nhật CCCD và SĐT nếu khách có nhập lúc đặt kho
+        boolean customerUpdated = false;
+        if (request.getCccd() != null && !request.getCccd().isBlank()) {
+            customer.setCccd(request.getCccd().trim());
+            customerUpdated = true;
+        }
+        if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            customer.setPhone(request.getPhone().trim());
+            customerUpdated = true;
+        }
+        if (customerUpdated) {
+            customer = userRepository.save(customer);
+        }
 
         // PR-B3 / PR-Q12: Kiểm tra nợ của khách hàng trước khi cho phép đặt chỗ mới
         Map<String, Object> debtCheck = jdbcTemplate.queryForMap(
@@ -530,6 +547,17 @@ public class ReservationService {
 
         staffTaskService.createCheckInTask(contract);
 
+        if (reservation.getCustomer() != null && reservation.getCustomer().getId() != null) {
+            String facilityName = reservation.getFacility() != null ? reservation.getFacility().getName() : "QueenKho";
+            if (notificationService != null) notificationService.sendNotification(
+                    reservation.getCustomer().getId(),
+                    "Đã được gán ô kho thành công",
+                    "Đơn " + reservation.getReservationCode() + " của bạn đã được gán khoang " + storageUnit.getId() + " tại " + facilityName + "! Vui lòng kiểm tra hợp đồng.",
+                    "ASSIGNED",
+                    "/kho-cua-toi/hop-dong/" + contract.getId()
+            );
+        }
+
         // PR-A9: log gán ô (người thao tác = FM lấy từ token)
         if (actorUserId != null) {
             activityLogService.log(actorUserId,
@@ -724,6 +752,14 @@ public class ReservationService {
                     managerId,
                     deadline,
                     refundTaskNote);
+
+            if (notificationService != null) notificationService.notifyFacilityManagers(
+                    reservation.getFacility().getId(),
+                    "Yêu cầu hoàn tiền cọc",
+                    "Đơn " + reservation.getReservationCode() + " bị huỷ — Chờ hoàn tiền cọc " + refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ cho khách!",
+                    "REFUND",
+                    "/manager/task-board?type=REFUND"
+            );
         }
 
         // 5. Ghi nhật ký RÚT GỌN vào activity_logs (chỉ lưu vết cơ bản)

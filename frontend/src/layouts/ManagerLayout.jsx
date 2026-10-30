@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { clearSession, getHomePath } from '../services/authService';
+import NotificationDropdown from '../components/NotificationDropdown';
 
 const managerMenuItems = [
   { path: '/manager', icon: 'dashboard', label: 'Bảng điều khiển cơ sở' },
@@ -147,6 +148,7 @@ export default function ManagerLayout() {
 
             {/* Manager Avatar & Logout Button */}
             <div className="flex items-center gap-3">
+              <NotificationDropdown />
               <div className="flex items-center gap-2.5 p-1 rounded-2xl">
                 <div className="w-10 h-10 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] text-white flex items-center justify-center font-black text-sm">
                   {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'M'}

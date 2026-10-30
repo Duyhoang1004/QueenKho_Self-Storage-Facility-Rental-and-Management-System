@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { clearSession, getHomePath } from '../services/authService';
+import NotificationDropdown from '../components/NotificationDropdown';
 
 // UC-16: Layout cho nhân viên cơ sở (STAFF)
 const staffMenuItems = [
@@ -112,6 +113,7 @@ export default function StaffLayout() {
           <div className="flex items-center gap-4">
             {/* Staff Avatar & Logout Button */}
             <div className="flex items-center gap-3">
+              <NotificationDropdown />
               <div className="flex items-center gap-2.5 p-1 rounded-2xl">
                 <div className="w-10 h-10 rounded-2xl bg-[#1CB0F6] border-b-2 border-[#1899D6] text-white flex items-center justify-center font-black text-sm">
                   {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'S'}

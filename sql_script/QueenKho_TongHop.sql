@@ -5,7 +5,9 @@
            + rental_policies_data.sql + setup_test_env.sql + UC28_setup.sql
            + Trigger_refund_sync.sql (bản mới nhất, giữ LIQUIDATED)
    Chỉ có dữ liệu bắt buộc: vai trò, cơ sở, loại kho, ô kho (TẤT CẢ trống), chính sách thuê,
-   mặt bằng tầng + vị trí ô kho (UC-06, Update_mat_bang.sql), tài khoản nội bộ. Chưa có khách hàng, đơn, hợp đồng, thanh toán, task, ticket, nhật ký.
+   mặt bằng tầng + vị trí ô kho (UC-06, Update_mat_bang.sql), tài khoản nội bộ.
+   Chưa có khách hàng, đơn, hợp đồng, thanh toán, task, ticket, nhật ký.
+   Schema gồm cả payment_transactions.bank_transaction_code (Update_payment_bank_transaction_code.sql).
    Khách hàng tự đăng ký trên trang /register.
 
    ⚠️ XOÁ VÀ TẠO LẠI TOÀN BỘ QueenKhoDB — mất hết dữ liệu local (đơn, hợp đồng, task...)
@@ -267,6 +269,7 @@ CREATE TABLE payment_transactions (
     renewal_months      INT NULL,                -- gói gia hạn 1 / 3 / 6 / 12 tháng; không suy ra từ transaction_code
     status              NVARCHAR(30) NOT NULL DEFAULT 'PENDING', -- PENDING / SUCCESS / FAILED / REFUNDED
     paid_at             DATETIME2 NULL,
+    bank_transaction_code NVARCHAR(100) NULL,    -- Mã giao dịch từ ngân hàng (FT... hoặc vnp_BankTranNo / vnp_TransactionNo) — Update_payment_bank_transaction_code.sql
     CONSTRAINT FK_payments_user        FOREIGN KEY (user_id)        REFERENCES users(id),
     CONSTRAINT FK_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id),
     CONSTRAINT FK_payments_contract    FOREIGN KEY (contract_id)    REFERENCES rental_contracts(id),

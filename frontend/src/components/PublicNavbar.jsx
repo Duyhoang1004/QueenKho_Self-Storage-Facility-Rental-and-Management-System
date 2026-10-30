@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import NotificationDropdown from './NotificationDropdown'
 
 export default function PublicNavbar() {
   const navigate = useNavigate()
@@ -74,15 +75,19 @@ export default function PublicNavbar() {
         {/* AUTH BUTTONS (DUOLINGO 2.5D FLAT) */}
         <div className="hidden sm:flex items-center gap-3">
           {sessionUser ? (
-            <Link
-              to="/kho-cua-toi"
-              className="duo-btn-green px-5 py-2.5 text-xs tracking-wider flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-[18px]">account_circle</span>
-              <span>KHO CỦA TÔI ({sessionUser.fullName?.split(' ').pop() || 'BẠN'})</span>
-            </Link>
+            <div className="flex items-center gap-3">
+              <NotificationDropdown />
+              <Link
+                to="/kho-cua-toi"
+                className="duo-btn-green px-5 py-2.5 text-xs tracking-wider flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">account_circle</span>
+                <span>KHO CỦA TÔI ({sessionUser.fullName?.split(' ').pop() || 'BẠN'})</span>
+              </Link>
+            </div>
           ) : (
-            <>
+            <div className="flex items-center gap-3">
+              <NotificationDropdown />
               <Link
                 to="/login"
                 className="duo-btn-white px-5 py-2.5 text-xs tracking-wider"
@@ -95,7 +100,7 @@ export default function PublicNavbar() {
               >
                 ĐĂNG KÝ
               </Link>
-            </>
+            </div>
           )}
         </div>
 

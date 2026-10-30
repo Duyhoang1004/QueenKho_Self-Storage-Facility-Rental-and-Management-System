@@ -228,7 +228,22 @@ export default function NotificationDropdown() {
 
           {/* Danh sách thông báo */}
           <div className="max-h-[380px] overflow-y-auto divide-y-2 divide-[#F0F0F0]">
-            {loading ? (
+            {!sessionStorage.getItem('accessToken') ? (
+              <div className="p-8 flex flex-col items-center gap-3 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-[#FFE8CC] border-2 border-b-4 border-[#FF9600] flex items-center justify-center text-[#E58800]">
+                  <span className="material-symbols-outlined text-[28px]">account_circle</span>
+                </div>
+                <p className="text-xs font-black text-[#4B4B4B] uppercase tracking-wide">Chưa đăng nhập</p>
+                <p className="text-xs font-bold text-[#777777] max-w-[240px]">Vui lòng đăng nhập để xem thông báo cập nhật về đơn đặt kho và hợp đồng của bạn.</p>
+                <button
+                  type="button"
+                  onClick={() => { setIsOpen(false); navigate('/login'); }}
+                  className="duo-btn-green px-5 py-2 text-xs mt-1"
+                >
+                  ĐĂNG NHẬP NGAY
+                </button>
+              </div>
+            ) : loading ? (
               <div className="py-12 flex flex-col items-center justify-center gap-2 text-[#AFAFAF]">
                 <div className="w-6 h-6 border-2 border-[#58CC02] border-t-transparent rounded-full animate-spin"></div>
                 <span className="text-xs font-bold">Đang tải thông báo...</span>

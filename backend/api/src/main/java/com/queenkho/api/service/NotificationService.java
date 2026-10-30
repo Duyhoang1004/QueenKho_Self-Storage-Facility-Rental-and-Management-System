@@ -98,13 +98,11 @@ public class NotificationService {
         if (adminId == null) return;
 
         try {
-            // Tránh spam nếu đã tạo thông báo tóm tắt trong vòng 30 phút qua
-            Integer recentSummaryCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = 'ADMIN_SUMMARY' AND created_at >= DATEADD(MINUTE, -30, SYSDATETIME())",
-                    Integer.class,
-                    adminId
-            );
-            if (recentSummaryCount != null && recentSummaryCount > 0) {
+            // Tránh spam nếu đã tạo thông báo tóm tắt trong vòng 30 phút qua (kiểm tra trong bộ nhớ RAM)
+            boolean hasRecentSummary = notificationRepository.findRecentByUserId(adminId, 50).stream()
+                    .anyMatch(n -> "ADMIN_SUMMARY".equals(n.getType()) && n.getCreatedAt() != null
+                            && n.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(30)));
+            if (hasRecentSummary) {
                 return;
             }
 

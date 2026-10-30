@@ -11,11 +11,11 @@ export async function register(userData) {
 }
 
 export function saveSession(loginResponse, emailInput = '') {
-  const { token, userId, fullName, role, facilityId, facilityName } = loginResponse
+  const { token, userId, fullName, role, facilityId, facilityName, phone, cccd } = loginResponse
   const email = loginResponse.email || emailInput
 
   sessionStorage.setItem('accessToken', token)
-  sessionStorage.setItem('user', JSON.stringify({ userId, fullName, email, role, facilityId, facilityName }))
+  sessionStorage.setItem('user', JSON.stringify({ userId, fullName, email, role, facilityId, facilityName, phone, cccd }))
 }
 
 // Trang chủ của từng role — dùng chung cho Login và các Layout khi vào sai portal.

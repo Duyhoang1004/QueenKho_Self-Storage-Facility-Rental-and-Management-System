@@ -59,7 +59,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("Lấy danh sách thông báo của người dùng khi đã có thông báo chưa đọc")
     void testGetMyNotifications_WithExisting() {
-        when(notificationRepository.countByUserIdAndIsReadFalse(10)).thenReturn(1L);
+        when(notificationRepository.countByUserId(10)).thenReturn(1L);
         when(notificationRepository.findRecentByUserId(10, 30)).thenReturn(List.of(notif1));
 
         List<NotificationResponse> result = notificationService.getMyNotifications(10, 30);
@@ -130,7 +130,7 @@ class NotificationServiceTest {
         when(userRepository.findById(7)).thenReturn(Optional.of(customerUser));
         when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        notificationService.notifyFacilityManagers(2, "Có đơn mới", "Đơn chờ gán ô", "BOOKING", "/manager/pending-assignments");
+        notificationService.notifyFacilityManagers(2, "Có đơn mới", "Đơn chờ gán ô", "BOOKING", "/manager/pending");
 
         verify(notificationRepository, times(2)).save(any(Notification.class));
     }

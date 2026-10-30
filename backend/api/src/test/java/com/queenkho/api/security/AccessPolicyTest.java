@@ -141,6 +141,18 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("UC-06: bản đồ vị trí ô theo hợp đồng — khách / Staff / FM xem được; sửa mặt bằng chỉ FM")
+    void unitLocationMap() {
+        assertTrue(allowed("CUSTOMER", "GET", "/api/v1/contracts/7/unit-location"));
+        assertTrue(allowed("STAFF", "GET", "/api/v1/contracts/7/unit-location"));
+        assertTrue(allowed("FACILITY_MANAGER", "GET", "/api/v1/contracts/7/unit-location"));
+        assertFalse(allowed("BOM", "GET", "/api/v1/contracts/7/unit-location"));
+        assertFalse(allowed("CUSTOMER", "GET", "/api/v1/storage-units/layout"));
+        assertFalse(allowed("STAFF", "PUT", "/api/v1/storage-units/layout/floors/1/plan"));
+        assertTrue(allowed("FACILITY_MANAGER", "PUT", "/api/v1/storage-units/layout/floors/1/plan"));
+    }
+
+    @Test
     @DisplayName("API không có trong bảng → không khớp luật nào (filter sẽ trả 403 API_NOT_DECLARED)")
     void undeclaredPathHasNoRule() {
         assertTrue(policy.match("GET", "/api/v1/khong-ton-tai").isEmpty());

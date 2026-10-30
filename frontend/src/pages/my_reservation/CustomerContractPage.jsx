@@ -4,6 +4,10 @@ import { getContractByReservation, cancelCheckout } from "../../services/contrac
 import { getVnpayStatus } from "../../services/vnpayService";
 import ContractOptionsModal from "../../components/ContractOptionsModal";
 import AssetTermsModal from "../../components/AssetTermsModal";
+import UnitLocationMap from "../../components/UnitLocationMap";
+
+// UC-06: hợp đồng còn giữ ô thì khách xem được vị trí ô trên mặt bằng
+const MAP_VISIBLE_STATUSES = ["PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING"];
 
 function formatVND(v) {
   if (v == null) return "—";
@@ -556,6 +560,17 @@ export default function CustomerContractPage() {
             <InfoRow label="Khu vực" value={contract.zone ? `Khu ${contract.zone}` : "—"} />
             <InfoRow label="Phòng số" value={contract.roomNumber} mono />
           </div>
+
+          {/* UC-06: vị trí ô trên mặt bằng cơ sở (chỉ khi hợp đồng còn giữ ô) */}
+          {MAP_VISIBLE_STATUSES.includes(contract.status) && (
+            <div className="mt-6 pt-5 border-t-2 border-[#E5E5E5] flex flex-col gap-2">
+              <h3 className="text-xs font-black uppercase text-[#4B4B4B] flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">map</span>
+                Vị trí ô kho trong cơ sở
+              </h3>
+              <UnitLocationMap contractId={contract.contractId || contract.id} viewer="customer" />
+            </div>
+          )}
         </div>
 
         {/* Thời hạn & Chi phí thuê */}

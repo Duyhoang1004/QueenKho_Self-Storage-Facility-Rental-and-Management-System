@@ -3,12 +3,15 @@ package com.queenkho.api.service;
 import com.queenkho.api.dto.FloorFixtureDto;
 import com.queenkho.api.dto.FloorRequest;
 import com.queenkho.api.dto.SaveFloorPlanRequest;
+import com.queenkho.api.dto.UnitLocationResponse;
 import com.queenkho.api.dto.UnitPlacementDto;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.FacilityFloor;
 import com.queenkho.api.entity.FloorFixture;
+import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.entity.UnitType;
+import com.queenkho.api.exception.ContractException;
 import com.queenkho.api.exception.FacilityException;
 import com.queenkho.api.repository.FacilityFloorRepository;
 import com.queenkho.api.repository.FacilityRepository;
@@ -196,6 +199,55 @@ class FloorPlanServiceTest {
         FacilityException ex = assertThrows(FacilityException.class, () -> floorPlanService.deleteFloor(10, 3));
         assertEquals("FLOOR_HAS_UNITS", ex.getCode());
         verify(facilityFloorRepository, never()).delete(any());
+    }
+
+    private RentalContract contract(StorageUnit unit, String status) {
+        RentalContract rc = new RentalContract();
+        rc.setId(31);
+        rc.setStorageUnit(unit);
+        rc.setStatus(status);
+        return rc;
+    }
+
+    @Test
+    @DisplayName("Vị trí ô theo hợp đồng: ô khác chỉ có hình khối, chỉ dẫn ghi lối đi trước cửa")
+    void unitLocationHidesOtherUnits() {
+        StorageUnit mine = unit("KV-TB-A103", "Tầng 1", 22, 5);
+        mine.setZone("A");
+        mine.setRoomNumber("103");
+        StorageUnit other = unit("KV-TB-A101", "Tầng 1", 12, 5);
+        StorageUnit unplaced = unit("KV-TB-C105", "Tầng 1", null, null);
+        when(facilityFloorRepository.findByFacility_IdAndNameIgnoreCase(1, "Tầng 1")).thenReturn(Optional.of(floor));
+        when(floorFixtureRepository.findByFloor_IdOrderByIdAsc(10)).thenReturn(List.of(
+                FloorFixture.builder().id(5).floor(floor).fixtureType("AISLE").label("Lối đi A – B").mapX(12).mapY(10).mapW(44).mapH(4).build()));
+        when(storageUnitRepository.findByFacility_Id(1)).thenReturn(List.of(mine, other, unplaced));
+
+        UnitLocationResponse res = floorPlanService.getUnitLocation(contract(mine, "ACTIVE"), true);
+
+        assertTrue(res.isPlaced());
+        assertEquals(22, res.getUnit().getX());
+        assertEquals("Tầng 1 · Khu A · Phòng 103 · cửa quay ra Lối đi A – B", res.getLocationHint());
+        assertEquals(1, res.getFloorPlan().getOtherUnits().size()); // ô chưa đặt + ô của mình không nằm trong danh sách
+        assertEquals(12, res.getFloorPlan().getOtherUnits().get(0).getX());
+        assertEquals(1, res.getFloorPlan().getFixtures().size());
+    }
+
+    @Test
+    @DisplayName("Vị trí ô theo hợp đồng: ô chưa đặt → placed=false; khách xem HĐ đã kết thúc → 409, Staff vẫn xem được")
+    void unitLocationUnplacedAndFinished() {
+        StorageUnit mine = unit("KV-TB-C105", "Tầng 1", null, null);
+        mine.setZone("C");
+        mine.setRoomNumber("105");
+
+        UnitLocationResponse res = floorPlanService.getUnitLocation(contract(mine, "PENDING_CHECK_IN"), true);
+        assertFalse(res.isPlaced());
+        assertNull(res.getFloorPlan());
+        assertEquals("Tầng 1 · Khu C · Phòng 105", res.getLocationHint());
+
+        ContractException ex = assertThrows(ContractException.class,
+                () -> floorPlanService.getUnitLocation(contract(mine, "TERMINATED"), true));
+        assertEquals("CONTRACT_NOT_ACTIVE", ex.getCode());
+        assertFalse(floorPlanService.getUnitLocation(contract(mine, "TERMINATED"), false).isPlaced());
     }
 
     @Test

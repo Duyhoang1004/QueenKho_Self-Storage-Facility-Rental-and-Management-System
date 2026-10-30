@@ -14,6 +14,7 @@ import {
   uploadImageFile,
 } from '../../services/staffTaskService';
 import SimulationButton from '../../components/SimulationButton';
+import UnitLocationMap from '../../components/UnitLocationMap';
 import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue } from '../../services/simulationService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
@@ -1233,6 +1234,15 @@ export default function StaffTaskDetailPage() {
             <InfoRow label="Trạng thái ô" value={UNIT_STATUS_LABEL[task.storageUnitStatus] || task.storageUnitStatus} />
             <InfoRow label="Cơ sở" value={task.facilityName} />
           </InfoCard>
+
+          {/* UC-06: vị trí ô trên mặt bằng để tới check-in / nghiệm thu / hỗ trợ nhanh hơn */}
+          {task.contractId && (
+            <InfoCard icon="map" title="Vị trí ô trên mặt bằng">
+              <div className="mt-2">
+                <UnitLocationMap contractId={task.contractId} viewer="staff" />
+              </div>
+            </InfoCard>
+          )}
 
           {task.contractCode ? (
             <InfoCard icon="description" title="Hợp đồng">

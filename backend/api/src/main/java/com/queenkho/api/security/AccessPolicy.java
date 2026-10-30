@@ -135,6 +135,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts", "CONTRACT_VIEW");
         rule("GET", "/api/v1/contracts/manager/overdue", "CONTRACT_MANAGE");
         rule("GET", "/api/v1/contracts/{id:\\d+}", "CONTRACT_VIEW");
+        rule("GET", "/api/v1/contracts/{id}/unit-location", "CONTRACT_VIEW"); // UC-06: bản đồ chỉ xem
         rule(null, "/api/v1/contracts/{id}/overdue-contacts", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/liquidate", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/refund-remaining-deposit", "CONTRACT_MANAGE");

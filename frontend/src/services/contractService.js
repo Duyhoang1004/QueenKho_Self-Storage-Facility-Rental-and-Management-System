@@ -32,6 +32,14 @@ export async function getRenewalEligibility(contractId) {
   return res.data
 }
 
+// UC-06: vị trí ô của hợp đồng trên mặt bằng (khách / Staff / FM, chỉ xem)
+// trả { unitId, floor, zone, roomNumber, locationHint, placed, unit: { x, y, w, h }, door,
+//       floorPlan: { name, gridWidth, gridHeight, cellMeters, fixtures, otherUnits: [{ x, y, w, h }] } }
+export async function getUnitLocation(contractId) {
+  const res = await api.get(`/contracts/${contractId}/unit-location`)
+  return res.data
+}
+
 // Flow 6: FM miễn phí trễ cho hợp đồng quá hạn (lý do bắt buộc 5–400 ký tự)
 export async function waiveLateFee(contractId, reason) {
   const res = await api.post(`/contracts/${contractId}/waive-late-fee`, { reason })

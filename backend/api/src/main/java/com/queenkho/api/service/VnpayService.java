@@ -43,6 +43,7 @@ public class VnpayService {
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final RenewalPolicyService renewalPolicy;
     @Autowired private NotificationService notificationService;
+    @Autowired(required = false) private VoucherService voucherService;
 
     public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
                         ReservationRepository reservations, StaffTaskService staffTasks,
@@ -90,7 +91,9 @@ public class VnpayService {
 
         BigDecimal rent = PricingService.discountedRent(price, m, discountPercent);
         BigDecimal depositAmount = (BigDecimal) r.get("deposit_amount");
-        BigDecimal netAmount = rent.add(depositAmount).subtract(PricingService.WELCOME_VOUCHER);
+        // BR-25: trừ đúng số tiền voucher đã chốt trên đơn (đơn cũ chưa có cột này → NEWKHO 100.000đ)
+        BigDecimal voucherDiscount = r.get("voucher_discount") instanceof BigDecimal vd ? vd : PricingService.WELCOME_VOUCHER;
+        BigDecimal netAmount = rent.add(depositAmount).subtract(voucherDiscount);
 
         return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, depositAmount, ip, holdExpiresAt);
     }
@@ -372,8 +375,10 @@ public class VnpayService {
         Integer id = ((Number) p.get("reservation_id")).intValue(); 
         var r = payments.findReservation(id);
         
-        if (r != null && "PENDING".equals(r.get("status"))) { 
+        if (r != null && "PENDING".equals(r.get("status"))) {
             payments.updateReservationToDepositPaid(id, (BigDecimal) r.get("deposit_amount"));
+            // BR-25: cọc thành công mới tính 1 lượt dùng voucher
+            if (voucherService != null) voucherService.markUsed(id);
             if (notificationService != null) {
                 Integer facilityId = (Integer) r.get("facility_id");
                 String reservationCode = (String) r.get("reservation_code");
@@ -390,6 +395,15 @@ public class VnpayService {
                     "Khách hàng " + customerName + " vừa cọc đơn " + (reservationCode != null ? reservationCode : ("#" + id)) + ". Đang chờ duyệt gán ô kho!",
                     "BOOKING",
                     "/manager/pending"
+                );
+                // BR-117: email xác nhận đặt cọc (biên nhận) cho khách
+                notificationService.notifyCustomer(
+                    ((Number) r.get("customer_id")).intValue(),
+                    "Đặt cọc thành công — đơn " + (reservationCode != null ? reservationCode : ("#" + id)),
+                    "QueenKho đã nhận thanh toán " + ((BigDecimal) p.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString()
+                            + "đ (mã giao dịch " + ref + "). Quản lý cơ sở sẽ gán ô kho cho bạn; bạn có thể tải phiếu biên nhận trong mục Kho của tôi.",
+                    "BOOKING",
+                    "/kho-cua-toi"
                 );
             }
             return null; 
@@ -463,6 +477,27 @@ public class VnpayService {
             }
         } catch (Exception e) {
             System.err.println("[VNPAY Renewal] ⚠️ Lỗi ghi activity_logs cho HĐ " + c.getId() + ": " + e.getMessage());
+        }
+
+        // BR-111 / BR-117: khách (kèm email) và FM được báo gia hạn thành công
+        if (notificationService != null) {
+            String newEnd = c.getEndDate().format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+            if (c.getCustomer() != null) notificationService.notifyCustomer(
+                    c.getCustomer().getId(),
+                    "Gia hạn thành công — HĐ " + c.getContractCode(),
+                    "Hợp đồng đã gia hạn thêm " + monthsToRenew + " tháng, hạn mới " + newEnd + ".",
+                    "RENEWAL",
+                    c.getReservation() != null ? "/kho-cua-toi/hop-dong/" + c.getReservation().getId() : "/kho-cua-toi");
+            Integer facilityId = c.getStorageUnit() != null && c.getStorageUnit().getFacility() != null
+                    ? c.getStorageUnit().getFacility().getId() : null;
+            notificationService.notifyFacilityManagers(
+                    facilityId,
+                    "Khách gia hạn hợp đồng — " + c.getContractCode(),
+                    (c.getCustomer() != null ? c.getCustomer().getFullName() : "Khách") + " gia hạn thêm " + monthsToRenew
+                            + " tháng (hạn mới " + newEnd + ")"
+                            + ("ACTIVE".equals(previousStatus) ? "." : ", hợp đồng trở lại hoạt động; lịch trả kho (nếu có) đã huỷ."),
+                    "RENEWAL",
+                    "/manager/customers");
         }
 
         return null;

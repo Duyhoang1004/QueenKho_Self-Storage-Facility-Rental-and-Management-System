@@ -46,6 +46,11 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- BR-117: gửi email thông báo cho khách (bật bằng MAIL_ENABLED=true + MAIL_USERNAME/MAIL_PASSWORD) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
 
 		<dependency>
     		<groupId>com.microsoft.sqlserver</groupId>

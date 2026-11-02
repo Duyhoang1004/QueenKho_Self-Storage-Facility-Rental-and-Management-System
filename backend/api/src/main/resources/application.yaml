@@ -5,6 +5,19 @@ spring:
     password: ${DB_PASSWORD:12345}
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
+  # BR-117: SMTP gửi email cho khách. Gmail: bật xác minh 2 bước → tạo "Mật khẩu ứng dụng" làm MAIL_PASSWORD
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      "[mail.smtp.auth]": true
+      "[mail.smtp.starttls.enable]": true
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 5000
+      "[mail.smtp.writetimeout]": 5000
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -29,3 +42,7 @@ queenkho:
   # Nút "⚡ Giả lập" tua thời gian để demo (DemoSimulationService). Tắt khi chạy thật: SIMULATION_ENABLED=false
   simulation:
     enabled: ${SIMULATION_ENABLED:true}
+  # BR-117: false = chỉ in nội dung email ra console (máy chưa cấu hình SMTP vẫn chạy). Bật: MAIL_ENABLED=true
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:QueenKho <no-reply@queenkho.local>}

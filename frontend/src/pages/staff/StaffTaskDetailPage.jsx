@@ -15,7 +15,7 @@ import {
 } from '../../services/staffTaskService';
 import SimulationButton from '../../components/SimulationButton';
 import UnitLocationMap from '../../components/UnitLocationMap';
-import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue } from '../../services/simulationService';
+import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -1198,6 +1198,19 @@ export default function StaffTaskDetailPage() {
         </div>
       )}
 
+      {/* Demo: task hỗ trợ / bảo trì quá hạn ngay → FM thấy nút "Gia hạn xử lý" trên bảng công việc (PR-S4) */}
+      {isManager && ['SUPPORT', 'MAINTENANCE'].includes(task.taskType)
+        && ['OPEN', 'IN_PROGRESS'].includes(task.status) && (
+        <div className="flex flex-wrap items-start gap-3 mb-6">
+          <SimulationButton
+            label="Task quá hạn ngay"
+            description="Lùi hạn xử lý của task về 1 phút trước và chạy ngay job đánh quá hạn (FM + nhân viên giữ task nhận thông báo). Sau đó dùng nút Gia hạn xử lý trên bảng công việc."
+            onRun={() => simulateTaskOverdue(task.id)}
+            onDone={() => navigate(`/manager/tasks?highlightTaskId=${task.id}`)}
+          />
+        </div>
+      )}
+
       {/* Demo: khách tới trả kho hôm nay / khách không tới trả kho (task nghiệm thu đang mở) */}
       {task.taskType === 'CHECK_OUT' && task.contractStatus === 'TERMINATION_PENDING'
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
@@ -1211,7 +1224,7 @@ export default function StaffTaskDetailPage() {
           {isManager && task.contractId && (
             <SimulationButton
               label="Khách không tới trả kho (31 ngày)"
-              description="Hết 5 ngày ân hạn mà khách không tới: hợp đồng chuyển QUÁ HẠN 31 ngày (phí trễ chạm trần 50% cọc), huỷ task nghiệm thu. Sau đó vào màn Hợp đồng quá hạn để liên hệ và thanh lý."
+              description="Qua ngày hẹn trả kho mà khách không tới: hợp đồng chuyển QUÁ HẠN 31 ngày (phí trễ chạm trần 50% cọc), huỷ task nghiệm thu. Sau đó vào màn Hợp đồng quá hạn để liên hệ và thanh lý."
               onRun={() => simulateOverdue(task.contractId, 31)}
               onDone={() => navigate('/manager/overdue')}
             />

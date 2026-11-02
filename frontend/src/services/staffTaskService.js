@@ -69,6 +69,12 @@ export async function extendSupportTask(taskId, managerId, payload) {
   return res.data
 }
 
+// PR-S4 mở rộng: FM gia hạn task SUPPORT / MAINTENANCE quá hạn (tối đa 7 ngày). Người gia hạn lấy từ token.
+export async function extendOverdueTask(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/extend`, payload)
+  return res.data
+}
+
 // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
 export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)

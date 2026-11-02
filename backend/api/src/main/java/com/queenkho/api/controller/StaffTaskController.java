@@ -169,6 +169,19 @@ public class StaffTaskController {
         }
     }
 
+    // PR-S4 mở rộng: FM gia hạn task SUPPORT / MAINTENANCE quá hạn (tối đa 7 ngày, giữ người nhận)
+    // POST /api/v1/staff-tasks/12/extend   body: { "newDueDate": "2026-11-05", "reason": "..." }
+    @PostMapping("/{id}/extend")
+    public ResponseEntity<?> extend(@PathVariable Integer id,
+                                    @RequestParam(required = false) Integer managerId,
+                                    @RequestBody(required = false) ExtendSupportTaskRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.extendOverdueTask(id, managerId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     // Staff báo cáo kết quả liên hệ khách hàng (No-Show workflow)
     // POST /api/v1/staff-tasks/12/contact-report
     @PostMapping("/{id}/contact-report")

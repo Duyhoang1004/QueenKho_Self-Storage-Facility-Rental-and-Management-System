@@ -488,7 +488,7 @@ export default function PublicLandingPage() {
             Sẵn sàng giải phóng không gian của bạn?
           </h2>
           <p className="text-sm sm:text-base font-bold mt-3 text-white/90">
-            Đặt kho ngay hôm nay để nhận ưu đãi giảm 100.000đ cho đơn đầu tiên với mã <strong className="underline">NEWKHO</strong>!
+            Đặt kho ngay hôm nay để nhận ưu đãi giảm 100.000đ cho mỗi đơn đặt kho trực tuyến với mã <strong className="underline">NEWKHO</strong>!
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
             <button

@@ -23,8 +23,11 @@ import java.util.List;
  *      → khách cũ chỉ còn gia hạn được nếu chưa có đơn nào cần tới ô này.
  *
  *  Ngày ô trống được nhận (ước tính an toàn, không đổi dữ liệu nào trong DB):
- *      ACTIVE / TERMINATION_PENDING : end_date + 6  (hết 5 ngày ân hạn dọn đồ PR-O1)
- *      OVERDUE                      : end_date + liquidation_days + 2 (FM thanh lý + 1 ngày dọn ô)
+ *      ACTIVE (qua mốc, chưa hẹn trả) : end_date + 6  (khách còn quyền hẹn trả tới end_date + 5, PR-O1)
+ *      TERMINATION_PENDING            : ngày hẹn trả + 1 (sửa 02/11/2026 — trước đây cố định end_date + 6 nên
+ *                                       khách hẹn trả sớm vẫn "giam" ô 5 ngày). Khách chỉ được dời lịch SỚM hơn
+ *                                       nên ngày này không bao giờ lùi ra sau. Không còn task CHECK_OUT → end_date + 6.
+ *      OVERDUE                        : end_date + liquidation_days + 2 (FM thanh lý + 1 ngày dọn ô)
  */
 @Service
 public class RenewalPolicyService {
@@ -66,6 +69,11 @@ public class RenewalPolicyService {
                 "SELECT CASE WHEN c.status = 'OVERDUE' " +
                         "            THEN DATEADD(DAY, COALESCE(rp.liquidation_days, " + LateFeeService.DEFAULT_LIQUIDATION_DAYS + ") + "
                         + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) " +
+                        "       WHEN c.status = 'TERMINATION_PENDING' " +
+                        "            THEN DATEADD(DAY, 1, COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
+                        "                 WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
+                        "                   AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), " +
+                        "                 DATEADD(DAY, " + (GRACE_DAYS_AFTER_END - 1) + ", c.end_date))) " +
                         "            ELSE DATEADD(DAY, " + GRACE_DAYS_AFTER_END + ", c.end_date) END AS release_date " +
                         "FROM rental_contracts c " +
                         "JOIN storage_units su ON su.id = c.storage_unit_id " +

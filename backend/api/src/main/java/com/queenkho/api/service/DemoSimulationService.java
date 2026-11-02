@@ -4,6 +4,7 @@ import com.queenkho.api.security.AccessException;
 import com.queenkho.api.security.CurrentUser;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,6 +43,15 @@ public class DemoSimulationService {
 
     @PersistenceContext
     private EntityManager entityManager;
+
+    public static final int MAX_EXPIRE_SOON_DAYS = 7;
+
+    // Thêm sau (PR-R9, task quá hạn) — inject qua field để giữ nguyên constructor đang dùng trong test
+    @Autowired(required = false)
+    private RenewalReminderService renewalReminderService;
+
+    @Autowired(required = false)
+    private StaffTaskService staffTaskService;
 
     public DemoSimulationService(JdbcTemplate jdbcTemplate,
                                  ReservationCleanupService reservationCleanupService,
@@ -267,6 +277,56 @@ public class DemoSimulationService {
         return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày thanh lý (cần thêm "
                         + ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ)"
                 : "Hợp đồng quá hạn " + days + " ngày — đang tính phí trễ", "endDate", endDate);
+    }
+
+    // ---------- 4b. PR-R9: hợp đồng ACTIVE sắp hết hạn (còn N ngày) → chạy ngay job nhắc gia hạn ----------
+    @Transactional
+    public Map<String, Object> expireSoon(Integer contractId, int days, CurrentUser actor) {
+        requireEnabled();
+        if (days < 1 || days > MAX_EXPIRE_SOON_DAYS) {
+            throw new AccessException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Số ngày còn lại phải từ 1 đến " + MAX_EXPIRE_SOON_DAYS);
+        }
+        Map<String, Object> contract = row(
+                "SELECT rc.id, rc.contract_code, rc.status, rc.billing_cycle_months, rc.customer_id, su.facility_id " +
+                        "FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
+                contractId, "Không tìm thấy hợp đồng");
+        requireOwnerOrFacility(actor, toInt(contract.get("customer_id")), toInt(contract.get("facility_id")));
+        if (!"ACTIVE".equals(contract.get("status"))) {
+            throw notApplicable("Chỉ giả lập được cho hợp đồng đang thuê (ACTIVE)");
+        }
+        int months = Math.max(1, toInt(contract.get("billing_cycle_months")));
+        LocalDate endDate = LocalDate.now().plusDays(days);
+        jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
+                endDate.minusMonths(months), endDate, contractId);
+        boolean sent = renewalReminderService != null && renewalReminderService.remindContract(contractId);
+
+        log(actor, "HĐ " + contract.get("contract_code") + " còn " + days + " ngày hết hạn (hết hạn " + endDate + ")",
+                "rental_contracts", contractId);
+        return result(sent
+                ? "Hợp đồng còn " + days + " ngày — đã gửi nhắc gia hạn (chuông + email)"
+                : "Hợp đồng còn " + days + " ngày — mốc nhắc này đã gửi trước đó", "endDate", endDate);
+    }
+
+    // ---------- 4c. Task quá hạn → FM thấy nút "Gia hạn xử lý" ----------
+    // Lùi hạn task về 1 phút trước rồi chạy NGAY job đánh quá hạn (gửi thông báo cho FM / nhân viên giữ task).
+    @Transactional
+    public Map<String, Object> makeTaskOverdue(Integer taskId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> task = row("SELECT id, task_type, status, facility_id FROM facility_tasks WHERE id = ?",
+                taskId, "Không tìm thấy task");
+        requireSameFacility(actor, toInt(task.get("facility_id")));
+        if (!List.of("OPEN", "IN_PROGRESS").contains(String.valueOf(task.get("status")))) {
+            throw notApplicable("Chỉ giả lập được cho task đang chờ nhận / đang xử lý");
+        }
+        jdbcTemplate.update("UPDATE facility_tasks SET due_at = DATEADD(MINUTE, -1, SYSDATETIME()) WHERE id = ?", taskId);
+        if (staffTaskService != null) {
+            staffTaskService.markOverdueTasks();
+        }
+        String status = jdbcTemplate.queryForObject("SELECT status FROM facility_tasks WHERE id = ?", String.class, taskId);
+
+        log(actor, "Task #" + taskId + " (" + task.get("task_type") + ") quá hạn xử lý → " + status, "facility_tasks", taskId);
+        return result("Task đã quá hạn — Quản lý cơ sở có thể bấm \"Gia hạn xử lý\"", "status", status);
     }
 
     // ---------- 5c. PR-Q10: hàng lưu giữ đã hết 60 ngày ----------

@@ -7,6 +7,7 @@ const bomMenuItems = [
   { path: '/bom/facilities', icon: 'warehouse', label: 'Cơ sở kho bãi' },
   { path: '/bom/unit-types', icon: 'sell', label: 'Bảng giá dịch vụ' },
   { path: '/bom/policies', icon: 'policy', label: 'Chính sách thuê' },
+  { path: '/bom/vouchers', icon: 'confirmation_number', label: 'Voucher đặt kho' },
   { path: '/bom/revenue', icon: 'monitoring', label: 'Báo cáo doanh thu' },
 ];
 

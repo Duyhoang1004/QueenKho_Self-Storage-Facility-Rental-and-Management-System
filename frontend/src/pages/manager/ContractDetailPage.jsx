@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getContractDetail } from '../../services/contractService'
 import SimulationButton from '../../components/SimulationButton'
-import { simulateOverdue } from '../../services/simulationService'
+import { simulateExpireSoon, simulateOverdue } from '../../services/simulationService'
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -132,6 +132,14 @@ export default function ContractDetailPage() {
       {/* Demo: tua thời gian để thấy phí trễ (3 ngày) và nút thanh lý (31 ngày) — ẩn khi backend tắt giả lập */}
       {['ACTIVE', 'OVERDUE'].includes(contract.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
+          {contract.status === 'ACTIVE' && (
+            <SimulationButton
+              label="Còn 3 ngày hết hạn"
+              description="Dời ngày hết hạn về 3 ngày nữa và chạy ngay job nhắc gia hạn: khách nhận thông báo trong chuông và email."
+              onRun={() => simulateExpireSoon(contract.contractId, 3)}
+              onDone={() => setReloadTick((t) => t + 1)}
+            />
+          )}
           <SimulationButton
             label="Quá hạn 3 ngày"
             description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách. Dùng để demo nút Miễn phí trễ."

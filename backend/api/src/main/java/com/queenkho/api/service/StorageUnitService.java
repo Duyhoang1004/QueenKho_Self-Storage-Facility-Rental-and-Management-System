@@ -96,6 +96,8 @@ public class StorageUnitService {
                     .mapW(unit.getMapW())
                     .mapH(unit.getMapH())
                     .mapDoor(unit.getMapDoor())
+                    .maintenanceNote(unit.getMaintenanceNote())
+                    .maintenanceSince(unit.getMaintenanceSince())
                     .defaultMapW(FloorPlanService.defaultSize(ut)[0])
                     .defaultMapH(FloorPlanService.defaultSize(ut)[1])
                     .build();
@@ -222,6 +224,8 @@ public class StorageUnitService {
                 .mapW(unit.getMapW())
                 .mapH(unit.getMapH())
                 .mapDoor(unit.getMapDoor())
+                    .maintenanceNote(unit.getMaintenanceNote())
+                    .maintenanceSince(unit.getMaintenanceSince())
                 .defaultMapW(FloorPlanService.defaultSize(ut)[0])
                 .defaultMapH(FloorPlanService.defaultSize(ut)[1])
                 .build());
@@ -384,6 +388,14 @@ public class StorageUnitService {
             return getStorageUnitDetail(id); // Trạng thái không đổi
         }
 
+        // PR-M9 (sửa 02/11/2026): chuyển sang Bảo trì bắt buộc ghi chú lý do (10–500 ký tự) — lưu trên ô để hiện ở
+        // danh sách / mặt bằng (trước đây chỉ ghi vào nhật ký nên FM không xem lại được)
+        String note = request.getNote() != null ? request.getNote().trim() : "";
+        if ("MAINTENANCE".equals(targetStatus) && (note.length() < 10 || note.length() > 500)) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Ghi chú lý do bảo trì bắt buộc, từ 10 đến 500 ký tự");
+        }
+
         // Chuyển AVAILABLE -> MAINTENANCE: làm giảm 1 ô khả dụng
         // Bắt buộc kiểm tra PR-M10 / BR-11: không làm âm số suất cọc
         if ("MAINTENANCE".equals(targetStatus)) {
@@ -391,6 +403,13 @@ public class StorageUnitService {
         }
 
         unit.setStatus(targetStatus);
+        if ("MAINTENANCE".equals(targetStatus)) {
+            unit.setMaintenanceNote(note);
+            unit.setMaintenanceSince(java.time.LocalDateTime.now());
+        } else {
+            unit.setMaintenanceNote(null);
+            unit.setMaintenanceSince(null);
+        }
         storageUnitRepository.save(unit);
 
         // PR-O10: "Mở lại kho" khi ô còn task bảo trì (sau trả kho có sự cố / thanh lý) → đóng luôn task đó

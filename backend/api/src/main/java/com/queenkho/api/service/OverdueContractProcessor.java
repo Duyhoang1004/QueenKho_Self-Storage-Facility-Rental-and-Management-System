@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Map;
 
 /**
  * Xử lý transaction độc lập cho từng hợp đồng quá hạn (UC-28 / PR-Q1).
@@ -21,6 +22,9 @@ public class OverdueContractProcessor {
 
     @Autowired
     private StaffTaskService staffTaskService;
+
+    @Autowired
+    private NotificationService notificationService;
 
     /**
      * Xử lý chuyển trạng thái cho Hợp đồng ACTIVE hết hạn (end_date < today)
@@ -38,13 +42,17 @@ public class OverdueContractProcessor {
             String edStr = endDate != null ? endDate.toString() : "";
             logOverdueActivity(contractId, systemUserId, today,
                     "[OVERDUE] Hợp đồng " + contractCode + " chuyển sang QUÁ HẠN (hết hạn ngày " + edStr + ")");
+            notifyOverdue(contractId, contractCode,
+                    "Hợp đồng đã hết hạn mà chưa gia hạn hoặc hẹn trả kho. Vui lòng gia hạn hoặc hẹn trả kho (trong 3 ngày tới) "
+                            + "để tránh phí trễ hạn, phí chiếm dụng và bị thanh lý theo điều khoản.");
             return true;
         }
         return false;
     }
 
     /**
-     * Xử lý chuyển trạng thái cho Hợp đồng TERMINATION_PENDING quá 5 ngày ân hạn
+     * Hợp đồng TERMINATION_PENDING mà khách KHÔNG tới trả kho theo lịch hẹn (đã qua ngày hẹn và đã qua end_date)
+     * → OVERDUE. ContractService chọn hợp đồng theo ngày hẹn (PR-O1 sửa 02/11/2026), không còn cố định end_date + 5.
      * Mỗi hợp đồng được chạy trong một Transaction độc lập (REQUIRES_NEW).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -65,10 +73,35 @@ public class OverdueContractProcessor {
             staffTaskService.cancelOpenTasks(contractId, "CHECK_OUT");
 
             logOverdueActivity(contractId, systemUserId, today,
-                    "[OVERDUE] Hợp đồng " + contractCode + " quá 5 ngày ân hạn trả kho, chuyển sang QUÁ HẠN và hủy task check-out");
+                    "[OVERDUE] Hợp đồng " + contractCode + " không tới trả kho theo lịch hẹn, chuyển sang QUÁ HẠN và hủy task check-out");
+            notifyOverdue(contractId, contractCode,
+                    "Bạn đã không tới trả kho theo lịch hẹn nên hợp đồng chuyển sang quá hạn. Vui lòng hẹn lại ngày trả kho "
+                            + "(trong 3 ngày tới) hoặc gia hạn để tránh phí trễ hạn, phí chiếm dụng và bị thanh lý theo điều khoản.");
             return true;
         }
         return false;
+    }
+
+    // BR-111 / BR-117: khách (thông báo + email) và FM được báo khi hợp đồng chuyển OVERDUE — mỗi đợt quá hạn 1 lần
+    private void notifyOverdue(Integer contractId, String contractCode, String customerMessage) {
+        if (notificationService == null) return;
+        try {
+            Map<String, Object> row = jdbcTemplate.queryForMap(
+                    "SELECT c.customer_id, c.reservation_id, c.end_date, su.id AS unit_id, su.facility_id, u.full_name " +
+                            "FROM rental_contracts c JOIN storage_units su ON su.id = c.storage_unit_id " +
+                            "JOIN users u ON u.id = c.customer_id WHERE c.id = ?", contractId);
+            String refKey = "OVERDUE:" + contractId + ":" + row.get("end_date");
+            Object reservationId = row.get("reservation_id");
+            notificationService.notifyCustomer(((Number) row.get("customer_id")).intValue(), refKey,
+                    "Hợp đồng " + contractCode + " đã quá hạn", customerMessage, "OVERDUE",
+                    reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
+            notificationService.notifyFacilityManagersOnce(((Number) row.get("facility_id")).intValue(), refKey,
+                    "Hợp đồng quá hạn — " + contractCode,
+                    "Khách " + row.get("full_name") + " (ô " + row.get("unit_id") + ") chưa trả kho / gia hạn. Liên hệ khách và ghi nhật ký liên hệ.",
+                    "OVERDUE", "/manager/overdue");
+        } catch (Exception e) {
+            System.err.println("[QueenKho Overdue Job] ⚠️ Lỗi gửi thông báo quá hạn HĐ " + contractCode + ": " + e.getMessage());
+        }
     }
 
     /**

@@ -58,6 +58,7 @@ import BomFacilitiesPage from './pages/bom/BomFacilitiesPage';
 import BomUnitTypesPage from './pages/bom/BomUnitTypesPage';
 import BomRentalPoliciesPage from './pages/bom/BomRentalPoliciesPage';
 import BomRevenuePage from './pages/bom/BomRevenuePage';
+import BomVouchersPage from './pages/bom/BomVouchersPage';
 
 /**
  * Điều hướng thông minh cho trang chủ:
@@ -185,6 +186,7 @@ export default function App() {
         <Route path="/bom/facilities" element={<BomFacilitiesPage />} />
         <Route path="/bom/unit-types" element={<BomUnitTypesPage />} />
         <Route path="/bom/policies" element={<BomRentalPoliciesPage />} />
+        <Route path="/bom/vouchers" element={<BomVouchersPage />} />
         <Route path="/bom/revenue" element={<BomRevenuePage />} />
       </Route>
     </Routes>

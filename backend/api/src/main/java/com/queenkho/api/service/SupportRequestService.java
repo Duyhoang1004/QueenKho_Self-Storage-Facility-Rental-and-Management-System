@@ -63,6 +63,9 @@ public class SupportRequestService {
     @Autowired
     private ActivityLogService activityLogService;
 
+    @Autowired
+    private NotificationService notificationService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -435,7 +438,21 @@ public class SupportRequestService {
         task.setStatus("OPEN");
         task.setDueAt(staffTaskService.computeDueAt(LocalDate.now()));
         task.setNote(taskNote);
-        return staffTaskRepository.save(task);
+        StaffTask saved = staffTaskRepository.save(task);
+
+        // BR-111: FM nhận thông báo khi khách gửi / mở lại yêu cầu hỗ trợ (loại khẩn ghi rõ [KHẨN])
+        if (notificationService != null) {
+            String customerName = ticket.getCustomer() != null ? ticket.getCustomer().getFullName() : "Khách hàng";
+            boolean reopened = reopenReason != null && !reopenReason.isBlank();
+            notificationService.notifyFacilityManagers(
+                    facilityId,
+                    prefix + (reopened ? "Khách yêu cầu xử lý lại " : "Yêu cầu hỗ trợ mới ") + ticket.getTicketCode(),
+                    customerName + " — HĐ " + contract.getContractCode() + " — " + getIssueTypeLabel(ticket.getIssueType())
+                            + (reopened ? ". Lý do: " + reopenReason.trim() : "") + ". Task hỗ trợ #" + saved.getId() + " đang chờ giao việc.",
+                    "SUPPORT",
+                    "/manager/tasks?highlightTaskId=" + saved.getId());
+        }
+        return saved;
     }
 
     private User validateCustomer(Integer customerId) {

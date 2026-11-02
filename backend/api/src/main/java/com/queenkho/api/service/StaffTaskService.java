@@ -447,6 +447,7 @@ public class StaffTaskService {
         User manager = findUserWithRole(managerId, "FACILITY_MANAGER", "Chỉ quản lý cơ sở mới được gỡ người nhận");
         StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
         String prevStaffName = task.getStaff() != null ? task.getStaff().getFullName() : "nhân viên";
+        Integer prevStaffId = task.getStaff() != null ? task.getStaff().getId() : null;
 
         int updated = staffTaskRepository.unassign(task.getId());
         if (updated == 0) {
@@ -478,6 +479,15 @@ public class StaffTaskService {
                 "[TASK_UNASSIGN] Quản lý " + manager.getFullName() + " gỡ " + prevStaffName + " khỏi task #" + task.getId() + " (" + task.getTaskType() + ")",
                 "facility_tasks",
                 String.valueOf(task.getId())
+        );
+
+        if (notificationService != null && prevStaffId != null) notificationService.notifyStaff(
+                prevStaffId,
+                "Bạn đã được gỡ khỏi task #" + task.getId(),
+                "Quản lý " + manager.getFullName() + " đã gỡ bạn khỏi task " + task.getTaskType() + " #" + task.getId()
+                        + ". Task quay về \"Chờ nhận\".",
+                "TASK",
+                "/staff?highlightTaskId=" + task.getId()
         );
 
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
@@ -736,6 +746,16 @@ public class StaffTaskService {
             // bỏ qua lỗi ghi log
         }
 
+        // BR-111 / BR-117: khách nhận thông báo + email (KHÔNG gửi mã PIN — khách xem PIN trong trang hợp đồng)
+        if (notificationService != null && contract.getCustomer() != null) notificationService.notifyCustomer(
+                contract.getCustomer().getId(),
+                "Nhận kho thành công — hợp đồng " + contract.getContractCode() + " đã kích hoạt",
+                "Ô " + contract.getStorageUnit().getId() + " đã bàn giao cho bạn, hợp đồng có hiệu lực đến "
+                        + contract.getEndDate() + ". Mã PIN và thẻ RFID xem trong trang hợp đồng.",
+                "ASSIGNED",
+                contract.getReservation() != null ? "/kho-cua-toi/hop-dong/" + contract.getReservation().getId() : "/kho-cua-toi"
+        );
+
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
@@ -851,6 +871,15 @@ public class StaffTaskService {
             sr.setResolvedAt(now);
             supportRequestRepository.save(sr);
             ticketCode = sr.getTicketCode();
+
+            // BR-111 / BR-117: khách nhận thông báo + email kết quả xử lý
+            if (notificationService != null && sr.getCustomer() != null) notificationService.notifyCustomer(
+                    sr.getCustomer().getId(),
+                    "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã được xử lý",
+                    "Kết quả: " + resolutionNote + ". Nếu sự cố chưa được khắc phục, bạn có thể yêu cầu xử lý lại trong 3 ngày.",
+                    "SUPPORT",
+                    "/ho-tro"
+            );
         }
 
         activityLogService.log(
@@ -939,35 +968,57 @@ public class StaffTaskService {
      */
     @Transactional
     public StaffTaskDetailResponse extendSupportTask(Integer taskId, Integer managerId, ExtendSupportTaskRequest request) {
+        return extendTask(taskId, managerId, request, List.of("SUPPORT"));
+    }
+
+    // PR-S4 mở rộng (02/11/2026): FM gia hạn được task SUPPORT và MAINTENANCE quá hạn.
+    // CHECK_IN quá hạn dùng "Dời lịch nhận kho"; CHECK_OUT do khách dời lịch trả; REFUND là việc của chính FM.
+    public static final List<String> EXTENDABLE_TASK_TYPES = List.of("SUPPORT", "MAINTENANCE");
+    public static final int MAX_EXTEND_DAYS = 7;
+
+    @Transactional
+    public StaffTaskDetailResponse extendOverdueTask(Integer taskId, Integer managerId, ExtendSupportTaskRequest request) {
+        return extendTask(taskId, managerId, request, EXTENDABLE_TASK_TYPES);
+    }
+
+    private StaffTaskDetailResponse extendTask(Integer taskId, Integer managerId, ExtendSupportTaskRequest request,
+                                               List<String> allowedTypes) {
         User manager = findUserWithRole(managerId, "FACILITY_MANAGER",
-                "Chỉ Quản lý cơ sở (FM) mới có quyền gia hạn task hỗ trợ quá hạn (PR-S4)");
+                "Chỉ Quản lý cơ sở (FM) mới có quyền gia hạn task quá hạn (PR-S4)");
         StaffTask task = findTaskInFacility(taskId, manager.getFacilityId());
 
-        if (!"SUPPORT".equals(task.getTaskType())) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
-                    "Chỉ task hỗ trợ (SUPPORT) mới áp dụng chức năng gia hạn này (PR-S4)");
+        if (!allowedTypes.contains(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, allowedTypes.size() == 1 ? "TASK_NOT_SUPPORT" : "TASK_NOT_EXTENDABLE",
+                    allowedTypes.size() == 1
+                            ? "Chỉ task hỗ trợ (SUPPORT) mới áp dụng chức năng gia hạn này (PR-S4)"
+                            : "Chỉ gia hạn được task hỗ trợ (SUPPORT) và bảo trì (MAINTENANCE). Task nhận kho hãy dời lịch hẹn, task trả kho do khách dời lịch.");
         }
+        String typeLabel = "MAINTENANCE".equals(task.getTaskType()) ? "bảo trì" : "hỗ trợ";
 
         boolean isOverdue = "OVERDUE".equals(task.getStatus())
                 || (OPEN_STATUSES.contains(task.getStatus()) && task.getDueAt() != null && !task.getDueAt().isAfter(LocalDateTime.now()));
         if (!isOverdue) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_OVERDUE",
-                    "Chỉ task hỗ trợ đã quá hạn (OVERDUE) mới cần gia hạn");
+                    "Chỉ task " + typeLabel + " đã quá hạn (OVERDUE) mới cần gia hạn");
         }
 
         if (request == null || request.getNewDueDate() == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Vui lòng chọn ngày hạn mới cho task hỗ trợ (PR-S4)");
+                    "Vui lòng chọn ngày hạn mới cho task " + typeLabel + " (PR-S4)");
         }
         if (request.getNewDueDate().isBefore(LocalDate.now())) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
                     "Ngày hạn mới phải từ hôm nay trở đi");
         }
+        if (request.getNewDueDate().isAfter(LocalDate.now().plusDays(MAX_EXTEND_DAYS))) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Chỉ gia hạn tối đa " + MAX_EXTEND_DAYS + " ngày kể từ hôm nay");
+        }
 
         String reason = request.getReason() != null ? request.getReason().trim() : "";
         if (reason.isEmpty()) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Bắt buộc nhập lý do gia hạn task hỗ trợ (PR-S4)");
+                    "Bắt buộc nhập lý do gia hạn task " + typeLabel + " (PR-S4)");
         }
         if (reason.length() > 500) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
@@ -1005,12 +1056,23 @@ public class StaffTaskService {
             }
         }
 
+        boolean support = "SUPPORT".equals(task.getTaskType());
         activityLogService.log(
                 manager.getId(),
-                "[SUPPORT_EXTEND] Quản lý " + manager.getFullName() + " gia hạn task SUPPORT #" + task.getId()
-                        + " (Ticket " + ticketCode + ") đến 21:00 " + formattedDue + ": " + reason,
+                (support ? "[SUPPORT_EXTEND] " : "[TASK_EXTEND] ") + "Quản lý " + manager.getFullName() + " gia hạn task "
+                        + task.getTaskType() + " #" + task.getId()
+                        + (support ? " (Ticket " + ticketCode + ")" : "") + " đến 21:00 " + formattedDue + ": " + reason,
                 "facility_tasks",
                 String.valueOf(task.getId())
+        );
+
+        // BR-111: nhân viên đang giữ task biết hạn mới
+        if (notificationService != null && task.getStaff() != null) notificationService.notifyStaff(
+                task.getStaff().getId(),
+                "Task #" + task.getId() + " đã được gia hạn",
+                "Quản lý " + manager.getFullName() + " gia hạn task " + typeLabel + " đến 21:00 " + formattedDue + ". Lý do: " + reason,
+                "TASK",
+                "/staff?highlightTaskId=" + task.getId()
         );
 
         entityManager.flush();
@@ -1288,6 +1350,27 @@ public class StaffTaskService {
         refundTask.setNote(refundNoteStr);
         staffTaskRepository.save(refundTask);
 
+        // BR-111 / BR-117: khách biết đã nghiệm thu + số tiền sẽ hoàn; FM có việc hoàn tiền mới
+        if (notificationService != null) {
+            notificationService.notifyCustomer(
+                    customerId,
+                    "Đã nghiệm thu trả kho — hợp đồng " + contract.getContractCode(),
+                    "Hợp đồng đã kết thúc. Số tiền hoàn trả dự kiến " + vndFmt.format(refundAmount) + "đ"
+                            + (excessDebt.add(overstayDebt).compareTo(BigDecimal.ZERO) > 0
+                                ? "; khoản phát sinh vượt cọc " + vndFmt.format(excessDebt.add(overstayDebt)) + "đ cần thanh toán trong mục Thanh toán"
+                                : "")
+                            + ". Quản lý cơ sở sẽ hoàn tiền trong 24 giờ làm việc.",
+                    "REFUND",
+                    reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
+            notificationService.notifyFacilityManagers(
+                    task.getFacilityId(),
+                    "Hoàn tiền trả kho — HĐ " + contract.getContractCode(),
+                    "Nhân viên đã nghiệm thu ô " + (unit != null ? unit.getId() : "—") + ". Cần hoàn "
+                            + vndFmt.format(refundAmount) + "đ cho khách " + contract.getCustomer().getFullName() + ".",
+                    "REFUND",
+                    "/manager/refunds?highlightTaskId=" + refundTask.getId());
+        }
+
         // 9. Ghi nhật ký hoạt động (activity_logs)
         try {
             String logMsg = "[CHECK_OUT] Nghiệm thu HĐ " + contract.getContractCode()
@@ -1372,6 +1455,8 @@ public class StaffTaskService {
         StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
         if (unit != null && "MAINTENANCE".equals(unit.getStatus())) {
             unit.setStatus("AVAILABLE");
+            unit.setMaintenanceNote(null);
+            unit.setMaintenanceSince(null);
             storageUnitRepository.save(unit);
         }
 
@@ -1388,6 +1473,16 @@ public class StaffTaskService {
                         + (unit != null ? ", ô " + unit.getId() + " sẵn sàng cho thuê" : "") + ": " + workNote,
                 "facility_tasks",
                 String.valueOf(taskId)
+        );
+
+        // BR-111: nhân viên làm xong thì FM được báo (FM tự đóng thì không cần)
+        if (notificationService != null && !isManager) notificationService.notifyFacilityManagers(
+                task.getFacilityId(),
+                (cleanup ? "Đã dọn xong kho sau thanh lý" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
+                user.getFullName() + " hoàn tất task #" + taskId + ": " + workNote
+                        + (unit != null ? ". Ô đã mở lại cho thuê." : ""),
+                "TASK",
+                "/manager/tasks/" + taskId
         );
 
         entityManager.flush();
@@ -2029,6 +2124,11 @@ public class StaffTaskService {
         // update MỌI REFUND PENDING của cả cơ sở → đơn khác chưa được hoàn cũng thành "đã hoàn")
         markRefundTransactionsSucceeded(task, method, ftCode);
 
+        // BR-111 / BR-117: khách nhận thông báo + email đã hoàn tiền
+        notifyCustomerRefunded(task, "CASH".equals(method)
+                ? "Quản lý cơ sở đã hoàn tiền mặt tại quầy."
+                : "Quản lý cơ sở đã chuyển khoản hoàn tiền (mã giao dịch " + ftCode + ").");
+
         // Ghi activity log (PR-A8, PR-A9)
         try {
             String logAction = "[REFUND] Quản lý " + manager.getFullName() + " xác nhận hoàn tất hoàn tiền task #" + task.getId()
@@ -2053,6 +2153,36 @@ public class StaffTaskService {
 
     private static final java.util.regex.Pattern REFUND_ORIGINAL_REF = java.util.regex.Pattern.compile("Mã gốc:\\s*([A-Za-z0-9_-]+)");
     private static final java.util.regex.Pattern REFUND_RESERVATION_CODE = java.util.regex.Pattern.compile("Đơn:\\s*([A-Za-z0-9_-]+)");
+
+    // Khách của task REFUND: qua hợp đồng (trả kho, thanh lý, No-Show) hoặc mã đơn trong note (huỷ đơn)
+    private void notifyCustomerRefunded(StaffTask task, String detail) {
+        if (notificationService == null) return;
+        Integer customerId = null;
+        Integer reservationId = null;
+        String code = null;
+        if (task.getContract() != null && task.getContract().getCustomer() != null) {
+            customerId = task.getContract().getCustomer().getId();
+            reservationId = task.getContract().getReservation() != null ? task.getContract().getReservation().getId() : null;
+            code = task.getContract().getContractCode();
+        } else {
+            java.util.regex.Matcher m = REFUND_RESERVATION_CODE.matcher(task.getNote() != null ? task.getNote() : "");
+            if (m.find()) {
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                        "SELECT TOP 1 id, customer_id FROM reservations WHERE reservation_code = ?", m.group(1));
+                if (!rows.isEmpty()) {
+                    customerId = ((Number) rows.get(0).get("customer_id")).intValue();
+                    code = m.group(1);
+                }
+            }
+        }
+        if (customerId == null) return;
+        notificationService.notifyCustomer(
+                customerId,
+                "Đã hoàn tiền" + (code != null ? " — " + code : ""),
+                detail + " Vui lòng kiểm tra tài khoản / biên nhận; nếu chưa nhận được, hãy liên hệ hotline cơ sở.",
+                "REFUND",
+                reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
+    }
 
     // Xác định giao dịch REFUND của 1 task theo thứ tự chắc chắn nhất:
     //  1. Task hoàn tiền VNPAY về muộn: note có "Mã gốc: <ref>" → giao dịch REF-LATE-<ref>
@@ -2135,6 +2265,30 @@ public class StaffTaskService {
 
     // ================== HỆ THỐNG TÍNH TOÁN QUYẾT TOÁN HOÀN TIỀN (PR-O2, PR-O11, PR-O14, PR-Q3) ==================
 
+    record EarlyReturn(int usedMonths, BigDecimal breakFee, BigDecimal refund) {}
+
+    /**
+     * PR-O2 (D-10) trả kho sớm, tính trong KỲ HIỆN TẠI (PR-O2c: kỳ gia hạn gần nhất, chưa gia hạn thì từ ngày bắt đầu HĐ):
+     *  - Số tháng đã dùng = từ đầu kỳ đến ngày nghiệm thu, làm tròn LÊN, tối thiểu 1.
+     *  - PR-O2a: đang ở tháng cuối của kỳ (đã dùng = số tháng của kỳ) → không hoàn tiền thuê, KHÔNG thu phí phá HĐ.
+     *  - Còn lại: hoàn = tiền thuê kỳ đã trả − đã dùng × giá niêm yết − phí phá HĐ (1 tháng giá niêm yết), tối thiểu 0.
+     */
+    static EarlyReturn earlyReturn(LocalDate periodStart, int periodMonths, LocalDate actualDate,
+                                   BigDecimal baseMonthlyPrice, BigDecimal rentPaid) {
+        int usedMonths = 1;
+        if (actualDate.isAfter(periodStart)) {
+            Period period = Period.between(periodStart, actualDate);
+            int m = period.getYears() * 12 + period.getMonths() + (period.getDays() > 0 ? 1 : 0);
+            usedMonths = Math.max(1, m);
+        }
+        if (usedMonths >= periodMonths) {
+            return new EarlyReturn(periodMonths, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+        BigDecimal usedCost = baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths));
+        BigDecimal refund = rentPaid.subtract(usedCost).subtract(baseMonthlyPrice).max(BigDecimal.ZERO);
+        return new EarlyReturn(usedMonths, baseMonthlyPrice, refund);
+    }
+
     public RefundCalculationResult calculateCheckoutRefund(RentalContract contract, LocalDate actualCheckoutDate, BigDecimal totalDamageCost) {
         if (totalDamageCost == null) {
             totalDamageCost = BigDecimal.ZERO;
@@ -2183,10 +2337,19 @@ public class StaffTaskService {
                 : (cycleMonths >= 12 ? 15 : cycleMonths >= 6 ? 10 : cycleMonths >= 3 ? 5 : 0);
         BigDecimal rentPaid = PricingService.discountedRent(baseMonthlyPrice, cycleMonths, discountPercent);
 
+        // PR-O2c: kỳ hiện tại = kỳ gia hạn gần nhất (nếu có) → tính trả sớm từ đầu kỳ đó, không từ ngày ký HĐ
+        LocalDate periodStart = startDate;
+        int periodMonths = cycleMonths;
         try {
-            BigDecimal latestMonthlyRent = jdbcTemplate.queryForObject(
-                    "SELECT COALESCE((SELECT TOP 1 amount FROM payment_transactions WHERE contract_id = ? AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC), 0)",
-                    BigDecimal.class, contract.getId());
+            List<Map<String, Object>> latestRenewal = jdbcTemplate.queryForList(
+                    "SELECT TOP 1 amount, renewal_months FROM payment_transactions WHERE contract_id = ? " +
+                            "AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC",
+                    contract.getId());
+            BigDecimal latestMonthlyRent = latestRenewal.isEmpty() ? null : (BigDecimal) latestRenewal.get(0).get("amount");
+            if (!latestRenewal.isEmpty() && latestRenewal.get(0).get("renewal_months") instanceof Number rm && rm.intValue() > 0) {
+                periodMonths = rm.intValue();
+                periodStart = endDate.minusMonths(periodMonths);
+            }
             if (latestMonthlyRent != null && latestMonthlyRent.compareTo(BigDecimal.ZERO) > 0) {
                 rentPaid = latestMonthlyRent;
             } else {
@@ -2209,21 +2372,10 @@ public class StaffTaskService {
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
 
         if (isEarlyCheckout) {
-            if (actualDate.isAfter(startDate)) {
-                Period period = Period.between(startDate, actualDate);
-                int m = period.getYears() * 12 + period.getMonths();
-                if (period.getDays() > 0) {
-                    m += 1;
-                }
-                usedMonths = Math.max(1, m);
-            } else {
-                usedMonths = 1;
-            }
-            breakFee = baseMonthlyPrice;
-
-            BigDecimal usedCost = baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths));
-            BigDecimal refundable = rentPaid.subtract(usedCost).subtract(breakFee);
-            earlyRentRefund = refundable.max(BigDecimal.ZERO);
+            EarlyReturn early = earlyReturn(periodStart, periodMonths, actualDate, baseMonthlyPrice, rentPaid);
+            usedMonths = early.usedMonths();
+            breakFee = early.breakFee();
+            earlyRentRefund = early.refund();
         }
 
         // 2. Kiểm tra Ân hạn (PR-O14, D-11) & Phí trễ hạn (PR-Q3): ngày nghiệm thu > endDate
@@ -2297,9 +2449,11 @@ public class StaffTaskService {
 
         if (earlyRentRefund.compareTo(BigDecimal.ZERO) > 0) {
             desc.append(" + Hoàn tiền thuê trả sớm: ").append(vndFmt.format(earlyRentRefund)).append("đ")
-                    .append(" (Đã trả ").append(cycleMonths).append("T: ").append(vndFmt.format(rentPaid)).append("đ")
+                    .append(" (Đã trả ").append(periodMonths).append("T: ").append(vndFmt.format(rentPaid)).append("đ")
                     .append(" - Đã dùng ").append(usedMonths).append("T: ").append(vndFmt.format(baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths)))).append("đ")
                     .append(" - Phí hủy HĐ: ").append(vndFmt.format(breakFee)).append("đ)");
+        } else if (isEarlyCheckout && breakFee.compareTo(BigDecimal.ZERO) == 0) {
+            desc.append(" (Trả trong tháng cuối của kỳ: không hoàn tiền thuê, không phí phá HĐ — PR-O2a)");
         }
 
         desc.append(" => THỰC HOÀN ").append(vndFmt.format(totalRefund)).append("đ");
@@ -2387,8 +2541,37 @@ public class StaffTaskService {
     // ================== JOB QUÁ HẠN ==================
 
     // @Modifying query bắt buộc chạy trong transaction → bọc ở đây
+    // BR-111: task vừa quá hạn → báo FM của cơ sở + nhân viên đang giữ task
     @Transactional
     public int markOverdueTasks() {
-        return staffTaskRepository.markOverdue(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        List<StaffTask> due = notificationService != null ? staffTaskRepository.findDueForOverdue(now) : List.of();
+        int updated = staffTaskRepository.markOverdue(now);
+        for (StaffTask t : due) {
+            notifyTaskOverdue(t);
+        }
+        return updated;
+    }
+
+    private void notifyTaskOverdue(StaffTask t) {
+        String hint = switch (t.getTaskType()) {
+            case "SUPPORT", "MAINTENANCE" -> "Bấm \"Gia hạn xử lý\" để đặt hạn mới cho task.";
+            case "CHECK_IN" -> "Liên hệ khách để dời lịch nhận kho hoặc xử lý No-Show.";
+            case "CHECK_OUT" -> "Khách chưa tới trả kho đúng hẹn — liên hệ khách để hẹn lại.";
+            case "REFUND" -> "Hoàn tiền cho khách sớm nhất có thể.";
+            default -> "";
+        };
+        String link = "REFUND".equals(t.getTaskType())
+                ? "/manager/refunds?highlightTaskId=" + t.getId()
+                : "/manager/tasks?highlightTaskId=" + t.getId();
+        String title = "Task #" + t.getId() + " (" + t.getTaskType() + ") đã quá hạn";
+        String who = t.getStaff() != null ? " — đang do " + t.getStaff().getFullName() + " giữ" : " — chưa ai nhận";
+        notificationService.notifyFacilityManagers(t.getFacilityId(), title,
+                "Hạn xử lý " + t.getDueAt().format(TS_FMT) + who + ". " + hint, "TASK", link);
+        if (t.getStaff() != null && !"REFUND".equals(t.getTaskType())) {
+            notificationService.notifyStaff(t.getStaff().getId(), title,
+                    "Task bạn đang giữ đã quá hạn " + t.getDueAt().format(TS_FMT) + ". Báo quản lý cơ sở để được gia hạn.",
+                    "TASK", "/staff?highlightTaskId=" + t.getId());
+        }
     }
 }

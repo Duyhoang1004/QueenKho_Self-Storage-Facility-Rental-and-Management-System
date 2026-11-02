@@ -82,4 +82,7 @@ public class CustomerContractResponse {
     private BigDecimal overstayFeeAmount;
     private BigDecimal totalOverdueCharge;           // phí trễ + phí chiếm dụng
     private BigDecimal amountBeyondDeposit;          // phần vượt cọc sẽ thành nợ nếu trả kho / bị thanh lý
+
+    // PR-O12: NONE / PENDING / COMPLETED — cùng nguồn với danh sách "Kho của tôi" (RefundStatusService)
+    private String refundStatus;
 }

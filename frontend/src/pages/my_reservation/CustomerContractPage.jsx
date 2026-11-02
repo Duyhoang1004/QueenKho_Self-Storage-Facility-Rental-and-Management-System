@@ -5,6 +5,8 @@ import { getVnpayStatus } from "../../services/vnpayService";
 import ContractOptionsModal from "../../components/ContractOptionsModal";
 import AssetTermsModal from "../../components/AssetTermsModal";
 import UnitLocationMap from "../../components/UnitLocationMap";
+import SimulationButton from "../../components/SimulationButton";
+import { simulateExpireSoon } from "../../services/simulationService";
 
 // UC-06: hợp đồng còn giữ ô thì khách xem được vị trí ô trên mặt bằng
 const MAP_VISIBLE_STATUSES = ["PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING"];
@@ -213,14 +215,24 @@ export default function CustomerContractPage() {
   if (!contract) return null;
 
   const isTerminated = contract.status === "TERMINATED";
-  const hasRefunded = isTerminated;
+  // PR-O12: "đã hoàn" chỉ khi FM đã xác nhận task REFUND (BE trả refundStatus, cùng nguồn với danh sách đơn)
+  const hasRefunded = contract.refundStatus
+    ? contract.refundStatus === "COMPLETED"
+    : isTerminated;
+  const isRefundPending = isTerminated && !hasRefunded;
 
   const statusInfo = isTerminated
-    ? {
-        label: "Đã kết thúc (Đã hoàn cọc)",
-        cls: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
-        icon: "payments",
-      }
+    ? hasRefunded
+      ? {
+          label: "Đã kết thúc (Đã hoàn cọc)",
+          cls: "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]",
+          icon: "payments",
+        }
+      : {
+          label: "Đã kết thúc (Chờ hoàn tiền)",
+          cls: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
+          icon: "hourglass_top",
+        }
     : (STATUS_MAP[contract.status] || {
         label: contract.status,
         cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
@@ -283,23 +295,27 @@ export default function CustomerContractPage() {
 
       {/* Thông báo hợp đồng đã thanh lý & hoàn tiền nếu TERMINATED */}
       {isTerminated && (
-        <div className="bg-[#FAF5FF] border-2 border-[#CE82FF] rounded-2xl p-5 flex items-start gap-4 shadow-sm">
-          <div className="w-12 h-12 rounded-full bg-[#F3E8FF] flex items-center justify-center shrink-0 border-2 border-[#CE82FF]">
-            <span className="material-symbols-outlined text-[#A560E8] text-[28px]">
-              payments
+        <div className={`border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm ${isRefundPending ? "bg-[#FFF8EE] border-[#FF9600]" : "bg-[#FAF5FF] border-[#CE82FF]"}`}>
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-2 ${isRefundPending ? "bg-[#FFE8CC] border-[#FF9600]" : "bg-[#F3E8FF] border-[#CE82FF]"}`}>
+            <span className={`material-symbols-outlined text-[28px] ${isRefundPending ? "text-[#E58800]" : "text-[#A560E8]"}`}>
+              {isRefundPending ? "hourglass_top" : "payments"}
             </span>
           </div>
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="text-base font-black text-[#A560E8]">
-                Hợp đồng đã kết thúc & Đã hoàn tiền thành công
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-base font-black ${isRefundPending ? "text-[#E58800]" : "text-[#A560E8]"}`}>
+                {isRefundPending
+                  ? "Hợp đồng đã kết thúc – Đang chờ hoàn tiền"
+                  : "Hợp đồng đã kết thúc & Đã hoàn tiền thành công"}
               </span>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#A560E8] text-white">
-                ĐÃ HOÀN TIỀN
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider text-white ${isRefundPending ? "bg-[#FF9600]" : "bg-[#A560E8]"}`}>
+                {isRefundPending ? "CHỜ HOÀN TIỀN" : "ĐÃ HOÀN TIỀN"}
               </span>
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
-              Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Tổng số tiền hoàn trả{" "}
+              {isRefundPending
+                ? "Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Quản lý cơ sở đang xử lý hoàn tiền theo cách nhận bạn đã chọn. Số tiền dự kiến hoàn trả "
+                : "Bạn đã hoàn tất thủ tục trả kho và nghiệm thu tài sản. Tổng số tiền hoàn trả "}
               <strong className="text-[#A560E8] font-black">
                 {formatVND(refundedDeposit)}
               </strong>{" "}
@@ -422,6 +438,21 @@ export default function CustomerContractPage() {
           {statusInfo.label}
         </span>
       </div>
+
+      {/* Demo PR-R9: tua hợp đồng về còn 7 / 3 / 1 ngày → job nhắc gia hạn chạy ngay (chuông + email) */}
+      {contract.status === "ACTIVE" && (
+        <div className="flex flex-wrap items-start gap-3">
+          {[7, 3, 1].map((days) => (
+            <SimulationButton
+              key={days}
+              label={`Còn ${days} ngày hết hạn`}
+              description={`Dời ngày hết hạn về ${days} ngày nữa (giữ số tháng) và chạy ngay job nhắc gia hạn: khách nhận thông báo trong chuông và email.`}
+              onRun={() => simulateExpireSoon(contract.contractId, days)}
+              onDone={() => fetchContract()}
+            />
+          ))}
+        </div>
+      )}
 
       {/* PR-R9 / PR-R10: còn ≤ 7 ngày hết hạn → nhắc hạn chót gia hạn ưu tiên (end_date − 3) */}
       {contract.status === "ACTIVE" && renewalReminder && (
@@ -817,7 +848,9 @@ export default function CustomerContractPage() {
                   </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      Hợp đồng này đã kết thúc. Tổng tiền hoàn trả cho bạn là{" "}
+                      {isRefundPending
+                        ? "Hợp đồng này đã kết thúc, đang chờ Quản lý cơ sở hoàn tiền. Số tiền dự kiến hoàn trả là "
+                        : "Hợp đồng này đã kết thúc. Tổng tiền hoàn trả cho bạn là "}
                       <strong className="text-[#A560E8]">{formatVND(refundedDeposit)}</strong>.
                     </span>
                     {actualDamageFee > 0 && (

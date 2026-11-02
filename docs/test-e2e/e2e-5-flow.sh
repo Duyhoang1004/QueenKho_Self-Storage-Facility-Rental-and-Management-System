@@ -19,6 +19,7 @@ call() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -X $m -H "Autho
 code() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -o /dev/null -w "%{http_code}" -X $m -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d "$d" "$u"; else curl -s -o /dev/null -w "%{http_code}" -X $m -H "Authorization: Bearer $t" "$u"; fi; }
 ipn()  { curl -s "$PAY/ipn?$(node "$SCR/vnp_sign.js" "$1" "$2" "${3:-00}")" | jget "o.RspCode"; }
 TODAY=$(date +%Y-%m-%d)
+TOMORROW=$(date -d tomorrow +%Y-%m-%d)
 # Chuẩn bị (chỉ đụng dữ liệu do chính script tạo ra — thẻ RFID-E2E-*):
 #  - kết thúc HĐ e2e lần chạy trước để trả ô; nhả ô bảo trì không còn HĐ nào giữ
 #  - đúng 1 ô Mini M trống ở Tân Bình (để thử chống overbooking), không còn đơn chờ giữ suất
@@ -95,10 +96,12 @@ check "KH1 xem HĐ của mình" "$(code GET $KH "$API/contracts/$C1")" "200"
 check "KH2 xem HĐ của KH1 → 403" "$(code GET $KH2 "$API/contracts/$C1")" "403"
 check "KH lọc ?facilityId=1 vẫn chỉ ra HĐ của mình" "$(call GET $KH "$API/contracts?facilityId=1" | jget '[...new Set(o.map(c=>c.customerId))].length')" "1"
 check "Báo giá gia hạn 4 gói" "$(call GET $KH "$API/contracts/$C1/renewal-quote" | jget 'o.length')" "4"
-check "KH2 yêu cầu trả kho HĐ KH1 → 403 (I13)" "$(code POST $KH2 "$API/contracts/$C1/request-checkout" "{\"checkoutDate\":\"$TODAY\"}")" "403"
-R=$(call POST $KH "$API/contracts/$C1/request-checkout" "{\"checkoutDate\":\"$TODAY\",\"refundMethod\":\"BANK_TRANSFER\",\"bankName\":\"VCB\",\"bankAccountNumber\":\"0123456789\",\"bankAccountName\":\"KHACH HANG 1\"}")
+check "KH2 yêu cầu trả kho HĐ KH1 → 403 (I13)" "$(code POST $KH2 "$API/contracts/$C1/request-checkout" "{\"checkoutDate\":\"$TOMORROW\"}")" "403"
+# PR-O1 (02/11/2026): hẹn trả từ ngày mai → giả lập "khách tới trả kho hôm nay" rồi mới nghiệm thu
+R=$(call POST $KH "$API/contracts/$C1/request-checkout" "{\"checkoutDate\":\"$TOMORROW\",\"refundMethod\":\"BANK_TRANSFER\",\"bankName\":\"VCB\",\"bankAccountNumber\":\"0123456789\",\"bankAccountName\":\"KHACH HANG 1\"}")
 check "Yêu cầu trả kho" "$(sql "SELECT status FROM rental_contracts WHERE id=$C1")" "TERMINATION_PENDING"
 T2=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C1 AND task_type='CHECK_OUT' AND status='OPEN'")
+check "⚡ Khách tới trả kho hôm nay" "$(code POST $FM "$API/dev/simulation/tasks/$T2/checkout-today")" "200"
 check "FM giao nghiệm thu cho Staff2" "$(call POST $FM "$API/staff-tasks/$T2/assign?staffId=$STAFF2_ID" | jget 'o.staffId')" "$STAFF2_ID"
 NOLIABLE="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
 check "Sự cố chưa chọn lỗi khách / lỗi cơ sở → 400" "$(call POST $ST2 "$API/staff-tasks/$T2/check-out" "$NOLIABLE" | jget 'o.error')" "INVALID_DAMAGE_ITEM"
@@ -201,7 +204,7 @@ check "Check-in được ngay sau giả lập" "$(code POST $ST1 "$API/staff-tas
 # ⚡ Quá hạn 31 ngày → thanh lý
 check "Chưa quá hạn đủ 30 ngày → chưa thanh lý được" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=3"; code POST $FM "$API/contracts/$C6/liquidate" '{"note":"E2E thanh ly som"}')" "200409"
 # Khách hẹn trả kho rồi không tới → quá hạn → thanh lý
-call POST $KH "$API/contracts/$C6/request-checkout" "{\"checkoutDate\":\"$TODAY\",\"refundMethod\":\"CASH\"}" >/dev/null
+call POST $KH "$API/contracts/$C6/request-checkout" "{\"checkoutDate\":\"$TOMORROW\",\"refundMethod\":\"CASH\"}" >/dev/null
 check "Khách hẹn trả kho (từ quá hạn)" "$(sql "SELECT status FROM rental_contracts WHERE id=$C6")" "TERMINATION_PENDING"
 check "⚡ Không tới trả kho 3 ngày → còn 5 ngày ân hạn, chặn" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=3")" "400"
 check "⚡ Khách không tới trả kho 31 ngày" "$(code POST $FM "$API/dev/simulation/contracts/$C6/make-overdue?days=31")" "200"

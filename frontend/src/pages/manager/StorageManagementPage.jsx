@@ -262,17 +262,34 @@ export default function StorageManagementPage() {
   );
 
   // PR-O10: ô vào bảo trì do sự cố trả kho / thanh lý → có task đang mở
-  const renderMaintenanceTaskLink = (unit) =>
-    unit.status === 'MAINTENANCE' && unit.maintenanceTaskId ? (
-      <button
-        type="button"
-        onClick={() => navigate(`/manager/tasks/${unit.maintenanceTaskId}`)}
-        className="text-[10px] font-black text-[#1CB0F6] hover:underline cursor-pointer whitespace-nowrap"
-        title="Mở phiếu bảo trì"
-      >
-        {unit.maintenanceReason === 'LIQUIDATION' ? 'Chờ dọn' : 'Chờ sửa'} · task #{unit.maintenanceTaskId}
-      </button>
-    ) : null;
+  // PR-M9: FM tự khoá bảo trì → hiện ghi chú lý do đã nhập
+  const renderMaintenanceTaskLink = (unit) => {
+    if (unit.status !== 'MAINTENANCE') return null;
+    if (unit.maintenanceTaskId) {
+      return (
+        <button
+          type="button"
+          onClick={() => navigate(`/manager/tasks/${unit.maintenanceTaskId}`)}
+          className="text-[10px] font-black text-[#1CB0F6] hover:underline cursor-pointer whitespace-nowrap"
+          title="Mở phiếu bảo trì"
+        >
+          {unit.maintenanceReason === 'LIQUIDATION' ? 'Chờ dọn' : 'Chờ sửa'} · task #{unit.maintenanceTaskId}
+        </button>
+      );
+    }
+    if (unit.maintenanceNote) {
+      const since = unit.maintenanceSince ? new Date(unit.maintenanceSince).toLocaleDateString('vi-VN') : '';
+      return (
+        <span
+          className="block max-w-[220px] truncate text-[10px] font-bold text-[#E58800]"
+          title={`${unit.maintenanceNote}${since ? ` (từ ${since})` : ''}`}
+        >
+          📝 {unit.maintenanceNote}{since ? ` · từ ${since}` : ''}
+        </span>
+      );
+    }
+    return null;
+  };
 
   const renderStatusBadge = (unit) => {
     const style = DISPLAY_STATES[getDisplayState(unit)];
@@ -343,6 +360,11 @@ export default function StorageManagementPage() {
   // Xác nhận đổi trạng thái AVAILABLE ⇄ MAINTENANCE (PR-M10, BR-11)
   const handleConfirmStatusChange = async () => {
     if (!statusModal.unit) return;
+    // PR-M9: khoá bảo trì bắt buộc ghi chú lý do 10–500 ký tự (BE chặn tương tự)
+    if (statusModal.targetStatus === 'MAINTENANCE' && statusModal.note.trim().length < 10) {
+      setToast({ type: 'error', message: 'Vui lòng ghi lý do bảo trì (tối thiểu 10 ký tự).' });
+      return;
+    }
     setStatusModal(prev => ({ ...prev, isSubmitting: true }));
 
     try {
@@ -1086,18 +1108,29 @@ export default function StorageManagementPage() {
             {statusModal.targetStatus === 'MAINTENANCE' && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-black uppercase text-[#4B4B4B]">
-                  Lý do bảo trì / Ghi chú sự cố:
+                  Lý do bảo trì / Ghi chú sự cố <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <textarea
                   rows={3}
+                  maxLength={500}
                   value={statusModal.note}
                   onChange={e => setStatusModal({ ...statusModal, note: e.target.value })}
                   placeholder="VD: Kiểm tra cảm biến SmartLock, sơn lại vách ngăn..."
                   className="duo-input w-full text-xs py-2.5"
                 />
+                <p className={`text-[11px] font-bold ${statusModal.note.trim().length < 10 ? 'text-[#FF4B4B]' : 'text-[#AFAFAF]'}`}>
+                  {statusModal.note.trim().length}/500 ký tự (tối thiểu 10) — ghi chú hiện ở danh sách ô kho cho đến khi mở lại.
+                </p>
                 <p className="text-[11px] font-bold text-[#AFAFAF] italic">
                   * Hệ thống sẽ tự động kiểm tra số suất khả dụng (PR-M10). Nếu hết suất trống đã cọc, thao tác sẽ bị chặn.
                 </p>
+              </div>
+            )}
+
+            {statusModal.targetStatus === 'AVAILABLE' && statusModal.unit.maintenanceNote && (
+              <div className="rounded-xl bg-[#FAFAFA] border-2 border-[#E5E5E5] px-4 py-3 text-xs font-bold text-[#4B4B4B]">
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF] block mb-1">Lý do đang bảo trì</span>
+                {statusModal.unit.maintenanceNote}
               </div>
             )}
 

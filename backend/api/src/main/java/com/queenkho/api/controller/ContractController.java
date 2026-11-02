@@ -2,6 +2,7 @@ package com.queenkho.api.controller;
 
 import com.queenkho.api.service.FloorPlanService;
 import com.queenkho.api.service.LateFeeService;
+import com.queenkho.api.service.RefundStatusService;
 import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.dto.CustomerContractResponse;
 import com.queenkho.api.entity.HeldGoods;
@@ -57,6 +58,9 @@ public class ContractController {
 
     @Autowired
     private FloorPlanService floorPlanService;
+
+    @Autowired
+    private RefundStatusService refundStatusService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -289,7 +293,9 @@ public class ContractController {
                 overstayDailyAmount,
                 overstayFeeAmount,
                 totalOverdueCharge,
-                amountBeyondDeposit);
+                amountBeyondDeposit,
+                refundStatusService.resolve(rc.getReservation().getId(),
+                        rc.getReservation().getReservationCode(), rc.getId()));
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -349,6 +355,8 @@ public class ContractController {
         ownershipGuard.checkContract(id);
         try {
             return ResponseEntity.ok(contractService.requestCheckout(id, request));
+        } catch (com.queenkho.api.exception.ContractException e) {
+            throw e; // PR-O3: INVALID_REFUND_METHOD → 400 qua handler của controller
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (Exception e) {

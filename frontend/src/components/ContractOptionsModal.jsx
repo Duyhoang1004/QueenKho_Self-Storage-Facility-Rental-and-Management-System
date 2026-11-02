@@ -15,18 +15,19 @@ function formatDate(val) {
 
 export default function ContractOptionsModal({ isOpen, onClose, contract, onSuccess, initialTab = 'renew' }) {
   const isTerminationPending = contract?.status === 'TERMINATION_PENDING'
-  const today = new Date().toISOString().split('T')[0]
+  // Ngày theo giờ máy (không dùng toISOString: giờ UTC làm lệch 1 ngày trước 7h sáng ở VN)
+  const toLocalISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const addDays = (dateStr, days) => {
+    if (!dateStr) return undefined
+    const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number)
+    return toLocalISO(new Date(y, m - 1, d + days))
+  }
+  const today = toLocalISO(new Date())
+  const tomorrow = addDays(today, 1)
   const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
   const prevScheduledDate = contract?.scheduledCheckoutDate || contract?.endDate
 
-  const addDays = (dateStr, days) => {
-    if (!dateStr) return undefined
-    const d = new Date(dateStr)
-    d.setDate(d.getDate() + days)
-    return d.toISOString().slice(0, 10)
-  }
-
-  // PR-O1: HĐ ACTIVE cho phép hẹn đến end_date + 5 ngày; HĐ OVERDUE hẹn trong 3 ngày tới
+  // PR-O1: hẹn từ ngày mai; HĐ ACTIVE đến end_date + 5 ngày; HĐ OVERDUE trong 3 ngày tới
   const maxCheckoutDate = isOverdue
     ? addDays(today, 3)
     : isTerminationPending
@@ -34,8 +35,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     : addDays(contract?.endDate, 5)
 
   const getInitialCheckoutDate = () => {
-    const initialDate = contract?.scheduledCheckoutDate || (isOverdue ? today : contract?.endDate)
-    return initialDate && initialDate >= today ? initialDate : today
+    const initialDate = contract?.scheduledCheckoutDate || (isOverdue ? tomorrow : contract?.endDate)
+    return initialDate && initialDate >= tomorrow ? initialDate : tomorrow
   }
 
   const getInitialAccountName = () => {
@@ -191,8 +192,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
-    if (checkoutDate < today) {
-      setCheckoutError('Ngày hẹn trả kho không thể là ngày trong quá khứ.')
+    if (checkoutDate < tomorrow) {
+      setCheckoutError(`Ngày hẹn trả kho phải từ ngày mai (${formatDate(tomorrow)}) trở đi.`)
       return
     }
 
@@ -215,18 +216,21 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       setCheckoutError('Vui lòng nhập đầy đủ thông tin ngân hàng để nhận hoàn tiền cọc.')
       return
     }
+    if (refundMethod === 'BANK_TRANSFER' && !/^\d{6,20}$/.test(bankAccountNumber.trim())) {
+      setCheckoutError('Số tài khoản chỉ gồm chữ số, dài 6–20 ký tự.')
+      return
+    }
 
     setCheckoutLoading(true)
     setCheckoutError('')
     try {
+      // PR-O3: BE ghi cách nhận cọc vào task theo refundMethod
       const res = await requestCheckout(contract.contractId, {
         checkoutDate,
+        refundMethod,
         bankName: refundMethod === 'BANK_TRANSFER' ? bankName.trim() : null,
         bankAccountNumber: refundMethod === 'BANK_TRANSFER' ? bankAccountNumber.trim() : null,
         bankAccountName: refundMethod === 'BANK_TRANSFER' ? bankAccountName.trim() : null,
-        notes: refundMethod === 'CASH'
-          ? 'Khách hàng chọn nhận tiền mặt trực tiếp tại quầy'
-          : `Hoàn tiền chuyển khoản qua ${bankName.trim()} - STK: ${bankAccountNumber.trim()} (${bankAccountName.trim()})`,
       })
       const successMsg = res.message || (isTerminationPending
         ? `Đã dời ngày trả kho cho hợp đồng ${contract.contractCode} sang ngày ${formatDate(checkoutDate)}.`
@@ -600,7 +604,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   id="checkoutDateInput"
                   type="date"
                   value={checkoutDate}
-                  min={today}
+                  min={tomorrow}
                   max={maxCheckoutDate}
                   onChange={(e) => setCheckoutDate(e.target.value)}
                   className="bg-transparent border-0 p-0 text-slate-800 font-semibold text-sm focus:outline-none w-full cursor-pointer"

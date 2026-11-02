@@ -44,9 +44,19 @@ export async function simulateNoShow(reservationId) {
 }
 
 // Flow 6: hợp đồng quá hạn N ngày (3 = phí trễ, 31 = thanh lý).
-// HĐ đang chờ trả kho = khách không tới trả kho (N phải > 5 ngày ân hạn)
+// HĐ đang chờ trả kho = khách không tới trả kho theo lịch hẹn (N phải > 5 — lịch hẹn muộn nhất là end_date + 5)
 export async function simulateOverdue(contractId, days) {
   return (await api.post(`/dev/simulation/contracts/${contractId}/make-overdue`, null, { params: { days } })).data
+}
+
+// PR-R9: hợp đồng ACTIVE còn N ngày (1–7) hết hạn → gửi ngay nhắc gia hạn (chuông + email)
+export async function simulateExpireSoon(contractId, days = 3) {
+  return (await api.post(`/dev/simulation/contracts/${contractId}/expire-soon`, null, { params: { days } })).data
+}
+
+// PR-S4: task hỗ trợ / bảo trì quá hạn ngay → FM demo "Gia hạn xử lý"
+export async function simulateTaskOverdue(taskId) {
+  return (await api.post(`/dev/simulation/tasks/${taskId}/make-overdue`)).data
 }
 
 // Flow 7: ticket đã xử lý quá 3 ngày → tự đóng

@@ -35,6 +35,8 @@ function unitTitle(unit) {
     lines.push(`Khách: ${unit.currentContract.customerName || '---'}`);
     if (unit.currentContract.endDate) lines.push(`Hết hạn: ${unit.currentContract.endDate}`);
   }
+  // PR-M9: lý do FM khoá bảo trì
+  if (unit.status === 'MAINTENANCE' && unit.maintenanceNote) lines.push(`Bảo trì: ${unit.maintenanceNote}`);
   return lines.join('\n');
 }
 

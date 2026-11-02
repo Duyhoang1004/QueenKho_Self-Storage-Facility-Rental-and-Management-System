@@ -68,4 +68,14 @@ public class Reservation {
 
     @Column(name = "terms_accepted_at")
     private java.time.LocalDateTime termsAcceptedAt;
+
+    // BR-25: voucher chốt lúc tạo đơn. voucherDiscount NULL = đơn cũ (trước khi có bảng vouchers) → coi như NEWKHO 100.000đ
+    @Column(name = "voucher_id")
+    private Integer voucherId;
+
+    @Column(name = "voucher_code", length = 30)
+    private String voucherCode;
+
+    @Column(name = "voucher_discount", precision = 12, scale = 2)
+    private java.math.BigDecimal voucherDiscount;
 }

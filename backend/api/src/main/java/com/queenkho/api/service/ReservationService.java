@@ -77,6 +77,12 @@ public class ReservationService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private RefundStatusService refundStatusService;
+
+    @Autowired(required = false)
+    private VoucherService voucherService;
+
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
     public List<MyReservationResponse> getMyReservations(Integer customerId) {
@@ -133,41 +139,12 @@ public class ReservationService {
                     } catch (Exception ignored) {
                     }
 
-                    // Trạng thái hiển thị theo giao dịch hoàn tiền và task hoàn tiền
-                    Integer openRefundTasks = 0;
-                    Integer completedRefundTasks = 0;
-                    try {
-                        openRefundTasks = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(1) FROM facility_tasks WHERE task_type = 'REFUND' AND status IN ('OPEN', 'CLAIMED', 'PENDING', 'OVERDUE') AND note LIKE ?",
-                                Integer.class,
-                                "%" + r.getReservationCode() + "%");
-                        completedRefundTasks = jdbcTemplate.queryForObject(
-                                "SELECT COUNT(1) FROM facility_tasks WHERE task_type = 'REFUND' AND status = 'COMPLETED' AND note LIKE ?",
-                                Integer.class,
-                                "%" + r.getReservationCode() + "%");
-                    } catch (Exception ignored) {
-                    }
-
-                    if (openRefundTasks != null && openRefundTasks > 0) {
-                        // Vẫn còn task hoàn tiền đang mở / chờ Manager xử lý -> BẮT BUỘC LÀ REFUND_PENDING (Chờ hoàn tiền)
+                    // Trạng thái hiển thị theo task / giao dịch hoàn tiền — cùng nguồn với trang chi tiết hợp đồng
+                    String refundStatus = refundStatusService.resolve(r.getId(), r.getReservationCode(), contractId);
+                    if (RefundStatusService.PENDING.equals(refundStatus)) {
                         displayStatus = "REFUND_PENDING";
-                    } else if (completedRefundTasks != null && completedRefundTasks > 0) {
-                        // Manager đã bấm xác nhận hoàn tất task hoàn tiền -> ĐÃ HOÀN TIỀN
+                    } else if (RefundStatusService.COMPLETED.equals(refundStatus)) {
                         displayStatus = "REFUNDED";
-                    } else {
-                        // Nếu không gắn với task trong facility_tasks, fallback theo payment_transactions hoặc r.getStatus()
-                        try {
-                            String refundStatus = jdbcTemplate.queryForObject(
-                                    "SELECT TOP 1 status FROM payment_transactions WHERE reservation_id = ? AND payment_type = 'REFUND' ORDER BY id DESC",
-                                    String.class,
-                                    r.getId());
-                            if ("SUCCESS".equalsIgnoreCase(refundStatus)) {
-                                displayStatus = "REFUNDED";
-                            } else if ("PENDING".equalsIgnoreCase(refundStatus)) {
-                                displayStatus = "REFUND_PENDING";
-                            }
-                        } catch (Exception ignored) {
-                        }
                     }
 
                     return new MyReservationResponse(
@@ -383,6 +360,15 @@ public class ReservationService {
         BigDecimal depositAmount = unitType.getBasePriceMonthly().multiply(BigDecimal.valueOf(depositMultiplier));
         int rentDiscountPercent = pricingService.bookingDiscountPercent(policy, request.getDurationMonths());
 
+        // BR-25: chốt voucher lúc tạo đơn (mã khách nhập không hợp lệ → 400 VOUCHER_INVALID; bỏ trống → mã mặc định)
+        Map<String, Object> voucher = null;
+        if (voucherService != null) {
+            BigDecimal rentAmount = PricingService.discountedRent(unitType.getBasePriceMonthly(),
+                    request.getDurationMonths(), rentDiscountPercent);
+            voucher = voucherService.quote(request.getVoucherCode(), customer.getId(), facility.getId(),
+                    request.getDurationMonths(), rentAmount);
+        }
+
         // Khoi tao va luu don dat cho
         Reservation reservation = new Reservation();
         reservation.setReservationCode(reservationCode);
@@ -394,6 +380,11 @@ public class ReservationService {
         reservation.setDurationMonths(request.getDurationMonths());
         reservation.setDepositAmount(depositAmount);
         reservation.setRentDiscountPercent(rentDiscountPercent);
+        if (voucher != null) {
+            reservation.setVoucherId((Integer) voucher.get("voucherId"));
+            reservation.setVoucherCode((String) voucher.get("code"));
+            reservation.setVoucherDiscount((BigDecimal) voucher.get("discount"));
+        }
         reservation.setTermsVersion(ASSET_TERMS_VERSION);
         reservation.setTermsAcceptedAt(LocalDateTime.now());
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
@@ -549,12 +540,14 @@ public class ReservationService {
 
         if (reservation.getCustomer() != null && reservation.getCustomer().getId() != null) {
             String facilityName = reservation.getFacility() != null ? reservation.getFacility().getName() : "QueenKho";
-            if (notificationService != null) notificationService.sendNotification(
+            // BR-117: kèm email; link trang hợp đồng theo reservationId (route /kho-cua-toi/hop-dong/:reservationId)
+            if (notificationService != null) notificationService.notifyCustomer(
                     reservation.getCustomer().getId(),
                     "Đã được gán ô kho thành công",
-                    "Đơn " + reservation.getReservationCode() + " của bạn đã được gán khoang " + storageUnit.getId() + " tại " + facilityName + "! Vui lòng kiểm tra hợp đồng.",
+                    "Đơn " + reservation.getReservationCode() + " của bạn đã được gán khoang " + storageUnit.getId() + " tại " + facilityName
+                            + ". Hẹn nhận kho ngày " + reservation.getStartDate() + " — vui lòng mang CCCD khi đến nhận.",
                     "ASSIGNED",
-                    "/kho-cua-toi/hop-dong/" + contract.getId()
+                    "/kho-cua-toi/hop-dong/" + reservation.getId()
             );
         }
 
@@ -1029,6 +1022,15 @@ public class ReservationService {
                 request.getStaffId(),
                 logAction,
                 reservation.getId());
+
+        // BR-117: khách nhận thông báo + email đơn bị huỷ vì không đến nhận kho
+        if (notificationService != null && reservation.getCustomer() != null) notificationService.notifyCustomer(
+                reservation.getCustomer().getId(),
+                "Đơn " + reservation.getReservationCode() + " đã bị huỷ (không đến nhận kho)",
+                "Bạn không đến nhận kho theo lịch hẹn và cơ sở không liên hệ được. " + penaltyLogStr
+                        + (refundAmount.compareTo(BigDecimal.ZERO) > 0 ? ". Quản lý cơ sở sẽ hoàn tiền trong 24 giờ làm việc." : "."),
+                "BOOKING",
+                "/kho-cua-toi");
     }
 
     // neu nhan vien goi va khach co nghe may
@@ -1076,6 +1078,104 @@ public class ReservationService {
                 request.getManagerId(),
                 logAction,
                 reservation.getId());
+
+        // BR-117: khách nhận xác nhận lịch nhận kho mới
+        if (notificationService != null && reservation.getCustomer() != null) notificationService.notifyCustomer(
+                reservation.getCustomer().getId(),
+                "Đã dời lịch nhận kho — đơn " + reservation.getReservationCode(),
+                "Lịch nhận kho mới: " + request.getNewStartDate() + " (trước đó " + oldDate + "). Vui lòng mang CCCD khi đến nhận.",
+                "BOOKING",
+                "/kho-cua-toi");
+    }
+
+    // UC-13 / UC-14: FM xem chi tiết đơn trước khi gán ô (quyền theo cơ sở kiểm tra ở controller bằng OwnershipGuard)
+    @Transactional(readOnly = true)
+    public com.queenkho.api.dto.ReservationManagerDetailResponse getManagerDetail(Integer reservationId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT r.id, r.reservation_code, r.status, r.created_at, r.start_date, r.expected_appointment_time, " +
+                        "r.duration_months, r.rent_discount_percent, r.deposit_amount, r.voucher_code, r.voucher_discount, " +
+                        "r.terms_version, r.terms_accepted_at, u.id AS customer_id, u.full_name, u.phone, u.email, u.cccd, " +
+                        "u.created_at AS customer_since, f.name AS facility_name, ut.name AS unit_type_name, ut.dimensions, " +
+                        "ut.area_sqm, ut.base_price_monthly " +
+                        "FROM reservations r JOIN users u ON u.id = r.customer_id JOIN facilities f ON f.id = r.facility_id " +
+                        "JOIN unit_types ut ON ut.id = r.unit_type_id WHERE r.id = ?", reservationId);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy đơn đặt chỗ");
+        }
+        Map<String, Object> r = rows.get(0);
+        int months = r.get("duration_months") instanceof Number n ? n.intValue() : 1;
+        BigDecimal basePrice = (BigDecimal) r.get("base_price_monthly");
+        Integer snapshot = r.get("rent_discount_percent") instanceof Number n ? n.intValue() : null;
+        int discountPercent = pricingService.snapshotOrDefault(snapshot, months);
+        BigDecimal voucherDiscount = r.get("voucher_discount") != null
+                ? (BigDecimal) r.get("voucher_discount") : PricingService.WELCOME_VOUCHER;
+
+        List<Map<String, Object>> payments = jdbcTemplate.queryForList(
+                "SELECT TOP 1 transaction_code, bank_transaction_code, paid_at, amount FROM payment_transactions " +
+                        "WHERE reservation_id = ? AND payment_type = 'DEPOSIT' AND status = 'SUCCESS' ORDER BY id DESC",
+                reservationId);
+        Map<String, Object> pay = payments.isEmpty() ? Map.of() : payments.get(0);
+
+        Integer customerId = ((Number) r.get("customer_id")).intValue();
+        Integer previous = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts WHERE customer_id = ? AND status IN ('TERMINATED', 'LIQUIDATED')",
+                Integer.class, customerId);
+        Integer active = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts WHERE customer_id = ? " +
+                        "AND status IN ('PENDING_CHECK_IN', 'ACTIVE', 'OVERDUE', 'TERMINATION_PENDING')",
+                Integer.class, customerId);
+        BigDecimal debt = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE user_id = ? AND status = 'PENDING' " +
+                        "AND payment_method = 'VNPAY' AND payment_type IN ('DAMAGE_FEE', 'OVERSTAY_FEE') AND renewal_months IS NULL",
+                BigDecimal.class, customerId);
+
+        return new com.queenkho.api.dto.ReservationManagerDetailResponse(
+                reservationId,
+                (String) r.get("reservation_code"),
+                (String) r.get("status"),
+                toLocalDateTime(r.get("created_at")),
+                customerId,
+                (String) r.get("full_name"),
+                (String) r.get("phone"),
+                (String) r.get("email"),
+                maskCccd((String) r.get("cccd")),
+                toLocalDateTime(r.get("customer_since")),
+                (String) r.get("facility_name"),
+                (String) r.get("unit_type_name"),
+                (String) r.get("dimensions"),
+                (BigDecimal) r.get("area_sqm"),
+                basePrice,
+                r.get("start_date") instanceof java.sql.Date d ? d.toLocalDate() : null,
+                toLocalDateTime(r.get("expected_appointment_time")),
+                months,
+                discountPercent,
+                basePrice != null ? PricingService.discountedRent(basePrice, months, discountPercent) : null,
+                (BigDecimal) r.get("deposit_amount"),
+                r.get("voucher_code") != null ? (String) r.get("voucher_code") : "NEWKHO",
+                voucherDiscount,
+                (BigDecimal) pay.get("amount"),
+                (String) pay.get("transaction_code"),
+                (String) pay.get("bank_transaction_code"),
+                toLocalDateTime(pay.get("paid_at")),
+                (String) r.get("terms_version"),
+                toLocalDateTime(r.get("terms_accepted_at")),
+                previous != null ? previous : 0,
+                active != null ? active : 0,
+                debt != null ? debt : BigDecimal.ZERO);
+    }
+
+    // CCCD che giữa: giữ 3 số đầu + 3 số cuối
+    static String maskCccd(String cccd) {
+        if (cccd == null || cccd.isBlank()) return null;
+        String value = cccd.trim();
+        if (value.length() <= 6) return "*".repeat(value.length());
+        return value.substring(0, 3) + "*".repeat(value.length() - 6) + value.substring(value.length() - 3);
+    }
+
+    private static LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof java.sql.Timestamp ts) return ts.toLocalDateTime();
+        if (value instanceof LocalDateTime ldt) return ldt;
+        return null;
     }
 
     // Hàm phụ trợ: Tính deadline 24h bỏ qua Chủ Nhật

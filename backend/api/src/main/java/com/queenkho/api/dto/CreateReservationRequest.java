@@ -20,4 +20,5 @@ public class CreateReservationRequest {
     private Boolean acceptedTerms; // Bắt buộc true: khách đồng ý điều khoản xử lý tài sản khi không trả kho
     private String phone;
     private String cccd;
+    private String voucherCode;    // BR-25: bỏ trống = tự áp mã mặc định (NEWKHO)
 }

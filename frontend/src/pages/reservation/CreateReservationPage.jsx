@@ -4,6 +4,7 @@ import { createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 import AssetTermsModal from '../../components/AssetTermsModal'
+import { validateVoucher } from '../../services/voucherService'
 
 function buildUnit(availability, unitTypeId) {
   const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
@@ -33,16 +34,12 @@ const DURATION_OPTIONS = [
   { months: 12, label: '12 Tháng', sub: 'Dài hạn', discount: 15 },
 ]
 
-// Ưu đãi đặt kho online — backend luôn trừ đúng 100.000đ (PricingService.WELCOME_VOUCHER)
-const VOUCHER_DISCOUNT = 100000
+// BR-25: ưu đãi mặc định NEWKHO 100.000đ — chỉ dùng để hiển thị khi chưa đăng nhập;
+// đã đăng nhập thì số tiền giảm lấy từ backend (/vouchers/validate), khớp đúng số VNPAY thu
+const DEFAULT_VOUCHER = { code: 'NEWKHO', name: 'Ưu đãi đặt kho trực tuyến', discount: 100000 }
 
 function formatVND(amount) {
   return amount.toLocaleString('vi-VN') + 'đ'
-}
-
-// Chỉ nhận mã backend thực sự áp dụng, tránh hiện số tiền khác với số VNPAY thu
-const VOUCHER_MAP = {
-  NEWKHO: VOUCHER_DISCOUNT,
 }
 
 export default function CreateReservationPage() {
@@ -67,22 +64,64 @@ export default function CreateReservationPage() {
   const [termsOpen, setTermsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const sessionUserId = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('user') || '{}').userId ?? null
+    } catch {
+      return null
+    }
+  })()
   const [voucherCode, setVoucherCode] = useState('')
-  const [voucherApplied, setVoucherApplied] = useState({ code: 'NEWKHO', discount: VOUCHER_DISCOUNT })
+  // Mã khách tự nhập đã được BE chấp nhận ('' = dùng mã mặc định)
+  const [customVoucherCode, setCustomVoucherCode] = useState('')
+  const [voucherApplied, setVoucherApplied] = useState(DEFAULT_VOUCHER)
   const [voucherError, setVoucherError] = useState('')
+  const [voucherChecking, setVoucherChecking] = useState(false)
   const [hasDebtError, setHasDebtError] = useState(false)
 
-  const handleApplyVoucher = () => {
+  const toApplied = (data) => (data?.voucherId
+    ? { code: data.code, name: data.name, discount: Number(data.discountAmount || 0) }
+    : { code: '', name: '', discount: 0 })
+
+  // BR-25: mức giảm phụ thuộc gói thuê (voucher % / gói tối thiểu) → hỏi lại BE khi đổi gói hoặc đổi mã
+  useEffect(() => {
+    if (!sessionUserId || !unit?.facilityId || !unit?.unitTypeId) return undefined
+    let cancelled = false
+    validateVoucher({ code: customVoucherCode, facilityId: unit.facilityId, unitTypeId: unit.unitTypeId, months: selectedMonths })
+      .then((data) => { if (!cancelled) setVoucherApplied(toApplied(data)) })
+      .catch((err) => {
+        if (cancelled) return
+        // Mã tự nhập không còn hợp lệ với gói mới → quay về mã mặc định và báo lý do
+        setVoucherError(err.response?.data?.message || 'Mã voucher không còn áp dụng được.')
+        setCustomVoucherCode('')
+      })
+    return () => { cancelled = true }
+  }, [sessionUserId, unit?.facilityId, unit?.unitTypeId, selectedMonths, customVoucherCode])
+
+  const handleApplyVoucher = async () => {
     const code = voucherCode.trim().toUpperCase()
     if (!code) return
-    const discount = VOUCHER_MAP[code]
-    if (discount) {
-      setVoucherApplied({ code, discount })
+    if (!sessionUserId) {
+      setVoucherError('Vui lòng đăng nhập để áp mã voucher.')
+      return
+    }
+    setVoucherChecking(true)
+    try {
+      const data = await validateVoucher({ code, facilityId: unit.facilityId, unitTypeId: unit.unitTypeId, months: selectedMonths })
+      setVoucherApplied(toApplied(data))
+      setCustomVoucherCode(code)
       setVoucherError('')
       setVoucherCode('')
-    } else {
-      setVoucherError('Mã voucher không hợp lệ hoặc đã hết hạn.')
+    } catch (err) {
+      setVoucherError(err.response?.data?.message || 'Mã voucher không hợp lệ hoặc đã hết hạn.')
+    } finally {
+      setVoucherChecking(false)
     }
+  }
+
+  const handleRemoveVoucher = () => {
+    setCustomVoucherCode('')
+    setVoucherError('')
   }
 
   const sessionUser = (() => {
@@ -215,6 +254,7 @@ export default function CreateReservationPage() {
         acceptedTerms: termsAccepted,
         phone: customerInfo.phone?.trim(),
         cccd: customerInfo.cccd?.trim(),
+        voucherCode: customVoucherCode || undefined,
       })
       // Đồng bộ thông tin SĐT và CCCD mới nhất vào phiên đăng nhập hiện tại
       sessionStorage.setItem('user', JSON.stringify({
@@ -231,6 +271,8 @@ export default function CreateReservationPage() {
         startDate,
         totalPayment: Number(paymentData.amount || totalPayment),
         deposit: Number(paymentData.depositAmount || deposit),
+        voucherCode: voucherApplied.code,
+        voucherDiscount: voucherApplied.discount,
         storage: unit,
       }))
 
@@ -635,21 +677,36 @@ export default function CreateReservationPage() {
                   <button
                     type="button"
                     onClick={handleApplyVoucher}
-                    className="duo-btn-white px-3 py-2 text-xs tracking-wider shrink-0"
+                    disabled={voucherChecking}
+                    className="duo-btn-white px-3 py-2 text-xs tracking-wider shrink-0 disabled:opacity-50"
                   >
-                    ÁP DỤNG
+                    {voucherChecking ? 'ĐANG KIỂM TRA...' : 'ÁP DỤNG'}
                   </button>
                 </div>
                 {voucherError && (
                   <p className="text-[11px] font-bold text-[#FF4B4B]">⚠️ {voucherError}</p>
                 )}
+                <p className="text-[10px] font-bold text-[#AFAFAF]">Mỗi đơn áp 1 mã, không cộng dồn. Mã do bạn nhập sẽ thay ưu đãi mặc định.</p>
               </div>
 
               {/* Dòng voucher đang áp dụng */}
-              <div className="flex justify-between items-center text-xs font-bold text-[#58A700] bg-[#D7FFB8] px-3 py-1.5 rounded-xl border border-[#58CC02]">
-                <span>🎫 Voucher <span className="font-black">{voucherApplied.code}</span></span>
-                <span className="font-black">-{formatVND(voucherApplied.discount)}</span>
-              </div>
+              {voucherApplied.code && (
+                <div className="flex justify-between items-center gap-2 text-xs font-bold text-[#58A700] bg-[#D7FFB8] px-3 py-1.5 rounded-xl border border-[#58CC02]">
+                  <span className="min-w-0 truncate" title={voucherApplied.name}>
+                    🎫 Voucher <span className="font-black">{voucherApplied.code}</span>
+                    {customVoucherCode && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveVoucher}
+                        className="ml-2 text-[10px] font-black uppercase text-[#FF4B4B] hover:underline cursor-pointer"
+                      >
+                        Bỏ mã
+                      </button>
+                    )}
+                  </span>
+                  <span className="font-black shrink-0">-{formatVND(voucherApplied.discount)}</span>
+                </div>
+              )}
 
               {/* Tổng tiền */}
               <div className="border-t-2 border-[#E5E5E5] pt-4 mt-1">

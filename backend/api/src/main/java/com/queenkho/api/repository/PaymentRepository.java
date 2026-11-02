@@ -24,7 +24,7 @@ public class PaymentRepository {
         try {
             return jdbcTemplate.queryForMap(
                     "SELECT r.id, r.reservation_code, r.customer_id, r.facility_id, r.deposit_amount, " +
-                    "r.duration_months, r.status, r.created_at, r.rent_discount_percent, ut.base_price_monthly " +
+                    "r.duration_months, r.status, r.created_at, r.rent_discount_percent, r.voucher_discount, ut.base_price_monthly " +
                     "FROM reservations r " + (lock ? "WITH (UPDLOCK, ROWLOCK) " : "") +
                     "JOIN unit_types ut ON ut.id = r.unit_type_id WHERE r.id = ?",
                     reservationId);
@@ -64,9 +64,10 @@ public class PaymentRepository {
 
     public Map<String, Object> paymentStatus(String ref) {
         try {
-            return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, p.amount AS payment_amount, p.paid_at, " +
+            return jdbcTemplate.queryForMap("SELECT p.status, p.payment_type, p.transaction_code, p.amount AS payment_amount, p.paid_at, " +
                     "p.bank_transaction_code, p.reservation_id, r.reservation_code, r.start_date, r.duration_months, r.deposit_amount, r.storage_unit_id, " +
-                    "r.status AS reservation_status, u.full_name AS customer_name, u.phone AS customer_phone, " +
+                    "r.status AS reservation_status, r.voucher_code, COALESCE(r.voucher_discount, 100000) AS voucher_discount, " +
+                    "u.full_name AS customer_name, u.phone AS customer_phone, " +
                     "u.email AS customer_email, u.cccd AS customer_cccd, f.name AS facility_name, " +
                     "f.address AS facility_address, f.hotline AS facility_hotline, ut.name AS unit_type_name, " +
                     "ut.area_sqm, ut.dimensions, su.floor AS storage_unit_floor, su.zone AS storage_unit_zone, " +

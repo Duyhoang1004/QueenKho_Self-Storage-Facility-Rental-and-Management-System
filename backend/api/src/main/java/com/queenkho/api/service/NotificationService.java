@@ -6,16 +6,25 @@ import com.queenkho.api.entity.User;
 import com.queenkho.api.repository.NotificationRepository;
 import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
+/**
+ * BR-111: thông báo trong chuông (lưu bảng notifications).
+ *  - Không còn sinh thông báo mẫu cho tài khoản chưa có thông báo — mọi thông báo đều từ sự kiện thật.
+ *  - notifyCustomer: thông báo + gửi email cho khách (EmailService gửi sau khi transaction commit).
+ *  - sendOnce: thông báo do job sinh, chống gửi trùng bằng refKey (vd nhắc gia hạn mỗi mốc 1 lần).
+ */
 @Service
 public class NotificationService {
+
+    private static final int TITLE_MAX = 200;
+    private static final int MESSAGE_MAX = 1000;
 
     @Autowired
     private NotificationRepository notificationRepository;
@@ -26,9 +35,11 @@ public class NotificationService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired(required = false)
+    private ApplicationEventPublisher eventPublisher;
+
     @Transactional(readOnly = true)
     public List<NotificationResponse> getMyNotifications(Integer userId, int limit) {
-        checkAndSeedUserNotificationsIfEmpty(userId);
         return notificationRepository.findRecentByUserId(userId, limit).stream()
                 .map(NotificationResponse::fromEntity)
                 .toList();
@@ -36,7 +47,6 @@ public class NotificationService {
 
     @Transactional(readOnly = true)
     public long getUnreadCount(Integer userId) {
-        checkAndSeedUserNotificationsIfEmpty(userId);
         return notificationRepository.countByUserIdAndIsReadFalse(userId);
     }
 
@@ -56,12 +66,35 @@ public class NotificationService {
 
     @Transactional
     public Notification sendNotification(Integer userId, String title, String message, String type, String targetUrl) {
-        if (userId == null) return null;
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null) return null;
+        return save(userId, title, message, type, targetUrl, null);
+    }
 
-        Notification notif = new Notification(user, title, message, type, targetUrl);
-        return notificationRepository.save(notif);
+    /** Thông báo do job sinh: đã gửi refKey này cho user thì bỏ qua (trả null). */
+    @Transactional
+    public Notification sendOnce(Integer userId, String refKey, String title, String message, String type, String targetUrl) {
+        if (userId == null || refKey == null) return null;
+        if (notificationRepository.existsByUserIdAndRefKey(userId, refKey)) return null;
+        return save(userId, title, message, type, targetUrl, refKey);
+    }
+
+    /** Thông báo cho khách + email (nếu khách có email). refKey != null thì chỉ gửi 1 lần. */
+    @Transactional
+    public Notification notifyCustomer(Integer customerId, String title, String message, String type, String targetUrl) {
+        return notifyCustomer(customerId, null, title, message, type, targetUrl);
+    }
+
+    @Transactional
+    public Notification notifyCustomer(Integer customerId, String refKey, String title, String message, String type, String targetUrl) {
+        Notification saved = refKey != null
+                ? sendOnce(customerId, refKey, title, message, type, targetUrl)
+                : sendNotification(customerId, title, message, type, targetUrl);
+        if (saved != null && eventPublisher != null) {
+            userRepository.findById(customerId)
+                    .filter(u -> u.getEmail() != null && !u.getEmail().isBlank())
+                    .ifPresent(u -> eventPublisher.publishEvent(
+                            new CustomerEmailEvent(u.getEmail(), u.getFullName(), title, message, targetUrl)));
+        }
+        return saved;
     }
 
     @Transactional
@@ -74,6 +107,20 @@ public class NotificationService {
         );
         for (Integer mId : managerIds) {
             sendNotification(mId, title, message, type, targetUrl);
+        }
+    }
+
+    /** Như notifyFacilityManagers nhưng chống trùng theo refKey (dùng cho job). */
+    @Transactional
+    public void notifyFacilityManagersOnce(Integer facilityId, String refKey, String title, String message, String type, String targetUrl) {
+        if (facilityId == null) return;
+        List<Integer> managerIds = jdbcTemplate.query(
+                "SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'FACILITY_MANAGER' AND u.facility_id = ?",
+                (rs, rowNum) -> rs.getInt("id"),
+                facilityId
+        );
+        for (Integer mId : managerIds) {
+            sendOnce(mId, refKey, title, message, type, targetUrl);
         }
     }
 
@@ -93,12 +140,28 @@ public class NotificationService {
         }
     }
 
+    // Cắt độ dài cho vừa cột để lỗi thông báo không làm hỏng nghiệp vụ chính
+    private Notification save(Integer userId, String title, String message, String type, String targetUrl, String refKey) {
+        if (userId == null) return null;
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) return null;
+
+        Notification notif = new Notification(user, truncate(title, TITLE_MAX), truncate(message, MESSAGE_MAX), type, targetUrl);
+        notif.setRefKey(refKey);
+        return notificationRepository.save(notif);
+    }
+
+    private static String truncate(String value, int max) {
+        if (value == null) return "";
+        return value.length() <= max ? value : value.substring(0, max - 1) + "…";
+    }
+
     @Transactional
     public void generateAdminLoginSummary(Integer adminId) {
         if (adminId == null) return;
 
         try {
-            // Tránh spam nếu đã tạo thông báo tóm tắt trong vòng 30 phút qua (kiểm tra trong bộ nhớ RAM)
+            // Tránh spam nếu đã tạo thông báo tóm tắt trong vòng 30 phút qua
             boolean hasRecentSummary = notificationRepository.findRecentByUserId(adminId, 50).stream()
                     .anyMatch(n -> "ADMIN_SUMMARY".equals(n.getType()) && n.getCreatedAt() != null
                             && n.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(30)));
@@ -140,87 +203,6 @@ public class NotificationService {
             sendNotification(adminId, title, message, "ADMIN_SUMMARY", "/admin/logs");
         } catch (Exception e) {
             System.err.println("[NotificationService] ⚠️ Lỗi khi sinh tóm tắt Admin: " + e.getMessage());
-        }
-    }
-
-    @Transactional
-    public void checkAndSeedUserNotificationsIfEmpty(Integer userId) {
-        if (userId == null) return;
-        // Kiểm tra TỔNG số thông báo đã có (kể cả đã đọc) — nếu đã có thì KHÔNG sinh lại để tránh lặp và cộng dồn
-        long totalCount = notificationRepository.countByUserId(userId);
-        if (totalCount > 0) return;
-
-        // Nếu người dùng hoàn toàn chưa có thông báo nào, khởi tạo mẫu 1 lần duy nhất theo đúng role
-        User user = userRepository.findById(userId).orElse(null);
-        if (user == null || user.getRole() == null) return;
-
-        String role = user.getRole().getName();
-
-        if ("CUSTOMER".equals(role)) {
-            // 1. Gán ô thành công
-            sendNotification(userId, "Gán ô kho thành công",
-                    "Đơn RES-596710 của bạn đã được gán khoang KV-BT-A103 tại QueenKho Bình Thạnh! Mã PIN truy cập: 123456.",
-                    "ASSIGNED", "/kho-cua-toi/hop-dong/1");
-
-            // 2. Nhắc gia hạn hợp đồng (3 ngày nữa)
-            sendNotification(userId, "Nhắc gia hạn hợp đồng",
-                    "Hợp đồng khoang KV-BT-A103 còn 3 ngày nữa sẽ hết hạn. Gia hạn ngay để tránh bị khoá mã PIN và tính phí trễ!",
-                    "RENEWAL", "/kho-cua-toi/hop-dong/1?action=renew");
-
-            // 3. Cảnh báo hợp đồng quá hạn
-            sendNotification(userId, "Cảnh báo hợp đồng quá hạn",
-                    "Hợp đồng của bạn đã quá hạn! Mã PIN đã bị khoá tạm thời. Vui lòng thanh toán để mở kho.",
-                    "OVERDUE", "/kho-cua-toi/hop-dong/1?action=pay-overdue");
-
-        } else if ("FACILITY_MANAGER".equals(role)) {
-            // 1. Đơn cọc mới chờ duyệt gán ô -> dẫn về /manager/pending
-            sendNotification(userId, "Đơn đặt kho mới chờ gán ô",
-                    "Khách hàng NGUYEN VAN C vừa cọc đơn RES-739909. Đang chờ duyệt gán ô kho!",
-                    "BOOKING", "/manager/pending");
-
-            // 2. Chờ hoàn tiền cọc
-            sendNotification(userId, "Yêu cầu hoàn tiền cọc",
-                    "Đơn RES-108234 bị huỷ — Chờ hoàn tiền cọc 500.000đ cho khách!",
-                    "REFUND", "/manager/refunds");
-
-            // 3. Hư hại kho khi nghiệm thu
-            sendNotification(userId, "Sự cố hư hại khoang lưu trữ",
-                    "Nhân viên vừa báo cáo sự cố hư hại tại khoang KV-BT-A103 (Ước tính: 350.000đ) cần duyệt bồi thường.",
-                    "DAMAGE", "/manager/tasks");
-
-            // 4. Hợp đồng quá hạn 15 ngày
-            sendNotification(userId, "Hợp đồng quá hạn đủ điều kiện thanh lý",
-                    "Hợp đồng HD-991779 đã quá hạn 15 ngày! Bạn có quyền mở kho và lập biên bản thanh lý.",
-                    "LIQUIDATION", "/manager/overdue");
-
-        } else if ("STAFF".equals(role)) {
-            // Tìm 1 task mở có trong cơ sở để highlight chính xác task thật
-            Integer taskId = 1;
-            try {
-                Integer foundId = jdbcTemplate.queryForObject(
-                        "SELECT TOP 1 id FROM facility_tasks WHERE facility_id = ? ORDER BY id DESC",
-                        Integer.class,
-                        user.getFacilityId() != null ? user.getFacilityId() : 2
-                );
-                if (foundId != null) taskId = foundId;
-            } catch (Exception ignored) {}
-
-            sendNotification(userId, "Phân công task Check-in mới",
-                    "Bạn vừa được phân công task Check-in mới cho khách hàng Khách Hàng 2 (Đơn RES-596710)!",
-                    "TASK", "/staff?highlightTaskId=" + taskId);
-
-            sendNotification(userId, "Phân công task Nghiệm thu trả kho",
-                    "Bạn vừa được phân công task Nghiệm thu trả kho cho khoang KV-BT-A103!",
-                    "TASK", "/staff?highlightTaskId=" + taskId);
-
-        } else if ("ADMIN".equals(role)) {
-            sendNotification(userId, "Tóm tắt hoạt động hệ thống",
-                    "Chào mừng trở lại! Kể từ lần đăng nhập cuối, hệ thống ghi nhận 12 lượt đăng nhập và 28 thao tác mới.",
-                    "ADMIN_SUMMARY", "/admin/logs");
-
-            sendNotification(userId, "Tài khoản nhân viên mới",
-                    "Quản lý cơ sở Tân Bình vừa tạo thêm 1 tài khoản nhân viên mới: Nguyen Van Staff (stafftanbinh3@gmail.com).",
-                    "STAFF_CREATED", "/admin/users");
         }
     }
 }

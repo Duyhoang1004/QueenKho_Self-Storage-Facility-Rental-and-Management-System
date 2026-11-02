@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getPendingReservations, getOverdueNoShowReservations } from '../../services/reservationService'
 import AssignUnitModal from '../../components/AssignUnitModal'
+import ReservationDetailDrawer from '../../components/ReservationDetailDrawer'
 import NoShowModal from '../../components/NoShowModal'
 import RescheduleModal from '../../components/RescheduleModal'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
@@ -56,6 +57,8 @@ function readUserId() {
 export default function PendingReservationsPage() {
   const userId = readUserId()
   const [activeTab, setActiveTab] = useState('pending')
+  // UC-13: đơn đang mở panel chi tiết
+  const [detailTarget, setDetailTarget] = useState(null)
   const [pendingPage, setPendingPage] = useState(1)
   const [overduePage, setOverduePage] = useState(1)
 
@@ -348,14 +351,25 @@ export default function PendingReservationsPage() {
                           {formatVND(r.depositAmount)}
                         </td>
                         <td className="py-4 px-5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => openAssign(r)}
-                            className="duo-btn-green px-4 py-2 text-xs"
-                          >
-                            <span className="material-symbols-outlined text-[16px] mr-1">key</span>
-                            <span>GÁN Ô KHO</span>
-                          </button>
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setDetailTarget(r)}
+                              className="duo-btn-white px-3 py-2 text-xs"
+                              title="Xem chi tiết đơn"
+                            >
+                              <span className="material-symbols-outlined text-[16px] mr-1">visibility</span>
+                              <span>CHI TIẾT</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openAssign(r)}
+                              className="duo-btn-green px-4 py-2 text-xs"
+                            >
+                              <span className="material-symbols-outlined text-[16px] mr-1">key</span>
+                              <span>GÁN Ô KHO</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -536,6 +550,17 @@ export default function PendingReservationsPage() {
         </div>
         )}
       </div>
+
+      <ReservationDetailDrawer
+        key={detailTarget?.id || 'none'}
+        reservationId={detailTarget?.id}
+        onClose={() => setDetailTarget(null)}
+        onAssign={() => {
+          const target = detailTarget
+          setDetailTarget(null)
+          openAssign(target)
+        }}
+      />
 
       <AssignUnitModal
         isOpen={isModalOpen}

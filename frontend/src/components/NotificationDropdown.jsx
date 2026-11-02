@@ -52,6 +52,20 @@ const TYPE_CONFIG = {
     color: 'text-[#FF4B4B]',
     label: 'Quá hạn'
   },
+  SUPPORT: {
+    icon: 'support_agent',
+    bg: 'bg-[#F3E8FF]',
+    border: 'border-[#CE82FF]',
+    color: 'text-[#A560E8]',
+    label: 'Hỗ trợ'
+  },
+  CHECKOUT: {
+    icon: 'logout',
+    bg: 'bg-[#FFE8CC]',
+    border: 'border-[#FF9600]',
+    color: 'text-[#E58800]',
+    label: 'Trả kho'
+  },
   TASK: {
     icon: 'assignment',
     bg: 'bg-[#DDF4FF]',

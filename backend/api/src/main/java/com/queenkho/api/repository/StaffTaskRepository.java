@@ -41,6 +41,11 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     @Query("SELECT t FROM StaffTask t LEFT JOIN FETCH t.staff WHERE t.supportRequestId IN :supportRequestIds ORDER BY t.id DESC")
     List<StaffTask> findBySupportRequestIdInWithStaff(@Param("supportRequestIds") Collection<Integer> supportRequestIds);
 
+    // BR-111: các task sắp bị job đánh OVERDUE (để gửi thông báo cho FM / nhân viên)
+    @Query("SELECT t FROM StaffTask t LEFT JOIN FETCH t.staff " +
+            "WHERE t.status IN ('OPEN', 'IN_PROGRESS') AND t.dueAt < :now")
+    List<StaffTask> findDueForOverdue(@Param("now") LocalDateTime now);
+
     // UC-16: job quá hạn đổi status thành OVERDUE
     @Modifying
     @Query("UPDATE StaffTask t SET t.status = 'OVERDUE' " +

@@ -85,6 +85,8 @@ public class AccessPolicy {
                 "Flow 4: quản lý danh mục và quy định chung", scopes("BOM", SYSTEM));
         group("BOM_REVENUE", "So sánh doanh thu giữa các cơ sở",
                 "Flow 4: hiệu quả vận hành từng cơ sở", scopes("BOM", SYSTEM));
+        group("BOM_VOUCHER", "Voucher đặt kho",
+                "BR-25: tạo / sửa / tạm dừng mã giảm giá, theo dõi lượt dùng", scopes("BOM", SYSTEM));
         group("ADMIN_ACCOUNTS", "Tài khoản người dùng & vai trò",
                 "Tạo / khoá tài khoản, gán vai trò và cơ sở", scopes("ADMIN", SYSTEM));
         group("ADMIN_AUDIT", "Nhật ký hoạt động & lịch sử đăng nhập",
@@ -92,10 +94,10 @@ public class AccessPolicy {
         // Demo: nút "⚡ Giả lập" tua thời gian (tắt bằng queenkho.simulation.enabled=false)
         group("DEV_SIM_CHECKIN", "Giả lập demo: khách tới nhận / trả kho hôm nay",
                 "Dời lịch hẹn về hôm nay để check-in / nghiệm thu trả kho ngay", scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
-        group("DEV_SIM_CUSTOMER", "Giả lập demo: giữ chỗ 15 phút, ticket tự đóng",
-                "Tua giờ để thấy job tự huỷ đơn / tự đóng ticket", scopes("CUSTOMER", OWN, "FACILITY_MANAGER", FACILITY));
-        group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, thanh lý",
-                "Tua 48h / 3 ngày / 31 ngày để demo chế tài", scopes("FACILITY_MANAGER", FACILITY));
+        group("DEV_SIM_CUSTOMER", "Giả lập demo: giữ chỗ 15 phút, ticket tự đóng, sắp hết hạn",
+                "Tua giờ để thấy job tự huỷ đơn / tự đóng ticket / nhắc gia hạn", scopes("CUSTOMER", OWN, "FACILITY_MANAGER", FACILITY));
+        group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, thanh lý, task quá hạn",
+                "Tua 48h / 3 ngày / 31 ngày để demo chế tài; đẩy task quá hạn để demo gia hạn xử lý", scopes("FACILITY_MANAGER", FACILITY));
 
         // ---------- Luật: khớp từ trên xuống, luật đầu tiên khớp được dùng ----------
         // Công khai
@@ -118,6 +120,7 @@ public class AccessPolicy {
 
         // Khách hàng
         rule("POST", "/api/v1/reservations", "CUSTOMER_BOOKING");
+        rule("GET", "/api/v1/vouchers/validate", "CUSTOMER_BOOKING"); // BR-25: kiểm tra mã trước khi đặt
         rule("GET", "/api/v1/reservations/my", "CUSTOMER_BOOKING");
         rule("GET", "/api/v1/reservations/{id}/cancel-preview", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/reservations/{id}/cancel", "CUSTOMER_BOOKING");
@@ -146,6 +149,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/reservations/pending", "RESERVATION_MANAGE");
         rule("GET", "/api/v1/reservations/overdue-no-show", "RESERVATION_MANAGE");
         rule("GET", "/api/v1/reservations/{id}/available-units", "RESERVATION_MANAGE");
+        rule("GET", "/api/v1/reservations/{id}/manager-detail", "RESERVATION_MANAGE"); // UC-13: chi tiết đơn khi gán ô
         rule("POST", "/api/v1/reservations/{id}/assign", "RESERVATION_MANAGE");
         rule("POST", "/api/v1/reservations/{id}/no-show", "RESERVATION_MANAGE");
         rule("PUT", "/api/v1/reservations/{id}/reschedule", "RESERVATION_MANAGE");
@@ -154,6 +158,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/assign", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/unassign", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/extend-support", "TASK_MANAGE");
+        rule("POST", "/api/v1/staff-tasks/{id}/extend", "TASK_MANAGE"); // PR-S4 mở rộng: gia hạn task SUPPORT / MAINTENANCE
         rule("POST", "/api/v1/staff-tasks/{id}/complete-refund", "TASK_MANAGE");
         rule("GET", "/api/v1/staff-tasks/pin-suggestion", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
@@ -186,6 +191,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/rental-policies/**", "BOM_CATALOG");
         rule(null, "/api/v1/facilities/bom/**", "BOM_CATALOG");
         rule(null, "/api/v1/unit-types/**", "BOM_CATALOG");
+        rule(null, "/api/v1/bom/vouchers/**", "BOM_VOUCHER");
 
         // Admin
         rule(null, "/api/v1/admin/users/**", "ADMIN_ACCOUNTS");
@@ -204,6 +210,8 @@ public class AccessPolicy {
         rule("POST", "/api/v1/dev/simulation/support-requests/{id}/auto-close", "DEV_SIM_CUSTOMER");
         rule("POST", "/api/v1/dev/simulation/reservations/{id}/trigger-noshow", "DEV_SIM_MANAGER");
         rule("POST", "/api/v1/dev/simulation/contracts/{id}/make-overdue", "DEV_SIM_MANAGER");
+        rule("POST", "/api/v1/dev/simulation/contracts/{id}/expire-soon", "DEV_SIM_CUSTOMER");
+        rule("POST", "/api/v1/dev/simulation/tasks/{id}/make-overdue", "DEV_SIM_MANAGER");
     }
 
     private static Map<String, String> scopes(String... roleAndScope) {

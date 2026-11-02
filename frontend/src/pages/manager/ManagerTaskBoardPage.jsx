@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
-import { assignStaffTask, unassignStaffTask, completeRefundTask, extendSupportTask, uploadImageFile } from '../../services/staffTaskService'
+import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile } from '../../services/staffTaskService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
 
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
@@ -118,8 +118,15 @@ function todayIsoDate() {
 }
 
 function tomorrowIsoDate() {
+  return isoDateAfter(1)
+}
+
+// PR-S4 mở rộng: hạn mới tối đa 7 ngày kể từ hôm nay (BE chặn tương tự)
+const MAX_EXTEND_DAYS = 7
+
+function isoDateAfter(days) {
   const d = new Date()
-  d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() + days)
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
@@ -190,7 +197,11 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     }
     const trimmedReason = extendReason.trim()
     if (!trimmedReason) {
-      setExtendError('Bắt buộc nhập lý do gia hạn task hỗ trợ (PR-S4).')
+      setExtendError('Bắt buộc nhập lý do gia hạn (PR-S4).')
+      return
+    }
+    if (extendDueDate > isoDateAfter(MAX_EXTEND_DAYS)) {
+      setExtendError(`Chỉ gia hạn tối đa ${MAX_EXTEND_DAYS} ngày kể từ hôm nay.`)
       return
     }
     if (trimmedReason.length > 500) {
@@ -200,20 +211,20 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
 
     setSubmitting(true)
     setExtendError('')
-    extendSupportTask(extendTarget.id, user.userId, {
+    extendOverdueTask(extendTarget.id, {
       newDueDate: extendDueDate,
       reason: trimmedReason,
     })
       .then(updated => {
         setToast({
           type: 'success',
-          message: `Đã gia hạn task hỗ trợ #${updated.id} (${updated.ticketCode || ''}) thành công! Trạng thái: ${updated.status === 'IN_PROGRESS' ? 'Đang xử lý (giữ người nhận)' : 'Chờ nhận'}.`,
+          message: `Đã gia hạn task #${updated.id}${updated.ticketCode ? ` (${updated.ticketCode})` : ''} thành công! Trạng thái: ${updated.status === 'IN_PROGRESS' ? 'Đang xử lý (giữ người nhận)' : 'Chờ nhận'}.`,
         })
         setExtendTarget(null)
         setReloadKey(k => k + 1)
       })
       .catch(err => {
-        setExtendError(err.response?.data?.message || 'Không gia hạn được task hỗ trợ, vui lòng thử lại.')
+        setExtendError(err.response?.data?.message || 'Không gia hạn được task, vui lòng thử lại.')
       })
       .finally(() => setSubmitting(false))
   }
@@ -364,7 +375,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
 
-    // PR-O10: task bảo trì quá hạn không giao lại được → FM mở phiếu và tự bấm "Sửa xong / Dọn xong"
+    // PR-O10: task bảo trì quá hạn → FM gia hạn cho nhân viên làm tiếp (PR-S4 mở rộng) hoặc tự bấm "Sửa xong / Dọn xong"
     if (task.taskType === 'MAINTENANCE' && isTaskOverdue) {
       return (
         <>
@@ -375,6 +386,14 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
           </Link>
+          <button
+            type="button"
+            onClick={() => openExtendSupportModal(task)}
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">more_time</span>
+            Gia hạn xử lý
+          </button>
           <Link
             to={detailUrl}
             className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
@@ -528,20 +547,23 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                 <span className="material-symbols-outlined text-[24px]">more_time</span>
               </div>
               <div>
-                <h3 className="text-lg font-black text-[#4B4B4B]">Gia hạn task hỗ trợ (PR-S4)</h3>
+                <h3 className="text-lg font-black text-[#4B4B4B]">
+                  Gia hạn task {extendTarget.taskType === 'MAINTENANCE' ? 'bảo trì' : 'hỗ trợ'} (PR-S4)
+                </h3>
                 <p className="text-xs font-bold text-[#AFAFAF]">
-                  Task #{extendTarget.id} · {extendTarget.ticketCode || 'Hỗ trợ KH'} · Giữ nguyên người nhận ({extendTarget.staffName || 'Chưa có'})
+                  Task #{extendTarget.id} · {extendTarget.taskType === 'MAINTENANCE' ? `Ô ${extendTarget.storageUnitId || '—'}` : (extendTarget.ticketCode || 'Hỗ trợ KH')} · Giữ nguyên người nhận ({extendTarget.staffName || 'Chưa có'})
                 </p>
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-black uppercase text-[#4B4B4B]">
-                Ngày hạn mới (hạn lúc 21:00) <span className="text-[#FF4B4B]">*</span>
+                Ngày hạn mới (hạn lúc 21:00, tối đa {MAX_EXTEND_DAYS} ngày) <span className="text-[#FF4B4B]">*</span>
               </label>
               <input
                 type="date"
                 min={todayIsoDate()}
+                max={isoDateAfter(MAX_EXTEND_DAYS)}
                 value={extendDueDate}
                 onChange={e => { setExtendDueDate(e.target.value); setExtendError('') }}
                 className="duo-input w-full text-xs"

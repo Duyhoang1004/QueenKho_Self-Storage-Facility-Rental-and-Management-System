@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -57,6 +58,61 @@ public class ContractService {
     @Autowired
     private PricingService pricingService;
 
+    @Autowired
+    private NotificationService notificationService;
+
+
+    // BR-111 / BR-117: khách hẹn / dời lịch trả kho → FM + nhân viên đang giữ task CHECK_OUT được báo, khách nhận email xác nhận
+    private void notifyCheckoutScheduled(RentalContract contract, LocalDate checkoutDate, boolean rescheduled, String refundMethodLabel) {
+        if (notificationService == null) return;
+        String date = checkoutDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        String unitId = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "—";
+        Integer facilityId = contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null
+                ? contract.getStorageUnit().getFacility().getId() : null;
+        String customerName = contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Khách hàng";
+
+        List<Map<String, Object>> taskRows = jdbcTemplate.queryForList(
+                "SELECT TOP 1 id, staff_id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_OUT' " +
+                        "AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY id DESC", contract.getId());
+        Integer taskId = taskRows.isEmpty() ? null : ((Number) taskRows.get(0).get("id")).intValue();
+        Object staffId = taskRows.isEmpty() ? null : taskRows.get(0).get("staff_id");
+
+        String title = (rescheduled ? "Khách dời lịch trả kho" : "Khách hẹn trả kho") + " — HĐ " + contract.getContractCode();
+        String message = customerName + " hẹn trả ô " + unitId + " ngày " + date + ". Nhận lại cọc: " + refundMethodLabel + ".";
+        notificationService.notifyFacilityManagers(facilityId, title, message, "CHECKOUT",
+                taskId != null ? "/manager/tasks?highlightTaskId=" + taskId : "/manager/tasks");
+        if (staffId instanceof Number n && taskId != null) {
+            notificationService.notifyStaff(n.intValue(), title, message, "CHECKOUT", "/staff?highlightTaskId=" + taskId);
+        }
+        if (contract.getCustomer() != null) {
+            Integer reservationId = contract.getReservation() != null ? contract.getReservation().getId() : null;
+            notificationService.notifyCustomer(contract.getCustomer().getId(),
+                    (rescheduled ? "Đã dời lịch trả kho" : "Đã ghi nhận lịch trả kho") + " — HĐ " + contract.getContractCode(),
+                    "Nhân viên sẽ nghiệm thu ô " + unitId + " ngày " + date + ". Cách nhận lại cọc: " + refundMethodLabel
+                            + ". Vui lòng dọn hết đồ trước khi bàn giao.",
+                    "CHECKOUT",
+                    reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
+        }
+    }
+
+    // PR-O3: BANK_TRANSFER (đủ ngân hàng + STK 6–20 chữ số + chủ TK) hoặc CASH (nhận tiền mặt tại quầy)
+    private static void validateRefundMethod(RequestCheckoutRequest request) {
+        String method = request != null && request.getRefundMethod() != null
+                ? request.getRefundMethod().trim().toUpperCase() : "";
+        if (!"BANK_TRANSFER".equals(method) && !"CASH".equals(method)) {
+            throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_REFUND_METHOD",
+                    "Vui lòng chọn cách nhận lại tiền cọc: chuyển khoản hoặc tiền mặt tại quầy.");
+        }
+        if ("BANK_TRANSFER".equals(method)) {
+            String bankName = request.getBankName() != null ? request.getBankName().trim() : "";
+            String accountNumber = request.getBankAccountNumber() != null ? request.getBankAccountNumber().trim() : "";
+            String accountName = request.getBankAccountName() != null ? request.getBankAccountName().trim() : "";
+            if (bankName.isEmpty() || accountName.isEmpty() || !accountNumber.matches("\\d{6,20}")) {
+                throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_REFUND_METHOD",
+                        "Nhận cọc qua chuyển khoản cần đủ tên ngân hàng, chủ tài khoản và số tài khoản (6–20 chữ số).");
+            }
+        }
+    }
 
     @Transactional
     public RequestCheckoutResponse requestCheckout(Integer contractId, RequestCheckoutRequest request) {
@@ -74,10 +130,14 @@ public class ContractService {
             checkoutDate = LocalDate.now();
         }
 
-        LocalDate today = LocalDate.now();
-        if (checkoutDate.isBefore(today)) {
-            throw new IllegalArgumentException("Ngày hẹn trả kho không thể là ngày trong quá khứ (" + checkoutDate + ").");
+        // PR-O1: hẹn từ NGÀY MAI trở đi (cần thời gian xếp nhân viên nghiệm thu), tính theo giờ Việt Nam
+        LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
+        if (!checkoutDate.isAfter(today)) {
+            throw new IllegalArgumentException("Ngày hẹn trả kho phải từ ngày mai trở đi (" + today.plusDays(1) + ").");
         }
+
+        // PR-O3: bắt buộc chọn cách nhận cọc; chuyển khoản phải đủ ngân hàng, số tài khoản, chủ tài khoản
+        validateRefundMethod(request);
 
         boolean isAlreadyPending = "TERMINATION_PENDING".equals(contract.getStatus());
 
@@ -134,9 +194,9 @@ public class ContractService {
         // Build notes (PR-O3: Chuyển khoản hoặc Tiền mặt tại quầy)
         StringBuilder noteBuilder = new StringBuilder();
         noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(checkoutDate);
-        if (request != null && request.getBankName() != null && !request.getBankName().isBlank()) {
-            noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber())
-                    .append(" (").append(request.getBankName()).append(" - ").append(request.getBankAccountName()).append(")");
+        if ("BANK_TRANSFER".equals(request.getRefundMethod().trim().toUpperCase())) {
+            noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber().trim())
+                    .append(" (").append(request.getBankName().trim()).append(" - ").append(request.getBankAccountName().trim()).append(")");
         } else {
             noteBuilder.append(" | Hoàn tiền: Nhận tiền mặt trực tiếp tại quầy");
         }
@@ -174,6 +234,9 @@ public class ContractService {
         } catch (Exception e) {
             // ignore log error
         }
+
+        notifyCheckoutScheduled(contract, checkoutDate, isAlreadyPending,
+                noteStr.contains("Hoàn cọc STK") ? "chuyển khoản" : "tiền mặt tại quầy");
 
         String responseMsg = isAlreadyPending
                 ? "Dời ngày trả kho thành công sang ngày " + checkoutDate + "."
@@ -322,12 +385,19 @@ public class ContractService {
         }
 
         // =========================================================================
-        // CASE 2: Hợp đồng TERMINATION_PENDING quá 5 ngày ân hạn (end_date + 5 < today) (PR-Q1)
+        // CASE 2: Hợp đồng TERMINATION_PENDING mà khách KHÔNG tới theo lịch hẹn (PR-Q1, sửa 02/11/2026):
+        // đã qua ngày hẹn trả (due_at của task CHECK_OUT) VÀ đã qua end_date → OVERDUE.
+        // Trước đây dùng cố định end_date + 5 → khách OVERDUE vừa hẹn trả (≤ 3 ngày tới, có thể > end+5)
+        // bị job huỷ lịch hẹn ngay trong đêm. Không còn task CHECK_OUT mở thì dùng end_date + 5 như cũ.
         // =========================================================================
         List<Map<String, Object>> pendingExpired = jdbcTemplate.queryForList(
-                "SELECT id, contract_code, end_date FROM rental_contracts " +
-                        "WHERE status = 'TERMINATION_PENDING' AND end_date IS NOT NULL AND DATEADD(DAY, 5, end_date) < ?",
-                today
+                "SELECT c.id, c.contract_code, c.end_date FROM rental_contracts c " +
+                        "WHERE c.status = 'TERMINATION_PENDING' AND c.end_date IS NOT NULL AND c.end_date < ? " +
+                        "  AND COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
+                        "                WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
+                        "                  AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), " +
+                        "               DATEADD(DAY, 5, c.end_date)) < ?",
+                today, today
         );
 
         for (Map<String, Object> row : pendingExpired) {
@@ -762,6 +832,15 @@ public class ContractService {
                 logAction,
                 String.valueOf(contract.getId())
         );
+
+        // BR-111 / BR-117: khách nhận thông báo + email về việc thanh lý và hàng được lưu giữ
+        if (notificationService != null && customerId != null) notificationService.notifyCustomer(
+                customerId,
+                "Hợp đồng " + contract.getContractCode() + " đã bị thanh lý",
+                "Hợp đồng quá hạn kéo dài nên đã được thanh lý theo điều khoản bạn đồng ý. Hàng còn trong ô (nếu có) được kiểm kê "
+                        + "và lưu giữ tại cơ sở; vui lòng liên hệ quản lý cơ sở để nhận lại và thanh toán các khoản còn nợ.",
+                "LIQUIDATION",
+                reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
 
         return Map.of(
                 "message", "Thanh lý hợp đồng thành công",

@@ -86,6 +86,17 @@ public class ReservationController {
         }
     }
 
+    // UC-13 / UC-14: FM xem chi tiết đơn (khách, lịch nhận, tiền, giao dịch cọc, lịch sử thuê) trước khi gán ô
+    @GetMapping("/{reservationId}/manager-detail")
+    public ResponseEntity<?> getManagerDetail(@PathVariable Integer reservationId) {
+        ownershipGuard.checkReservation(reservationId);
+        try {
+            return ResponseEntity.ok(reservationService.getManagerDetail(reservationId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        }
+    }
+
     // UC-14: Gán kho và tạo hợp đồng
     @PostMapping("/{reservationId}/assign")
     public ResponseEntity<?> assignStorageUnit(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.AssignUnitRequest request) {

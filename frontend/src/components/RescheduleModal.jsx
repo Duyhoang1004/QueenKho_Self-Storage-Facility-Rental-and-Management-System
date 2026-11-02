@@ -10,7 +10,9 @@ export default function RescheduleModal({ isOpen, reservation, onClose, onSucces
 
   if (!isOpen || !reservation) return null
 
-  const today = new Date().toISOString().split('T')[0]
+  // Ngày theo giờ máy (toISOString là giờ UTC, trước 7h sáng ở VN sẽ ra ngày hôm qua)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   const handleConfirm = async () => {
     if (!newStartDate) {

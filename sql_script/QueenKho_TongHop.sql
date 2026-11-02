@@ -115,6 +115,8 @@ CREATE TABLE storage_units (
     map_w           INT NULL,
     map_h           INT NULL,
     map_door        NVARCHAR(10) NULL,                         -- phía cửa: TOP / BOTTOM / LEFT / RIGHT
+    maintenance_note  NVARCHAR(500) NULL,                      -- lý do FM chuyển ô sang MAINTENANCE (xoá khi mở lại)
+    maintenance_since DATETIME2 NULL,
     CONSTRAINT FK_storageunits_facility FOREIGN KEY (facility_id)  REFERENCES facilities(id),
     CONSTRAINT FK_storageunits_unittype FOREIGN KEY (unit_type_id) REFERENCES unit_types(id),
     CONSTRAINT CK_storageunits_map CHECK (
@@ -198,6 +200,34 @@ GO
 CREATE UNIQUE INDEX UX_rentalpolicy_active_facility ON rental_policy(facility_id) WHERE is_active = 1;
 GO
 
+/* ---------- 6b. vouchers (BR-25: voucher đặt kho do BOM quản lý; NEWKHO là mã mặc định) ---------- */
+CREATE TABLE vouchers (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    code            NVARCHAR(30)  NOT NULL UNIQUE,   -- luôn viết HOA
+    name            NVARCHAR(150) NOT NULL,
+    discount_type   NVARCHAR(10)  NOT NULL,          -- FIXED (số tiền) / PERCENT (% tiền thuê)
+    discount_value  DECIMAL(12,2) NOT NULL,
+    max_discount    DECIMAL(12,2) NULL,              -- trần giảm cho PERCENT (NULL = không trần)
+    min_months      INT NOT NULL DEFAULT 1,          -- gói thuê tối thiểu được áp
+    facility_id     INT NULL,                        -- NULL = mọi cơ sở
+    start_at        DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    end_at          DATETIME2 NULL,                  -- NULL = không hết hạn
+    usage_limit     INT NULL,                        -- tổng lượt (NULL = không giới hạn)
+    per_user_limit  INT NULL,                        -- lượt / khách (NULL = không giới hạn)
+    used_count      INT NOT NULL DEFAULT 0,          -- cộng khi VNPAY báo cọc thành công
+    is_default      BIT NOT NULL DEFAULT 0,          -- tự áp khi khách không nhập mã (NEWKHO)
+    status          NVARCHAR(20) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / INACTIVE
+    created_by      INT NULL,
+    created_at      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_vouchers_facility FOREIGN KEY (facility_id) REFERENCES facilities(id),
+    CONSTRAINT FK_vouchers_creator  FOREIGN KEY (created_by)  REFERENCES users(id),
+    CONSTRAINT CK_vouchers_type     CHECK (discount_type IN ('FIXED', 'PERCENT')),
+    CONSTRAINT CK_vouchers_status   CHECK (status IN ('ACTIVE', 'INACTIVE')),
+    CONSTRAINT CK_vouchers_value    CHECK (discount_value > 0 AND (discount_type <> 'PERCENT' OR discount_value <= 100)),
+    CONSTRAINT CK_vouchers_months   CHECK (min_months IN (1, 3, 6, 12))
+);
+GO
+
 /* ---------- 7. reservations ---------- */
 CREATE TABLE reservations (
     id                          INT IDENTITY(1,1) PRIMARY KEY,
@@ -216,11 +246,15 @@ CREATE TABLE reservations (
     rent_discount_percent       INT NULL,            -- % ưu đãi tiền thuê chốt lúc tạo đơn (giống deposit_amount)
     terms_version               NVARCHAR(20) NULL,   -- Phiên bản điều khoản xử lý tài sản khách đã đồng ý (NULL = đơn cũ, chưa đồng ý)
     terms_accepted_at           DATETIME2 NULL,      -- Thời điểm khách tick đồng ý điều khoản khi đặt kho
+    voucher_id                  INT NULL,            -- BR-25: voucher áp cho đơn (chốt lúc tạo đơn)
+    voucher_code                NVARCHAR(30) NULL,
+    voucher_discount            DECIMAL(12,2) NULL,  -- số tiền giảm đã chốt (NULL = đơn cũ, BE coi như NEWKHO 100.000đ)
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),
     CONSTRAINT FK_reservations_unittype    FOREIGN KEY (unit_type_id)    REFERENCES unit_types(id),
-    CONSTRAINT FK_reservations_storageunit FOREIGN KEY (storage_unit_id) REFERENCES storage_units(id)
+    CONSTRAINT FK_reservations_storageunit FOREIGN KEY (storage_unit_id) REFERENCES storage_units(id),
+    CONSTRAINT FK_reservations_voucher     FOREIGN KEY (voucher_id)      REFERENCES vouchers(id)
 );
 GO
 CREATE INDEX IX_reservations_customer    ON reservations(customer_id);
@@ -455,6 +489,24 @@ CREATE INDEX IX_loginhistory_created_at ON login_history(created_at DESC);
 CREATE INDEX IX_loginhistory_user ON login_history(user_id);
 GO
 
+/* ---------- 15. notifications (thông báo trong chuông, lưu DB) ---------- */
+CREATE TABLE notifications (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    user_id         INT NOT NULL,
+    title           NVARCHAR(200)  NOT NULL,
+    message         NVARCHAR(1000) NOT NULL,
+    type            NVARCHAR(30)   NOT NULL,   -- BOOKING / REFUND / TASK / SUPPORT / RENEWAL / OVERDUE / CHECKOUT ...
+    target_url      NVARCHAR(300)  NULL,
+    ref_key         NVARCHAR(150)  NULL,       -- chống gửi trùng (vd nhắc gia hạn RENEWAL:12:2026-11-30:3)
+    is_read         BIT NOT NULL DEFAULT 0,
+    created_at      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_notifications_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+GO
+CREATE INDEX IX_notifications_user_created ON notifications(user_id, created_at DESC);
+CREATE UNIQUE INDEX UX_notifications_user_ref ON notifications(user_id, ref_key) WHERE ref_key IS NOT NULL;
+GO
+
 /* ============================================================
    PHẦN 2 — DỮ LIỆU NỀN
    ============================================================ */
@@ -466,6 +518,11 @@ INSERT INTO roles (name, description) VALUES
     ('FACILITY_MANAGER', N'Quản lý cơ sở'),
     ('BOM',              N'Business Operations Manager'),
     ('ADMIN',            N'Quản trị hệ thống');
+GO
+
+/* ---------- vouchers: mã mặc định NEWKHO (BR-25) ---------- */
+INSERT INTO vouchers (code, name, discount_type, discount_value, min_months, start_at, is_default, status)
+VALUES ('NEWKHO', N'Ưu đãi đặt kho trực tuyến', 'FIXED', 100000, 1, '2026-01-01', 1, 'ACTIVE');
 GO
 
 /* ---------- facilities (id cố định 1..6) ---------- */

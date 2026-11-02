@@ -17,6 +17,12 @@ export async function getPendingReservations({ facilityId, managerId } = {}) {
   return response.data
 }
 
+// UC-13 / UC-14: FM xem chi tiết đơn (khách, lịch nhận, tiền, giao dịch cọc, lịch sử thuê) trước khi gán ô
+export async function getReservationManagerDetail(reservationId) {
+  const response = await api.get(`/reservations/${reservationId}/manager-detail`)
+  return response.data
+}
+
 // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền
 export async function getAvailableUnits(reservationId) {
   const response = await api.get(`/reservations/${reservationId}/available-units`)

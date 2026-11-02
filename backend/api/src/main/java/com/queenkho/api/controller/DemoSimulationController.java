@@ -76,6 +76,19 @@ public class DemoSimulationController {
         return ResponseEntity.ok(simulationService.makeOverdue(id, days, currentUser.require()));
     }
 
+    // PR-R9: hợp đồng ACTIVE còn N ngày (1–7) hết hạn → gửi nhắc gia hạn ngay (khách chủ HĐ / FM)
+    @PostMapping("/contracts/{id}/expire-soon")
+    public ResponseEntity<Map<String, Object>> expireSoon(@PathVariable Integer id,
+                                                          @RequestParam(defaultValue = "3") int days) {
+        return ResponseEntity.ok(simulationService.expireSoon(id, days, currentUser.require()));
+    }
+
+    // Task OPEN / IN_PROGRESS quá hạn ngay → FM demo "Gia hạn xử lý" (FM / Staff)
+    @PostMapping("/tasks/{id}/make-overdue")
+    public ResponseEntity<Map<String, Object>> makeTaskOverdue(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.makeTaskOverdue(id, currentUser.require()));
+    }
+
     // Flow 7: ticket đã xử lý quá 3 ngày → hệ thống tự đóng (khách chủ ticket / FM)
     @PostMapping("/support-requests/{id}/auto-close")
     public ResponseEntity<Map<String, Object>> autoCloseTicket(@PathVariable Integer id) {

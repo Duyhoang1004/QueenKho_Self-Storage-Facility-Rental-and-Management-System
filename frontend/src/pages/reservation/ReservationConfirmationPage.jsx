@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getVnpayStatus } from '../../services/vnpayService'
 import { useSearchParams } from 'react-router-dom'
+import { printReservationReceipt } from '../../utils/receipt'
 
 function formatVND(amount) {
   return Number(amount || 0).toLocaleString('vi-VN') + 'đ'
@@ -56,6 +57,35 @@ export default function ReservationConfirmationPage() {
   const startDateStr = startDate
     ? String(startDate).split('-').reverse().join('/')
     : 'Chưa cập nhật'
+  const voucherDiscount = Number(serverDetails.voucher_discount ?? paymentContext.voucherDiscount ?? 0)
+  const voucherCode = serverDetails.voucher_code || paymentContext.voucherCode || ''
+  const [printBlocked, setPrintBlocked] = useState(false)
+
+  // Phiếu biên nhận: tiền thuê = tổng đã trả − cọc + voucher (BE trừ voucher khi tạo link VNPAY)
+  const handlePrintReceipt = () => {
+    const opened = printReservationReceipt({
+      reservationCode,
+      transactionCode: serverDetails.transaction_code || searchParams.get('orderId') || '',
+      bankTransactionCode: serverDetails.bank_transaction_code || '',
+      paidAt: serverDetails.paid_at || paidAt,
+      customerName,
+      customerPhone,
+      customerEmail,
+      facilityName: branch,
+      facilityAddress: address,
+      facilityHotline,
+      unitTypeName: unitName,
+      dimensions: dimension,
+      startDate,
+      durationMonths: selectedMonths,
+      rentAmount: Number(totalPayment) - Number(depositAmount) + voucherDiscount,
+      depositAmount,
+      voucherCode,
+      voucherDiscount,
+      totalPaid: totalPayment,
+    })
+    setPrintBlocked(!opened)
+  }
 
   useEffect(() => {
     const orderId = searchParams.get('orderId')
@@ -305,7 +335,7 @@ export default function ReservationConfirmationPage() {
             {/* Nút hành động */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mx-6 mt-6 mb-6">
               <button
-                onClick={() => navigate('/booking')}
+                onClick={handlePrintReceipt}
                 className="duo-btn-white w-full sm:w-auto px-5 py-3 text-xs tracking-wider"
               >
                 <span className="material-symbols-outlined text-[18px] mr-1">download</span>
@@ -319,6 +349,11 @@ export default function ReservationConfirmationPage() {
                 <span>XEM KHO CỦA TÔI</span>
               </button>
             </div>
+            {printBlocked && (
+              <p className="mx-6 -mt-3 mb-6 text-[11px] font-bold text-[#E58800]">
+                Trình duyệt đã chặn cửa sổ in. Hãy cho phép cửa sổ bật lên (pop-up) cho trang này rồi bấm lại.
+              </p>
+            )}
           </>
         )}
       </div>

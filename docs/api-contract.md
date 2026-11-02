@@ -835,3 +835,63 @@ Lưới: **1 ô = 0.5m**, toạ độ `(x, y)` là góc trên-trái tính bằng
 ```
 - Khách gọi khi HĐ không ở `PENDING_CHECK_IN` / `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING` → `409 CONTRACT_NOT_ACTIVE`. Staff / FM xem mọi trạng thái.
 - FE: trang `/kho-cua-toi/hop-dong/:reservationId` (mục "Ô kho đã thuê") và `/staff/tasks/:id`, `/manager/tasks/:id` (task có hợp đồng).
+
+---
+
+## Sửa lỗi sau đợt test (02/11/2026)
+
+> SQL: chạy `sql_script/Update_sua_bug_sau_test.sql` (DB đang dùng) — tạo `notifications`, `vouchers` (+ mã mặc định `NEWKHO`), thêm cột voucher vào `reservations`, ghi chú bảo trì vào `storage_units`. `QueenKho_full.sql` / `QueenKho_TongHop.sql` đã có sẵn.
+
+### BR-25 — Voucher đặt kho
+| API | Quyền | Mô tả | Lỗi |
+|---|---|---|---|
+| `GET /api/v1/vouchers/validate?code=&facilityId=&unitTypeId=&months=` | CUSTOMER | Kiểm tra mã cho đơn sắp đặt. `code` trống = mã mặc định. Trả `{ voucherId, code, name, discountAmount, rentAmount }` (`voucherId` null = không có mã nào áp được) | `400 VOUCHER_INVALID` (message = lý do) |
+| `GET /api/v1/bom/vouchers` | BOM | Danh sách voucher + `usedCount`, `facilityName` | |
+| `POST /api/v1/bom/vouchers` | BOM | Body `{ code, name, discountType: FIXED/PERCENT, discountValue, maxDiscount?, minMonths (1/3/6/12), facilityId?, startAt?, endAt?, usageLimit?, perUserLimit?, isDefault }` | `400 INVALID_INPUT`, `400 DUPLICATE_CODE` |
+| `PUT /api/v1/bom/vouchers/{id}` | BOM | Sửa (đã có lượt dùng thì không đổi mã) | `400 VOUCHER_IN_USE`, `404 VOUCHER_NOT_FOUND` |
+| `PATCH /api/v1/bom/vouchers/{id}/status` | BOM | Body `{ "status": "ACTIVE" | "INACTIVE" }` | |
+
+Thay đổi API cũ:
+- `POST /api/v1/reservations`: thêm `voucherCode` (tuỳ chọn). Mã không hợp lệ → `400 VOUCHER_INVALID`. Đơn lưu `voucherCode` + số tiền giảm; link VNPAY trừ đúng số này.
+- `GET /api/payments/vnpay/status/{txnRef}`: thêm `transaction_code`, `voucher_code`, `voucher_discount` (cho phiếu biên nhận).
+
+### BR-119 — Chi tiết đơn cho FM trước khi gán ô
+`GET /api/v1/reservations/{id}/manager-detail` (FM cùng cơ sở) →
+```json
+{
+  "reservationId": 12, "reservationCode": "RES-596710", "status": "DEPOSIT_PAID", "createdAt": "2026-11-02T09:12:00",
+  "customerId": 5, "customerName": "Nguyễn Văn A", "customerPhone": "0901234567", "customerEmail": "a@gmail.com",
+  "customerCccdMasked": "079******123", "customerSince": "2026-10-01T08:00:00",
+  "facilityName": "QueenKho Tân Bình", "unitTypeName": "Kho Mini M", "dimensions": "1.5 x 1.5 x 2.5 m", "areaSqm": 2.25, "basePriceMonthly": 750000,
+  "startDate": "2026-11-05", "expectedAppointmentTime": "2026-11-05T09:00:00", "durationMonths": 3, "rentDiscountPercent": 5,
+  "rentAmount": 2137500, "depositAmount": 750000, "voucherCode": "NEWKHO", "voucherDiscount": 100000, "totalPaid": 2787500,
+  "transactionCode": "QKD…", "bankTransactionCode": "VNP14…", "paidAt": "2026-11-02T09:13:10",
+  "termsVersion": "v2", "termsAcceptedAt": "2026-11-02T09:12:00",
+  "previousContracts": 1, "activeContracts": 0, "pendingDebtAmount": 0
+}
+```
+
+### PR-O1 / PR-O3 — Hẹn trả kho (`POST /api/v1/contracts/{id}/request-checkout`)
+- `checkoutDate` phải **sau hôm nay** (giờ VN) → `400 INVALID_INPUT`.
+- Body bắt buộc `refundMethod`: `BANK_TRANSFER` (kèm `bankName`, `bankAccountNumber` 6–20 chữ số, `bankAccountName`) hoặc `CASH` → thiếu / sai `400 INVALID_REFUND_METHOD`.
+
+### PR-O12 — Trạng thái hoàn tiền thống nhất
+- `GET /api/v1/contracts?reservationId=` (và các API trả `CustomerContractResponse`): thêm `refundStatus` = `NONE` / `PENDING` / `COMPLETED` — cùng nguồn với trạng thái `REFUND_PENDING` / `REFUNDED` ở `GET /reservations/my`.
+
+### PR-S4 mở rộng — Gia hạn task quá hạn
+`POST /api/v1/staff-tasks/{id}/extend` (FM) body `{ "newDueDate": "2026-11-05", "reason": "..." }` — task `SUPPORT` hoặc `MAINTENANCE` đang quá hạn; hạn mới từ hôm nay đến tối đa 7 ngày. Lỗi: `409 TASK_NOT_EXTENDABLE`, `409 TASK_NOT_OVERDUE`, `400 INVALID_INPUT`. API cũ `extend-support` vẫn giữ (chỉ SUPPORT).
+
+### PR-M9 — Ghi chú bảo trì ô kho
+- `PATCH /api/v1/storage-units/{id}/status` với `status = MAINTENANCE`: `note` **bắt buộc 10–500 ký tự** → thiếu `400 INVALID_INPUT`.
+- Response ô kho (danh sách, chi tiết) thêm `maintenanceNote`, `maintenanceSince` (xoá khi mở lại `AVAILABLE`).
+
+### Thông báo & email
+- `GET /api/v1/notifications` không còn trả thông báo mẫu cho tài khoản mới. Loại thông báo mới: `SUPPORT`, `CHECKOUT` (ngoài `BOOKING`, `REFUND`, `DAMAGE`, `LIQUIDATION`, `ASSIGNED`, `RENEWAL`, `OVERDUE`, `TASK`, `ADMIN_SUMMARY`, `STAFF_CREATED`).
+- Email cho khách: biến môi trường `MAIL_ENABLED=true`, `MAIL_USERNAME`, `MAIL_PASSWORD` (Gmail: mật khẩu ứng dụng), tuỳ chọn `MAIL_FROM`, `MAIL_HOST`, `MAIL_PORT`. Mặc định tắt → nội dung email in ra console BE.
+
+### Demo — Giả lập mới
+| API | Quyền | Mô tả |
+|---|---|---|
+| `POST /api/v1/dev/simulation/contracts/{id}/expire-soon?days=3` | CUSTOMER (HĐ của mình), FM | HĐ ACTIVE: `end_date` = hôm nay + `days` (1–7, giữ số tháng) rồi chạy ngay job nhắc gia hạn → `{ message, endDate }` |
+| `POST /api/v1/dev/simulation/tasks/{id}/make-overdue` | FM | Task OPEN / IN_PROGRESS: hạn lùi 1 phút rồi chạy ngay job quá hạn → `{ status: "OVERDUE" }` |
+- `make-overdue` cho HĐ `TERMINATION_PENDING`: vẫn yêu cầu `days` > 5 (lịch hẹn muộn nhất là `end_date` + 5).

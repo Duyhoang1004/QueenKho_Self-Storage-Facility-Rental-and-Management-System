@@ -51,6 +51,13 @@ public class StorageUnit {
     @Column(name = "map_door", length = 10)
     private String mapDoor; // TOP / BOTTOM / LEFT / RIGHT
 
+    // PR-M9 (sửa 02/11/2026): lý do FM chuyển ô sang MAINTENANCE — hiện ở danh sách ô / mặt bằng, xoá khi mở lại
+    @Column(name = "maintenance_note", length = 500)
+    private String maintenanceNote;
+
+    @Column(name = "maintenance_since")
+    private java.time.LocalDateTime maintenanceSince;
+
     public boolean isPlacedOnMap() {
         return mapX != null && mapY != null && mapW != null && mapH != null;
     }

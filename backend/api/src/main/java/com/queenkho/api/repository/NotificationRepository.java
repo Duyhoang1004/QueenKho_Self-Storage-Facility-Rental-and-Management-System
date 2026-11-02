@@ -1,87 +1,34 @@
 package com.queenkho.api.repository;
 
 import com.queenkho.api.entity.Notification;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
+import java.util.List;
+import java.util.Optional;
 
-/**
- * Kho lưu trữ thông báo tạm thời trên RAM (In-Memory Repository).
- * Hoàn toàn không tạo bảng, không can thiệp vào Database.
- * Khi ứng dụng khởi động lại hoặc tắt chương trình, dữ liệu sẽ tự động được xóa sạch.
- */
-@Repository
-public class NotificationRepository {
+// BR-111: thông báo lưu bảng notifications
+public interface NotificationRepository extends JpaRepository<Notification, Integer> {
 
-    private final AtomicInteger idGenerator = new AtomicInteger(1);
-    private final Map<Integer, List<Notification>> storage = new ConcurrentHashMap<>();
+    List<Notification> findByUserIdOrderByCreatedAtDescIdDesc(Integer userId, PageRequest page);
 
-    public synchronized Notification save(Notification notification) {
-        if (notification == null) return null;
-        Integer userId = notification.getUserId();
-        if (userId == null && notification.getUser() != null) {
-            userId = notification.getUser().getId();
-            notification.setUserId(userId);
-        }
-        if (userId == null) return notification;
-
-        if (notification.getId() == null) {
-            notification.setId(idGenerator.getAndIncrement());
-            storage.computeIfAbsent(userId, k -> new CopyOnWriteArrayList<>()).add(0, notification);
-        } else {
-            List<Notification> list = storage.getOrDefault(userId, Collections.emptyList());
-            for (int i = 0; i < list.size(); i++) {
-                if (list.get(i).getId().equals(notification.getId())) {
-                    list.set(i, notification);
-                    break;
-                }
-            }
-        }
-        return notification;
+    default List<Notification> findRecentByUserId(Integer userId, int limit) {
+        if (userId == null) return List.of();
+        return findByUserIdOrderByCreatedAtDescIdDesc(userId, PageRequest.of(0, Math.max(1, limit)));
     }
 
-    public List<Notification> findRecentByUserId(Integer userId, int limit) {
-        if (userId == null) return Collections.emptyList();
-        List<Notification> list = storage.getOrDefault(userId, Collections.emptyList());
-        return list.stream()
-                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .limit(limit)
-                .collect(Collectors.toList());
-    }
+    long countByUserId(Integer userId);
 
-    public long countByUserId(Integer userId) {
-        if (userId == null) return 0;
-        return storage.getOrDefault(userId, Collections.emptyList()).size();
-    }
+    long countByUserIdAndIsReadFalse(Integer userId);
 
-    public long countByUserIdAndIsReadFalse(Integer userId) {
-        if (userId == null) return 0;
-        return storage.getOrDefault(userId, Collections.emptyList()).stream()
-                .filter(n -> !Boolean.TRUE.equals(n.getIsRead()))
-                .count();
-    }
+    Optional<Notification> findByIdAndUserId(Integer id, Integer userId);
 
-    public Optional<Notification> findByIdAndUserId(Integer id, Integer userId) {
-        if (id == null || userId == null) return Optional.empty();
-        return storage.getOrDefault(userId, Collections.emptyList()).stream()
-                .filter(n -> id.equals(n.getId()))
-                .findFirst();
-    }
+    boolean existsByUserIdAndRefKey(Integer userId, String refKey);
 
-    public void markAllAsRead(Integer userId) {
-        if (userId == null) return;
-        List<Notification> list = storage.getOrDefault(userId, Collections.emptyList());
-        for (Notification n : list) {
-            n.setIsRead(true);
-        }
-    }
-
-    public void clear() {
-        storage.clear();
-        idGenerator.set(1);
-    }
+    @Modifying
+    @Query("UPDATE Notification n SET n.isRead = true WHERE n.userId = :userId AND n.isRead = false")
+    int markAllAsRead(@Param("userId") Integer userId);
 }

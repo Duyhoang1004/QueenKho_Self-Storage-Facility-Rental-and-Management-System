@@ -59,7 +59,6 @@ class NotificationServiceTest {
     @Test
     @DisplayName("Lấy danh sách thông báo của người dùng khi đã có thông báo chưa đọc")
     void testGetMyNotifications_WithExisting() {
-        when(notificationRepository.countByUserId(10)).thenReturn(1L);
         when(notificationRepository.findRecentByUserId(10, 30)).thenReturn(List.of(notif1));
 
         List<NotificationResponse> result = notificationService.getMyNotifications(10, 30);
@@ -68,6 +67,41 @@ class NotificationServiceTest {
         assertEquals("Đặt kho thành công", result.get(0).title());
         assertEquals("BOOKING", result.get(0).type());
         assertFalse(result.get(0).isRead());
+    }
+
+    @Test
+    @DisplayName("BR-111: tài khoản chưa có thông báo → trả rỗng, KHÔNG tự sinh thông báo mẫu")
+    void testGetMyNotifications_EmptyDoesNotSeedFakeData() {
+        when(notificationRepository.findRecentByUserId(10, 30)).thenReturn(List.of());
+
+        List<NotificationResponse> result = notificationService.getMyNotifications(10, 30);
+
+        assertTrue(result.isEmpty());
+        verify(notificationRepository, never()).save(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("sendOnce: refKey đã gửi cho user thì bỏ qua (chống gửi trùng nhắc gia hạn)")
+    void testSendOnce_SkipsDuplicateRefKey() {
+        when(notificationRepository.existsByUserIdAndRefKey(10, "RENEWAL:1:2026-11-30:3")).thenReturn(true);
+
+        Notification created = notificationService.sendOnce(10, "RENEWAL:1:2026-11-30:3", "Nhắc gia hạn", "Còn 3 ngày", "RENEWAL", "/kho-cua-toi");
+
+        assertNull(created);
+        verify(notificationRepository, never()).save(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("sendOnce: refKey mới thì lưu thông báo kèm refKey")
+    void testSendOnce_SavesWithRefKey() {
+        when(notificationRepository.existsByUserIdAndRefKey(10, "RENEWAL:1:2026-11-30:3")).thenReturn(false);
+        when(userRepository.findById(10)).thenReturn(Optional.of(customerUser));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Notification created = notificationService.sendOnce(10, "RENEWAL:1:2026-11-30:3", "Nhắc gia hạn", "Còn 3 ngày", "RENEWAL", "/kho-cua-toi");
+
+        assertNotNull(created);
+        assertEquals("RENEWAL:1:2026-11-30:3", created.getRefKey());
     }
 
     @Test

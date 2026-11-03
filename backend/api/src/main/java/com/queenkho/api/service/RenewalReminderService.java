@@ -1,10 +1,15 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.dto.LateFeeCalculationResult;
+import com.queenkho.api.entity.RentalContract;
+import com.queenkho.api.repository.RentalContractRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -17,6 +22,8 @@ import java.util.Map;
  *    end_date đổi → kỳ mới nhắc lại từ đầu.
  *  - Lỡ ngày chạy job (server tắt) vẫn nhắc ở lần chạy sau: còn 5 ngày → gửi mốc 7, còn 2 ngày → gửi mốc 3.
  *  - Hợp đồng đã hẹn trả kho (TERMINATION_PENDING) không nhắc.
+ * BR-117: cùng job cảnh báo hợp đồng OVERDUE sắp tới mốc thanh lý — còn ≤ 3 ngày (LIQUIDATION_WARN) và khi đã
+ *  đủ ngày để quản lý được phép thanh lý (LIQUIDATION_DUE). Mỗi loại gửi 1 lần cho mỗi kỳ end_date.
  */
 @Service
 public class RenewalReminderService {
@@ -24,12 +31,19 @@ public class RenewalReminderService {
     public static final List<Integer> REMIND_DAYS = List.of(1, 3, 7);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+    public static final int LIQUIDATION_WARN_DAYS = 3;
+
     private final JdbcTemplate jdbcTemplate;
     private final NotificationService notificationService;
+    private final RentalContractRepository contractRepository;
+    private final LateFeeService lateFeeService;
 
-    public RenewalReminderService(JdbcTemplate jdbcTemplate, NotificationService notificationService) {
+    public RenewalReminderService(JdbcTemplate jdbcTemplate, NotificationService notificationService,
+                                  RentalContractRepository contractRepository, LateFeeService lateFeeService) {
         this.jdbcTemplate = jdbcTemplate;
         this.notificationService = notificationService;
+        this.contractRepository = contractRepository;
+        this.lateFeeService = lateFeeService;
     }
 
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Ho_Chi_Minh")
@@ -38,6 +52,68 @@ public class RenewalReminderService {
         if (sent > 0) {
             System.out.println("[QueenKho Renewal] Đã gửi " + sent + " nhắc gia hạn.");
         }
+        int warned = warnLiquidationAll();
+        if (warned > 0) {
+            System.out.println("[QueenKho Renewal] Đã gửi " + warned + " cảnh báo thanh lý.");
+        }
+    }
+
+    /** Quét hợp đồng OVERDUE, cảnh báo khách trước / khi tới mốc thanh lý. Trả số cảnh báo mới gửi. */
+    @Transactional
+    public int warnLiquidationAll() {
+        LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
+        List<Integer> ids = jdbcTemplate.queryForList(
+                "SELECT id FROM rental_contracts WHERE status = 'OVERDUE'", Integer.class);
+        int sent = 0;
+        for (Integer id : ids) {
+            RentalContract contract = contractRepository.findById(id).orElse(null);
+            if (contract != null && warnLiquidation(contract, today)) sent++;
+        }
+        return sent;
+    }
+
+    /** Cảnh báo thanh lý cho 1 hợp đồng OVERDUE (dùng cho nút giả lập quá hạn). Trả true nếu vừa gửi cảnh báo mới. */
+    @Transactional
+    public boolean warnLiquidationContract(Integer contractId) {
+        return contractRepository.findById(contractId)
+                .filter(c -> "OVERDUE".equals(c.getStatus()))
+                .map(c -> warnLiquidation(c, LocalDate.now(LateFeeService.VIETNAM_ZONE)))
+                .orElse(false);
+    }
+
+    private boolean warnLiquidation(RentalContract contract, LocalDate today) {
+        if (contract.getEndDate() == null || contract.getCustomer() == null) return false;
+        LateFeeCalculationResult late = lateFeeService.calculateLateFee(contract, today);
+        // Quản lý được thanh lý khi quá hạn > liquidationDays ngày (LateFeeService.canLiquidate)
+        LocalDate liquidableFrom = contract.getEndDate().plusDays(late.getLiquidationDaysThreshold() + 1L);
+        long daysLeft = ChronoUnit.DAYS.between(today, liquidableFrom);
+        if (daysLeft > LIQUIDATION_WARN_DAYS) return false;
+
+        boolean due = daysLeft <= 0;
+        String code = contract.getContractCode();
+        BigDecimal owed = (Boolean.TRUE.equals(contract.getLateFeeWaived()) ? BigDecimal.ZERO : nz(late.getLateFeeAmount()))
+                .add(nz(late.getOverstayFeeAmount()));
+        String message = "Hợp đồng " + code + " đã quá hạn " + late.getOverdueDays() + " ngày"
+                + (owed.signum() > 0 ? ", phí trễ và phí chiếm dụng hiện tại " + vnd(owed) + "đ" : "") + ". "
+                + (due
+                    ? "Hợp đồng đã tới mốc thanh lý theo điều khoản: quản lý cơ sở có thể thanh lý bất cứ lúc nào, hàng còn trong ô "
+                        + "sẽ được kiểm kê và lưu giữ tại cơ sở (có tính phí lưu giữ). "
+                    : "Từ ngày " + liquidableFrom.format(DATE_FMT) + " hợp đồng có thể bị thanh lý theo điều khoản bạn đã đồng ý. ")
+                + "Vui lòng gia hạn hoặc hẹn trả kho ngay để tránh bị thanh lý.";
+        String refKey = (due ? "LIQUIDATION_DUE:" : "LIQUIDATION_WARN:") + contract.getId() + ":" + contract.getEndDate();
+        Integer reservationId = contract.getReservation() != null ? contract.getReservation().getId() : null;
+        return notificationService.notifyCustomer(contract.getCustomer().getId(), refKey,
+                due ? "Hợp đồng " + code + " đã tới mốc thanh lý" : "Cảnh báo sắp thanh lý hợp đồng " + code,
+                message, "OVERDUE",
+                reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi") != null;
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private static String vnd(BigDecimal value) {
+        return String.format("%,d", value.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', '.');
     }
 
     /** Quét toàn bộ hợp đồng ACTIVE còn ≤ 7 ngày. Trả số nhắc mới gửi. */

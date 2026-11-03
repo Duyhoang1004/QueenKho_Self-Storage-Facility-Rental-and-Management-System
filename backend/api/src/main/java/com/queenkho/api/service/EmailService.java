@@ -14,7 +14,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * BR-117: email cho khách hàng, đi kèm mọi thông báo notifyCustomer (đặt cọc, gán ô, check-in, hẹn trả kho,
  * nhắc gia hạn, quá hạn, hoàn tiền...).
  *  - Gửi SAU KHI transaction commit (nghiệp vụ rollback thì không gửi) và chạy nền (@Async) để không làm chậm API.
- *  - queenkho.mail.enabled=false (mặc định) → chỉ in nội dung ra console, máy chưa cấu hình SMTP vẫn chạy bình thường.
+ *  - Gửi thật khi queenkho.mail.enabled=true (mặc định) VÀ đã có spring.mail.username (MAIL_USERNAME).
+ *    Thiếu một trong hai → chỉ in nội dung ra console, máy chưa cấu hình SMTP vẫn chạy bình thường.
  *  - Không bao giờ gửi mã PIN / mật khẩu qua email.
  */
 @Service
@@ -26,13 +27,18 @@ public class EmailService {
     private final String frontendUrl;
 
     public EmailService(ObjectProvider<JavaMailSender> mailSender,
-                        @Value("${queenkho.mail.enabled:false}") boolean enabled,
+                        @Value("${queenkho.mail.enabled:true}") boolean enabled,
+                        @Value("${spring.mail.username:}") String smtpUsername,
                         @Value("${queenkho.mail.from:no-reply@queenkho.local}") String from,
                         @Value("${vnpay.frontend-url:http://localhost:5173}") String frontendUrl) {
         this.mailSender = mailSender;
-        this.enabled = enabled;
-        this.from = from;
+        this.enabled = enabled && smtpUsername != null && !smtpUsername.isBlank();
+        // Gmail chỉ cho gửi bằng chính tài khoản đăng nhập → dùng MAIL_USERNAME làm From khi chưa đặt MAIL_FROM riêng
+        this.from = from.contains("no-reply@queenkho.local") && this.enabled ? "QueenKho <" + smtpUsername + ">" : from;
         this.frontendUrl = frontendUrl;
+        System.out.println(this.enabled
+                ? "[Email] Gửi email thật qua SMTP, tài khoản " + smtpUsername
+                : "[Email] Chưa gửi thật (thiếu MAIL_USERNAME/MAIL_PASSWORD hoặc MAIL_ENABLED=false) — chỉ in nội dung ra console");
     }
 
     @Async

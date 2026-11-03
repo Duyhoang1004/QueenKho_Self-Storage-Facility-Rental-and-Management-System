@@ -42,7 +42,8 @@ queenkho:
   # Nút "⚡ Giả lập" tua thời gian để demo (DemoSimulationService). Tắt khi chạy thật: SIMULATION_ENABLED=false
   simulation:
     enabled: ${SIMULATION_ENABLED:true}
-  # BR-117: false = chỉ in nội dung email ra console (máy chưa cấu hình SMTP vẫn chạy). Bật: MAIL_ENABLED=true
+  # BR-117: mặc định gửi thật nếu đã có MAIL_USERNAME + MAIL_PASSWORD; thiếu tài khoản SMTP thì chỉ in ra console.
+  # Tắt hẳn (chỉ in console): MAIL_ENABLED=false
   mail:
-    enabled: ${MAIL_ENABLED:false}
+    enabled: ${MAIL_ENABLED:true}
     from: ${MAIL_FROM:QueenKho <no-reply@queenkho.local>}

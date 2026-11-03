@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
@@ -59,6 +59,8 @@ const FILTERS = [
     label: "Đã gán ô",
     statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"],
   },
+  // HĐ còn hiệu lực hết hạn trong 7 ngày tới hoặc đã quá hạn (khớp ô "HĐ sắp hết hạn" ở trang chủ)
+  { key: "EXPIRING", label: "Sắp hết hạn", statuses: ["UNIT_ASSIGNED"], expiringOnly: true },
   {
     key: "CLOSED",
     label: "Đã đóng",
@@ -121,7 +123,12 @@ export default function MyReservationsPage() {
   const [error, setError] = useState(
     userId ? "" : "Bạn cần đăng nhập để xem đơn đặt chỗ.",
   );
-  const [filter, setFilter] = useState("ALL");
+  // Bộ lọc lấy từ ?loc= để trang chủ dẫn thẳng tới đúng nhóm đơn (vd. /kho-cua-toi?loc=EXPIRING)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const locParam = searchParams.get("loc");
+  const filter = FILTERS.some((f) => f.key === locParam) ? locParam : "ALL";
+  const setFilter = (key) =>
+    setSearchParams(key === "ALL" ? {} : { loc: key }, { replace: true });
   const [currentPage, setCurrentPage] = useState(1);
   const [reloadKey, setReloadKey] = useState(0);
   const [retryingId, setRetryingId] = useState(null);
@@ -305,6 +312,12 @@ export default function MyReservationsPage() {
     let list = reservations;
     if (active && active.statuses) {
       list = reservations.filter((r) => active.statuses.includes(r.status));
+    }
+    if (active?.expiringOnly) {
+      list = list.filter((r) => {
+        const days = getDaysUntilExpiry(r);
+        return days !== null && days <= 7;
+      });
     }
     return [...list].sort((a, b) => {
       const diffA = getDaysUntilExpiry(a);

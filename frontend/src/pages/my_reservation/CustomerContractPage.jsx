@@ -80,12 +80,13 @@ const STATUS_MAP = {
 
 function InfoRow({ label, value, mono }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1 min-w-0">
       <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
         {label}
       </span>
+      {/* email / CCCD dài không có khoảng trắng → cho phép ngắt dòng, tránh đè sang cột bên cạnh */}
       <span
-        className={`text-sm font-black text-[#4B4B4B] ${mono ? "font-mono" : ""}`}
+        className={`text-sm font-black text-[#4B4B4B] [overflow-wrap:anywhere] ${mono ? "font-mono" : ""}`}
       >
         {value || "—"}
       </span>

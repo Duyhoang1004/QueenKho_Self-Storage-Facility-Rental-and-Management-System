@@ -451,6 +451,19 @@ public class SupportRequestService {
                             + (reopened ? ". Lý do: " + reopenReason.trim() : "") + ". Task hỗ trợ #" + saved.getId() + " đang chờ giao việc.",
                     "SUPPORT",
                     "/manager/tasks?highlightTaskId=" + saved.getId());
+
+            // BR-117: xác nhận cho khách đã nhận yêu cầu (chuông + email)
+            if (ticket.getCustomer() != null) {
+                notificationService.notifyCustomer(
+                        ticket.getCustomer().getId(),
+                        (reopened ? "Đã nhận yêu cầu xử lý lại " : "Đã nhận yêu cầu hỗ trợ ") + ticket.getTicketCode(),
+                        "QueenKho đã ghi nhận yêu cầu \"" + getIssueTypeLabel(ticket.getIssueType()) + "\" cho HĐ "
+                                + contract.getContractCode() + ". Nhân viên cơ sở sẽ xử lý"
+                                + (urgent ? " ưu tiên trong thời gian sớm nhất" : " và cập nhật kết quả cho bạn")
+                                + "; bạn sẽ nhận thông báo khi yêu cầu được xử lý xong.",
+                        "SUPPORT",
+                        "/ho-tro");
+            }
         }
         return saved;
     }

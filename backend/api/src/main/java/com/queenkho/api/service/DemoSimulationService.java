@@ -274,6 +274,8 @@ public class DemoSimulationService {
         log(actor, "HĐ " + contract.get("contract_code") + (missedCheckout ? " khách không tới trả kho," : "")
                         + " quá hạn " + days + " ngày (hết hạn " + endDate + ")",
                 "rental_contracts", contractId);
+        // BR-117: chạy ngay cảnh báo thanh lý (job thật chạy 8h sáng) để demo thấy chuông + email
+        if (renewalReminderService != null) renewalReminderService.warnLiquidationContract(contractId);
         return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày thanh lý (cần thêm "
                         + ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ)"
                 : "Hợp đồng quá hạn " + days + " ngày — đang tính phí trễ", "endDate", endDate);

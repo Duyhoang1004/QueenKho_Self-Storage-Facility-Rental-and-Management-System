@@ -5,13 +5,18 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Map;
+
 @Service
 public class ReservationCleanupService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NotificationService notificationService;
 
-    public ReservationCleanupService(JdbcTemplate jdbcTemplate) {
+    public ReservationCleanupService(JdbcTemplate jdbcTemplate, NotificationService notificationService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.notificationService = notificationService;
     }
 
     // Chạy mỗi phút 1 lần (60000ms)
@@ -26,11 +31,26 @@ public class ReservationCleanupService {
                 "AND reservation_id IN (SELECT id FROM reservations " +
                 "WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -15, SYSDATETIME()))");
 
-        int rowsUpdated = jdbcTemplate.update(
+        // OUTPUT trả đúng các đơn vừa chuyển EXPIRED để báo cho khách
+        List<Map<String, Object>> expired = jdbcTemplate.queryForList(
                 "UPDATE reservations SET status = 'EXPIRED' " +
+                "OUTPUT inserted.customer_id, inserted.reservation_code " +
                 "WHERE status = 'PENDING' AND created_at <= DATEADD(minute, -15, SYSDATETIME())");
-        if (rowsUpdated > 0) {
-            System.out.println("[QueenKho Cleanup] Đã hết hạn " + rowsUpdated + " đơn giữ chỗ quá 15 phút.");
+        if (!expired.isEmpty()) {
+            System.out.println("[QueenKho Cleanup] Đã hết hạn " + expired.size() + " đơn giữ chỗ quá 15 phút.");
+        }
+
+        // BR-117: báo khách đơn hết hạn giữ chỗ (chuông + email)
+        for (Map<String, Object> row : expired) {
+            if (row.get("customer_id") == null) continue;
+            String code = String.valueOf(row.get("reservation_code"));
+            notificationService.notifyCustomer(
+                    ((Number) row.get("customer_id")).intValue(),
+                    "Đơn " + code + " đã hết hạn giữ chỗ",
+                    "Đơn đặt chỗ " + code + " chưa được thanh toán cọc trong 15 phút nên đã tự huỷ, ô kho được trả lại cho khách khác. "
+                            + "Nếu vẫn cần thuê, bạn có thể đặt lại đơn mới.",
+                    "BOOKING",
+                    "/tim-va-dat-kho");
         }
     }
 }

@@ -41,43 +41,37 @@ function formatDate(value) {
   return String(value);
 }
 
+// Số ngày từ hôm nay (giờ máy) tới ngày kết thúc "yyyy-MM-dd"; âm = đã quá hạn
+function daysUntil(value) {
+  const [y, m, d] = String(value).split('T')[0].split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const today = new Date();
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((new Date(y, m - 1, d) - startOfToday) / 86400000);
+}
+
+// Khớp mốc nhắc gia hạn xa nhất của RenewalReminderService (1, 3, 7 ngày)
+const EXPIRING_WITHIN_DAYS = 7;
+
 export default function HomePage() {
   const userStr = sessionStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   const displayName = user?.fullName || 'Khách hàng';
 
   const [reservations, setReservations] = useState([]);
-  const [debtsTotal, setDebtsTotal] = useState(0);
+  const [payments, setPayments] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
     async function loadData() {
-      try {
-        const res = await getMyReservations();
-        if (isMounted) {
-          setReservations(Array.isArray(res?.data) ? res.data : []);
-        }
-      } catch {
-        if (isMounted) setReservations([]);
-      }
-
-      try {
-        const paymentRes = await getMyPayments();
-        if (isMounted) {
-          let total = 0;
-          if (Array.isArray(paymentRes?.debts)) {
-            total = paymentRes.debts.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-          } else if (paymentRes?.summary?.totalUnpaid) {
-            total = Number(paymentRes.summary.totalUnpaid) || 0;
-          }
-          setDebtsTotal(total);
-        }
-      } catch {
-        if (isMounted) setDebtsTotal(0);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
+      // GET /reservations/my trả thẳng mảng (không bọc trong { data })
+      const [resResult, payResult] = await Promise.allSettled([getMyReservations(), getMyPayments()]);
+      if (!isMounted) return;
+      const list = resResult.status === 'fulfilled' ? resResult.value : null;
+      setReservations(Array.isArray(list) ? list : []);
+      setPayments(payResult.status === 'fulfilled' ? payResult.value : null);
+      setLoading(false);
     }
     loadData();
     return () => { isMounted = false; };
@@ -89,24 +83,49 @@ export default function HomePage() {
 
   const activeCount = activeReservations.length;
 
-  const expiringCount = useMemo(() => {
-    const now = new Date();
-    const next7Days = new Date();
-    next7Days.setDate(now.getDate() + 7);
-    return activeReservations.filter(r => {
-      if (!r.endDate) return false;
-      const end = new Date(r.endDate);
-      return end >= now && end <= next7Days;
-    }).length;
-  }, [activeReservations]);
+  // Đã cọc nhưng quản lý chưa gán ô → chưa tính là đang thuê, chỉ hiện ghi chú
+  const waitingAssignCount = useMemo(
+    () => reservations.filter(r => r.status === 'DEPOSIT_PAID').length,
+    [reservations],
+  );
 
-  const pendingAmountTotal = useMemo(() => {
-    const pendingReservations = reservations.filter(r => r.status === 'PENDING');
-    const resPending = pendingReservations.reduce((sum, r) => sum + (Number(r.depositAmount || r.totalAmount) || 0), 0);
-    return debtsTotal > 0 ? debtsTotal : resPending;
-  }, [reservations, debtsTotal]);
+  // HĐ còn hiệu lực hết hạn trong 7 ngày tới, kể cả HĐ đã quá hạn mà chưa gia hạn / trả kho
+  const expiringReservations = useMemo(() => {
+    return reservations.filter(r => {
+      if (r.status !== 'UNIT_ASSIGNED' || !r.endDate) return false;
+      const days = daysUntil(r.endDate);
+      return days !== null && days <= EXPIRING_WITHIN_DAYS;
+    });
+  }, [reservations]);
+  const expiringCount = expiringReservations.length;
+
+  // Khoản khách còn phải trả: cọc đơn chưa thanh toán (trả ở Kho của tôi)
+  // + nợ phí sự cố / chiếm dụng + phí trễ HĐ quá hạn (trả ở trang Thanh toán)
+  const { depositDue, feesDue } = useMemo(() => {
+    const deposit = reservations
+      .filter(r => r.status === 'PENDING')
+      .reduce((sum, r) => sum + (Number(r.depositAmount) || 0), 0);
+    const debts = (payments?.debts || []).reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+    const overdueFees = (payments?.overdueContracts || []).reduce(
+      (sum, c) => sum + (c.lateFeeWaived ? 0 : Number(c.lateFeeAmount) || 0) + (Number(c.overstayFeeAmount) || 0),
+      0,
+    );
+    return { depositDue: deposit, feesDue: debts + overdueFees };
+  }, [reservations, payments]);
+  const pendingAmountTotal = depositDue + feesDue;
 
   const primaryUnit = activeReservations[0] || null;
+
+  // Bấm ô thống kê → nhảy tới đúng trang / đúng bộ lọc
+  let activeLink = '/kho-cua-toi';
+  if (activeCount > 0) activeLink = '/kho-cua-toi?loc=UNIT_ASSIGNED';
+  else if (waitingAssignCount > 0) activeLink = '/kho-cua-toi?loc=DEPOSIT_PAID';
+
+  const expiringLink = expiringCount === 1
+    ? `/kho-cua-toi/hop-dong/${expiringReservations[0].id}`
+    : '/kho-cua-toi?loc=EXPIRING';
+
+  const paymentLink = feesDue === 0 && depositDue > 0 ? '/kho-cua-toi?loc=PENDING' : '/thanh-toan';
 
   const dynamicStats = [
     {
@@ -114,6 +133,8 @@ export default function HomePage() {
       label: 'Kho đang thuê',
       value: loading ? '—' : String(activeCount),
       unit: 'khoang',
+      hint: !loading && waitingAssignCount > 0 ? `+${waitingAssignCount} đơn đã cọc, chờ gán ô` : '',
+      to: activeLink,
       color: 'text-[#58CC02]',
       borderColor: 'border-[#58CC02]',
       bgColor: 'bg-[#D7FFB8]',
@@ -123,6 +144,7 @@ export default function HomePage() {
       label: 'HĐ sắp hết hạn',
       value: loading ? '—' : String(expiringCount),
       unit: 'hợp đồng',
+      to: expiringLink,
       color: 'text-[#FF9600]',
       borderColor: 'border-[#FF9600]',
       bgColor: 'bg-[#FFE8CC]',
@@ -132,6 +154,7 @@ export default function HomePage() {
       label: 'Chờ thanh toán',
       value: loading ? '—' : (pendingAmountTotal > 0 ? `${pendingAmountTotal.toLocaleString('vi-VN')}₫` : '0₫'),
       unit: '',
+      to: paymentLink,
       color: 'text-[#FF4B4B]',
       borderColor: 'border-[#FF4B4B]',
       bgColor: 'bg-[#FFDFDF]',
@@ -139,10 +162,7 @@ export default function HomePage() {
   ];
 
   const currentHour = new Date().getHours();
-  let greeting = 'Xin chào';
-  if (currentHour < 12) greeting = 'Chào buổi sáng';
-  else if (currentHour < 18) greeting = 'Chào buổi chiều';
-  else greeting = 'Chào buổi tối';
+  const greeting = currentHour < 12 ? 'Chào buổi sáng' : currentHour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
 
   const today = new Date().toLocaleDateString('vi-VN', {
     weekday: 'long',
@@ -208,9 +228,10 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           {dynamicStats.map((stat) => (
-            <div
+            <Link
               key={stat.label}
-              className="duo-card p-5 flex items-center justify-between hover:border-[#1CB0F6] transition-all"
+              to={stat.to}
+              className="duo-card p-5 flex items-center justify-between hover:border-[#1CB0F6] active:translate-y-[2px] transition-all cursor-pointer"
             >
               <div>
                 <span className="text-xs font-black text-[#AFAFAF] uppercase tracking-wider block">
@@ -226,13 +247,16 @@ export default function HomePage() {
                     </span>
                   )}
                 </div>
+                {stat.hint && (
+                  <span className="text-[11px] font-bold text-[#1CB0F6] mt-1 block">{stat.hint}</span>
+                )}
               </div>
               <div className={`w-13 h-13 rounded-2xl ${stat.bgColor} border-2 border-b-4 ${stat.borderColor} flex items-center justify-center shrink-0`}>
                 <span className={`material-symbols-outlined text-[26px] ${stat.color}`}>
                   {stat.icon}
                 </span>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
 

@@ -755,6 +755,29 @@ public class ReservationService {
             );
         }
 
+        // BR-117: xác nhận huỷ đơn cho khách (chuông + email), kèm số tiền hoàn nếu đã cọc
+        if (notificationService != null && reservation.getCustomer() != null) {
+            String cancelMessage;
+            if (wasDepositPaid) {
+                BigDecimal refundAmount = preview.getRefundAmount();
+                cancelMessage = refundAmount.compareTo(BigDecimal.ZERO) > 0
+                        ? "Số tiền hoàn dự kiến " + refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ"
+                            + (preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
+                                ? " (đã trừ phí huỷ " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ)"
+                                : "")
+                            + ". Quản lý cơ sở sẽ hoàn tiền trong 24 giờ làm việc; bạn sẽ nhận email khi hoàn xong."
+                        : "Theo chính sách huỷ, khoản đã đóng không được hoàn lại.";
+            } else {
+                cancelMessage = "Đơn chưa thanh toán cọc nên không phát sinh phí huỷ.";
+            }
+            notificationService.notifyCustomer(
+                    reservation.getCustomer().getId(),
+                    "Đã huỷ đơn " + reservation.getReservationCode(),
+                    "Bạn đã huỷ đơn đặt chỗ " + reservation.getReservationCode() + ". " + cancelMessage,
+                    "BOOKING",
+                    "/kho-cua-toi");
+        }
+
         // 5. Ghi nhật ký RÚT GỌN vào activity_logs (chỉ lưu vết cơ bản)
         String actionLog = "Người dùng ID " + reservation.getCustomer().getId()
                 + " yêu cầu hủy đơn " + reservation.getReservationCode();

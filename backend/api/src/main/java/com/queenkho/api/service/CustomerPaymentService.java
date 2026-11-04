@@ -78,7 +78,8 @@ public class CustomerPaymentService {
         for (CustomerPaymentsResponse.PaymentItem p : transactions) {
             BigDecimal amount = p.amount() != null ? p.amount() : BigDecimal.ZERO;
             boolean success = "SUCCESS".equals(p.status());
-            if ("REFUND".equals(p.paymentType())) {
+            // BR-128: tiền bồi thường cơ sở chi cho khách tính như tiền QueenKho trả lại khách
+            if ("REFUND".equals(p.paymentType()) || "COMPENSATION".equals(p.paymentType())) {
                 if (success) {
                     totalRefunded = totalRefunded.add(amount);
                 } else if ("PENDING".equals(p.status())) {

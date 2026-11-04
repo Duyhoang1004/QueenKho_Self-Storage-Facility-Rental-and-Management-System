@@ -153,6 +153,22 @@ class AccessPolicyTest {
     }
 
     @Test
+    @DisplayName("04/11/2026: BOM miễn phí trễ + xem bồi thường; chỉ FM chốt / chi trả bồi thường; gói bảo hiểm công khai")
+    void lateFeeWaiverAndClaims() {
+        assertTrue(allowed("BOM", "POST", "/api/v1/contracts/3/waive-late-fee"));
+        assertTrue(allowed("BOM", "GET", "/api/v1/contracts/overdue-all"));
+        assertTrue(allowed("FACILITY_MANAGER", "POST", "/api/v1/contracts/3/waive-late-fee"));
+        assertFalse(allowed("STAFF", "POST", "/api/v1/contracts/3/waive-late-fee"));
+        assertTrue(allowed("BOM", "GET", "/api/v1/claims"));
+        assertTrue(allowed("BOM", "GET", "/api/v1/claims/4"));
+        assertFalse(allowed("BOM", "POST", "/api/v1/claims/4/decide"));
+        assertTrue(allowed("FACILITY_MANAGER", "POST", "/api/v1/claims/4/pay"));
+        assertFalse(allowed("CUSTOMER", "GET", "/api/v1/claims"));
+        assertTrue(allowed("CUSTOMER", "GET", "/api/v1/contracts/7/sensor-readings"));
+        assertTrue(policy.match("GET", "/api/v1/insurance-plans").isPresent());
+    }
+
+    @Test
     @DisplayName("API không có trong bảng → không khớp luật nào (filter sẽ trả 403 API_NOT_DECLARED)")
     void undeclaredPathHasNoRule() {
         assertTrue(policy.match("GET", "/api/v1/khong-ton-tai").isEmpty());

@@ -247,7 +247,7 @@ export default function PendingReservationsPage() {
           <ListBoxHeader
             icon="pending_actions"
             title="Hàng đợi đơn chờ gán ô kho"
-            subtitle="Khách đã thanh toán cọc — cần chỉ định mã ô kho thực tế"
+            subtitle="Khách đã thanh toán cọc — cần chỉ định mã ô kho thực tế. Ưu tiên khách cũ & gói dài, rồi ngày nhận gần nhất"
             count={items.length}
             countLabel="đơn chờ"
             accentColor="bg-[#FFE8CC] text-[#E58800] border-[#FF9600]"
@@ -329,9 +329,18 @@ export default function PendingReservationsPage() {
                             <div className="w-8 h-8 rounded-xl bg-[#58CC02] border-b border-[#58A700] text-white flex items-center justify-center font-black text-xs">
                               {initials(r.customerName)}
                             </div>
-                            <span className="font-black text-[#4B4B4B]">
-                              {r.customerName}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="font-black text-[#4B4B4B]">
+                                {r.customerName}
+                              </span>
+                              {/* BR-123: khách cũ / gói dài được xếp lên đầu danh sách */}
+                              {r.priorityLabel && (
+                                <span className="text-[10px] font-black text-[#FF9600] flex items-center gap-0.5">
+                                  <span className="material-symbols-outlined text-[13px]">workspace_premium</span>
+                                  Ưu tiên · {r.priorityLabel}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="py-4 px-5">{r.customerPhone || '—'}</td>

@@ -446,10 +446,33 @@ public class ContractService {
         }
 
         String targetStatus = "LIQUIDATED".equalsIgnoreCase(statusParam) ? "LIQUIDATED" : "OVERDUE";
+        return queryOverdueContracts(targetFacilityId, targetStatus);
+    }
 
+    /**
+     * Flow 6 (04/11/2026): BOM cũng được miễn phí trễ → xem hợp đồng quá hạn toàn chuỗi (lọc theo cơ sở nếu chọn).
+     * FM gọi API này thì vẫn chỉ thấy cơ sở của mình.
+     */
+    @Transactional(readOnly = true)
+    public List<OverdueContractManagerResponse> getOverdueContractsForChain(Integer userId, Integer facilityId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        String role = user.getRole() != null ? user.getRole().getName() : "";
+        if ("BOM".equals(role)) {
+            return queryOverdueContracts(facilityId, "OVERDUE");
+        }
+        if (!"FACILITY_MANAGER".equals(role) || user.getFacilityId() == null) {
+            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ BOM hoặc Quản lý cơ sở được xem danh sách này");
+        }
+        return queryOverdueContracts(user.getFacilityId(), "OVERDUE");
+    }
+
+    // facilityId NULL = toàn chuỗi (chỉ BOM)
+    private List<OverdueContractManagerResponse> queryOverdueContracts(Integer targetFacilityId, String targetStatus) {
         String sql = "SELECT " +
                 "c.id AS contract_id, " +
                 "c.contract_code, " +
+                "f.name AS facility_name, " +
                 "u.full_name AS customer_name, " +
                 "u.phone AS customer_phone, " +
                 "su.id AS storage_unit_id, " +
@@ -471,6 +494,7 @@ public class ContractService {
                 "JOIN users u ON c.customer_id = u.id " +
                 "JOIN storage_units su ON c.storage_unit_id = su.id " +
                 "JOIN unit_types ut ON su.unit_type_id = ut.id " +
+                "JOIN facilities f ON f.id = su.facility_id " +
                 "OUTER APPLY ( " +
                 "    SELECT " +
                 "        COUNT(1) AS contact_count, " +
@@ -486,7 +510,7 @@ public class ContractService {
                 "      AND a.target_id = CAST(c.id AS NVARCHAR(50)) " +
                 "      AND LEFT(a.action, 17) = '[OVERDUE_CONTACT]' " +
                 ") al " +
-                "WHERE su.facility_id = ? " +
+                "WHERE (? IS NULL OR su.facility_id = ?) " +
                 "  AND c.status = ? " +
                 "ORDER BY c.end_date ASC, c.id ASC";
 
@@ -556,6 +580,19 @@ public class ContractService {
             }
             if (overstayDisplay == null) overstayDisplay = BigDecimal.ZERO;
 
+            // PR-Q16: phí dọn & di dời hàng sẽ trừ khi thanh lý (đã thanh lý → số đã chốt, mã MV-)
+            BigDecimal movingFeeDisplay = lateFeeService.goodsMovingFee(dummyContract);
+            if ("LIQUIDATED".equalsIgnoreCase(status)) {
+                try {
+                    movingFeeDisplay = jdbcTemplate.queryForObject(
+                            "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions WHERE contract_id = ? " +
+                                    "AND payment_type = 'OVERSTAY_FEE' AND transaction_code LIKE 'MV-%'",
+                            BigDecimal.class, contractId);
+                } catch (Exception ignored) {
+                }
+            }
+            if (movingFeeDisplay == null) movingFeeDisplay = BigDecimal.ZERO;
+
             return OverdueContractManagerResponse.builder()
                     .contractId(contractId)
                     .contractCode(contractCode)
@@ -579,9 +616,11 @@ public class ContractService {
                     .minContactsRequired(MIN_CONTACTS_BEFORE_LIQUIDATION)
                     .termsVersion(rs.getString("terms_version"))
                     .overstayFeeAmount(overstayDisplay)
+                    .goodsMovingFeeAmount(movingFeeDisplay)
                     .totalOverdueCharge(lateFeeDisplay.add(overstayDisplay))
+                    .facilityName(rs.getString("facility_name"))
                     .build();
-        }, targetFacilityId, targetStatus);
+        }, targetFacilityId, targetFacilityId, targetStatus);
     }
 
     @Transactional(readOnly = true)
@@ -761,7 +800,13 @@ public class ContractService {
         BigDecimal afterLateFee = depositHeld.subtract(lateFee).max(BigDecimal.ZERO);
         BigDecimal overstayOffset = overstayFee.min(afterLateFee);
         BigDecimal overstayDebt = overstayFee.subtract(overstayOffset);
-        BigDecimal remainingDeposit = afterLateFee.subtract(overstayOffset);
+        BigDecimal afterOverstay = afterLateFee.subtract(overstayOffset);
+        // PR-Q16 (04/11/2026): phí dọn & di dời hàng sang khu lưu giữ — thu 1 lần, trừ tiếp vào cọc, thiếu thì thành nợ.
+        // Chỉ áp dụng khách đã đồng ý điều khoản v3 (goodsMovingFee trả 0 với v1 / v2)
+        BigDecimal movingFee = lateFeeService.goodsMovingFee(contract);
+        BigDecimal movingOffset = movingFee.min(afterOverstay);
+        BigDecimal movingDebt = movingFee.subtract(movingOffset);
+        BigDecimal remainingDeposit = afterOverstay.subtract(movingOffset);
 
         // 1. Cập nhật hợp đồng: LIQUIDATED, xóa pin & rfid, cập nhật deposit_held_amount
         contract.setStatus("LIQUIDATED");
@@ -823,6 +868,25 @@ public class ContractService {
                     customerId, reservationId, contract.getId(), overstayDebt);
         }
 
+        // 5c. PR-Q16: phí dọn & di dời hàng — ghi chung loại OVERSTAY_FEE (tiền dịch vụ chỗ / xử lý hàng, tính vào doanh thu
+        // thuê như phí lưu giữ), phân biệt bằng mã MV-; phần vượt cọc là nợ, khách trả ở UC-20 như nợ phí chiếm dụng
+        if (movingOffset.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'DEPOSIT_OFFSET', ?, 'SUCCESS', SYSDATETIME())",
+                    "MV-OFF-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), movingOffset);
+        }
+        if (movingDebt.compareTo(BigDecimal.ZERO) > 0) {
+            jdbcTemplate.update(
+                    "INSERT INTO payment_transactions " +
+                            "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
+                            "VALUES (?, ?, ?, ?, 'OVERSTAY_FEE', 'VNPAY', ?, 'PENDING', NULL)",
+                    "MV-DEBT-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000),
+                    customerId, reservationId, contract.getId(), movingDebt);
+        }
+
         // 6. Ghi activity_logs "[LIQUIDATION] HĐ <mã>: <note>" do chính FM ghi, KHÔNG nuốt lỗi ghi log
         String logAction = "[LIQUIDATION] HĐ " + contract.getContractCode() + ": " + request.getNote().trim();
         jdbcTemplate.update(
@@ -849,6 +913,8 @@ public class ContractService {
                 "lateFeeAmount", lateFee,
                 "overstayFeeAmount", overstayFee,
                 "overstayDebtAmount", overstayDebt,
+                "goodsMovingFeeAmount", movingFee,
+                "goodsMovingDebtAmount", movingDebt,
                 "remainingDeposit", remainingDeposit
         );
     }
@@ -863,8 +929,11 @@ public class ContractService {
     public Map<String, Object> waiveLateFee(Integer contractId, Integer managerId, String reason) {
         User manager = userRepository.findById(managerId)
                 .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản người thao tác"));
-        if (manager.getRole() == null || !"FACILITY_MANAGER".equals(manager.getRole().getName())) {
-            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý cơ sở mới được miễn phí trễ");
+        String role = manager.getRole() != null ? manager.getRole().getName() : "";
+        // 04/11/2026: BOM cũng được miễn phí trễ (mọi cơ sở, không phụ thuộc cờ allow_late_fee_waiver do chính BOM đặt cho FM)
+        boolean bom = "BOM".equals(role);
+        if (!bom && !"FACILITY_MANAGER".equals(role)) {
+            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý cơ sở hoặc BOM mới được miễn phí trễ");
         }
         String trimmedReason = reason == null ? "" : reason.trim();
         if (trimmedReason.length() < 5 || trimmedReason.length() > 400) {
@@ -874,7 +943,7 @@ public class ContractService {
                 .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
         Integer facilityId = contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null
                 ? contract.getStorageUnit().getFacility().getId() : null;
-        if (manager.getFacilityId() == null || !manager.getFacilityId().equals(facilityId)) {
+        if (!bom && (manager.getFacilityId() == null || !manager.getFacilityId().equals(facilityId))) {
             throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Hợp đồng không thuộc cơ sở do bạn quản lý");
         }
         if (!"OVERDUE".equalsIgnoreCase(contract.getStatus())) {
@@ -884,7 +953,7 @@ public class ContractService {
             throw new ContractException(HttpStatus.CONFLICT, "LATE_FEE_ALREADY_WAIVED", "Hợp đồng đã được miễn phí trễ cho đợt quá hạn này");
         }
         var policy = pricingService.activePolicy(facilityId);
-        if (policy != null && !policy.isAllowLateFeeWaiver()) {
+        if (!bom && policy != null && !policy.isAllowLateFeeWaiver()) {
             throw new ContractException(HttpStatus.FORBIDDEN, "WAIVER_NOT_ALLOWED",
                     "Chính sách thuê hiện hành của cơ sở không cho phép miễn phí trễ (BOM đã tắt)");
         }
@@ -903,7 +972,7 @@ public class ContractService {
                         "AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND (payment_type <> 'OVERSTAY_FEE' OR renewal_months IS NOT NULL)",
                 contractId);
 
-        String logAction = "[FEE_WAIVE] " + manager.getFullName() + " miễn phí trễ HĐ " + contract.getContractCode()
+        String logAction = "[FEE_WAIVE] " + (bom ? "BOM " : "") + manager.getFullName() + " miễn phí trễ HĐ " + contract.getContractCode()
                 + " (quá hạn " + before.getOverdueDays() + " ngày, phí trễ " + before.getLateFeeAmount().toPlainString() + "đ): " + trimmedReason;
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -911,6 +980,13 @@ public class ContractService {
                 manager.getId(),
                 logAction.length() > 500 ? logAction.substring(0, 497) + "..." : logAction,
                 String.valueOf(contract.getId()));
+        // BOM miễn thì FM cơ sở được báo để liên hệ khách gia hạn
+        if (bom && notificationService != null && facilityId != null) {
+            notificationService.notifyFacilityManagers(facilityId,
+                    "BOM đã miễn phí trễ HĐ " + contract.getContractCode(),
+                    manager.getFullName() + ": " + trimmedReason + ". Khách gia hạn sẽ không phải trả phí trễ đợt này.",
+                    "OVERDUE", "/manager/overdue");
+        }
 
         return Map.of(
                 "message", "Đã miễn phí trễ cho hợp đồng " + contract.getContractCode(),

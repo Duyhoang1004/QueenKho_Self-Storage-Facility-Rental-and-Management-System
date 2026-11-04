@@ -77,7 +77,7 @@ export default function PublicLandingPage() {
           {/* Subtitle */}
           <p className="mt-5 text-sm sm:text-base text-[#777777] font-bold max-w-2xl leading-relaxed">
             Giải pháp thuê kho tự quản mini cá nhân & doanh nghiệp với khóa SmartLock,
-            kiểm soát nhiệt độ 20°C và giám sát AI 24/7. Nhận kho ngay trong 5 phút.
+            cảm biến nhiệt độ / độ ẩm cảnh báo khi vượt ngưỡng và check-in online. Nhận kho ngay trong 5 phút.
           </p>
 
           {/* HERO CALL-TO-ACTION BUTTONS DUOLINGO FLAT 2.5D */}
@@ -166,8 +166,8 @@ export default function PublicLandingPage() {
               <span className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider mt-1 block">Ra vào tự do SmartLock</span>
             </div>
             <div className="duo-card p-4">
-              <span className="text-2xl sm:text-3xl font-black text-[#58CC02] block">500 Triệu</span>
-              <span className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider mt-1 block">Bảo hiểm toàn diện</span>
+              <span className="text-2xl sm:text-3xl font-black text-[#58CC02] block">Tới 500 Triệu</span>
+              <span className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider mt-1 block">Bảo hiểm hàng hoá theo gói</span>
             </div>
           </div>
 
@@ -412,7 +412,7 @@ export default function PublicLandingPage() {
               </div>
               <h3 className="font-black text-base text-[#4B4B4B]">Kiểm Soát Nhiệt Độ</h3>
               <p className="text-xs font-bold text-[#AFAFAF] mt-2 leading-relaxed">
-                Hệ thống điều hòa và kiểm soát độ ẩm 20°C - 25°C, chống ẩm mốc cho tài liệu, đồ gỗ, quần áo.
+                Ngưỡng an toàn 15°C – 30°C, độ ẩm ≤ 75%. Cảm biến vượt ngưỡng tự báo bạn và nhân viên kiểm tra ngay; hàng hư do kho được xét bồi thường.
               </p>
             </div>
 
@@ -420,9 +420,9 @@ export default function PublicLandingPage() {
               <div className="w-14 h-14 mx-auto rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] flex items-center justify-center text-[#FF4B4B] text-3xl mb-4">
                 🛡️
               </div>
-              <h3 className="font-black text-base text-[#4B4B4B]">Bảo Hiểm 500 Triệu</h3>
+              <h3 className="font-black text-base text-[#4B4B4B]">Bảo Hiểm Tới 500 Triệu</h3>
               <p className="text-xs font-bold text-[#AFAFAF] mt-2 leading-relaxed">
-                Mọi hợp đồng thuê đều được bảo hiểm bồi thường rủi ro cháy nổ, thiên tai lên đến 500 triệu.
+                Gói Cơ bản miễn phí (trần 20 triệu, lỗi do kho). Gói Nâng cao / Cao cấp có bảo hiểm cả thiên tai, hoả hoạn — trần 200 / 500 triệu theo giá trị hàng khai báo.
               </p>
             </div>
           </div>

@@ -56,6 +56,9 @@ export function printReservationReceipt(data) {
     ['Tiền thuê (đã trừ ưu đãi gói)', formatVND(data.rentAmount)],
     ['Tiền cọc (hoàn lại khi trả kho)', formatVND(data.depositAmount)],
   ]
+  if (Number(data.insuranceAmount) > 0) {
+    moneyRows.push([`Bảo hiểm hàng hoá ${data.insurancePlanLabel || ''}`.trim(), formatVND(data.insuranceAmount)])
+  }
   if (Number(data.voucherDiscount) > 0) {
     moneyRows.push([`Voucher ${data.voucherCode || ''}`.trim(), `-${formatVND(data.voucherDiscount)}`])
   }

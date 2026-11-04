@@ -1,7 +1,7 @@
 # QueenKho — Business Rules
 
-> Cập nhật: **02/11/2026** · Đối chiếu với code nhánh `fix/sua-bug-sau-test` (tách từ `main` `d8e21b3`) — 189 unit test chạy pass cùng ngày.
-> Các lần cập nhật: 16–17/10 tổng hợp + góp ý thành viên · 26/10 hoàn thiện 5 flow Must-have · 27/10 góp ý giảng viên — gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (D-12) · 01/11 đồng bộ toàn bộ tài liệu với code · 02/11 sửa lỗi sau đợt test (mục 7).
+> Cập nhật: **04/11/2026** · Đối chiếu với code trên `main` `bffe0a1` + thay đổi chưa commit ngày 04/11 — 208 unit test + E2E `docs/test-e2e/e2e-bao-hiem-boi-thuong.sh` (36 bước) chạy pass cùng ngày.
+> Các lần cập nhật: 16–17/10 tổng hợp + góp ý thành viên · 26/10 hoàn thiện 5 flow Must-have · 27/10 góp ý giảng viên — gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (D-12) · 01/11 đồng bộ toàn bộ tài liệu với code · 02/11 sửa lỗi sau đợt test · 04/11 góp ý giảng viên — bằng chứng bàn giao, chuyển ô, ưu tiên khách cũ, check-in online, phí di dời hàng (D-13, mục 7).
 >
 > **Ký hiệu**
 > - **BR-xx** — rule mô tả hành vi **code đang chạy**. BR-01 → BR-100 có từ đợt tổng hợp đầu; **BR-101 trở đi** bổ sung 01/11/2026 cho các tính năng làm sau 27/10 (mặt bằng, thông báo, mô phỏng demo…).
@@ -32,10 +32,10 @@
 
 | Vai trò | UC | Trạng thái |
 |---|---|---|
-| **Customer** | UC-02 Đăng ký · UC-09 Tìm kho · UC-10 Đặt chỗ · UC-11 Thanh toán cọc · UC-12 Đơn của tôi · UC-15 Huỷ đơn · UC-19 Hợp đồng của tôi · UC-20 Thanh toán & khoản nợ (PR-50) · UC-21 Gia hạn · UC-22 Yêu cầu trả kho · UC-26 Gửi yêu cầu hỗ trợ · Xem vị trí ô trên mặt bằng (BR-109) | ✅ |
+| **Customer** | UC-02 Đăng ký · UC-09 Tìm kho · UC-10 Đặt chỗ · UC-11 Thanh toán cọc · UC-12 Đơn của tôi · UC-15 Huỷ đơn · UC-19 Hợp đồng của tôi · UC-20 Thanh toán & khoản nợ (PR-50) · UC-21 Gia hạn · UC-22 Yêu cầu trả kho · UC-26 Gửi yêu cầu hỗ trợ · Xem vị trí ô trên mặt bằng (BR-109) · Check-in online (BR-124) · Xem biên bản bàn giao + ảnh (BR-121) · Chọn gói bảo hiểm hàng hoá (BR-125) · Báo hàng hư / mất, theo dõi hồ sơ bồi thường (BR-126) · Xem nhiệt độ / độ ẩm ô (BR-129) | ✅ |
 | **Staff** | UC-16 Bảng công việc · UC-17 Nhận việc · UC-18 Check-in & biên bản · UC-23 Nghiệm thu trả kho · UC-24 Sự cố hư hỏng · UC-27 Xử lý hỗ trợ · Bảo trì ô (PR-O10) | ✅ |
-| **Facility Manager** | UC-06 Ô kho & sơ đồ mặt bằng · UC-13 Đơn chờ gán ô · UC-14 Gán ô (chọn trên mặt bằng) + sinh hợp đồng · EX-03 No-Show / dời lịch · UC-16/17 Bảng việc, giao việc, gỡ người nhận · UC-25 Hoàn tiền · UC-28 Hợp đồng quá hạn & thanh lý · Hàng đang lưu giữ (PR-Q10) · UC-30 Dashboard · Báo cáo cơ sở · UC-32 Quản lý nhân viên · Xem khách hàng & hợp đồng | ✅ |
-| **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu toàn chuỗi | ✅ |
+| **Facility Manager** | UC-06 Ô kho & sơ đồ mặt bằng · UC-13 Đơn chờ gán ô · UC-14 Gán ô (chọn trên mặt bằng, ưu tiên khách cũ + gói dài — BR-123) + sinh hợp đồng · Chuyển ô cho hợp đồng (BR-122) · Bồi thường hàng hoá: thẩm định, chốt, chi trả (BR-127, BR-128) · EX-03 No-Show / dời lịch · UC-16/17 Bảng việc, giao việc, gỡ người nhận · UC-25 Hoàn tiền · UC-28 Hợp đồng quá hạn & thanh lý · Hàng đang lưu giữ (PR-Q10) · UC-30 Dashboard · Báo cáo cơ sở · UC-32 Quản lý nhân viên · Xem khách hàng & hợp đồng | ✅ |
+| **BOM** | UC-04 Cơ sở · UC-05 Loại kho & giá · UC-07 Chính sách thuê · UC-29 Doanh thu toàn chuỗi (có chi bồi thường) · Hợp đồng quá hạn toàn chuỗi + miễn phí trễ (BR-130) · Xem hồ sơ bồi thường (BR-128) | ✅ |
 | **Admin** | UC-03 Vai trò · UC-08 Tài khoản · UC-31 Nhật ký + lịch sử đăng nhập · Dashboard `/admin` | ✅ |
 | **Chung** | UC-01 Đăng nhập · Thông báo trong ứng dụng (BR-111 → BR-113, 🔸 lưu bộ nhớ) | ✅ |
 | **Hệ thống** | EX-01 Hết hạn giữ chỗ · EX-02 Thanh toán lỗi · job quá hạn hợp đồng 00:05 · job task quá hạn + tự đóng ticket (mỗi phút) | ✅ |
@@ -73,13 +73,15 @@ Rule còn chưa code hoặc code đang lệch: xem **mục 4**.
 | D-10 | **Trả kho sớm được hoàn tiền thuê** theo nguyên tắc *thu hồi ưu đãi + phí phá hợp đồng* (thay quy định "trả sớm không hoàn"). | PR-O2. |
 | D-11 | **Ân hạn dọn đồ**: miễn phí **1 ngày** sau `end_date`; ngày 2 → 5 tính **tiền thuê theo ngày**, trừ vào cọc. | PR-O1, PR-O14. |
 | D-12 | (27/10/2026, góp ý giảng viên) **Tối ưu doanh thu ô kho** — khách cũ không được giữ ô "miễn phí" khi không thuê tiếp. 4 tầng: **(1)** gia hạn phải báo trước 3 ngày, quá mốc thì ô thành *sắp trống* và được bán trước cho khách khác; **(2)** quá hạn tính **phí chiếm dụng** mỗi ngày, không trần, để quá hạn luôn đắt hơn gia hạn; **(3)** thanh lý sau **15 ngày** (thay 30) để ô sớm cho thuê lại; **(4)** hàng lưu giữ sau thanh lý tính **phí lưu giữ**. Tầng 2–4 chỉ áp dụng cho khách đã đồng ý **điều khoản v2**. | PR-R10, PR-R11, PR-R12, PR-Q8, PR-Q14, PR-Q15. |
+| D-13 | (04/11/2026, góp ý giảng viên cho nhóm cùng đề tài) **Không gắn chết khách với 1 ô, có bằng chứng khi bàn giao, ưu tiên khách gắn bó**: **(1)** biên bản nhận / trả kho bắt buộc **ảnh hiện trạng ô** — so hai bộ ảnh để biết hư hỏng do ai; **(2)** FM được **chuyển hợp đồng sang ô khác cùng loại** (sự cố cơ sở / khách xin / sắp xếp lại, kể cả lúc gia hạn); **(3)** đơn chờ gán ô xếp **khách cũ + gói dài** lên trước; **(4)** khách **tự check-in online** đúng ngày hẹn; **(5)** thanh lý thu thêm **phí dọn & di dời hàng** một lần. Điều khoản tài sản lên **v3**. | BR-121 → BR-124, PR-Q16. |
+| D-14 | (04/11/2026, góp ý giảng viên: hàng hư / mất do kho, nhiệt độ, bảo hiểm, IoT) **Bảo hiểm hàng hoá + bồi thường qua yêu cầu hỗ trợ**: khách chọn gói bảo hiểm khi đặt kho (Cơ bản miễn phí / Nâng cao / Cao cấp) và khai báo giá trị hàng; hàng hư / mất gửi ticket hỗ trợ loại mới → Staff kiểm tra hiện trường → FM đối chiếu ảnh bàn giao + cảm biến, chốt lỗi và số tiền → chi trả có bằng chứng → gói có bảo hiểm thì cơ sở đòi lại bên bảo hiểm. Lỗi cơ sở **không đền gấp đôi giá trị hàng** (dễ trục lợi) mà đền tiền hàng tới trần + **phạt vi phạm 1 tháng tiền thuê** + hoàn tiền thuê ngày ô không dùng được, khách được chấm dứt hợp đồng không phí phá HĐ. Giữ quyền FM miễn phí trễ và **thêm quyền này cho BOM**. | BR-125 → BR-130. |
 
 ### 1.3 Ma trận vai trò → màn hình
 | Nhóm màn hình | CUSTOMER | STAFF | FM | BOM | ADMIN |
 |---|:-:|:-:|:-:|:-:|:-:|
 | Tìm & đặt kho, Kho của tôi, Thanh toán & khoản nợ, Hỗ trợ | ✔ | | | | |
 | Xem vị trí ô của hợp đồng trên mặt bằng (BR-109) | ✔ (hợp đồng của mình) | ✔ | ✔ | | |
-| Bảng công việc, check-in / nghiệm thu, sự cố, xử lý hỗ trợ, bảo trì ô | | ✔ | xem, giao việc, gỡ người nhận, gia hạn task hỗ trợ, đóng task bảo trì | | |
+| Bảng công việc, check-in / nghiệm thu, sự cố, xử lý hỗ trợ (kể cả kiểm tra hiện trường hồ sơ bồi thường), bảo trì ô | | ✔ | xem, giao việc, gỡ người nhận, gia hạn task hỗ trợ, đóng task bảo trì | | |
 | Đơn chờ gán ô, No-Show, ô kho & sơ đồ mặt bằng, hợp đồng quá hạn, hàng lưu giữ, dashboard & báo cáo cơ sở, hoàn tiền | | | ✔ | | |
 | Tạo / khoá tài khoản Staff | | | ✔ (cơ sở mình) | | ✔ |
 | Cơ sở, loại kho & giá, chính sách, doanh thu toàn chuỗi | | | xem chính sách | ✔ | |
@@ -104,7 +106,9 @@ Nguồn đúng duy nhất của phân quyền là bảng `AccessPolicy` (PR-90);
 | **Khoản nợ** | Phí vượt cọc (`DAMAGE_FEE` / `OVERSTAY_FEE`, method `VNPAY`, `PENDING`); còn nợ thì không đặt kho mới (PR-Q12), trả ở UC-20. |
 | **Thanh lý** | FM chấm dứt hợp đồng quá hạn quá `liquidation_days` để giải phóng ô (PR-Q8, PR-Q9). Hàng của khách chuyển sang **hàng lưu giữ** 60 ngày (PR-Q10). |
 | **Giờ quầy / giờ ra vào** | Giờ quầy đóng 21:00 = hạn mọi task; khách ra vào kho 24/7 bằng PIN / RFID (PR-92). |
-| **Điều khoản v1 / v2** | Điều khoản xử lý tài sản khách đồng ý khi đặt (`reservations.terms_version`). v2 (từ 27/10/2026) thêm phí chiếm dụng, thanh lý 15 ngày, phí lưu giữ; đơn v1 giữ rule cũ (D-12). |
+| **Điều khoản v1 / v2 / v3** | Điều khoản xử lý tài sản khách đồng ý khi đặt (`reservations.terms_version`). v2 (từ 27/10/2026) thêm phí chiếm dụng, thanh lý 15 ngày, phí lưu giữ; đơn v1 giữ rule cũ (D-12). v3 (từ 04/11/2026) thêm phí dọn & di dời hàng khi thanh lý, quyền chuyển ô cùng loại, ảnh biên bản (D-13); đơn v2 không bị tính phí di dời. |
+| **Chuyển ô** | FM đổi ô của hợp đồng sang ô khác cùng loại, cùng cơ sở; giá, cọc, PIN, ngày hết hạn giữ nguyên (BR-122). |
+| **Check-in online** | Khách tự nhận kho trên app đúng ngày hẹn: nhập CCCD, tự kiểm tra ô, chụp ảnh, cam kết hàng cấm → hợp đồng `ACTIVE` + PIN, không cần Staff (BR-124). |
 | **Mã FT** | Mã giao dịch ngân hàng của lệnh chuyển khoản, lưu ở `payment_transactions.bank_transaction_code` để đối soát. |
 
 ---
@@ -237,7 +241,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | ~~BR-26~~ | ~~Giữ đơn 10 phút~~ → **PR-B6, PR-B7** |
 | BR-27 | IPN: kiểm tra chữ ký HMAC, khớp số tiền, mỗi giao dịch chỉ xử lý 1 lần (khoá dòng). |
 | ~~BR-28~~ | ~~VNPAY lỗi → huỷ đơn ngay~~ → **PR-B8**. (VNPAY OK → giao dịch `SUCCESS`, đơn `DEPOSIT_PAID` vẫn giữ.) |
-| BR-102 | **Điều khoản xử lý tài sản**: khách bắt buộc tick đồng ý khi đặt, thiếu → 400 `TERMS_NOT_ACCEPTED`. Lưu `reservations.terms_version` (hiện là `v2`) + `terms_accepted_at`. *(29/10/2026, #97)* Khách xem lại bản điều khoản mình đã đồng ý ở "Kho của tôi" / trang hợp đồng; đơn cũ chưa đồng ý hiện ghi chú "hợp đồng tạo trước khi có điều khoản". Nội dung điều khoản: PR-Q10. |
+| BR-102 | **Điều khoản xử lý tài sản**: khách bắt buộc tick đồng ý khi đặt, thiếu → 400 `TERMS_NOT_ACCEPTED`. Lưu `reservations.terms_version` (hiện là `v3` — từ 04/11/2026) + `terms_accepted_at`. *(29/10/2026, #97)* Khách xem lại bản điều khoản mình đã đồng ý ở "Kho của tôi" / trang hợp đồng; đơn cũ chưa đồng ý hiện ghi chú "hợp đồng tạo trước khi có điều khoản". Nội dung điều khoản: PR-Q10. |
 | BR-103 | *(29/10/2026, #96)* IPN thành công lưu **mã giao dịch ngân hàng** vào `payment_transactions.bank_transaction_code`: `vnp_BankTranNo`, không có thì `vnp_TransactionNo`. Áp dụng cho cọc, gia hạn, trả nợ; BOM thấy mã này trong danh sách đối soát (UC-29). |
 | BR-120 | *(02/11/2026)* **Phiếu biên nhận đặt kho**: nút "Tải phiếu biên nhận" ở trang xác nhận thanh toán mở bản in (khách in hoặc "Lưu thành PDF") gồm mã đơn, mã giao dịch VNPAY + mã ngân hàng, thời điểm thanh toán, khách, cơ sở, loại kho, ngày nhận, số tháng, tiền thuê, cọc, voucher, tổng đã trả. Email "Đặt cọc thành công" (BR-117) gửi kèm các thông tin chính. |
 
@@ -284,7 +288,9 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 ### UC-13 / UC-14 Duyệt đơn & gán ô ✅
 | Mã | Rule |
 |---|---|
-| BR-40 | FM thấy đơn `DEPOSIT_PAID`, chưa có ô, **thuộc cơ sở mình**, cũ nhất trước. Chưa gán cơ sở → lỗi. |
+| BR-40 | FM thấy đơn `DEPOSIT_PAID`, chưa có ô, **thuộc cơ sở mình**. ~~Cũ nhất trước~~ → *(04/11/2026)* xếp theo **BR-123**. Chưa gán cơ sở → lỗi. |
+| BR-123 | *(04/11/2026, D-13)* **Ưu tiên khách cũ + hợp đồng dài khi gán ô**: điểm ưu tiên = gói (12T: 3 · 6T: 2 · 3T: 1 · 1T: 0) + khách cũ (đã nhận kho ≥ 1 hợp đồng: +2; ≥ 3 hợp đồng: +3). "Đã nhận kho" = có biên bản `CHECK_IN` (No-Show không tính). Danh sách đơn chờ gán ô xếp điểm cao trước; cùng điểm thì **ngày nhận kho gần hơn** trước, rồi đơn cọc trước. Mỗi đơn hiện nhãn "Ưu tiên · Khách cũ (n HĐ) · Gói 12 tháng". Chỉ đổi **thứ tự xử lý** của FM — không giữ / chặn suất của ai (đơn đã cọc đều đã giữ suất, BR-11). |
+| BR-122 | *(04/11/2026, D-13)* **FM chuyển hợp đồng sang ô khác** (không gắn cứng khách với 1 ô): hợp đồng `PENDING_CHECK_IN` / `ACTIVE` / `TERMINATION_PENDING` (quá hạn phải xử lý quá hạn trước → 409 `CONTRACT_NOT_TRANSFERABLE`); ô mới **cùng cơ sở + cùng loại** (khác loại → 400 `UNIT_TYPE_MISMATCH`, để giá thuê / cọc / phí không đổi) và `AVAILABLE` (chiếm bằng UPDATE có điều kiện, trùng → 409 `UNIT_NOT_AVAILABLE`). Lý do: `FACILITY_ISSUE` (ô có sự cố do cơ sở — ô cũ **bắt buộc** vào bảo trì, cơ sở hỗ trợ chuyển hàng miễn phí) · `CUSTOMER_REQUEST` · `REARRANGE` (vd sắp xếp lại lúc gia hạn) + mô tả 10–500 ký tự. Ô cũ → `AVAILABLE`, hoặc `MAINTENANCE` kèm ghi chú (PR-M9; không làm âm số suất — 409 `SLOT_IN_USE`). 1 transaction: đổi ô của hợp đồng + đơn, lưu `unit_transfers`, log `[UNIT_TRANSFER]`, thông báo + email cho khách (vị trí ô mới, lý do). **PIN, ngày hết hạn, tiền không đổi.** Khách và FM xem **lịch sử chuyển ô** ở trang hợp đồng. API `GET /contracts/{id}/transfer-options`, `POST /contracts/{id}/transfer-unit`, `GET /contracts/{id}/unit-transfers`. |
 | BR-41 | Gợi ý ô `AVAILABLE` cùng cơ sở, **cùng loại** (hết thì không gợi ý ô khác loại — D-02). |
 | BR-42 | Gán ô khi đơn `DEPOSIT_PAID` và ô `AVAILABLE` — **phải đúng loại & đúng cơ sở của đơn**; chiếm ô bằng UPDATE có điều kiện để hai FM không gán trùng. 1 transaction: ô `OCCUPIED`; đơn `UNIT_ASSIGNED`; hợp đồng `HD-xxxxxx` `PENDING_CHECK_IN`; sinh task `CHECK_IN`; thông báo cho khách (BR-111). |
 | BR-43 | Hợp đồng: start = ngày bắt đầu đơn; end = start + số tháng; `deposit_held_amount` = cọc; gắn **chính sách đang hiệu lực của cơ sở**. |
@@ -330,6 +336,8 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | BR-72 | PIN đúng 6 chữ số do BE gợi ý ("Sinh lại"); RFID bắt buộc, ≤ 50 ký tự; ghi chú ≤ 1000 ký tự. |
 | BR-73 | PIN và RFID không trùng với hợp đồng `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING`. |
 | BR-74 | 1 transaction: biên bản `CHECK_IN`; hợp đồng `ACTIVE` + PIN + RFID; task `COMPLETED`; log. Không đổi start/end. |
+| BR-121 | *(04/11/2026, D-13)* **Ảnh hiện trạng ô trong biên bản**: check-in (UC-18), nghiệm thu trả kho (UC-23) và check-in online (BR-124) bắt buộc **1–10 ảnh** (thiếu → 400 `HANDOVER_PHOTO_REQUIRED`), lưu `handover_records.evidence_image_urls`. Hư hỏng của ô được xác định bằng cách **đối chiếu ảnh lúc nhận với ảnh lúc trả** — không có trong ảnh lúc nhận mà có lúc trả thì là phát sinh trong thời gian thuê. Khách xem lại mọi biên bản + ảnh ở trang hợp đồng; FM xem ở chi tiết hợp đồng (`GET /contracts/{id}/handover-records`). Nút "Giả lập hoàn thiện" thêm 1 ảnh mẫu. Biên bản cũ (trước 04/11) không có ảnh. |
+| BR-124 | *(04/11/2026, D-13)* **Check-in online** (khách tự nhận kho, không cần Staff): hợp đồng `PENDING_CHECK_IN` của chính khách; từ **ngày hẹn**, trước 21:00 (cùng mốc PR-C1; sớm → 409 `CHECK_IN_TOO_EARLY`, task đã quá hạn → 409 `TASK_OVERDUE`, FM dời lịch). Xác minh danh tính = **CCCD nhập khớp CCCD đã lưu** (sai → 400 `IDENTITY_MISMATCH`; tài khoản chưa có CCCD → 409 `IDENTITY_MISSING`, nhận tại quầy). Khách tự tick: ô trống, ô sạch, khoá nguyên vẹn, **cam kết không lưu hàng cấm** — ô không đạt thì **không được tự nhận** (400 `CHECKLIST_INCOMPLETE`), báo nhân viên để đổi ô; ảnh hiện trạng theo BR-121. 1 transaction: task `CHECK_IN` `COMPLETED` (ghi chú "Khách tự check-in online", kể cả khi Staff đang giữ task); biên bản `CHECK_IN` với `check_in_method = ONLINE`, `staff_id` NULL; hợp đồng `ACTIVE` + PIN (không cấp RFID — cần thẻ thì nhận tại quầy); log `[CHECK_IN_ONLINE]`; thông báo khách (+ email, không gửi PIN), FM, Staff đang giữ task. 🔸 Chưa xác minh khách có mặt tại cơ sở (không GPS / QR tại ô) — ảnh hiện trạng là căn cứ. API `POST /contracts/{id}/online-check-in`. |
 
 **Đã chốt**
 | Mã | Rule |
@@ -401,6 +409,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 |---|---|
 | PR-O5 | Staff đang giữ task `CHECK_OUT` `IN_PROGRESS`, **trong ngày hẹn** (như PR-C1), hợp đồng `TERMINATION_PENDING`. Có nút "Giả lập hoàn thiện". |
 | PR-O6 | "Ô trống" + "Xác minh danh tính" **bắt buộc đạt** (không đạt → không nghiệm thu, hẹn lại). "Sạch" / "Khoá nguyên vẹn" được không đạt nhưng **bắt buộc lập sự cố** (UC-24, thiếu → `DAMAGE_REPORT_REQUIRED`). ⬜ Mục 6 (PR-C7) ở nghiệm thu đổi thành "Không phát hiện hàng cấm / chất nguy hiểm còn lại" — chưa có vì PR-C7 chưa code (L-26). |
+| — | *(04/11/2026)* Biên bản nghiệm thu bắt buộc **ảnh hiện trạng ô lúc trả** (BR-121), đối chiếu với ảnh lúc nhận để quyết định sự cố là lỗi khách hay lỗi cơ sở (PR-O16). |
 | PR-O7 | 1 transaction: biên bản `CHECK_OUT`; hợp đồng `TERMINATED`; đơn `COMPLETED`; **xoá PIN/RFID**; task `COMPLETED`; ô `AVAILABLE` (hoặc `MAINTENANCE` nếu có sự cố); tạo yêu cầu hoàn cọc (PR-O11); đóng ticket hỗ trợ còn mở (PR-S8); log. |
 
 ### UC-24 Ghi nhận sự cố hư hỏng ✅
@@ -436,6 +445,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | PR-Q12 | Khách có hợp đồng `OVERDUE` hoặc còn nợ (`DAMAGE_FEE` `PENDING`, hoặc `OVERSTAY_FEE` `PENDING` không phải dòng phụ gia hạn) → không đặt chỗ mới, 409 `CUSTOMER_HAS_DEBT`. |
 | PR-Q14 | (27/10/2026, D-12) **Phí chiếm dụng** (overstay): mỗi ngày quá hạn (đếm như PR-Q2) = **giá niêm yết / 30 × `rental_policy.overstay_percent`** (mặc định **150%**, BOM chỉnh 100–300%), **không trần** → quá hạn luôn đắt hơn gia hạn. Cộng **thêm** vào phí trễ PR-Q3 (phí trễ vẫn là phạt một lần, trần 50% cọc). Tính động như PR-Q4, chỉ ghi giao dịch `OVERSTAY_FEE` khi: khách gia hạn (dòng phụ VNPAY), trả kho lỡ ân hạn (trừ cọc / nợ — PR-O11), bị thanh lý (PR-Q9). FM **miễn phí trễ** (Flow 6) → phí trễ = 0 và phí chiếm dụng chỉ còn **100%** giá ngày (bỏ phần phạt, vẫn thu tiền những ngày đã chiếm ô). Chỉ áp dụng khi khách đã đồng ý **điều khoản v2**; đơn cũ (v1 / chưa đồng ý) phí chiếm dụng = 0. |
 | PR-Q15 | (27/10/2026, D-12) **Phí lưu giữ hàng** sau thanh lý: mỗi ngày lưu giữ (tính từ ngày thanh lý, tối đa đến hết hạn 60 ngày) = **giá ngày của ô cũ × `rental_policy.held_goods_fee_percent`** (mặc định **20%**, BOM chỉnh 0–100%). Thu khi FM chốt hồ sơ, theo thứ tự: tiền bán còn dư (bán thanh lý) → cọc còn giữ → (chỉ khi **khách nhận lại**) khách trả tại quầy — FM phải tick "Đã thu tại quầy", thiếu → 409 `STORAGE_FEE_UNPAID`. Không đủ thì cơ sở tự chịu phần thiếu, không sinh nợ mới. **Giao cơ quan chức năng** không tính phí. Ghi `OVERSTAY_FEE` `SUCCESS` (method `GOODS_SALE` / `DEPOSIT_OFFSET` / `CASH`) + lưu `held_goods.storage_fee_amount`. Chỉ áp dụng điều khoản v2. |
+| PR-Q16 | *(04/11/2026, D-13 — góp ý "tính phí đẩy hàng lúc xử lý kho quá hạn")* **Phí dọn & di dời hàng** khi thanh lý (mở ô, kiểm kê, chuyển hàng sang khu lưu giữ): thu **1 lần** = giá niêm yết tháng × `rental_policy.goods_moving_fee_percent` (mặc định **30%**, BOM chỉnh 0–100). Trừ vào cọc **sau** phí trễ và phí chiếm dụng; vượt cọc → nợ. Ghi chung loại `OVERSTAY_FEE` (tiền dịch vụ chỗ / xử lý hàng, tính vào doanh thu thuê như phí lưu giữ) với mã **`MV-OFF-…`** (trừ cọc, `DEPOSIT_OFFSET`) / **`MV-DEBT-…`** (nợ, `VNPAY` `PENDING`, trả ở UC-20). Popup thanh lý của FM hiện khoản này. Chỉ áp dụng **điều khoản v3**. |
 
 ### UC-04 Quản lý cơ sở (BOM) ✅
 | Mã | Rule |
@@ -457,12 +467,13 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | Mã | Rule |
 |---|---|
 | PR-13 | Mỗi cơ sở có đúng 1 chính sách **đang hiệu lực**. Tạo/sửa sẽ phát hành phiên bản mới và áp dụng bản đó; BOM có thể chọn lại chính phiên bản cũ làm bản hiệu lực mà không tạo bản sao. Không ghi đè nội dung; hợp đồng giữ `rental_policy_id` lúc ký. Màn hình xem được lịch sử phiên bản. |
-| PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50; *(27/10/2026)* **% phí chiếm dụng 100–300** (mặc định 150, PR-Q14); **% phí lưu giữ hàng 0–100** (mặc định 20, PR-Q15). Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 15 ngày** *(trước 27/10/2026 là 30)*; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký — script `Update_gia_han_doanh_thu.sql` tạo **phiên bản mới** cho mỗi cơ sở thay vì sửa bản cũ. |
+| PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50; *(27/10/2026)* **% phí chiếm dụng 100–300** (mặc định 150, PR-Q14); **% phí lưu giữ hàng 0–100** (mặc định 20, PR-Q15); *(04/11/2026)* **% phí dọn & di dời hàng 0–100 giá tháng** (mặc định 30, PR-Q16). Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 15 ngày** *(trước 27/10/2026 là 30)*; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký — script `Update_gia_han_doanh_thu.sql` tạo **phiên bản mới** cho mỗi cơ sở thay vì sửa bản cũ. |
 | PR-15 | Code đọc chính sách thay cho số viết cứng (cọc, phí huỷ, phí trễ, thanh lý). (sửa L-03) |
 | PR-M5 | Huỷ đơn → chính sách hiện hành lúc huỷ; phí trễ / thanh lý → chính sách gắn hợp đồng. Chỉ BOM sửa, FM chỉ xem. |
 | PR-M6 | BOM được chỉnh `deposit_month_multiplier` (xem UC-10). |
 | PR-Q13 | Entity `RentalPolicy`; `late_fee_percent_per_day` (mặc định 10), `late_fee_max_percent` (mặc định 50); đã bỏ `lock_account_days` (D-05). |
 | — | *(26/10/2026)* Thêm vào chính sách: % ưu đãi đặt mới / gia hạn 3·6·12 tháng (0–50%, D-08) và cờ `allow_late_fee_waiver` — BOM bật/tắt quyền FM miễn phí trễ (tắt → 403 `WAIVER_NOT_ALLOWED`). Phiên bản mới **kế thừa** ưu đãi của bản trước nếu BOM không sửa. |
+| BR-130 | *(04/11/2026, D-14)* **BOM cũng được miễn phí trễ**: miễn cho hợp đồng `OVERDUE` của **mọi cơ sở**, không phụ thuộc cờ `allow_late_fee_waiver` (cờ này chỉ giới hạn FM). Cùng điều kiện như FM: lý do 5–400 ký tự, mỗi đợt quá hạn 1 lần (409 `LATE_FEE_ALREADY_WAIVED`), thanh lý vẫn tính đủ phí. Log `[FEE_WAIVE] BOM …`, FM cơ sở nhận thông báo. Màn **Hợp đồng quá hạn** của BOM (`/bom/overdue`, API `GET /contracts/overdue-all`) liệt kê quá hạn toàn chuỗi kèm tên cơ sở. Nhóm quyền mới `LATE_FEE_WAIVE` (FM cơ sở mình + BOM toàn hệ thống). |
 
 ### UC-29 Dashboard doanh thu (BOM) ✅
 **Đang chạy** (`BomRevenueService`, `BomRevenuePage.jsx`; FM dùng chung API, bị khoá về cơ sở mình — `ManagerReportsPage.jsx`, xuất CSV)
@@ -547,7 +558,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | Mã | Rule |
 |---|---|
 | PR-51 | Ticket **bắt buộc gắn hợp đồng** `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING` của chính khách; câu hỏi chung → hotline. |
-| PR-S1 | Loại: `LOCK_ISSUE` (**khẩn**), `SECURITY` (**khẩn**), `FACILITY_DAMAGE`, `CLEANING`, `OTHER`. Mô tả 10–1000 ký tự. Mã `SR-xxxxxx`. |
+| PR-S1 | Loại: `LOCK_ISSUE` (**khẩn**), `SECURITY` (**khẩn**), `FACILITY_DAMAGE`, `CLEANING`, `OTHER`; *(04/11/2026)* `GOODS_DAMAGE` (**khẩn**), `GOODS_LOSS` (**khẩn**) — hàng hư / mất, kèm hồ sơ bồi thường (BR-126). Mô tả 10–1000 ký tự. Mã `SR-xxxxxx`. |
 | PR-S2 | Mỗi hợp đồng: 1 ticket mở / loại (→ 409 `DUPLICATE_ISSUE_TYPE`), tối đa 3 ticket mở (→ 409 `MAX_OPEN_TICKETS_REACHED`). |
 | PR-S3 | Khách huỷ ticket còn `OPEN` → `CLOSED`, task `CANCELLED`. |
 | PR-52 | Ticket `RESOLVED`: "Đã ổn" → `CLOSED`; "Chưa xong" (bắt buộc lý do) → `OPEN` + task `SUPPORT` mới; 3 ngày không phản hồi → job tự `CLOSED`. |
@@ -560,7 +571,12 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | PR-S4 | Task `SUPPORT` `OVERDUE`: Staff không làm tiếp; **FM gia hạn** (hạn mới + lý do) → `OPEN` / `IN_PROGRESS` (giữ người nhận). Log. *(mở rộng 02/11/2026)* Áp dụng cả task **`MAINTENANCE`** quá hạn; hạn mới **tối đa 7 ngày** kể từ hôm nay; nhân viên giữ task nhận thông báo hạn mới. Task `CHECK_IN` quá hạn dùng dời lịch nhận kho (EX-03), `CHECK_OUT` do khách dời lịch trả (PR-O1), `REFUND` là việc của FM — không gia hạn. API `POST /staff-tasks/{id}/extend`. Demo: nút giả lập "Task quá hạn ngay" (BR-115). |
 | PR-S5 | Chỉ Staff giữ task `IN_PROGRESS`, chưa quá hạn, mới hoàn tất; **bắt buộc kết quả xử lý** (≤ 1000). 1 transaction: task `COMPLETED`; ticket `RESOLVED` + `resolution_note` + `resolved_at`; log. |
 | PR-S6 | Ticket `LOCK_ISSUE`: nút **"Cấp lại PIN"** (6 số, không trùng — BR-73), log. Hợp đồng `OVERDUE` không cấp lại (PR-Q5). |
-| PR-S7 | Hỗ trợ **không phát sinh phí**; hư hỏng do khách chỉ tính lúc nghiệm thu (UC-24). |
+| PR-S7 | Hỗ trợ **không phát sinh phí**; hư hỏng do khách chỉ tính lúc nghiệm thu (UC-24). *(04/11/2026)* Ngoại lệ: ticket hàng hư / mất của khách → hồ sơ bồi thường (BR-126 → BR-128), cơ sở có thể phải **chi tiền** cho khách. |
+| BR-125 | *(04/11/2026, D-14)* **Gói bảo hiểm hàng hoá** chọn khi đặt kho (`reservations.insurance_plan`, phí / tháng chốt vào `insurance_premium_monthly`): **Cơ bản** miễn phí, trần 20 triệu, cơ sở tự chịu · **Nâng cao** 50.000đ/tháng, trần 200 triệu · **Cao cấp** 120.000đ/tháng, trần 500 triệu (hai gói sau có đối tác bảo hiểm). Khách khai báo **giá trị hàng** (tuỳ chọn, 0–10 tỷ — `declared_goods_value`); **trần bồi thường = min(giá trị khai báo, trần gói)**, không khai báo → tối đa 5 triệu. Phí bảo hiểm cộng vào số tiền VNPAY lúc đặt (× số tháng) và lúc gia hạn (giữ gói cũ, `insuranceAmount` trong báo giá, ghi chung dòng `MONTHLY_RENT`); **không hoàn khi khách tự trả sớm** (trừ ra khỏi tiền thuê kỳ trước khi áp PR-O2). Gói lạ → 400 `INVALID_INSURANCE_PLAN`. 🔸 Mức phí / trần cố định trong code (`InsurancePlan`), chưa cho BOM chỉnh. API công khai `GET /insurance-plans`. |
+| BR-126 | *(04/11/2026, D-14)* **Khách báo hàng hư / mất** qua yêu cầu hỗ trợ `GOODS_DAMAGE` / `GOODS_LOSS` (hợp đồng `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING`): bắt buộc danh sách hàng + giá trị (10–2000 ký tự), số tiền đề nghị > 0, ngày phát hiện (trong thời gian thuê, không ở tương lai), hàng hư bắt buộc ≥ 1 ảnh (tối đa 10) → sinh **hồ sơ bồi thường** `BT-xxxxxx` (`compensation_claims`, `SUBMITTED`) + task `SUPPORT` khẩn như PR-34. Task hỗ trợ của ticket này là **kiểm tra hiện trường**: Staff đang giữ task mở ô cùng khách, bắt buộc biên bản ≥ 10 ký tự + ≥ 1 ảnh + **nguyên nhân sơ bộ** (`CUSTOMER` / `FACILITY` / `FORCE_MAJEURE` / `UNKNOWN`) → hồ sơ `INSPECTED`, ticket **vẫn `IN_PROGRESS`** chờ FM (không chuyển RESOLVED). Khách huỷ ticket `OPEN` → hồ sơ `WITHDRAWN`. Khách bấm "Chưa xong" (khiếu nại): hồ sơ bị từ chối → quay lại `SUBMITTED` để kiểm tra lại; hồ sơ đã chấp nhận / chi trả → 409 `CLAIM_ALREADY_SETTLED`. Khách xem tiến độ hồ sơ ngay trong ticket. |
+| BR-127 | *(04/11/2026, D-14)* **FM thẩm định & chốt** (hồ sơ `INSPECTED`, cơ sở mình) ở màn **Bồi thường hàng hoá** (`/manager/claims`): đối chiếu ảnh khách gửi, ảnh kiểm tra, **ảnh biên bản nhận kho** (BR-121), **cảm biến ±3 ngày** quanh ngày sự cố (BR-129). Nhập bên chịu lỗi, giá trị thẩm định (≤ số khách đề nghị), % hư hại (mất = 100%), số ngày ô không dùng được (0–90), hướng xử lý, kết luận gửi khách (10–1000 ký tự); nút **Tính thử** (`POST /claims/{id}/quote`, cùng hàm tính với lúc chốt). Bảng tính: thiệt hại = giá trị thẩm định × %; **lỗi cơ sở** → tiền hàng (≤ trần BR-125) + **phạt vi phạm 1 tháng giá niêm yết** + hoàn tiền thuê theo ngày (giá / 30 × số ngày); **bất khả kháng** → tiền hàng chỉ khi gói có bảo hiểm, + hoàn tiền thuê theo ngày, không phạt; **lỗi khách** → 0. Lỗi khách hoặc tổng = 0 → `REJECTED`, ticket `RESOLVED` kèm kết luận; ngược lại `APPROVED`. Hướng xử lý: **CONTINUE** (tiếp tục thuê, FM có thể chuyển ô cùng loại miễn phí — BR-122) hoặc **TERMINATE** (bật `rental_contracts.fault_termination`: khách hẹn trả kho như UC-22 nhưng **không phí phá HĐ**, tiền thuê kỳ hiện tại hoàn **theo số ngày còn lại**, thay công thức PR-O2). Log `[CLAIM_DECIDE]`, thông báo + email cho khách. |
+| BR-128 | *(04/11/2026, D-14)* **Chi trả & đòi bảo hiểm**: FM chi trả hồ sơ `APPROVED` — chuyển khoản bắt buộc ảnh ủy nhiệm chi (mã FT tuỳ chọn), tiền mặt bắt buộc tick khách ký nhận (thiếu → 400 `PAYMENT_EVIDENCE_REQUIRED`) → giao dịch **`COMPENSATION`** `SUCCESS` (mã `BT-PAY-…`), hồ sơ `PAID`, ticket `RESOLVED` (khách xác nhận "Đã ổn" như PR-52). Gói có bảo hiểm và tiền hàng > 0 → **cơ sở chi trước rồi gửi hồ sơ đòi lại** qua `InsuranceProviderClient` (🔸 đối tác mô phỏng, mã `QKINS-xxxxxx`, `SUBMITTED`); nút ⚡ "Bảo hiểm duyệt & chi trả" → `PAID` + số tiền bảo hiểm trả cơ sở. BOM xem mọi hồ sơ (`/bom/claims`, chỉ đọc); báo cáo doanh thu hiện **Chi bồi thường hàng** và **Bảo hiểm trả lại** (chi phí riêng, không trừ vào doanh thu ròng). Trang Thanh toán của khách hiện khoản bồi thường như tiền nhận lại. |
+| BR-129 | *(04/11/2026, D-14 — "liên hệ IoT hệ thống giám sát")* **Cảm biến nhiệt độ / độ ẩm từng ô** (`unit_sensor_readings`): ngưỡng an toàn **15–30°C, độ ẩm ≤ 75%**, vượt ngưỡng → bản ghi cảnh báo → báo khách đang thuê (+ email) và FM (chống trùng theo ô + giờ), sinh task `MAINTENANCE` lý do **`SENSOR`** (đóng task không đổi trạng thái ô đang có khách). Khách / Staff / FM xem số liệu 3 ngày gần nhất ở trang hợp đồng (`GET /contracts/{id}/sensor-readings`). 🔸 Chưa nối thiết bị thật — số liệu sinh bằng nút ⚡ "Cảm biến vượt ngưỡng" (12 giờ số đo, nóng / ẩm dần tới 36°C, 88%). |
 | PR-S8 | Hợp đồng `TERMINATED` / `LIQUIDATED` → ticket còn mở `CLOSED`, task `CANCELLED`. |
 | PR-S10 | Bảng `support_requests` có thêm `resolution_note`, `resolved_at`, `closed_at` để lưu kết quả xử lý và đếm mốc 3 ngày tự đóng (PR-52). ⚠️ Các cột này hiện được `SupportRequestSchemaInitializer` tự thêm lúc khởi động và có trong script cập nhật, nhưng **chưa có trong `QueenKho.sql`** (L-34). |
 
@@ -663,6 +679,14 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | `vouchers` 🆕; `reservations` + `voucher_id`, `voucher_code`, `voucher_discount` | voucher đặt kho, chốt mức giảm trên đơn (đơn cũ được gán `NEWKHO` 100.000đ) | BR-25 | ✅ (02/11) |
 | `storage_units` + `maintenance_note`, `maintenance_since` | ghi chú khi FM khoá bảo trì | PR-M9 | ✅ (02/11) |
 | `handover_records` | + `is_prohibited_goods_committed` BIT NOT NULL DEFAULT 0 | PR-C7 | ⬜ (L-26) |
+| `handover_records` | + `evidence_image_urls` (ảnh, ngăn bởi `\|\|\|`), + `check_in_method` (`COUNTER` / `ONLINE`), `staff_id` cho phép NULL | BR-121, BR-124 | ✅ (04/11, `Update_bang_chung_chuyen_o.sql`) |
+| `unit_transfers` 🆕 | lịch sử chuyển ô: hợp đồng, ô cũ → ô mới, loại lý do, mô tả, trạng thái ô cũ, người chuyển | BR-122 | ✅ (04/11) |
+| `rental_policy` | + `goods_moving_fee_percent` INT NOT NULL DEFAULT 30 (0–100) | PR-Q16 | ✅ (04/11) |
+| `reservations` | + `insurance_plan` (BASIC / ADVANCED / PREMIUM, mặc định BASIC), `insurance_premium_monthly`, `declared_goods_value` | BR-125 | ✅ (04/11, `Update_bao_hiem_boi_thuong.sql`) |
+| `rental_contracts` | + `fault_termination` BIT DEFAULT 0 | BR-127 | ✅ (04/11) |
+| `compensation_claims` 🆕 | hồ sơ bồi thường: ticket, khách đề nghị, kiểm tra hiện trường, quyết định, chi trả, hồ sơ bảo hiểm | BR-126 → BR-128 | ✅ (04/11) |
+| `unit_sensor_readings` 🆕 | nhiệt độ / độ ẩm từng ô, cờ vượt ngưỡng | BR-129 | ✅ (04/11) |
+| `payment_transactions` | `payment_type` thêm `COMPENSATION` (cơ sở chi cho khách) | BR-128 | ✅ (04/11) |
 | Comment trạng thái | khớp mục 2 | — | ⬜ (L-12) |
 
 ---
@@ -724,6 +748,14 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 400 / 404 | `DUPLICATE_CODE`, `VOUCHER_IN_USE` / `VOUCHER_NOT_FOUND` | BOM tạo trùng mã / đổi mã voucher đã có người dùng / sai id | BR-25 |
 | 400 | `INVALID_REFUND_METHOD` | Hẹn trả kho thiếu cách nhận cọc hoặc thiếu thông tin chuyển khoản | PR-O3 |
 | 409 | `TASK_NOT_EXTENDABLE` | Gia hạn task không phải `SUPPORT` / `MAINTENANCE` | PR-S4 |
+| 400 | `HANDOVER_PHOTO_REQUIRED` | Biên bản check-in / nghiệm thu / check-in online thiếu ảnh hiện trạng ô | BR-121 |
+| 400 / 409 | `IDENTITY_MISMATCH` / `IDENTITY_MISSING` | Check-in online: CCCD không khớp / tài khoản chưa có CCCD | BR-124 |
+| 409 | `CONTRACT_NOT_TRANSFERABLE` | Chuyển ô cho hợp đồng quá hạn / đã kết thúc | BR-122 |
+| 400 / 409 | `UNIT_TYPE_MISMATCH`, `UNIT_NOT_IN_FACILITY` / `UNIT_NOT_AVAILABLE` | Chuyển sang ô khác loại, khác cơ sở / ô không còn trống | BR-122 |
+| 400 | `INVALID_INSURANCE_PLAN` | Đặt kho với gói bảo hiểm không tồn tại | BR-125 |
+| 400 | `INVALID_CLAIM` / `EVIDENCE_IMAGE_REQUIRED` | Hồ sơ bồi thường thiếu danh sách hàng / số tiền / ngày; hàng hư hoặc biên bản kiểm tra thiếu ảnh | BR-126 |
+| 409 | `CLAIM_STATUS_INVALID` / `CLAIM_ALREADY_SETTLED` | Thao tác sai trạng thái hồ sơ / khiếu nại hồ sơ đã chấp nhận | BR-126, BR-127 |
+| 400 | `PAYMENT_EVIDENCE_REQUIRED` | Chi trả bồi thường thiếu ủy nhiệm chi / xác nhận ký nhận | BR-128 |
 
 Các mã kỹ thuật khác (`*_NOT_FOUND`, `INVALID_*`, `FORBIDDEN_CONTRACT`, `TASK_NOT_*`…) giữ nguyên trong code, không liệt kê hết ở đây.
 
@@ -806,23 +838,38 @@ Tầng 2–4 chỉ áp dụng cho đơn đặt từ **điều khoản v2** (`res
 | Ghi chú bảo trì không hiện | Lưu trên ô, hiện ở danh sách / chi tiết / mặt bằng | PR-M9 |
 | "Kho của tôi" ghi chờ hoàn tiền nhưng chi tiết ghi đã hoàn | Một nguồn trạng thái hoàn tiền dùng chung | PR-O12 |
 
+### 04/11/2026 — Góp ý giảng viên (dành cho nhóm cùng đề tài) (D-13)
+| # | Góp ý | Hệ thống trước đó | Kết quả | Rule |
+|---|---|---|---|---|
+| 1 | Khách chọn cứng kho rồi tới nhận → nên để FM gán kho | Đã đúng: khách chỉ chọn cơ sở + loại kho, FM gán ô | Giữ nguyên | D-02, BR-41, BR-42 |
+| 2 | Ưu tiên khách cũ + hợp đồng dài, không phải khách mới | Đơn chờ gán ô xếp cũ nhất trước; gói dài chỉ được giảm giá | ✅ Xếp theo điểm ưu tiên khách cũ + gói dài | BR-123 |
+| 3 | Sắp hết hạn gửi mail hỏi thuê tiếp; thuê tiếp thì sắp xếp kho; không gắn chết 1 kho cho khách | Đã có nhắc 7 / 3 / 1 ngày + email; khách luôn ở ô cũ | ✅ FM chuyển ô cùng loại (kể cả lúc gia hạn), khách nhận thông báo + email vị trí mới | PR-R9, BR-122 |
+| 4 | Quá hạn: báo trước nhiều ngày, tới ngày là dọn, doanh thu quan trọng hơn phạt cọc | Đã có D-12 (phí chiếm dụng không trần, thanh lý 15 ngày) | Giữ nguyên; nhóm chốt **giữ quyền FM miễn phí trễ và thêm cho BOM** (BR-130) | D-11, D-12, BR-130 |
+| 5 | Tính phí đẩy hàng lúc xử lý kho quá hạn | Chỉ có phí lưu giữ theo ngày | ✅ Phí dọn & di dời hàng 1 lần khi thanh lý (điều khoản v3) | PR-Q16 |
+| 6 | Thuê 6 tháng mà 3 tháng trả: không trả lại tiền; "dùng bao nhiêu trả bấy nhiêu" thì xử lý thế nào | Hoàn theo PR-O2 (thu hồi ưu đãi + phạt 1 tháng) | Giữ PR-O2 — trả lời được cả hai câu (không hoàn phần ưu đãi + mất 1 tháng phí phá HĐ) | D-10, PR-O2 → PR-O2c |
+| 7 | Hàng hư / mất do kho (nhiệt độ, chất lượng kho): quy trình, đền bù (gấp đôi?), bảo hiểm, IoT, thanh lý HĐ, trả tiền trước, gọi API bảo hiểm | Chưa có — sự cố lỗi cơ sở chỉ ghi chi phí nội bộ; trang chủ quảng cáo "Bảo hiểm 500 triệu", "20°C" | ✅ Gói bảo hiểm khi đặt kho; hồ sơ bồi thường qua yêu cầu hỗ trợ (kiểm tra → thẩm định → chi trả trước → đòi bảo hiểm qua API mô phỏng); phạt vi phạm 1 tháng thay "đền gấp đôi"; chấm dứt HĐ không phí; cảm biến nhiệt độ mô phỏng; sửa câu chữ trang chủ | D-14, BR-125 → BR-129 |
+| 8 | Check-in: khách không đến thì giữ tiền là ổn; check-in online | No-Show giữ 100% cọc; chỉ check-in tại quầy | ✅ Check-in online | D-07, BR-124 |
+| 9 | Trả kho: nghiệm thu lấy gì làm bằng chứng để biết lỗi do ai | Chỉ checkbox + tick "khách đã ký"; ảnh chỉ khi có sự cố | ✅ Ảnh hiện trạng bắt buộc lúc nhận và lúc trả, khách xem lại được | BR-121 |
+
 ---
 
 ## 8. Truy vết rule ↔ kiểm thử
 
-> `./mvnw test` ngày 02/11/2026: **189 test, 0 lỗi** — 24 lớp test, chủ yếu kiểm thử tầng service bằng JUnit 5 + Mockito. Bảng dưới cho biết rule nào đã có test tự động kiểm chứng.
+> `./mvnw test` ngày 04/11/2026: **208 test, 0 lỗi** — 26 lớp test, chủ yếu kiểm thử tầng service bằng JUnit 5 + Mockito. Bảng dưới cho biết rule nào đã có test tự động kiểm chứng.
 
 | Lớp test | Số test | Rule được kiểm chứng |
 |---|:-:|---|
-| `AccessPolicyTest` | 9 | PR-90, ma trận 1.3 (mọi API đều khai báo luật; phạm vi từng vai trò) |
+| `AccessPolicyTest` | 10 | PR-90, ma trận 1.3 (mọi API đều khai báo luật; phạm vi từng vai trò), BR-128 / BR-130 (BOM miễn phí trễ, xem bồi thường; chỉ FM chốt) |
 | `AccessControlFilterTest` | 10 | PR-90, BR-03 (thiếu token, khoá giữa phiên, ghi đè `customerId` / `facilityId` theo token) |
 | `ReservationServiceTest` | 11 | BR-21, PR-B1, PR-B3, PR-M4, PR-M6, PR-Q12 |
 | `NoShowServiceTest` | 8 | BR-51, BR-52, PR-X1, PR-X2, PR-X3 |
-| `StaffTaskAssignAndRefundTest` | 13 | Giao việc (UC-16/17), PR-O12 |
+| `StaffTaskAssignAndRefundTest` | 14 | Giao việc (UC-16/17), PR-O12, PR-C1, BR-121 (check-in thiếu ảnh) |
+| `LecturerFeedbackRulesTest` | 8 | BR-122 (chuyển ô khác loại, hết suất khi đưa ô cũ vào bảo trì, hợp đồng quá hạn), BR-123 (điểm ưu tiên), BR-124 (CCCD sai, ô không đạt, sai chủ hợp đồng), PR-Q16 (chỉ điều khoản v3) |
+| `CompensationRulesTest` | 7 | BR-125 (trần bồi thường), BR-127 (lỗi cơ sở / bất khả kháng / lỗi khách, chấm dứt hoàn theo ngày), BR-129 (ngưỡng cảm biến) |
 | `MaintenanceTaskTest` | 9 | PR-O10, PR-Q10 (biên bản kiểm kê → hàng lưu giữ) |
 | `HeldGoodsServiceTest` | 9 | PR-Q10, PR-Q12, PR-Q15 |
 | `LateFeePolicyTest` | 6 | PR-Q3, PR-Q5, PR-Q8, PR-Q14, PR-M5, D-12 (điều khoản v1 không tính phí chiếm dụng) |
-| `ContractWaiveLateFeeTest` | 6 | Miễn phí trễ (UC-07, UC-28) |
+| `ContractWaiveLateFeeTest` | 8 | Miễn phí trễ (UC-07, UC-28), BR-130 (BOM miễn mọi cơ sở kể cả khi chính sách tắt quyền FM) |
 | `PricingServiceTest` | 8 | D-08, BR-24, BR-81, PR-Q6 |
 | `RenewalPolicyServiceTest` | 8 | PR-R10, PR-R11 |
 | `RentalPolicyServiceTest` | 5 | PR-13, PR-14, D-08 (phiên bản mới kế thừa ưu đãi) |

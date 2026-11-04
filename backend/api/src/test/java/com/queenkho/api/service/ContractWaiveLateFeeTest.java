@@ -128,4 +128,39 @@ class ContractWaiveLateFeeTest {
         ContractException ex = assertThrows(ContractException.class, () -> service.waiveLateFee(9, 6, "Lý do đủ dài"));
         assertEquals("FORBIDDEN_FACILITY", ex.getCode());
     }
+
+    // ---------- 04/11/2026: BOM cũng được miễn phí trễ ----------
+
+    private User bom() {
+        Role bomRole = new Role();
+        bomRole.setName("BOM");
+        User bom = new User();
+        bom.setId(2);
+        bom.setRole(bomRole);
+        bom.setFullName("BOM");
+        when(userRepository.findById(2)).thenReturn(Optional.of(bom));
+        return bom;
+    }
+
+    @Test
+    @DisplayName("BOM miễn cho HĐ quá hạn của cơ sở bất kỳ, kể cả khi chính sách đã tắt quyền miễn của FM")
+    void bomWaivesAnyFacility() {
+        bom();
+        contract.getStorageUnit().getFacility().setId(5);
+        policy.setAllowLateFeeWaiver(false);
+        when(pricingService.activePolicy(5)).thenReturn(policy);
+
+        Map<String, Object> result = service.waiveLateFee(9, 2, "Khách là đối tác lâu năm");
+
+        assertEquals(true, result.get("lateFeeWaived"));
+        assertTrue(contract.getLateFeeWaived());
+    }
+
+    @Test
+    @DisplayName("FM vẫn bị chặn khi BOM tắt quyền miễn phí trễ của cơ sở → 403 WAIVER_NOT_ALLOWED")
+    void fmBlockedWhenPolicyDisallows() {
+        policy.setAllowLateFeeWaiver(false);
+        ContractException ex = assertThrows(ContractException.class, () -> service.waiveLateFee(9, 6, "Lý do đủ dài"));
+        assertEquals("WAIVER_NOT_ALLOWED", ex.getCode());
+    }
 }

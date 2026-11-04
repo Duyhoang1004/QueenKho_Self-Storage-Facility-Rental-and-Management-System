@@ -9,6 +9,8 @@ const bomMenuItems = [
   { path: '/bom/policies', icon: 'policy', label: 'Chính sách thuê' },
   { path: '/bom/vouchers', icon: 'confirmation_number', label: 'Voucher đặt kho' },
   { path: '/bom/revenue', icon: 'monitoring', label: 'Báo cáo doanh thu' },
+  { path: '/bom/overdue', icon: 'event_busy', label: 'Hợp đồng quá hạn' },
+  { path: '/bom/claims', icon: 'gavel', label: 'Bồi thường hàng hoá' },
 ];
 
 export default function BomLayout() {

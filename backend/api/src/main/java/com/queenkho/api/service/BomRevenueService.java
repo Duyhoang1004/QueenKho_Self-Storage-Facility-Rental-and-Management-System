@@ -87,6 +87,19 @@ public class BomRevenueService {
                         + " AND p.payment_type = 'REFUND'"
                         + dateFilter + facilityWhere);
 
+        // BR-128: chi bồi thường cho khách (chi phí, không trừ vào doanh thu) + tiền bảo hiểm trả lại cơ sở
+        BigDecimal compensationPaid = querySum(
+                "SELECT COALESCE(SUM(p.amount), 0) FROM payment_transactions p"
+                        + facilityJoin
+                        + " WHERE p.status = 'SUCCESS'"
+                        + " AND p.payment_type = 'COMPENSATION'"
+                        + dateFilter + facilityWhere);
+        BigDecimal insuranceRecovered = querySum(
+                "SELECT COALESCE(SUM(c.insurance_amount), 0) FROM compensation_claims c"
+                        + " WHERE c.insurance_status = 'PAID'"
+                        + buildDateFilter(period, year, month, quarter, "c.insurance_updated_at")
+                        + (facilityId != null ? " AND c.facility_id = " + facilityId : ""));
+
         // Tăng trưởng so với kỳ trước cùng loại
         double growthRate = calcGrowthRate(netRevenue, facilityId, period, year, month, quarter);
 
@@ -99,6 +112,8 @@ public class BomRevenueService {
                 .growthRate(growthRate)
                 .rentalCount(rentalCount)
                 .refundCount(refundCount)
+                .compensationPaid(compensationPaid)
+                .insuranceRecovered(insuranceRecovered)
                 .build();
     }
 

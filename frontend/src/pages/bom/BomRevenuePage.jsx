@@ -582,6 +582,11 @@ export default function BomRevenuePage() {
               <span className="text-[#FF4B4B] font-black">{overview?.refundCount ?? 0} yêu cầu hoàn cọc</span>
               <span className="text-[#AFAFAF]">Có mã FT đối soát</span>
             </div>
+            {/* BR-128: chi bồi thường hàng hư / mất (chi phí riêng, không trừ vào doanh thu ròng) */}
+            <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
+              <span className="text-[#777777]">Chi bồi thường hàng: <strong className="text-[#FF4B4B]">{formatVND(overview?.compensationPaid || 0)}</strong></span>
+              <span className="text-[#777777]">Bảo hiểm trả lại: <strong className="text-[#58A700]">{formatVND(overview?.insuranceRecovered || 0)}</strong></span>
+            </div>
           </div>
 
           {/* CHỈ SỐ 4: QUỸ CỌC ĐANG GIỮ (DEPOSITS HELD) */}

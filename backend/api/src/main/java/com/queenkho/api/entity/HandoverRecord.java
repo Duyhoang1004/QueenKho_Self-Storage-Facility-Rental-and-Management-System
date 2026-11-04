@@ -19,8 +19,9 @@ public class HandoverRecord {
     @JoinColumn(name = "contract_id", nullable = false)
     private RentalContract contract;
 
+    // NULL khi khách tự check-in online (BR-124)
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "staff_id", nullable = false)
+    @JoinColumn(name = "staff_id")
     private User staff;
 
     @Column(nullable = false)
@@ -43,6 +44,14 @@ public class HandoverRecord {
 
     @Column
     private String notes;
+
+    // BR-121: ảnh hiện trạng ô lúc bàn giao / nghiệm thu, ngăn bởi |||
+    @Column(name = "evidence_image_urls")
+    private String evidenceImageUrls;
+
+    // BR-124: COUNTER (Staff lập tại quầy) / ONLINE (khách tự check-in trên app)
+    @Column(name = "check_in_method", nullable = false)
+    private String checkInMethod = "COUNTER";
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;

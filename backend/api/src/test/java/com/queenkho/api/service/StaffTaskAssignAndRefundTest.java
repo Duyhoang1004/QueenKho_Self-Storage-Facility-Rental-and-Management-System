@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -225,9 +226,29 @@ class StaffTaskAssignAndRefundTest {
         request.setCustomerSignatureConfirmed(true);
         request.setAccessPinCode("123456");
         request.setRfidCardCode("RFID-1");
+        request.setEvidenceImages(List.of("http://x/hien-trang.png")); // BR-121
 
         StaffTaskException ex = assertThrows(StaffTaskException.class, () -> service.checkIn(50, 12, request));
         assertEquals("CHECK_IN_TOO_EARLY", ex.getCode());
+        verify(staffTaskRepository, never()).completeCheckIn(anyInt(), anyInt(), any());
+    }
+
+    // ---------- BR-121 ----------
+
+    @Test
+    @DisplayName("BR-121: biên bản check-in không có ảnh hiện trạng ô → 400 HANDOVER_PHOTO_REQUIRED, chưa đóng task")
+    void checkInWithoutPhotoRejected() {
+        CheckInRequest request = new CheckInRequest();
+        request.setIdentityVerified(true);
+        request.setUnitEmpty(true);
+        request.setUnitClean(true);
+        request.setLockIntact(true);
+        request.setCustomerSignatureConfirmed(true);
+        request.setAccessPinCode("123456");
+        request.setRfidCardCode("RFID-1");
+
+        StaffTaskException ex = assertThrows(StaffTaskException.class, () -> service.checkIn(50, 12, request));
+        assertEquals("HANDOVER_PHOTO_REQUIRED", ex.getCode());
         verify(staffTaskRepository, never()).completeCheckIn(anyInt(), anyInt(), any());
     }
 }

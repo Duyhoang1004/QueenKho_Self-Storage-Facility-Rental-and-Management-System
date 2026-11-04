@@ -48,5 +48,11 @@ public class OverdueContractManagerResponse {
     // PR-Q14: phí chiếm dụng (0 nếu đơn trước điều khoản v2) + tổng phải trả cho đợt quá hạn
     private BigDecimal overstayFeeAmount;
     private BigDecimal totalOverdueCharge;
+
+    // PR-Q16: phí dọn & di dời hàng sẽ trừ khi thanh lý (0 nếu đơn trước điều khoản v3)
+    private BigDecimal goodsMovingFeeAmount;
+
+    // Màn quá hạn toàn chuỗi của BOM
+    private String facilityName;
 }
 

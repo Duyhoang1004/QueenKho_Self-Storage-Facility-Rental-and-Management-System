@@ -78,4 +78,15 @@ public class Reservation {
 
     @Column(name = "voucher_discount", precision = 12, scale = 2)
     private java.math.BigDecimal voucherDiscount;
+
+    // BR-125: gói bảo hiểm hàng hoá khách chọn khi đặt kho (BASIC / ADVANCED / PREMIUM) + phí / tháng chốt lúc đặt
+    @Column(name = "insurance_plan", nullable = false, length = 20)
+    private String insurancePlan = "BASIC";
+
+    @Column(name = "insurance_premium_monthly", nullable = false, precision = 15, scale = 2)
+    private java.math.BigDecimal insurancePremiumMonthly = java.math.BigDecimal.ZERO;
+
+    // Giá trị hàng khách khai báo — căn cứ trần bồi thường (NULL = không khai báo → trần thấp)
+    @Column(name = "declared_goods_value", precision = 15, scale = 2)
+    private java.math.BigDecimal declaredGoodsValue;
 }

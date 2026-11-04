@@ -68,3 +68,13 @@ export async function simulateTicketAutoClose(ticketId) {
 export async function simulateExpireHeldGoods(heldGoodsId) {
   return (await api.post(`/dev/simulation/held-goods/${heldGoodsId}/expire-hold`)).data
 }
+
+// BR-129: cảm biến ô của hợp đồng vượt ngưỡng nhiệt độ / độ ẩm (khách chủ HĐ / FM)
+export async function simulateSensorAlert(contractId) {
+  return (await api.post(`/dev/simulation/contracts/${contractId}/sensor-alert`)).data
+}
+
+// BR-128: bên bảo hiểm duyệt & chi trả hồ sơ bồi thường (FM)
+export async function simulateInsurancePayout(claimId) {
+  return (await api.post(`/dev/simulation/claims/${claimId}/insurance-payout`)).data
+}

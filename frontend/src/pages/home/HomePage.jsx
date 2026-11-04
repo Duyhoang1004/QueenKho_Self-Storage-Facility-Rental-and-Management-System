@@ -214,7 +214,7 @@ export default function HomePage() {
                 <span className="text-xs font-black text-[#4B4B4B]">Chuỗi an toàn 100%</span>
               </div>
               <h3 className="text-lg font-black text-[#4B4B4B] mt-1">
-                Tất cả đồ đạc của bạn đều được bảo quản ở độ ẩm và nhiệt độ lý tưởng (22°C)!
+                Đồ đạc của bạn được giám sát nhiệt độ / độ ẩm từng ô, vượt ngưỡng là có cảnh báo!
               </h3>
             </div>
           </div>

@@ -151,7 +151,21 @@ public class PricingService {
             }
         }
         boolean waived = Boolean.TRUE.equals(contract.getLateFeeWaived()) && "OVERDUE".equals(status);
+        // BR-125: gia hạn giữ nguyên gói bảo hiểm đã chọn lúc đặt → thu thêm phí bảo hiểm cho các tháng mới
+        BigDecimal insurance = insurancePremiumMonthly(contract).multiply(BigDecimal.valueOf(months)).setScale(0, RoundingMode.HALF_UP);
         return new RenewalQuoteResponse(months, percent, monthlyPrice, subtotal, discount, rent, lateFee, waived,
-                overstayFee, rent.add(lateFee).add(overstayFee).setScale(0, RoundingMode.HALF_UP));
+                overstayFee, rent.add(lateFee).add(overstayFee).add(insurance).setScale(0, RoundingMode.HALF_UP), insurance);
+    }
+
+    /** BR-125: phí bảo hiểm / tháng đã chốt trên đơn (đơn cũ = 0) */
+    public static BigDecimal insurancePremiumMonthly(RentalContract contract) {
+        try {
+            if (contract.getReservation() != null && contract.getReservation().getInsurancePremiumMonthly() != null) {
+                return contract.getReservation().getInsurancePremiumMonthly();
+            }
+        } catch (RuntimeException ignored) {
+            // quan hệ LAZY ngoài transaction
+        }
+        return BigDecimal.ZERO;
     }
 }

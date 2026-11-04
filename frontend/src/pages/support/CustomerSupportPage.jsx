@@ -12,6 +12,7 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import SimulationButton from '../../components/SimulationButton';
 import { simulateTicketAutoClose } from '../../services/simulationService';
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
+import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 
 const PAGE_SIZE = 5;
 
@@ -52,7 +53,82 @@ export const ISSUE_TYPE_META = {
     urgent: false,
     cls: 'bg-[#F3E8FF] text-[#A560E8] border-[#CE82FF]',
   },
+  // BR-126: hàng của khách bị hư / mất → mở hồ sơ bồi thường
+  GOODS_DAMAGE: {
+    label: 'Hàng bị hư hỏng',
+    desc: 'Hàng trong ô bị ẩm mốc, thấm nước, biến dạng... — yêu cầu bồi thường',
+    icon: 'inventory_2',
+    urgent: true,
+    claim: true,
+    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]',
+  },
+  GOODS_LOSS: {
+    label: 'Mất hàng',
+    desc: 'Hàng gửi trong ô bị mất / thiếu — yêu cầu bồi thường',
+    icon: 'report',
+    urgent: true,
+    claim: true,
+    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]',
+  },
 };
+
+// BR-126 → BR-128: trạng thái hồ sơ bồi thường hiện trong ticket
+const CLAIM_STATUS_META = {
+  SUBMITTED: { label: 'Chờ kiểm tra hiện trường', cls: 'bg-[#DDF4FF] text-[#1CB0F6]' },
+  INSPECTED: { label: 'Chờ quản lý thẩm định', cls: 'bg-[#F3E8FF] text-[#A560E8]' },
+  APPROVED: { label: 'Được bồi thường — chờ chi trả', cls: 'bg-[#FFE8CC] text-[#E58800]' },
+  PAID: { label: 'Đã chi trả', cls: 'bg-[#D7FFB8] text-[#58A700]' },
+  REJECTED: { label: 'Không được bồi thường', cls: 'bg-[#FFDFDF] text-[#FF4B4B]' },
+  WITHDRAWN: { label: 'Đã rút hồ sơ', cls: 'bg-[#F7F7F7] text-[#777777]' },
+};
+
+function formatVND(v) {
+  if (v == null) return '—';
+  return Number(v).toLocaleString('vi-VN') + 'đ';
+}
+
+const LIABLE_LABELS = { CUSTOMER: 'Lỗi do khách', FACILITY: 'Lỗi do cơ sở', FORCE_MAJEURE: 'Bất khả kháng' };
+
+function CustomerClaimSummary({ claim }) {
+  const meta = CLAIM_STATUS_META[claim.status] || CLAIM_STATUS_META.SUBMITTED;
+  const decided = ['APPROVED', 'PAID', 'REJECTED'].includes(claim.status);
+  return (
+    <div className="rounded-2xl border-2 border-[#FFB8B8] p-4 flex flex-col gap-2 text-xs font-bold text-[#4B4B4B]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-black flex items-center gap-1">
+          <span className="material-symbols-outlined text-[18px] text-[#FF4B4B]">gavel</span>
+          Hồ sơ bồi thường {claim.claimCode}
+        </span>
+        <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${meta.cls}`}>{meta.label}</span>
+      </div>
+      <p className="text-[#777777] whitespace-pre-line">{claim.itemsDescription}</p>
+      <p>
+        Đề nghị: <strong>{formatVND(claim.claimedAmount)}</strong> · Gói bảo hiểm {claim.insurancePlanLabel} · Trần {formatVND(claim.coverageCap)}
+      </p>
+      {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
+      {claim.inspectionNote && (
+        <p className="text-[#777777]">Kiểm tra hiện trường ({claim.inspectedByName}): {claim.inspectionNote}</p>
+      )}
+      {decided && (
+        <div className="rounded-xl bg-[#F7F7F7] p-3 flex flex-col gap-1">
+          <span>Kết luận: <strong>{LIABLE_LABELS[claim.liableParty] || '—'}</strong></span>
+          {Number(claim.totalCompensation) > 0 && (
+            <span>
+              Bồi thường <strong className="text-[#58A700]">{formatVND(claim.totalCompensation)}</strong> = hàng {formatVND(claim.goodsCompensation)}
+              {Number(claim.penaltyAmount) > 0 && ` + phạt vi phạm ${formatVND(claim.penaltyAmount)}`}
+              {Number(claim.rentRefundAmount) > 0 && ` + hoàn tiền thuê ${formatVND(claim.rentRefundAmount)}`}
+            </span>
+          )}
+          {claim.resolution === 'TERMINATE' && claim.status !== 'REJECTED' && (
+            <span className="text-[#58A700]">Bạn được chấm dứt hợp đồng không mất phí phá hợp đồng — hẹn trả kho ở trang hợp đồng.</span>
+          )}
+          {claim.decisionNote && <span className="text-[#777777]">{claim.decisionNote}</span>}
+          {claim.paidAt && <span>Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {new Date(claim.paidAt).toLocaleString('vi-VN')}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const TICKET_STATUS_META = {
   OPEN: {
@@ -136,6 +212,11 @@ export default function CustomerSupportPage() {
   const [selectedContractId, setSelectedContractId] = useState('');
   const [selectedIssueType, setSelectedIssueType] = useState('LOCK_ISSUE');
   const [description, setDescription] = useState('');
+  // BR-126: thông tin hồ sơ bồi thường (chỉ với Hàng bị hư hỏng / Mất hàng)
+  const [claimItems, setClaimItems] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
+  const [claimIncidentDate, setClaimIncidentDate] = useState('');
+  const [claimImages, setClaimImages] = useState([]);
   const [createError, setCreateError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -238,6 +319,25 @@ export default function CustomerSupportPage() {
       setCreateError(`Mô tả sự cố phải từ ${DESC_MIN} đến ${DESC_MAX} ký tự (hiện tại: ${trimmed.length} ký tự).`);
       return;
     }
+    const isClaim = Boolean(ISSUE_TYPE_META[selectedIssueType]?.claim);
+    if (isClaim) {
+      if (claimItems.trim().length < 10) {
+        setCreateError('Liệt kê hàng bị ảnh hưởng (tên, số lượng, giá trị) — tối thiểu 10 ký tự.');
+        return;
+      }
+      if (!(Number(claimAmount) > 0)) {
+        setCreateError('Nhập số tiền đề nghị bồi thường.');
+        return;
+      }
+      if (!claimIncidentDate) {
+        setCreateError('Chọn ngày phát hiện sự cố.');
+        return;
+      }
+      if (selectedIssueType === 'GOODS_DAMAGE' && claimImages.length === 0) {
+        setCreateError('Hàng bị hư hỏng cần ít nhất 1 ảnh chụp hàng / hoá đơn.');
+        return;
+      }
+    }
 
     setSubmitting(true);
     setCreateError('');
@@ -245,9 +345,19 @@ export default function CustomerSupportPage() {
       contractId: Number(selectedContractId),
       issueType: selectedIssueType,
       description: trimmed,
+      ...(isClaim ? {
+        itemsDescription: claimItems.trim(),
+        claimedAmount: Number(claimAmount),
+        incidentDate: claimIncidentDate,
+        evidenceImages: claimImages,
+      } : {}),
     })
       .then((created) => {
         setShowCreateModal(false);
+        setClaimItems('');
+        setClaimAmount('');
+        setClaimIncidentDate('');
+        setClaimImages([]);
         setToast({
           type: 'success',
           message: `Đã gửi yêu cầu hỗ trợ ${created.ticketCode} thành công! Nhân viên cơ sở đã nhận được công việc.`,
@@ -655,6 +765,9 @@ export default function CustomerSupportPage() {
                   </p>
                 </div>
 
+                {/* BR-126 → BR-128: tiến độ hồ sơ bồi thường */}
+                {ticket.claim && <CustomerClaimSummary claim={ticket.claim} />}
+
                 {/* Thông tin nhân viên phụ trách & Kết quả xử lý */}
                 <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#777777] font-bold">
                   <div className="flex flex-wrap items-center gap-4">
@@ -907,6 +1020,61 @@ export default function CustomerSupportPage() {
                 className="duo-input w-full text-xs resize-none"
               />
             </div>
+
+            {/* BR-126: hồ sơ bồi thường hàng hư / mất */}
+            {ISSUE_TYPE_META[selectedIssueType]?.claim && (
+              <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#FFB8B8] bg-[#FFF5F5] p-4">
+                <p className="text-xs font-black uppercase text-[#FF4B4B] flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[18px]">gavel</span>
+                  4. Hồ sơ đề nghị bồi thường
+                </p>
+                <p className="text-[11px] font-bold text-[#777777]">
+                  Nhân viên sẽ mở ô cùng bạn để kiểm tra, quản lý cơ sở đối chiếu ảnh lúc nhận kho và cảm biến nhiệt độ để xác định lỗi.
+                  Mức bồi thường tối đa theo gói bảo hiểm và giá trị hàng bạn khai báo khi đặt kho.
+                </p>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Danh sách hàng bị ảnh hưởng *</span>
+                  <textarea
+                    rows={3}
+                    value={claimItems}
+                    onChange={(e) => { setClaimItems(e.target.value); setCreateError(''); }}
+                    placeholder="VD: 2 thùng sách (1.500.000đ), 1 tủ gỗ (4.000.000đ)..."
+                    className="duo-input w-full text-xs resize-none"
+                  />
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Số tiền đề nghị (đ) *</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100000"
+                      value={claimAmount}
+                      onChange={(e) => { setClaimAmount(e.target.value); setCreateError(''); }}
+                      className="duo-input text-xs"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Ngày phát hiện *</span>
+                    <input
+                      type="date"
+                      value={claimIncidentDate}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => { setClaimIncidentDate(e.target.value); setCreateError(''); }}
+                      className="duo-input text-xs"
+                    />
+                  </label>
+                </div>
+                <HandoverPhotoPicker
+                  images={claimImages}
+                  onChange={setClaimImages}
+                  label="Ảnh hàng hư / hoá đơn"
+                  hint="Chụp rõ hàng bị hư và hoá đơn mua hàng (nếu có) để thẩm định giá trị."
+                  mockLabel="Ảnh hàng bị ẩm mốc (demo)"
+                  required={selectedIssueType === 'GOODS_DAMAGE'}
+                />
+              </div>
+            )}
 
             {createError && (
               <div className="rounded-2xl border-2 border-[#FF4B4B] bg-[#FFF5F5] px-4 py-3 text-xs font-black text-[#FF4B4B] flex items-center gap-2">

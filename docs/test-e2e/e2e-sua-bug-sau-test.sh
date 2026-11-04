@@ -81,7 +81,7 @@ T=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C AND task_type='CHECK
 call POST $FM "$API/staff-tasks/$T/assign?staffId=$ST1_ID" >/dev/null
 check "Staff nhận thông báo được giao việc" "$(call GET $ST1 "$API/notifications" | jget "o.some(n=>n.targetUrl==='/staff?highlightTaskId=$T')")" "true"
 PIN=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-check "Staff check-in" "$(code POST $ST1 "$API/staff-tasks/$T/check-in" "{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBUG-$RES\"}")" "200"
+check "Staff check-in" "$(code POST $ST1 "$API/staff-tasks/$T/check-in" "{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBUG-$RES\"}")" "200"
 check "HĐ ACTIVE" "$(sql "SELECT status FROM rental_contracts WHERE id=$C")" "ACTIVE"
 
 echo "== BR-111 + PR-S4: yêu cầu hỗ trợ → FM được báo; task quá hạn → FM gia hạn"
@@ -111,7 +111,7 @@ echo "== Nghiệm thu → trạng thái hoàn tiền thống nhất giữa danh 
 T2=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C AND task_type='CHECK_OUT' AND status IN ('OPEN','IN_PROGRESS')")
 check "⚡ Khách tới trả kho hôm nay" "$(code POST $FM "$API/dev/simulation/tasks/$T2/checkout-today")" "200"
 call POST $FM "$API/staff-tasks/$T2/assign?staffId=$ST1_ID" >/dev/null
-check "Staff nghiệm thu (nguyên vẹn)" "$(code POST $ST1 "$API/staff-tasks/$T2/check-out" "{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\"}")" "200"
+check "Staff nghiệm thu (nguyên vẹn)" "$(code POST $ST1 "$API/staff-tasks/$T2/check-out" "{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\"}")" "200"
 check "Chi tiết HĐ: chờ hoàn tiền (không còn ghi đã hoàn)" "$(call GET $KH "$API/contracts?reservationId=$RES" | jget 'o.status+"/"+o.refundStatus')" "TERMINATED/PENDING"
 check "Danh sách Kho của tôi: chờ hoàn tiền" "$(call GET $KH "$API/reservations/my" | jget "o.find(r=>r.id===$RES).status")" "REFUND_PENDING"
 RT=$(sql "SELECT TOP 1 id FROM facility_tasks WHERE contract_id=$C AND task_type='REFUND' ORDER BY id DESC")

@@ -46,4 +46,7 @@ public class SupportRequestResponse {
     private LocalDateTime latestTaskDueAt;
     private Integer assignedStaffId;
     private String assignedStaffName;
+
+    // BR-126: ticket hàng hư / mất kèm hồ sơ bồi thường (null với loại khác)
+    private CompensationClaimResponse claim;
 }

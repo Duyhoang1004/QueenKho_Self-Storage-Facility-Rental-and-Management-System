@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getContractDetail } from '../../services/contractService'
 import SimulationButton from '../../components/SimulationButton'
+import TransferUnitModal from '../../components/TransferUnitModal'
+import ContractHandoverSection from '../../components/ContractHandoverSection'
+import ContractProtectionPanel from '../../components/ContractProtectionPanel'
 import { simulateExpireSoon, simulateOverdue } from '../../services/simulationService'
+
+// BR-122: hợp đồng còn giữ ô và chưa quá hạn mới chuyển ô được
+const TRANSFERABLE_STATUSES = ['PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING']
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -55,6 +61,8 @@ export default function ContractDetailPage() {
   const [error, setError] = useState('')
 
   const [reloadTick, setReloadTick] = useState(0)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     getContractDetail(id)
@@ -221,6 +229,16 @@ export default function ContractDetailPage() {
             <InfoRow label="Khu vực" value={`Khu ${contract.zone}`} />
             <InfoRow label="Số phòng" value={contract.roomNumber} mono />
           </div>
+          {TRANSFERABLE_STATUSES.includes(contract.status) && (
+            <button
+              type="button"
+              onClick={() => setTransferOpen(true)}
+              className="duo-btn-white px-4 py-2 text-xs gap-1.5 mt-4"
+            >
+              <span className="material-symbols-outlined text-[18px] text-[#FF9600]">swap_horiz</span>
+              Chuyển sang ô khác
+            </button>
+          )}
         </Section>
 
         {/* Thông tin hợp đồng */}
@@ -272,6 +290,41 @@ export default function ContractDetailPage() {
           </div>
         </Section>
       </div>
+
+      {/* BR-125 / BR-129: bảo hiểm hàng hoá + giám sát nhiệt độ ô */}
+      <div className="mt-6">
+        <Section icon="verified_user" title="Bảo hiểm & giám sát ô kho">
+          <ContractProtectionPanel contract={contract} viewer="manager" />
+        </Section>
+      </div>
+
+      {/* BR-121 / BR-122: biên bản bàn giao kèm ảnh + lịch sử chuyển ô */}
+      <div className="mt-6">
+        <Section icon="fact_check" title="Biên bản bàn giao & chuyển ô">
+          <ContractHandoverSection contractId={contract.contractId} reloadKey={reloadTick} />
+        </Section>
+      </div>
+
+      {notice && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] px-4 py-3 text-xs font-black text-[#58A700] shadow-lg flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
+          {notice}
+          <button type="button" onClick={() => setNotice('')} className="ml-2 text-[#58A700]">
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+        </div>
+      )}
+
+      <TransferUnitModal
+        open={transferOpen}
+        contract={contract}
+        onClose={() => setTransferOpen(false)}
+        onDone={(result) => {
+          setTransferOpen(false)
+          setNotice(`Đã chuyển hợp đồng sang ô ${result.toUnitId}, khách đã nhận thông báo + email.`)
+          setReloadTick((t) => t + 1)
+        }}
+      />
     </div>
   )
 }

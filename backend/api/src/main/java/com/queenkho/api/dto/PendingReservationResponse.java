@@ -27,6 +27,19 @@ public class PendingReservationResponse {
     private Boolean noShowEligible;
     private Integer failedContactCount;
     private String noShowIneligibleReason;
+    // BR-123: ưu tiên khách cũ + gói dài khi FM gán ô
+    private Integer priorityScore;
+    private Integer pastRentalCount;   // số hợp đồng trước đây khách đã nhận kho
+    private String priorityLabel;
+
+    public PendingReservationResponse(Integer id, String reservationCode, String customerName,
+                                      String customerPhone, String unitTypeName, LocalDate startDate,
+                                      Integer durationMonths, BigDecimal depositAmount, LocalDateTime createdAt,
+                                      String staffNote, String staffName, Boolean noShowEligible,
+                                      Integer failedContactCount, String noShowIneligibleReason) {
+        this(id, reservationCode, customerName, customerPhone, unitTypeName, startDate, durationMonths, depositAmount,
+                createdAt, staffNote, staffName, noShowEligible, failedContactCount, noShowIneligibleReason, null, null, null);
+    }
 
     public PendingReservationResponse(Integer id, String reservationCode, String customerName,
                                       String customerPhone, String unitTypeName, LocalDate startDate,

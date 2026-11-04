@@ -86,7 +86,7 @@ check "Giao lại đúng người → 409" "$(code POST $FM "$API/staff-tasks/$T
 
 echo "== Flow 2: Staff1 check-in, bàn giao PIN + thẻ"
 PIN=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-BODY="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2E-$RES1\"}"
+BODY="{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2E-$RES1\"}"
 check "Staff2 check-in task của Staff1 → 409" "$(code POST $ST2 "$API/staff-tasks/$T1/check-in" "$BODY")" "409"
 check "Staff1 check-in" "$(code POST $ST1 "$API/staff-tasks/$T1/check-in" "$BODY")" "200"
 check "HĐ ACTIVE" "$(sql "SELECT status FROM rental_contracts WHERE id=$C1")" "ACTIVE"
@@ -103,9 +103,9 @@ check "Yêu cầu trả kho" "$(sql "SELECT status FROM rental_contracts WHERE i
 T2=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C1 AND task_type='CHECK_OUT' AND status='OPEN'")
 check "⚡ Khách tới trả kho hôm nay" "$(code POST $FM "$API/dev/simulation/tasks/$T2/checkout-today")" "200"
 check "FM giao nghiệm thu cho Staff2" "$(call POST $FM "$API/staff-tasks/$T2/assign?staffId=$STAFF2_ID" | jget 'o.staffId')" "$STAFF2_ID"
-NOLIABLE="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
+NOLIABLE="{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
 check "Sự cố chưa chọn lỗi khách / lỗi cơ sở → 400" "$(call POST $ST2 "$API/staff-tasks/$T2/check-out" "$NOLIABLE" | jget 'o.error')" "INVALID_DAMAGE_ITEM"
-OUT="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\",\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"liableParty\":\"CUSTOMER\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]},{\"title\":\"Tham dot mai\",\"estimatedCost\":800000,\"liableParty\":\"FACILITY\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
+OUT="{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":false,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"notes\":\"E2E\",\"damageCases\":[{\"title\":\"Vo ke\",\"estimatedCost\":3000000,\"liableParty\":\"CUSTOMER\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]},{\"title\":\"Tham dot mai\",\"estimatedCost\":800000,\"liableParty\":\"FACILITY\",\"evidenceImages\":[\"http://localhost:8080/uploads/demo.png\"]}]}"
 check "Staff2 nghiệm thu: lỗi khách 3.000.000 (vượt cọc) + lỗi cơ sở 800.000" "$(code POST $ST2 "$API/staff-tasks/$T2/check-out" "$OUT")" "200"
 check "HĐ TERMINATED, ô bảo trì" "$(sql "SELECT rc.status+'/'+su.status FROM rental_contracts rc JOIN storage_units su ON su.id=rc.storage_unit_id WHERE rc.id=$C1")" "TERMINATED/MAINTENANCE"
 # (Trả sớm → tiền thuê được hoàn bù trước vào nợ, nên tổng DAMAGE_FEE có thể < 3.000.000 — kiểm tra ở biên bản)
@@ -157,7 +157,7 @@ code POST $FM "$API/reservations/$RES2/assign" "{\"storageUnitId\":\"$U2\"}" >/d
 C2=$(sql "SELECT id FROM rental_contracts WHERE reservation_id=$RES2"); T3=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C2 AND task_type='CHECK_IN'")
 call POST $ST1 "$API/staff-tasks/$T3/claim" >/dev/null
 PIN2=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-code POST $ST1 "$API/staff-tasks/$T3/check-in" "{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN2\",\"rfidCardCode\":\"RFID-E2E-$RES2\"}" >/dev/null
+code POST $ST1 "$API/staff-tasks/$T3/check-in" "{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN2\",\"rfidCardCode\":\"RFID-E2E-$RES2\"}" >/dev/null
 # Nút "⚡ Giả lập: Quá hạn 3 ngày" (thay cho sửa SQL tay)
 check "Staff không dùng được giả lập quá hạn" "$(code POST $ST1 "$API/dev/simulation/contracts/$C2/make-overdue?days=3")" "403"
 check "Giả lập quá hạn 3 ngày" "$(call POST $FM "$API/dev/simulation/contracts/$C2/make-overdue?days=3" | jget 'o.endDate')" "$(date -d '-3 day' +%Y-%m-%d)"
@@ -196,7 +196,7 @@ TOMORROW=$(date -d '+1 day' +%Y-%m-%d)
 read R6 C6 T6K <<< "$(new_paid_assigned $TOMORROW)"
 call POST $ST1 "$API/staff-tasks/$T6K/claim" >/dev/null
 PIN6=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-CI6="{\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN6\",\"rfidCardCode\":\"RFID-E2E-$R6\"}"
+CI6="{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN6\",\"rfidCardCode\":\"RFID-E2E-$R6\"}"
 check "Hẹn ngày mai → check-in hôm nay bị chặn" "$(call POST $ST1 "$API/staff-tasks/$T6K/check-in" "$CI6" | jget 'o.error')" "CHECK_IN_TOO_EARLY"
 check "⚡ Khách tới hôm nay" "$(code POST $ST1 "$API/dev/simulation/tasks/$T6K/arrive-today")" "200"
 check "Check-in được ngay sau giả lập" "$(code POST $ST1 "$API/staff-tasks/$T6K/check-in" "$CI6")" "200"

@@ -12,5 +12,7 @@ public record RentalPolicyResponse(
     Integer renewalDiscount3m, Integer renewalDiscount6m, Integer renewalDiscount12m,
     boolean allowLateFeeWaiver,
     // PR-Q14 / PR-Q15
-    Integer overstayPercent, Integer heldGoodsFeePercent
+    Integer overstayPercent, Integer heldGoodsFeePercent,
+    // PR-Q16
+    Integer goodsMovingFeePercent
 ) {}

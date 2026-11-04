@@ -249,6 +249,7 @@ class MaintenanceTaskTest {
         req.setCustomerSignatureConfirmed(true);
         req.setUnitClean(true);
         req.setLockIntact(false);
+        req.setEvidenceImages(List.of("http://x/hien-trang.png")); // BR-121
         req.setDamageCases(List.of(item));
 
         StaffTaskException ex = assertThrows(StaffTaskException.class, () -> service.checkOut(70, 12, req));

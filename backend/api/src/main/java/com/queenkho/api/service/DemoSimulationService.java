@@ -53,6 +53,13 @@ public class DemoSimulationService {
     @Autowired(required = false)
     private StaffTaskService staffTaskService;
 
+    // BR-128 / BR-129 (04/11/2026): bảo hiểm chi trả, cảm biến vượt ngưỡng
+    @Autowired(required = false)
+    private UnitSensorService unitSensorService;
+
+    @Autowired(required = false)
+    private CompensationClaimService compensationClaimService;
+
     public DemoSimulationService(JdbcTemplate jdbcTemplate,
                                  ReservationCleanupService reservationCleanupService,
                                  SupportRequestService supportRequestService,
@@ -372,6 +379,38 @@ public class DemoSimulationService {
 
         log(actor, "Ticket " + ticket.get("ticket_code") + " đã xử lý quá 3 ngày → " + status, "support_requests", ticketId);
         return result("Yêu cầu hỗ trợ đã được hệ thống tự đóng", "status", status);
+    }
+
+    // ---------- BR-129: cảm biến ô vượt ngưỡng (khách chủ HĐ / FM) ----------
+    // Ghi 12 giờ số đo (6 giờ bình thường rồi nóng / ẩm dần tới 36°C, 88%) → chạy xử lý cảnh báo thật
+    @Transactional
+    public Map<String, Object> sensorAlert(Integer contractId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> contract = row(
+                "SELECT rc.id, rc.contract_code, rc.status, rc.customer_id, rc.storage_unit_id, su.facility_id " +
+                        "FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
+                contractId, "Không tìm thấy hợp đồng");
+        requireOwnerOrFacility(actor, toInt(contract.get("customer_id")), toInt(contract.get("facility_id")));
+        if (!List.of("ACTIVE", "OVERDUE", "TERMINATION_PENDING").contains(String.valueOf(contract.get("status")))) {
+            throw notApplicable("Chỉ giả lập được cho hợp đồng đang thuê");
+        }
+        Map<String, Object> reading = unitSensorService.simulateAlert(String.valueOf(contract.get("storage_unit_id")));
+        log(actor, "Cảm biến ô " + contract.get("storage_unit_id") + " (HĐ " + contract.get("contract_code")
+                + ") vượt ngưỡng " + reading.get("temperature") + "°C / " + reading.get("humidity") + "%", "rental_contracts", contractId);
+        return result("Cảm biến ghi nhận " + reading.get("temperature") + "°C, độ ẩm " + reading.get("humidity")
+                + "% — đã báo khách, FM và sinh việc kiểm tra", "storageUnitId", reading.get("storageUnitId"));
+    }
+
+    // ---------- BR-128: bên bảo hiểm duyệt & chi trả hồ sơ (FM) ----------
+    @Transactional
+    public Map<String, Object> insurancePayout(Integer claimId, CurrentUser actor) {
+        requireEnabled();
+        Map<String, Object> claim = row("SELECT id, facility_id FROM compensation_claims WHERE id = ?", claimId,
+                "Không tìm thấy hồ sơ bồi thường");
+        requireSameFacility(actor, toInt(claim.get("facility_id")));
+        var response = compensationClaimService.simulateInsurancePayout(claimId, actor.id());
+        return result("Bảo hiểm đã chi trả " + response.getInsuranceAmount() + "đ cho cơ sở", "insuranceStatus",
+                response.getInsuranceStatus());
     }
 
     // ---------- Helpers ----------

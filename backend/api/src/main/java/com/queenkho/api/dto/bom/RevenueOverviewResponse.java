@@ -37,4 +37,10 @@ public class RevenueOverviewResponse {
 
     // Số lượng giao dịch hoàn tiền trong kỳ
     private long refundCount;
+
+    // BR-128 (04/11/2026): chi phí bồi thường hàng hư / mất cơ sở đã chi (COMPENSATION) — chi phí, không trừ vào doanh thu
+    private BigDecimal compensationPaid;
+
+    // BR-128: tiền bên bảo hiểm đã trả lại cho cơ sở trong kỳ
+    private BigDecimal insuranceRecovered;
 }

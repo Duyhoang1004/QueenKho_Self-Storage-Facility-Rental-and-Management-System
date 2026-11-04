@@ -18,6 +18,14 @@ const TYPE_LABELS = {
   DAMAGE_FEE: { label: 'Phí sự cố', icon: 'construction' },
   OVERSTAY_FEE: { label: 'Phí chiếm dụng / lưu giữ', icon: 'door_front' }, // PR-Q14 / PR-Q15
   REFUND: { label: 'Hoàn tiền', icon: 'currency_exchange' },
+  COMPENSATION: { label: 'Bồi thường hàng hoá', icon: 'gavel' }, // BR-128: cơ sở chi cho khách
+}
+
+// PR-Q16: phí dọn & di dời hàng khi thanh lý ghi chung loại OVERSTAY_FEE, phân biệt bằng mã MV-
+const MOVING_FEE_TYPE = { label: 'Phí dọn & di dời hàng', icon: 'local_shipping' }
+function typeOf(t) {
+  if (t.paymentType === 'OVERSTAY_FEE' && t.transactionCode?.startsWith('MV-')) return MOVING_FEE_TYPE
+  return TYPE_LABELS[t.paymentType] || { label: t.paymentType, icon: 'receipt' }
 }
 
 const METHOD_LABELS = {
@@ -207,7 +215,7 @@ export default function CustomerPaymentsPage() {
                   <div key={item.key} className="rounded-2xl bg-white p-4 border-2 border-b-4 border-[#FF4B4B] flex flex-col md:flex-row md:items-center gap-4">
                     <span className="material-symbols-outlined text-[30px] text-[#FF4B4B]">construction</span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-black text-[#4B4B4B]">{debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
+                      <p className="font-black text-[#4B4B4B]">{debt.transactionCode?.startsWith("MV-") ? "Phí dọn & di dời hàng vượt tiền cọc" : debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
                       <p className="text-xs font-bold text-[#777777]">
                         {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — phát sinh khi nghiệm thu trả kho
                       </p>
@@ -307,9 +315,9 @@ export default function CustomerPaymentsPage() {
                   </tr>
                 )}
                 {paginatedTransactions.map((t) => {
-                  const type = TYPE_LABELS[t.paymentType] || { label: t.paymentType, icon: 'receipt' }
+                  const type = typeOf(t)
                   const status = STATUS_STYLES[t.status] || STATUS_STYLES.PENDING
-                  const isRefund = t.paymentType === 'REFUND'
+                  const isRefund = t.paymentType === 'REFUND' || t.paymentType === 'COMPENSATION'
                   return (
                     <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0 hover:bg-[#FAFAFA]">
                       <td className="px-4 py-3 whitespace-nowrap font-bold text-[#777777]">{formatTime(t.paidAt)}</td>

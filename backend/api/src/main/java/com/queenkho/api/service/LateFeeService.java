@@ -46,6 +46,9 @@ public class LateFeeService {
     public static final String OVERSTAY_TERMS_VERSION = "v2";
     public static final int DEFAULT_OVERSTAY_PERCENT = 150;
     public static final int DEFAULT_HELD_GOODS_FEE_PERCENT = 20;
+    // PR-Q16 (04/11/2026): phí dọn & di dời hàng khi thanh lý — chỉ áp dụng khách đã đồng ý điều khoản từ v3
+    public static final int DEFAULT_GOODS_MOVING_FEE_PERCENT = 30;
+    public static final String MOVING_FEE_TERMS_VERSION = "v3";
 
     @Autowired
     private RentalPolicyRepository rentalPolicyRepository;
@@ -82,6 +85,26 @@ public class LateFeeService {
         RentalPolicy policy = policyOf(contract);
         return policy != null && policy.getHeldGoodsFeePercent() != null
                 ? policy.getHeldGoodsFeePercent() : DEFAULT_HELD_GOODS_FEE_PERCENT;
+    }
+
+    /** Khách đã đồng ý điều khoản có phí dọn & di dời hàng chưa (v3 trở đi) */
+    public static boolean acceptsMovingFeeTerms(String termsVersion) {
+        return termsVersion != null && termsVersion.compareTo(MOVING_FEE_TERMS_VERSION) >= 0;
+    }
+
+    /**
+     * PR-Q16: phí dọn & di dời hàng khi thanh lý = giá niêm yết tháng × goods_moving_fee_percent (thu 1 lần).
+     * Khách chưa đồng ý điều khoản v3 → 0 (không tự thêm khoản phí khách chưa ký).
+     */
+    public BigDecimal goodsMovingFee(RentalContract contract) {
+        if (contract == null) return BigDecimal.ZERO;
+        OverstayBasis basis = overstayBasis(contract);
+        if (!acceptsMovingFeeTerms(basis.termsVersion())) return BigDecimal.ZERO;
+        RentalPolicy policy = policyOf(contract);
+        int percent = policy != null && policy.getGoodsMovingFeePercent() != null
+                ? policy.getGoodsMovingFeePercent() : DEFAULT_GOODS_MOVING_FEE_PERCENT;
+        return basis.monthlyPrice().multiply(BigDecimal.valueOf(percent))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
     }
 
     /** Điều khoản khách đã đồng ý + giá niêm yết tháng của loại ô — đọc từ entity, thiếu thì hỏi DB */

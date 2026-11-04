@@ -33,10 +33,11 @@ public class SupportRequestService {
     public static final List<String> ELIGIBLE_CONTRACT_STATUSES = List.of("ACTIVE", "OVERDUE", "TERMINATION_PENDING");
     public static final List<String> OPEN_TICKET_STATUSES = List.of("OPEN", "IN_PROGRESS", "RESOLVED");
     public static final List<String> OPEN_TASK_STATUSES = List.of("OPEN", "IN_PROGRESS", "OVERDUE");
+    // BR-126 (04/11/2026): GOODS_DAMAGE / GOODS_LOSS = hàng của khách bị hư / mất → kèm hồ sơ bồi thường, xử lý khẩn
     public static final List<String> VALID_ISSUE_TYPES = List.of(
-            "LOCK_ISSUE", "SECURITY", "FACILITY_DAMAGE", "CLEANING", "OTHER"
+            "LOCK_ISSUE", "SECURITY", "FACILITY_DAMAGE", "CLEANING", "OTHER", "GOODS_DAMAGE", "GOODS_LOSS"
     );
-    public static final Set<String> URGENT_ISSUE_TYPES = Set.of("LOCK_ISSUE", "SECURITY");
+    public static final Set<String> URGENT_ISSUE_TYPES = Set.of("LOCK_ISSUE", "SECURITY", "GOODS_DAMAGE", "GOODS_LOSS");
 
     private static final int MAX_OPEN_TICKETS_PER_CONTRACT = 3;
     private static final int DESCRIPTION_MIN_LENGTH = 10;
@@ -66,6 +67,9 @@ public class SupportRequestService {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private CompensationClaimService compensationClaimService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -81,6 +85,8 @@ public class SupportRequestService {
             case "FACILITY_DAMAGE" -> "Hư hỏng cơ sở vật chất";
             case "CLEANING" -> "Vệ sinh kho bãi";
             case "OTHER" -> "Yêu cầu hỗ trợ khác";
+            case "GOODS_DAMAGE" -> "Hàng bị hư hỏng (yêu cầu bồi thường)";
+            case "GOODS_LOSS" -> "Mất hàng (yêu cầu bồi thường)";
             default -> issueType;
         };
     }
@@ -180,7 +186,7 @@ public class SupportRequestService {
         String issueType = request.getIssueType() != null ? request.getIssueType().trim().toUpperCase() : "";
         if (!VALID_ISSUE_TYPES.contains(issueType)) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Loại yêu cầu hỗ trợ không hợp lệ. Chỉ chấp nhận: LOCK_ISSUE, SECURITY, FACILITY_DAMAGE, CLEANING, OTHER");
+                    "Loại yêu cầu hỗ trợ không hợp lệ. Chỉ chấp nhận: LOCK_ISSUE, SECURITY, FACILITY_DAMAGE, CLEANING, OTHER, GOODS_DAMAGE, GOODS_LOSS");
         }
 
         String desc = request.getDescription() != null ? request.getDescription().trim() : "";
@@ -218,6 +224,12 @@ public class SupportRequestService {
                             + " yêu cầu hỗ trợ đang mở. Vui lòng chờ xử lý hoặc đóng bớt ticket trước khi tạo mới (PR-S2).");
         }
 
+        // BR-126: hàng hư / mất → kiểm tra dữ liệu hồ sơ bồi thường trước khi lưu ticket
+        boolean claimTicket = CompensationClaimService.isClaimIssue(issueType);
+        if (claimTicket) {
+            compensationClaimService.validateClaimInput(issueType, request, contract);
+        }
+
         String ticketCode = generateUniqueTicketCode();
         SupportRequest ticket = SupportRequest.builder()
                 .ticketCode(ticketCode)
@@ -231,6 +243,9 @@ public class SupportRequestService {
         SupportRequest saved = supportRequestRepository.save(ticket);
         entityManager.flush();
         entityManager.refresh(saved);
+        if (claimTicket) {
+            compensationClaimService.createForTicket(saved, contract, request);
+        }
 
         // PR-34: Sinh task SUPPORT tại cơ sở của hợp đồng, hạn theo BR-61
         StaffTask task = createSupportTaskForTicket(contract, saved, null);
@@ -271,6 +286,7 @@ public class SupportRequestService {
             t.setStatus("CANCELLED");
         }
         staffTaskRepository.saveAll(openTasks);
+        compensationClaimService.withdrawForTicket(ticket.getId()); // BR-126: rút hồ sơ bồi thường đi kèm (nếu có)
 
         activityLogService.log(
                 customer.getId(),
@@ -340,6 +356,8 @@ public class SupportRequestService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
                     "Hợp đồng đã kết thúc hoặc thanh lý nên không thể mở lại yêu cầu hỗ trợ.");
         }
+        // BR-126: khiếu nại hồ sơ bị từ chối → kiểm tra lại; hồ sơ đã chấp nhận / chi trả thì không mở lại
+        compensationClaimService.reopenForTicket(ticket.getId());
 
         String timestamp = LocalDateTime.now().format(TS_FMT);
         String oldDesc = ticket.getDescription() != null ? ticket.getDescription() : "";
@@ -536,6 +554,8 @@ public class SupportRequestService {
                 .latestTaskDueAt(latestTask != null ? latestTask.getDueAt() : null)
                 .assignedStaffId(staff != null ? staff.getId() : null)
                 .assignedStaffName(staff != null ? staff.getFullName() : null)
+                .claim(CompensationClaimService.isClaimIssue(sr.getIssueType()) && compensationClaimService != null
+                        ? compensationClaimService.byTicketIds(List.of(sr.getId())).get(sr.getId()) : null)
                 .build();
     }
 }

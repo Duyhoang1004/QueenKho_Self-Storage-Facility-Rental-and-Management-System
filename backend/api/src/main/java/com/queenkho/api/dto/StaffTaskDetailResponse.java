@@ -90,4 +90,7 @@ public class StaffTaskDetailResponse {
     private LocalDateTime ticketCreatedAt;
     private LocalDateTime ticketResolvedAt;
     private LocalDateTime ticketClosedAt;
+
+    // BR-126: task hỗ trợ của ticket hàng hư / mất = kiểm tra hiện trường cho hồ sơ bồi thường
+    private CompensationClaimResponse claim;
 }

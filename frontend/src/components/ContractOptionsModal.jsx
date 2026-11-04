@@ -531,6 +531,16 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="font-mono font-bold">+{formatVND(overstayFee)}</span>
                 </div>
               )}
+              {/* BR-125: gia hạn giữ nguyên gói bảo hiểm đã chọn lúc đặt */}
+              {Number(currentQuote?.insuranceAmount || 0) > 0 && (
+                <div className="flex items-center justify-between text-xs text-[#1899D6] font-semibold bg-[#DDF4FF] p-2.5 rounded-lg border border-[#84D8FF]">
+                  <span className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">verified_user</span>
+                    Bảo hiểm hàng hoá {contract?.insurancePlanLabel || ''}:
+                  </span>
+                  <span className="font-mono font-bold">+{formatVND(Number(currentQuote.insuranceAmount))}</span>
+                </div>
+              )}
               {isTerminationPending && lateFee > 0 && (
                 <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
                   <span className="flex items-center gap-1.5">

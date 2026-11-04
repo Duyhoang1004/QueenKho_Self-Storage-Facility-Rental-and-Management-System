@@ -13,5 +13,6 @@ public record RenewalQuoteResponse(
         BigDecimal lateFeeAmount,
         boolean lateFeeWaived,
         BigDecimal overstayFeeAmount, // PR-Q14: phí chiếm dụng các ngày đã quá hạn (0 nếu không OVERDUE / đơn trước điều khoản v2)
-        BigDecimal totalAmount
+        BigDecimal totalAmount,
+        BigDecimal insuranceAmount    // BR-125: phí bảo hiểm gói đã chọn × số tháng gia hạn (đã cộng vào totalAmount)
 ) {}

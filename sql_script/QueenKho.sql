@@ -149,6 +149,7 @@ CREATE TABLE rental_policy (
     allow_late_fee_waiver       BIT NOT NULL DEFAULT 1,    -- FM được miễn phí trễ cho khách
     overstay_percent            INT NOT NULL DEFAULT 150,  -- PR-Q14: phí chiếm dụng mỗi ngày quá hạn = giá ngày × % (không trần)
     held_goods_fee_percent      INT NOT NULL DEFAULT 20,   -- PR-Q15: phí lưu giữ hàng sau thanh lý mỗi ngày = giá ngày × %
+    goods_moving_fee_percent    INT NOT NULL DEFAULT 30,   -- PR-Q16: phí dọn & di dời hàng khi thanh lý = giá tháng × % (1 lần)
     version                    INT NOT NULL DEFAULT 1,
     is_active                   BIT NOT NULL DEFAULT 0,
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
@@ -156,7 +157,7 @@ CREATE TABLE rental_policy (
     CONSTRAINT UQ_rentalpolicy_facility_version UNIQUE (facility_id, version),
     CONSTRAINT CK_rentalpolicy_values CHECK (deposit_month_multiplier BETWEEN 1 AND 3 AND cancel_fee_percent BETWEEN 0 AND 100 AND cancel_free_hours >= 0 AND late_fee_percent_per_day BETWEEN 0 AND 100 AND late_fee_max_percent BETWEEN late_fee_percent_per_day AND 100 AND liquidation_days >= 1),
     CONSTRAINT CK_rentalpolicy_discounts CHECK (booking_discount_3m BETWEEN 0 AND 50 AND booking_discount_6m BETWEEN 0 AND 50 AND booking_discount_12m BETWEEN 0 AND 50 AND renewal_discount_3m BETWEEN 0 AND 50 AND renewal_discount_6m BETWEEN 0 AND 50 AND renewal_discount_12m BETWEEN 0 AND 50),
-    CONSTRAINT CK_rentalpolicy_overstay CHECK (overstay_percent BETWEEN 100 AND 300 AND held_goods_fee_percent BETWEEN 0 AND 100),
+    CONSTRAINT CK_rentalpolicy_overstay CHECK (overstay_percent BETWEEN 100 AND 300 AND held_goods_fee_percent BETWEEN 0 AND 100 AND goods_moving_fee_percent BETWEEN 0 AND 100),
     CONSTRAINT FK_rentalpolicy_creator FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     CONSTRAINT FK_rentalpolicy_facility FOREIGN KEY (facility_id) REFERENCES facilities(id)
 );
@@ -186,6 +187,9 @@ CREATE TABLE reservations (
     rent_discount_percent       INT NULL,            -- % ưu đãi tiền thuê chốt lúc tạo đơn (giống deposit_amount)
     terms_version               NVARCHAR(20) NULL,   -- Phiên bản điều khoản xử lý tài sản khách đã đồng ý (NULL = đơn cũ, chưa đồng ý)
     terms_accepted_at           DATETIME2 NULL,      -- Thời điểm khách tick đồng ý điều khoản khi đặt kho
+    insurance_plan              NVARCHAR(20) NOT NULL DEFAULT 'BASIC', -- BR-125: BASIC / ADVANCED / PREMIUM
+    insurance_premium_monthly   DECIMAL(15,2) NOT NULL DEFAULT 0,       -- phí bảo hiểm / tháng chốt lúc đặt
+    declared_goods_value        DECIMAL(15,2) NULL,                     -- giá trị hàng khách khai báo (trần bồi thường)
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),
@@ -216,6 +220,7 @@ CREATE TABLE rental_contracts (
     rfid_card_code          NVARCHAR(50) NULL,
     late_fee_waived         BIT NOT NULL DEFAULT 0,       -- FM miễn phí trễ cho đợt quá hạn hiện tại
     late_fee_waiver_note    NVARCHAR(500) NULL,
+    fault_termination       BIT NOT NULL DEFAULT 0,      -- BR-127: chấm dứt do lỗi cơ sở (không phí phá HĐ)
     CONSTRAINT FK_contracts_reservation FOREIGN KEY (reservation_id)   REFERENCES reservations(id),
     CONSTRAINT FK_contracts_customer    FOREIGN KEY (customer_id)      REFERENCES users(id),
     CONSTRAINT FK_contracts_storageunit FOREIGN KEY (storage_unit_id)  REFERENCES storage_units(id),
@@ -233,7 +238,7 @@ CREATE TABLE payment_transactions (
     user_id             INT NOT NULL,
     reservation_id      INT NULL,        -- đặt cọc gắn với reservation
     contract_id         INT NULL,        -- tiền thuê hàng tháng gắn với contract
-    payment_type        NVARCHAR(30) NOT NULL,   -- DEPOSIT / MONTHLY_RENT / REFUND / LATE_FEE / DAMAGE_FEE / OVERSTAY_FEE (phí chiếm dụng + phí lưu giữ hàng)
+    payment_type        NVARCHAR(30) NOT NULL,   -- DEPOSIT / MONTHLY_RENT / REFUND / LATE_FEE / DAMAGE_FEE / OVERSTAY_FEE (phí chiếm dụng + phí lưu giữ hàng + phí di dời MV-) / COMPENSATION (cơ sở bồi thường cho khách)
     payment_method      NVARCHAR(30) NOT NULL,   -- VNPAY / MOMO / BANK_TRANSFER / CASH
     amount              DECIMAL(12,2) NOT NULL,
     renewal_months      INT NULL,                -- gói gia hạn 1 / 3 / 6 / 12 tháng; không suy ra từ transaction_code
@@ -261,7 +266,7 @@ GO
 CREATE TABLE handover_records (
     id                              INT IDENTITY(1,1) PRIMARY KEY,
     contract_id                     INT NOT NULL,
-    staff_id                        INT NOT NULL,
+    staff_id                        INT NULL,                  -- NULL = khách tự check-in online (BR-124)
     record_type                     NVARCHAR(30) NOT NULL,  -- CHECK_IN / CHECK_OUT
     is_identity_verified            BIT NOT NULL DEFAULT 0,
     is_empty                        BIT NOT NULL DEFAULT 1,
@@ -269,12 +274,35 @@ CREATE TABLE handover_records (
     is_lock_intact                  BIT NOT NULL DEFAULT 1,
     customer_signature_confirmed    BIT NOT NULL DEFAULT 0,
     notes                           NVARCHAR(MAX) NULL,
+    evidence_image_urls             NVARCHAR(MAX) NULL,     -- BR-121: ảnh hiện trạng ô lúc bàn giao, ngăn bởi |||
+    check_in_method                 NVARCHAR(10) NOT NULL DEFAULT 'COUNTER', -- BR-124: COUNTER (Staff) / ONLINE (khách)
     created_at                      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_handover_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
     CONSTRAINT FK_handover_staff    FOREIGN KEY (staff_id)    REFERENCES users(id)
 );
 GO
 CREATE INDEX IX_handover_contract ON handover_records(contract_id);
+GO
+
+/* ---------- 10b. unit_transfers (BR-122: FM chuyển hợp đồng sang ô khác) ---------- */
+CREATE TABLE unit_transfers (
+    id              INT IDENTITY(1,1) PRIMARY KEY,
+    contract_id     INT NOT NULL,
+    from_unit_id    NVARCHAR(20) NOT NULL,
+    to_unit_id      NVARCHAR(20) NOT NULL,
+    reason_type     NVARCHAR(20) NOT NULL,       -- FACILITY_ISSUE / CUSTOMER_REQUEST / REARRANGE
+    reason          NVARCHAR(500) NOT NULL,
+    old_unit_status NVARCHAR(20) NOT NULL,       -- ô cũ sau khi chuyển: AVAILABLE / MAINTENANCE
+    moved_by        INT NOT NULL,
+    created_at      DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_unit_transfers_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
+    CONSTRAINT FK_unit_transfers_from     FOREIGN KEY (from_unit_id) REFERENCES storage_units(id),
+    CONSTRAINT FK_unit_transfers_to       FOREIGN KEY (to_unit_id)   REFERENCES storage_units(id),
+    CONSTRAINT FK_unit_transfers_user     FOREIGN KEY (moved_by)     REFERENCES users(id),
+    CONSTRAINT CK_unit_transfers_reason CHECK (reason_type IN ('FACILITY_ISSUE', 'CUSTOMER_REQUEST', 'REARRANGE'))
+);
+GO
+CREATE INDEX IX_unit_transfers_contract ON unit_transfers(contract_id);
 GO
 
 /* ---------- 11. support_requests ---------- */
@@ -292,6 +320,77 @@ CREATE TABLE support_requests (
 );
 GO
 CREATE INDEX IX_support_customer ON support_requests(customer_id);
+GO
+
+/* ---------- 11a. compensation_claims (BR-126 → BR-128: bồi thường hàng hư / mất) ---------- */
+CREATE TABLE compensation_claims (
+    id                   INT IDENTITY(1,1) PRIMARY KEY,
+    claim_code           NVARCHAR(20)   NOT NULL UNIQUE,            -- BT-xxxxxx
+    support_request_id   INT            NOT NULL UNIQUE,            -- ticket hỗ trợ GOODS_DAMAGE / GOODS_LOSS
+    contract_id          INT            NOT NULL,
+    customer_id          INT            NOT NULL,
+    facility_id          INT            NOT NULL,
+    claim_type           NVARCHAR(20)   NOT NULL,                   -- GOODS_DAMAGE / GOODS_LOSS
+    incident_date        DATE           NULL,
+    items_description    NVARCHAR(2000) NOT NULL,
+    claimed_amount       DECIMAL(15, 2) NOT NULL,
+    customer_images      NVARCHAR(MAX)  NULL,
+    status               NVARCHAR(20)   NOT NULL DEFAULT 'SUBMITTED', -- SUBMITTED / INSPECTED / APPROVED / PAID / REJECTED / WITHDRAWN
+    inspected_by         INT            NULL,
+    inspected_at         DATETIME2      NULL,
+    inspection_note      NVARCHAR(1000) NULL,
+    inspection_images    NVARCHAR(MAX)  NULL,
+    preliminary_cause    NVARCHAR(20)   NULL,                       -- CUSTOMER / FACILITY / FORCE_MAJEURE / UNKNOWN
+    liable_party         NVARCHAR(20)   NULL,                       -- CUSTOMER / FACILITY / FORCE_MAJEURE
+    assessed_value       DECIMAL(15, 2) NULL,
+    damage_percent       INT            NULL,
+    unusable_days        INT            NULL,
+    coverage_cap         DECIMAL(15, 2) NULL,
+    goods_compensation   DECIMAL(15, 2) NULL,
+    penalty_amount       DECIMAL(15, 2) NULL,
+    rent_refund_amount   DECIMAL(15, 2) NULL,
+    total_compensation   DECIMAL(15, 2) NULL,
+    resolution           NVARCHAR(20)   NULL,                       -- CONTINUE / TERMINATE
+    decision_note        NVARCHAR(1000) NULL,
+    decided_by           INT            NULL,
+    decided_at           DATETIME2      NULL,
+    payment_method       NVARCHAR(20)   NULL,
+    payment_evidence     NVARCHAR(MAX)  NULL,
+    bank_transaction_code NVARCHAR(100) NULL,
+    paid_by              INT            NULL,
+    paid_at              DATETIME2      NULL,
+    insurance_status     NVARCHAR(20)   NULL,                       -- NOT_APPLICABLE / SUBMITTED / APPROVED / PAID / REJECTED
+    insurance_ref        NVARCHAR(50)   NULL,
+    insurance_amount     DECIMAL(15, 2) NULL,
+    insurance_updated_at DATETIME2      NULL,
+    created_at           DATETIME2      NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_claims_ticket   FOREIGN KEY (support_request_id) REFERENCES support_requests(id),
+    CONSTRAINT FK_claims_contract FOREIGN KEY (contract_id)        REFERENCES rental_contracts(id),
+    CONSTRAINT FK_claims_customer FOREIGN KEY (customer_id)        REFERENCES users(id),
+    CONSTRAINT FK_claims_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),
+    CONSTRAINT FK_claims_inspector FOREIGN KEY (inspected_by)      REFERENCES users(id),
+    CONSTRAINT FK_claims_decider  FOREIGN KEY (decided_by)         REFERENCES users(id),
+    CONSTRAINT FK_claims_payer    FOREIGN KEY (paid_by)            REFERENCES users(id),
+    CONSTRAINT CK_claims_type     CHECK (claim_type IN ('GOODS_DAMAGE', 'GOODS_LOSS')),
+    CONSTRAINT CK_claims_status   CHECK (status IN ('SUBMITTED', 'INSPECTED', 'APPROVED', 'PAID', 'REJECTED', 'WITHDRAWN'))
+);
+GO
+CREATE INDEX IX_claims_facility_status ON compensation_claims(facility_id, status);
+CREATE INDEX IX_claims_contract ON compensation_claims(contract_id);
+GO
+
+/* ---------- 11c. unit_sensor_readings (BR-129: nhiệt độ / độ ẩm từng ô — IoT mô phỏng) ---------- */
+CREATE TABLE unit_sensor_readings (
+    id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+    storage_unit_id NVARCHAR(20)  NOT NULL,
+    temperature     DECIMAL(5, 2) NOT NULL,
+    humidity        DECIMAL(5, 2) NOT NULL,
+    is_alert        BIT           NOT NULL DEFAULT 0,
+    recorded_at     DATETIME2     NOT NULL DEFAULT SYSDATETIME(),
+    CONSTRAINT FK_sensor_unit FOREIGN KEY (storage_unit_id) REFERENCES storage_units(id)
+);
+GO
+CREATE INDEX IX_sensor_unit_time ON unit_sensor_readings(storage_unit_id, recorded_at DESC);
 GO
 
 /* ---------- 11b. facility_tasks (UC-16, UC-17, UC-18, REFUND) ----------

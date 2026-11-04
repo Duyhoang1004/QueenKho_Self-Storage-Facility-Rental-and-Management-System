@@ -94,3 +94,50 @@ export async function refundRemainingDeposit(contractId, data) {
   return res.data
 }
 
+
+// BR-121: biên bản nhận kho / trả kho của hợp đồng (kèm ảnh hiện trạng ô)
+// trả [{ id, recordType: CHECK_IN | CHECK_OUT, checkInMethod: COUNTER | ONLINE, staffName, createdAt, notes,
+//        identityVerified, unitEmpty, unitClean, lockIntact, customerSignatureConfirmed, evidenceImages: [url] }]
+export async function getHandoverRecords(contractId) {
+  const res = await api.get(`/contracts/${contractId}/handover-records`)
+  return res.data
+}
+
+// BR-124: khách tự check-in online đúng ngày hẹn
+// data = { cccd, unitEmpty, unitClean, lockIntact, prohibitedGoodsCommitted, evidenceImages: [url], notes }
+export async function onlineCheckIn(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/online-check-in`, data)
+  return res.data
+}
+
+// BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang
+export async function getTransferOptions(contractId) {
+  const res = await api.get(`/contracts/${contractId}/transfer-options`)
+  return res.data
+}
+
+// BR-122: lịch sử chuyển ô của hợp đồng
+export async function getUnitTransfers(contractId) {
+  const res = await api.get(`/contracts/${contractId}/unit-transfers`)
+  return res.data
+}
+
+// BR-122: FM chuyển hợp đồng sang ô khác
+// data = { toUnitId, reasonType: FACILITY_ISSUE | CUSTOMER_REQUEST | REARRANGE, reason, oldUnitMaintenance }
+export async function transferUnit(contractId, data) {
+  const res = await api.post(`/contracts/${contractId}/transfer-unit`, data)
+  return res.data
+}
+
+// BR-129: nhiệt độ / độ ẩm ô của hợp đồng — { readings: [{ temperature, humidity, alert, recordedAt }], alertCount, latest, tempMin, tempMax, humidityMax }
+// around = 'yyyy-mm-dd' để xem quanh ngày xảy ra sự cố (hồ sơ bồi thường)
+export async function getSensorReadings(contractId, { days = 3, around } = {}) {
+  const res = await api.get(`/contracts/${contractId}/sensor-readings`, { params: { days, ...(around ? { around } : {}) } })
+  return res.data
+}
+
+// Flow 6 (04/11/2026): hợp đồng quá hạn toàn chuỗi cho BOM (FM gọi chỉ thấy cơ sở mình)
+export async function getOverdueContractsChain(facilityId) {
+  const res = await api.get('/contracts/overdue-all', { params: facilityId ? { facilityId } : {} })
+  return res.data
+}

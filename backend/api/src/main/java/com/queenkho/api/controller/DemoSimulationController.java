@@ -89,6 +89,18 @@ public class DemoSimulationController {
         return ResponseEntity.ok(simulationService.makeTaskOverdue(id, currentUser.require()));
     }
 
+    // BR-129: cảm biến ô của hợp đồng vượt ngưỡng nhiệt độ / độ ẩm (khách chủ HĐ / FM)
+    @PostMapping("/contracts/{id}/sensor-alert")
+    public ResponseEntity<Map<String, Object>> sensorAlert(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.sensorAlert(id, currentUser.require()));
+    }
+
+    // BR-128: bên bảo hiểm duyệt và chuyển tiền hàng cho cơ sở (FM)
+    @PostMapping("/claims/{id}/insurance-payout")
+    public ResponseEntity<Map<String, Object>> insurancePayout(@PathVariable Integer id) {
+        return ResponseEntity.ok(simulationService.insurancePayout(id, currentUser.require()));
+    }
+
     // Flow 7: ticket đã xử lý quá 3 ngày → hệ thống tự đóng (khách chủ ticket / FM)
     @PostMapping("/support-requests/{id}/auto-close")
     public ResponseEntity<Map<String, Object>> autoCloseTicket(@PathVariable Integer id) {

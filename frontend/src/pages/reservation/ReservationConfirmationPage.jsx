@@ -78,10 +78,13 @@ export default function ReservationConfirmationPage() {
       dimensions: dimension,
       startDate,
       durationMonths: selectedMonths,
-      rentAmount: Number(totalPayment) - Number(depositAmount) + voucherDiscount,
+      // BR-125: tổng đã trả gồm cả phí bảo hiểm → tách riêng dòng bảo hiểm
+      rentAmount: Number(totalPayment) - Number(depositAmount) + voucherDiscount - Number(paymentContext.insuranceAmount || 0),
       depositAmount,
       voucherCode,
       voucherDiscount,
+      insuranceAmount: Number(paymentContext.insuranceAmount || 0),
+      insurancePlanLabel: paymentContext.insurancePlanLabel || '',
       totalPaid: totalPayment,
     })
     setPrintBlocked(!opened)

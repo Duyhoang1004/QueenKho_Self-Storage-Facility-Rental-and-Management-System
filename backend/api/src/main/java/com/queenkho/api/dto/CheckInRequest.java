@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 // UC-18: nội dung biên bản bàn giao khi Staff check-in cho khách
 @Getter
 @Setter
@@ -19,4 +21,7 @@ public class CheckInRequest {
     private String accessPinCode;  // 6 chữ số, lấy từ GET /staff-tasks/pin-suggestion
     private String rfidCardCode;   // mã in trên thẻ từ phát cho khách
     private String notes;
+
+    // BR-121: ảnh hiện trạng ô lúc bàn giao (≥ 1, tối đa 10) — căn cứ khi có tranh chấp lúc trả kho
+    private List<String> evidenceImages;
 }

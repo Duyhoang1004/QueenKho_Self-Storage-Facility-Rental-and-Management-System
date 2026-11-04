@@ -85,4 +85,45 @@ public class CustomerContractResponse {
 
     // PR-O12: NONE / PENDING / COMPLETED — cùng nguồn với danh sách "Kho của tôi" (RefundStatusService)
     private String refundStatus;
+
+    // BR-125 (04/11/2026): bảo hiểm hàng hoá — gán sau constructor (giữ nguyên thứ tự tham số cũ)
+    private String insurancePlan;
+    private String insurancePlanLabel;
+    private BigDecimal insurancePremiumMonthly;
+    private BigDecimal declaredGoodsValue;
+    private BigDecimal coverageCap;
+    private Boolean insured;
+    // BR-127: hồ sơ bồi thường cho phép chấm dứt hợp đồng không phí phá HĐ
+    private Boolean faultTermination;
+
+    public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
+                                    String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
+                                    String floor, String zone, String roomNumber, String status, LocalDate startDate,
+                                    LocalDate endDate, Integer billingCycleMonths, BigDecimal depositHeldAmount,
+                                    String reservationCode, String accessPinCode, String rfidCardCode,
+                                    BigDecimal basePriceMonthly, Integer reservationId, BigDecimal totalPaid,
+                                    BigDecimal rentPaid, LocalDate scheduledCheckoutDate, Long overdueDays,
+                                    BigDecimal lateFeeAmount, BigDecimal estimatedDepositRefund, BigDecimal originalDeposit,
+                                    BigDecimal refundAmount, BigDecimal damageFee, Boolean isInspectionCompleted,
+                                    BigDecimal depositRefund, BigDecimal earlyRentRefund, Integer usedMonths,
+                                    BigDecimal breakFee, BigDecimal maxLateFeeAmount, Boolean isMaxLateFeeReached,
+                                    Boolean isPinLocked, Boolean canLiquidate, Integer liquidationDaysThreshold,
+                                    BigDecimal estimatedOverdueDepositRefund, Integer facilityId, Boolean lateFeeWaived,
+                                    String lateFeeWaiverNote, BigDecimal facilityDamageFee, String termsVersion,
+                                    LocalDateTime termsAcceptedAt, String heldGoodsStatus, LocalDate heldGoodsHoldUntil,
+                                    String heldGoodsStorageLocation, String facilityName, String facilityAddress,
+                                    String facilityHotline, String customerEmail, String customerCccd,
+                                    BigDecimal overstayDailyAmount, BigDecimal overstayFeeAmount,
+                                    BigDecimal totalOverdueCharge, BigDecimal amountBeyondDeposit, String refundStatus) {
+        this(contractId, contractCode, customerId, customerFullName, customerPhone, storageUnitId, unitTypeName, areaSqm,
+                floor, zone, roomNumber, status, startDate, endDate, billingCycleMonths, depositHeldAmount, reservationCode,
+                accessPinCode, rfidCardCode, basePriceMonthly, reservationId, totalPaid, rentPaid, scheduledCheckoutDate,
+                overdueDays, lateFeeAmount, estimatedDepositRefund, originalDeposit, refundAmount, damageFee,
+                isInspectionCompleted, depositRefund, earlyRentRefund, usedMonths, breakFee, maxLateFeeAmount,
+                isMaxLateFeeReached, isPinLocked, canLiquidate, liquidationDaysThreshold, estimatedOverdueDepositRefund,
+                facilityId, lateFeeWaived, lateFeeWaiverNote, facilityDamageFee, termsVersion, termsAcceptedAt,
+                heldGoodsStatus, heldGoodsHoldUntil, heldGoodsStorageLocation, facilityName, facilityAddress,
+                facilityHotline, customerEmail, customerCccd, overstayDailyAmount, overstayFeeAmount, totalOverdueCharge,
+                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null);
+    }
 }

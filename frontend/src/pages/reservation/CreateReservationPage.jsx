@@ -5,6 +5,15 @@ import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 import AssetTermsModal from '../../components/AssetTermsModal'
 import { validateVoucher } from '../../services/voucherService'
+import { getInsurancePlans } from '../../services/claimService'
+
+// BR-125: dự phòng khi chưa tải được danh sách gói từ backend (GET /insurance-plans)
+const FALLBACK_PLANS = [
+  { code: 'BASIC', label: 'Cơ bản', monthlyPremium: 0, coverageLimit: 20000000, insured: false },
+  { code: 'ADVANCED', label: 'Nâng cao', monthlyPremium: 50000, coverageLimit: 200000000, insured: true },
+  { code: 'PREMIUM', label: 'Cao cấp', monthlyPremium: 120000, coverageLimit: 500000000, insured: true },
+]
+const NO_DECLARATION_CAP = 5000000
 
 function buildUnit(availability, unitTypeId) {
   const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
@@ -58,6 +67,10 @@ export default function CreateReservationPage() {
 
   const [selectedMonths, setSelectedMonths] = useState(3)
   const [startDate, setStartDate] = useState('')
+  // BR-125: gói bảo hiểm hàng hoá + giá trị hàng khai báo (căn cứ trần bồi thường)
+  const [insurancePlans, setInsurancePlans] = useState(FALLBACK_PLANS)
+  const [insurancePlan, setInsurancePlan] = useState('BASIC')
+  const [declaredValue, setDeclaredValue] = useState('')
   const [agreed, setAgreed] = useState(false)
   // Điều khoản xử lý tài sản khi không trả kho — bắt buộc, backend lưu phiên bản + thời điểm đồng ý
   const [termsAccepted, setTermsAccepted] = useState(false)
@@ -147,6 +160,11 @@ export default function CreateReservationPage() {
     if (!hasParams) return
     getFacilityPricing(facilityId).then(setPricing).catch(() => setPricing(null))
   }, [hasParams, facilityId])
+  useEffect(() => {
+    getInsurancePlans()
+      .then((plans) => { if (Array.isArray(plans) && plans.length) setInsurancePlans(plans) })
+      .catch(() => {})
+  }, [])
   const durationOptions = DURATION_OPTIONS.map((opt) => {
     const fromPolicy = pricing?.bookingPackages?.find((p) => p.months === opt.months)
     return fromPolicy ? { ...opt, discount: fromPolicy.discountPercent } : opt
@@ -212,7 +230,14 @@ export default function CreateReservationPage() {
   const discountAmount = Math.round(baseTotal * (selectedOption.discount / 100))
   const netRent = baseTotal - discountAmount
   const deposit = unit.pricePerMonth * unit.depositMonthMultiplier
-  const totalPayment = netRent + deposit - voucherApplied.discount
+  // BR-125: phí bảo hiểm = phí gói / tháng × số tháng (gói Cơ bản miễn phí)
+  const selectedPlan = insurancePlans.find((p) => p.code === insurancePlan) || insurancePlans[0]
+  const insuranceTotal = Number(selectedPlan.monthlyPremium || 0) * selectedMonths
+  const declaredNumber = Number(declaredValue || 0)
+  const coverageCap = declaredNumber > 0
+    ? Math.min(declaredNumber, Number(selectedPlan.coverageLimit))
+    : Math.min(NO_DECLARATION_CAP, Number(selectedPlan.coverageLimit))
+  const totalPayment = netRent + deposit - voucherApplied.discount + insuranceTotal
 
   const handleSubmit = async () => {
     if (!isAuthenticated || !sessionUser?.userId) {
@@ -255,6 +280,8 @@ export default function CreateReservationPage() {
         phone: customerInfo.phone?.trim(),
         cccd: customerInfo.cccd?.trim(),
         voucherCode: customVoucherCode || undefined,
+        insurancePlan,
+        declaredGoodsValue: declaredNumber > 0 ? declaredNumber : undefined,
       })
       // Đồng bộ thông tin SĐT và CCCD mới nhất vào phiên đăng nhập hiện tại
       sessionStorage.setItem('user', JSON.stringify({
@@ -273,6 +300,8 @@ export default function CreateReservationPage() {
         deposit: Number(paymentData.depositAmount || deposit),
         voucherCode: voucherApplied.code,
         voucherDiscount: voucherApplied.discount,
+        insurancePlanLabel: selectedPlan.label,
+        insuranceAmount: insuranceTotal,
         storage: unit,
       }))
 
@@ -457,6 +486,55 @@ export default function CreateReservationPage() {
               <p className="text-xs font-bold text-[#AFAFAF] mt-2">
                 🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
               </p>
+            </div>
+
+            {/* BR-125: gói bảo hiểm hàng hoá */}
+            <div className="mt-6 pt-5 border-t-2 border-[#E5E5E5] flex flex-col gap-3">
+              <div>
+                <p className="text-sm font-black text-[#4B4B4B] flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[20px] text-[#1CB0F6]">verified_user</span>
+                  Bảo hiểm hàng hoá
+                </p>
+                <p className="text-[11px] font-bold text-[#AFAFAF]">
+                  Hàng hư / mất do lỗi kho được bồi thường tới mức trần. Gói có bảo hiểm còn được bồi thường cả khi gặp thiên tai, hoả hoạn từ bên ngoài.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {insurancePlans.map((p) => (
+                  <button
+                    key={p.code}
+                    type="button"
+                    onClick={() => setInsurancePlan(p.code)}
+                    className={`rounded-2xl border-2 px-4 py-3 text-left ${
+                      insurancePlan === p.code ? 'bg-[#DDF4FF] border-[#1CB0F6]' : 'bg-white border-[#E5E5E5] hover:bg-[#F7F7F7]'
+                    }`}
+                  >
+                    <span className="block text-xs font-black text-[#4B4B4B]">{p.label}</span>
+                    <span className="block text-sm font-black text-[#1CB0F6]">
+                      {Number(p.monthlyPremium) > 0 ? `${formatVND(Number(p.monthlyPremium))}/tháng` : 'Miễn phí'}
+                    </span>
+                    <span className="block text-[10px] font-bold text-[#AFAFAF]">
+                      Trần {formatVND(Number(p.coverageLimit))}{p.insured ? ' · có bảo hiểm' : ' · cơ sở tự chịu'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Giá trị hàng gửi kho (khai báo, tuỳ chọn)</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="100000"
+                  value={declaredValue}
+                  onChange={(e) => setDeclaredValue(e.target.value)}
+                  placeholder="VD: 30000000"
+                  className="duo-input"
+                />
+                <span className="text-[11px] font-bold text-[#777777]">
+                  Trần bồi thường của bạn: <strong className="text-[#1CB0F6]">{formatVND(coverageCap)}</strong>
+                  {declaredNumber > 0 ? '' : ` — không khai báo giá trị chỉ được tối đa ${formatVND(Math.min(NO_DECLARATION_CAP, Number(selectedPlan.coverageLimit)))}`}
+                </span>
+              </label>
             </div>
           </div>
 
@@ -662,6 +740,15 @@ export default function CreateReservationPage() {
                 </span>
                 <span className="font-black text-[#4B4B4B]">{formatVND(deposit)}</span>
               </div>
+
+              {insuranceTotal > 0 && (
+                <div className="flex justify-between items-center text-xs font-bold">
+                  <span className="text-[#4B4B4B]">
+                    Bảo hiểm {selectedPlan.label} ({formatVND(Number(selectedPlan.monthlyPremium))} × {selectedMonths})
+                  </span>
+                  <span className="font-black text-[#4B4B4B]">{formatVND(insuranceTotal)}</span>
+                </div>
+              )}
 
               {/* Voucher input */}
               <div className="flex flex-col gap-1.5">

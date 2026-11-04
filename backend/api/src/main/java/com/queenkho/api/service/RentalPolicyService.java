@@ -64,7 +64,7 @@ public class RentalPolicyService {
             p.getCreatedAt(), p.getCreatedBy() == null ? "Hệ thống" : p.getCreatedBy().getFullName(),
             p.getBookingDiscount3m(), p.getBookingDiscount6m(), p.getBookingDiscount12m(),
             p.getRenewalDiscount3m(), p.getRenewalDiscount6m(), p.getRenewalDiscount12m(),
-            p.isAllowLateFeeWaiver(), p.getOverstayPercent(), p.getHeldGoodsFeePercent());
+            p.isAllowLateFeeWaiver(), p.getOverstayPercent(), p.getHeldGoodsFeePercent(), p.getGoodsMovingFeePercent());
     }
 
     @Transactional(readOnly = true)
@@ -129,6 +129,9 @@ public class RentalPolicyService {
             LateFeeService.DEFAULT_OVERSTAY_PERCENT));
         policy.setHeldGoodsFeePercent(pick(request.heldGoodsFeePercent(), current == null ? null : current.getHeldGoodsFeePercent(),
             LateFeeService.DEFAULT_HELD_GOODS_FEE_PERCENT));
+        // PR-Q16: % phí dọn & di dời hàng khi thanh lý
+        policy.setGoodsMovingFeePercent(pick(request.goodsMovingFeePercent(), current == null ? null : current.getGoodsMovingFeePercent(),
+            LateFeeService.DEFAULT_GOODS_MOVING_FEE_PERCENT));
         policy.setCreatedBy(user);
         policies.saveAndFlush(policy);
         entityManager.refresh(policy);

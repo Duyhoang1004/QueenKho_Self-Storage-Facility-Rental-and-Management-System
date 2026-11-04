@@ -36,7 +36,8 @@ public class ReservationService {
     // Phiên bản "Điều khoản xử lý tài sản khi không trả kho" (nội dung ở FE: components/AssetTermsModal.jsx).
     // Đổi nội dung điều khoản → tăng version để biết khách nào đồng ý bản nào.
     // v2 (27/10/2026): thêm phí chiếm dụng khi quá hạn (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15)
-    public static final String ASSET_TERMS_VERSION = "v2";
+    // v3 (04/11/2026): thêm phí dọn & di dời hàng khi thanh lý (PR-Q16), cơ sở được chuyển ô cùng loại (BR-122)
+    public static final String ASSET_TERMS_VERSION = "v3";
 
     @Autowired
     private ReservationRepository reservationRepository;
@@ -191,20 +192,64 @@ public class ReservationService {
             throw new IllegalArgumentException("Tài khoản chưa được gán cơ sở nên không xem được đơn chờ gán ô");
         }
 
+        // BR-123 (04/11/2026, góp ý giảng viên): ưu tiên khách cũ + hợp đồng dài khi gán ô —
+        // điểm cao lên đầu; cùng điểm thì ngày nhận kho gần hơn trước, rồi đơn cọc trước
         return reservationRepository
                 .findByFacility_IdAndStatusAndStorageUnitIdIsNullOrderByCreatedAtAsc(targetFacilityId, "DEPOSIT_PAID")
                 .stream()
-                .map(r -> new PendingReservationResponse(
-                        r.getId(),
-                        r.getReservationCode(),
-                        r.getCustomer().getFullName(),
-                        r.getCustomer().getPhone(),
-                        r.getUnitType().getName(),
-                        r.getStartDate(),
-                        r.getDurationMonths(),
-                        r.getDepositAmount(),
-                        r.getCreatedAt()))
+                .map(r -> {
+                    PendingReservationResponse dto = new PendingReservationResponse(
+                            r.getId(),
+                            r.getReservationCode(),
+                            r.getCustomer().getFullName(),
+                            r.getCustomer().getPhone(),
+                            r.getUnitType().getName(),
+                            r.getStartDate(),
+                            r.getDurationMonths(),
+                            r.getDepositAmount(),
+                            r.getCreatedAt());
+                    int pastRentals = countPastRentals(r.getCustomer().getId());
+                    dto.setPastRentalCount(pastRentals);
+                    dto.setPriorityScore(priorityScore(r.getDurationMonths(), pastRentals));
+                    dto.setPriorityLabel(priorityLabel(r.getDurationMonths(), pastRentals));
+                    return dto;
+                })
+                .sorted(java.util.Comparator.comparing(PendingReservationResponse::getPriorityScore).reversed()
+                        .thenComparing(PendingReservationResponse::getStartDate,
+                                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                        .thenComparing(PendingReservationResponse::getCreatedAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
                 .toList();
+    }
+
+    // BR-123: số hợp đồng khách đã thực sự nhận kho trước đây (có biên bản CHECK_IN) — No-Show không tính
+    private int countPastRentals(Integer customerId) {
+        try {
+            Integer n = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(DISTINCT hr.contract_id) FROM handover_records hr " +
+                            "JOIN rental_contracts rc ON rc.id = hr.contract_id " +
+                            "WHERE rc.customer_id = ? AND hr.record_type = 'CHECK_IN'",
+                    Integer.class, customerId);
+            return n != null ? n : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** BR-123: gói 12T = 3 điểm, 6T = 2, 3T = 1, 1T = 0; khách cũ (≥ 1 HĐ đã nhận kho) +2, thân thiết (≥ 3 HĐ) +3 */
+    static int priorityScore(Integer months, int pastRentals) {
+        int m = months != null ? months : 0;
+        int packageScore = m >= 12 ? 3 : m >= 6 ? 2 : m >= 3 ? 1 : 0;
+        int loyaltyScore = pastRentals >= 3 ? 3 : pastRentals >= 1 ? 2 : 0;
+        return packageScore + loyaltyScore;
+    }
+
+    static String priorityLabel(Integer months, int pastRentals) {
+        List<String> parts = new java.util.ArrayList<>();
+        if (pastRentals >= 3) parts.add("Khách thân thiết (" + pastRentals + " HĐ)");
+        else if (pastRentals >= 1) parts.add("Khách cũ (" + pastRentals + " HĐ)");
+        if (months != null && months >= 6) parts.add("Gói " + months + " tháng");
+        return parts.isEmpty() ? null : String.join(" · ", parts);
     }
 
     // [EXCEPTION] No-Show: lấy đơn đã gán ô nhưng startDate đã qua (khách không đến nhận)
@@ -273,6 +318,19 @@ public class ReservationService {
         if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
             throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "TERMS_NOT_ACCEPTED",
                     "Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi đặt kho");
+        }
+        // BR-125: gói bảo hiểm (bỏ trống = BASIC miễn phí) + giá trị hàng khai báo (tuỳ chọn, căn cứ trần bồi thường)
+        String planCode = request.getInsurancePlan() == null || request.getInsurancePlan().isBlank()
+                ? "BASIC" : request.getInsurancePlan().trim().toUpperCase();
+        if (!List.of("BASIC", "ADVANCED", "PREMIUM").contains(planCode)) {
+            throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INSURANCE_PLAN",
+                    "Gói bảo hiểm phải là BASIC, ADVANCED hoặc PREMIUM");
+        }
+        InsurancePlan insurancePlan = InsurancePlan.of(planCode);
+        java.math.BigDecimal declaredValue = request.getDeclaredGoodsValue();
+        if (declaredValue != null && (declaredValue.signum() < 0 || declaredValue.compareTo(InsurancePlan.MAX_DECLARED_VALUE) > 0)) {
+            throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Giá trị hàng khai báo phải từ 0 đến 10 tỷ đồng");
         }
 
         // Kiem tra khach hang
@@ -387,6 +445,9 @@ public class ReservationService {
         }
         reservation.setTermsVersion(ASSET_TERMS_VERSION);
         reservation.setTermsAcceptedAt(LocalDateTime.now());
+        reservation.setInsurancePlan(insurancePlan.name());
+        reservation.setInsurancePremiumMonthly(insurancePlan.monthlyPremium());
+        reservation.setDeclaredGoodsValue(declaredValue != null && declaredValue.signum() > 0 ? declaredValue : null);
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
         reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());

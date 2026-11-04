@@ -4,7 +4,13 @@ import com.queenkho.api.service.FloorPlanService;
 import com.queenkho.api.service.LateFeeService;
 import com.queenkho.api.service.RefundStatusService;
 import com.queenkho.api.service.RenewalPolicyService;
+import com.queenkho.api.service.UnitTransferService;
+import com.queenkho.api.service.UnitSensorService;
+import com.queenkho.api.service.InsurancePlan;
 import com.queenkho.api.dto.CustomerContractResponse;
+import com.queenkho.api.dto.OnlineCheckInRequest;
+import com.queenkho.api.dto.TransferUnitRequest;
+import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.repository.HeldGoodsRepository;
@@ -13,6 +19,7 @@ import com.queenkho.api.security.CurrentUser;
 import com.queenkho.api.security.CurrentUserProvider;
 import com.queenkho.api.security.OwnershipGuard;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -62,8 +69,21 @@ public class ContractController {
     @Autowired
     private RefundStatusService refundStatusService;
 
+    @Autowired
+    private UnitTransferService unitTransferService;
+
+    @Autowired
+    private UnitSensorService unitSensorService;
+
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
+    }
+
+    // BR-124: check-in online dùng chung nghiệp vụ check-in của StaffTaskService
+    @ExceptionHandler(StaffTaskException.class)
+    public ResponseEntity<?> handleStaffTaskException(StaffTaskException ex) {
         return ResponseEntity.status(ex.getStatus())
                 .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
     }
@@ -234,7 +254,7 @@ public class ContractController {
 
         int effectiveCycleMonths = calc.getCycleMonths();
 
-        return new CustomerContractResponse(
+        CustomerContractResponse dto = new CustomerContractResponse(
                 rc.getId(),
                 rc.getContractCode(),
                 rc.getCustomer().getId(),
@@ -296,6 +316,17 @@ public class ContractController {
                 amountBeyondDeposit,
                 refundStatusService.resolve(rc.getReservation().getId(),
                         rc.getReservation().getReservationCode(), rc.getId()));
+
+        // BR-125: gói bảo hiểm hàng hoá + trần bồi thường; BR-127: được chấm dứt không phí phá HĐ
+        InsurancePlan plan = InsurancePlan.of(rc.getReservation().getInsurancePlan());
+        dto.setInsurancePlan(plan.name());
+        dto.setInsurancePlanLabel(plan.label());
+        dto.setInsurancePremiumMonthly(rc.getReservation().getInsurancePremiumMonthly());
+        dto.setDeclaredGoodsValue(rc.getReservation().getDeclaredGoodsValue());
+        dto.setCoverageCap(plan.coverageCap(rc.getReservation().getDeclaredGoodsValue()));
+        dto.setInsured(plan.insured());
+        dto.setFaultTermination(Boolean.TRUE.equals(rc.getFaultTermination()));
+        return dto;
     }
 
     // GET /api/v1/contracts?managerId=3
@@ -441,6 +472,62 @@ public class ContractController {
         return rentalContractRepository.findDetailById(id)
                 .map(rc -> ResponseEntity.ok((Object) floorPlanService.getUnitLocation(rc, customerView)))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    // BR-121: biên bản nhận kho / trả kho kèm ảnh hiện trạng — khách xem của mình, Staff / FM xem của cơ sở
+    @GetMapping("/{id}/handover-records")
+    public ResponseEntity<?> getHandoverRecords(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(staffTaskService.getHandoverRecords(id));
+    }
+
+    // BR-124: khách tự check-in online đúng ngày hẹn (khách lấy từ token)
+    @PostMapping("/{id}/online-check-in")
+    public ResponseEntity<?> onlineCheckIn(@PathVariable Integer id, @RequestBody OnlineCheckInRequest request) {
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(staffTaskService.onlineCheckIn(id, currentUser.require().id(), request));
+    }
+
+    // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang
+    @GetMapping("/{id}/transfer-options")
+    public ResponseEntity<?> getTransferOptions(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(unitTransferService.getTransferOptions(id));
+    }
+
+    // BR-129: nhiệt độ / độ ẩm ô của hợp đồng — `days` ngày quanh ngày `around` (mặc định: N ngày gần nhất)
+    @GetMapping("/{id}/sensor-readings")
+    public ResponseEntity<?> getSensorReadings(@PathVariable Integer id,
+                                               @RequestParam(defaultValue = "3") int days,
+                                               @RequestParam(required = false)
+                                               @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                                               LocalDate around) {
+        ownershipGuard.checkContract(id);
+        int window = Math.max(1, Math.min(days, 14));
+        return rentalContractRepository.findDetailById(id)
+                .map(rc -> ResponseEntity.ok((Object) unitSensorService.summary(rc.getStorageUnit().getId(),
+                        around != null ? around.atTime(12, 0) : null, window)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // Flow 6 (04/11/2026): BOM xem hợp đồng quá hạn toàn chuỗi để miễn phí trễ (FM gọi thì chỉ thấy cơ sở mình)
+    @GetMapping("/overdue-all")
+    public ResponseEntity<?> getOverdueContractsChain(@RequestParam(required = false) Integer facilityId) {
+        return ResponseEntity.ok(contractService.getOverdueContractsForChain(currentUser.require().id(), facilityId));
+    }
+
+    // BR-122: lịch sử chuyển ô của hợp đồng
+    @GetMapping("/{id}/unit-transfers")
+    public ResponseEntity<?> getUnitTransfers(@PathVariable Integer id) {
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(unitTransferService.getTransferHistory(id));
+    }
+
+    // BR-122: FM chuyển hợp đồng sang ô khác
+    @PostMapping("/{id}/transfer-unit")
+    public ResponseEntity<?> transferUnit(@PathVariable Integer id, @RequestBody TransferUnitRequest request) {
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(unitTransferService.transferUnit(id, currentUser.require().id(), request));
     }
 
     // Flow 6: FM miễn phí trễ cho hợp đồng quá hạn (chính sách cơ sở phải cho phép)

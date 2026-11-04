@@ -21,6 +21,9 @@ public class CheckOutRequest {
 
     private String notes;
 
+    // BR-121: ảnh hiện trạng ô lúc nghiệm thu (≥ 1, tối đa 10) — so với ảnh lúc nhận kho để biết lỗi do ai
+    private List<String> evidenceImages;
+
     // UC-24: Danh sách sự cố hư hỏng phát sinh (rỗng nếu kho bình thường)
     private List<DamageItemRequest> damageCases;
 

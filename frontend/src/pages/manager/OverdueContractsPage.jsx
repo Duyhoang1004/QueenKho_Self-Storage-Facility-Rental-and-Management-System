@@ -228,9 +228,10 @@ export default function OverdueContractsPage() {
     safePage * PAGE_SIZE
   )
 
-  // PR-Q9 / PR-Q14: thanh lý trừ cọc phí trễ + phí chiếm dụng; vượt cọc thành nợ OVERSTAY_FEE của khách
+  // PR-Q9 / PR-Q14 / PR-Q16: thanh lý trừ cọc phí trễ + phí chiếm dụng + phí dọn & di dời hàng; vượt cọc thành nợ của khách
   const liquidationCharge = liquidateContractTarget
     ? Number(liquidateContractTarget.lateFeeAmount || 0) + Number(liquidateContractTarget.overstayFeeAmount || 0)
+      + Number(liquidateContractTarget.goodsMovingFeeAmount || 0)
     : 0
 
   return (
@@ -769,6 +770,12 @@ export default function OverdueContractsPage() {
                   <div className="flex justify-between items-center text-red-600 font-bold">
                     <span>Phí chiếm dụng ô ({liquidateContractTarget.overdueDays} ngày):</span>
                     <span>-{formatVND(liquidateContractTarget.overstayFeeAmount)}</span>
+                  </div>
+                )}
+                {Number(liquidateContractTarget.goodsMovingFeeAmount) > 0 && (
+                  <div className="flex justify-between items-center text-red-600 font-bold">
+                    <span>Phí dọn & di dời hàng sang khu lưu giữ:</span>
+                    <span>-{formatVND(liquidateContractTarget.goodsMovingFeeAmount)}</span>
                   </div>
                 )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline font-black">

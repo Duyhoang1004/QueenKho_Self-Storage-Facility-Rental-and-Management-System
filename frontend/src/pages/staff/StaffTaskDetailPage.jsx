@@ -16,6 +16,8 @@ import {
 import SimulationButton from '../../components/SimulationButton';
 import UnitLocationMap from '../../components/UnitLocationMap';
 import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
+import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
+import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -148,51 +150,11 @@ function formatCurrency(amount) {
   return num.toLocaleString('vi-VN') + ' đ';
 }
 
-// Nén file ảnh sang base64 JPEG nhẹ (tối đa 800px) để lưu DB nhanh và xem trực tiếp không cần server ngoài
-function compressImageToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Không đọc được file ảnh'));
-    reader.onload = e => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Định dạng ảnh không hợp lệ'));
-      img.onload = () => {
-        const MAX_DIM = 800;
-        let { width, height } = img;
-        if (width > MAX_DIM || height > MAX_DIM) {
-          if (width > height) {
-            height = Math.round((height * MAX_DIM) / width);
-            width = MAX_DIM;
-          } else {
-            width = Math.round((width * MAX_DIM) / height);
-            height = MAX_DIM;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.75));
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-// Tạo 1 ảnh bằng chứng mẫu dạng SVG Data URI khi bấm "Giả lập sự cố" (phục vụ demo nhanh)
-function createMockEvidenceDataUrl(label) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320">
-    <rect width="480" height="320" fill="#FFF5E6" rx="16"/>
-    <rect x="16" y="16" width="448" height="288" fill="none" stroke="#FF9600" stroke-width="4" stroke-dasharray="10,6" rx="12"/>
-    <circle cx="240" cy="120" r="42" fill="#FFE8CC"/>
-    <text x="240" y="132" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#E58800" text-anchor="middle">!</text>
-    <text x="240" y="195" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#4B4B4B" text-anchor="middle">ẢNH BẰNG CHỨNG HIỆN TRƯỜNG</text>
-    <text x="240" y="225" font-family="Arial, sans-serif" font-size="14" fill="#777777" text-anchor="middle">${label}</text>
-    <text x="240" y="265" font-family=" monospace" font-size="12" fill="#AFAFAF" text-anchor="middle">QueenKho Inspection Evidence</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+// BR-121: ảnh mẫu hiện trạng ô cho các nút "Giả lập" (chỉ thêm khi chưa có ảnh thật)
+function withMockHandoverPhoto(photos, task, action) {
+  return photos.length > 0
+    ? photos
+    : [createMockEvidenceDataUrl(`Hiện trạng ô ${task?.storageUnitId || ''} lúc ${action}`, 'ẢNH HIỆN TRẠNG Ô KHO')];
 }
 
 // Vì sao người đang xem không lập được biên bản (null = lập được)
@@ -648,11 +610,13 @@ export default function StaffTaskDetailPage() {
   const [pinLoading, setPinLoading] = useState(false);
   const [rfid, setRfid] = useState('');
   const [notes, setNotes] = useState('');
+  const [checkInPhotos, setCheckInPhotos] = useState([]); // BR-121
 
   // State cho Check-out & Damage Cases (UC-23 & UC-24)
   const [coChecks, setCoChecks] = useState(INITIAL_CHECKOUT_CHECKS);
   const [damageCases, setDamageCases] = useState([]);
   const [coNotes, setCoNotes] = useState('');
+  const [checkOutPhotos, setCheckOutPhotos] = useState([]); // BR-121
   const [previewImage, setPreviewImage] = useState(null);
 
   // State cho Refund (UC-25)
@@ -663,6 +627,8 @@ export default function StaffTaskDetailPage() {
 
   // State cho Support (UC-27)
   const [resolutionNote, setResolutionNote] = useState('');
+  const [inspectionImages, setInspectionImages] = useState([]); // BR-126
+  const [preliminaryCause, setPreliminaryCause] = useState('');
   const [confirmSupportOpen, setConfirmSupportOpen] = useState(false);
   const [pinResetting, setPinResetting] = useState(false);
   const [extendDueDate, setExtendDueDate] = useState(() => {
@@ -708,11 +674,14 @@ export default function StaffTaskDetailPage() {
   // ================== LOGIC CHECK-IN (UC-18) ==================
   const allCheckInChecked = CHECKIN_CHECKLIST.every(item => checks[item.key]);
   const canSubmitCheckIn =
-    allCheckInChecked && /^\d{6}$/.test(pin) && rfid.trim() !== '' && notes.length <= NOTES_MAX && !submitting;
+    allCheckInChecked && /^\d{6}$/.test(pin) && rfid.trim() !== '' && notes.length <= NOTES_MAX
+    && checkInPhotos.length > 0 && !submitting;
 
   const handleCheckInSubmit = () => {
     setSubmitting(true);
-    checkInStaffTask(task.id, userId, { ...checks, accessPinCode: pin, rfidCardCode: rfid.trim(), notes })
+    checkInStaffTask(task.id, userId, {
+      ...checks, accessPinCode: pin, rfidCardCode: rfid.trim(), notes, evidenceImages: checkInPhotos,
+    })
       .then(data => {
         setTask(data);
         setJustCompleted(true);
@@ -934,13 +903,14 @@ export default function StaffTaskDetailPage() {
   }
 
   const canSubmitCheckOut =
-    blockingPassed && !damageValidationError && coNotes.length <= NOTES_MAX && !submitting;
+    blockingPassed && !damageValidationError && coNotes.length <= NOTES_MAX && checkOutPhotos.length > 0 && !submitting;
 
   const handleCheckOutSubmit = () => {
     setSubmitting(true);
     const payload = {
       ...coChecks,
       notes: coNotes,
+      evidenceImages: checkOutPhotos,
       damageCases: damageCases.map(d => ({
         title: d.title.trim(),
         description: d.description?.trim() || '',
@@ -1038,18 +1008,27 @@ export default function StaffTaskDetailPage() {
 
   // ================== LOGIC HỖ TRỢ KHÁCH HÀNG (UC-27) ==================
   const isSupport = task?.taskType === 'SUPPORT';
+  // BR-126: ticket hàng hư / mất → task hỗ trợ là kiểm tra hiện trường (bắt buộc ảnh + nguyên nhân sơ bộ)
+  const claim = task?.claim;
+  const isClaimInspection = isSupport && Boolean(claim);
   const canSubmitSupport =
-    resolutionNote.trim().length >= 1 && resolutionNote.trim().length <= NOTES_MAX && !submitting;
+    resolutionNote.trim().length >= (isClaimInspection ? 10 : 1) && resolutionNote.trim().length <= NOTES_MAX && !submitting
+    && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause)));
 
   const handleResolveSupportSubmit = () => {
     setSubmitting(true);
-    resolveSupportTask(task.id, userId, { resolutionNote: resolutionNote.trim() })
+    resolveSupportTask(task.id, userId, {
+      resolutionNote: resolutionNote.trim(),
+      ...(isClaimInspection ? { inspectionImages, preliminaryCause } : {}),
+    })
       .then(data => {
         setTask(data);
         setJustCompleted(true);
         setToast({
           type: 'success',
-          message: `Đã xử lý xong yêu cầu hỗ trợ ${data.ticketCode || ''}. Trạng thái phiếu chuyển sang Chờ khách xác nhận (RESOLVED).`,
+          message: isClaimInspection
+            ? `Đã lập biên bản kiểm tra hồ sơ ${claim.claimCode}. Quản lý cơ sở sẽ thẩm định và chốt bồi thường.`
+            : `Đã xử lý xong yêu cầu hỗ trợ ${data.ticketCode || ''}. Trạng thái phiếu chuyển sang Chờ khách xác nhận (RESOLVED).`,
         });
       })
       .catch(err => {
@@ -1926,14 +1905,50 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
+                  {/* BR-126: hồ sơ bồi thường khách gửi — nhân viên kiểm tra hiện trường */}
+                  {isClaimInspection && (
+                    <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#FFB8B8] bg-[#FFF5F5] p-4">
+                      <p className="text-sm font-black text-[#FF4B4B] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[20px]">gavel</span>
+                        Hồ sơ bồi thường {claim.claimCode} — {claim.claimType === 'GOODS_LOSS' ? 'Mất hàng' : 'Hàng bị hư hỏng'}
+                      </p>
+                      <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">{claim.itemsDescription}</p>
+                      <p className="text-xs font-bold text-[#777777]">
+                        Khách đề nghị {Number(claim.claimedAmount).toLocaleString('vi-VN')}đ · phát hiện ngày {claim.incidentDate || '—'} · gói bảo hiểm {claim.insurancePlanLabel}
+                      </p>
+                      {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
+                      <p className="text-[11px] font-bold text-[#FF9600]">
+                        Mở ô cùng khách, chụp hiện trạng (dấu thấm, ẩm mốc, khoá, hàng hư) và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu với ảnh lúc nhận kho và cảm biến để kết luận.
+                      </p>
+                      <HandoverPhotoPicker
+                        images={inspectionImages}
+                        onChange={setInspectionImages}
+                        label="Ảnh kiểm tra hiện trường"
+                        mockLabel={`Hiện trường ô ${task.storageUnitId || ''} khi kiểm tra`}
+                      />
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-[#777777]">Nguyên nhân sơ bộ *</span>
+                        <select value={preliminaryCause} onChange={e => setPreliminaryCause(e.target.value)} className="duo-input text-xs">
+                          <option value="">— Chọn —</option>
+                          <option value="FACILITY">Do cơ sở (dột, nhiệt độ / độ ẩm, khoá hỏng...)</option>
+                          <option value="CUSTOMER">Do khách (đóng gói kém, hàng tự hư, hàng cấm...)</option>
+                          <option value="FORCE_MAJEURE">Bất khả kháng (thiên tai, hoả hoạn từ bên ngoài)</option>
+                          <option value="UNKNOWN">Chưa xác định được</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+
                   {/* Form nhập kết quả xử lý (PR-S5) */}
                   <div className="flex flex-col gap-3">
                     <div>
                       <h3 className="text-base font-black text-[#4B4B4B]">
-                        Báo cáo kết quả xử lý hỗ trợ (PR-S5)
+                        {isClaimInspection ? 'Biên bản kiểm tra hiện trường' : 'Báo cáo kết quả xử lý hỗ trợ (PR-S5)'}
                       </h3>
                       <p className="text-xs font-bold text-[#AFAFAF]">
-                        Nhập nội dung đã kiểm tra / khắc phục tại hiện trường (1–1000 ký tự) để gửi phản hồi cho khách hàng xác nhận.
+                        {isClaimInspection
+                          ? 'Mô tả những gì đã kiểm tra tại ô (tối thiểu 10 ký tự). Phiếu hỗ trợ vẫn đang xử lý cho tới khi quản lý chốt bồi thường.'
+                          : 'Nhập nội dung đã kiểm tra / khắc phục tại hiện trường (1–1000 ký tự) để gửi phản hồi cho khách hàng xác nhận.'}
                       </p>
                     </div>
 
@@ -2080,6 +2095,9 @@ export default function StaffTaskDetailPage() {
                         <p><span className="font-black text-[#AFAFAF] uppercase mr-1">Người nghiệm thu:</span><span className="font-black text-[#4B4B4B]">{record.staffName}</span></p>
                         <p className="mt-1 whitespace-pre-line"><span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span><span className="font-bold text-[#777777]">{record.notes || 'Không có'}</span></p>
                       </div>
+                      {record.evidenceImages?.length > 0 && (
+                        <div className="mt-3"><PhotoGrid images={record.evidenceImages} /></div>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs font-bold text-[#AFAFAF]">Task này không có biên bản nghiệm thu.</p>
@@ -2146,6 +2164,9 @@ export default function StaffTaskDetailPage() {
                         <p><span className="font-black text-[#AFAFAF] uppercase mr-1">Người lập:</span><span className="font-black text-[#4B4B4B]">{record.staffName}</span></p>
                         <p className="mt-1 whitespace-pre-line"><span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span><span className="font-bold text-[#777777]">{record.notes || 'Không có'}</span></p>
                       </div>
+                      {record.evidenceImages?.length > 0 && (
+                        <div className="mt-3"><PhotoGrid images={record.evidenceImages} /></div>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs font-bold text-[#AFAFAF]">Task này không có biên bản bàn giao.</p>
@@ -2184,6 +2205,7 @@ export default function StaffTaskDetailPage() {
                         customerSignatureConfirmed: true,
                       });
                       setDamageCases([]);
+                      setCheckOutPhotos(prev => withMockHandoverPhoto(prev, task, 'trả kho'));
                     }}
                     className="duo-btn-white px-3.5 py-2 text-xs gap-1.5"
                     title="Điền nhanh trường hợp kho nguyên vẹn 100%"
@@ -2216,6 +2238,7 @@ export default function StaffTaskDetailPage() {
                       );
                       facilityFault.evidenceImages = [createMockEvidenceDataUrl('Vết thấm trần ô ' + (task.storageUnitId || ''))];
                       setDamageCases([customerFault, facilityFault]);
+                      setCheckOutPhotos(prev => withMockHandoverPhoto(prev, task, 'trả kho'));
                     }}
                     className="duo-btn-white px-3.5 py-2 text-xs gap-1.5"
                     title="Điền nhanh 1 sự cố lỗi khách vượt cọc + 1 sự cố lỗi cơ sở, kèm ảnh mẫu"
@@ -2241,6 +2264,7 @@ export default function StaffTaskDetailPage() {
                       );
                       facilityFault.evidenceImages = [createMockEvidenceDataUrl('Vết thấm trần ô ' + (task.storageUnitId || ''))];
                       setDamageCases([facilityFault]);
+                      setCheckOutPhotos(prev => withMockHandoverPhoto(prev, task, 'trả kho'));
                     }}
                     className="duo-btn-white px-3.5 py-2 text-xs gap-1.5"
                     title="Điền nhanh sự cố do cơ sở: ô vẫn vào bảo trì nhưng khách được hoàn cọc đầy đủ"
@@ -2609,6 +2633,15 @@ export default function StaffTaskDetailPage() {
                 )}
               </div>
 
+              {/* BR-121: ảnh hiện trạng ô lúc trả — so với ảnh lúc nhận kho để biết hư hỏng phát sinh khi nào */}
+              <HandoverPhotoPicker
+                images={checkOutPhotos}
+                onChange={setCheckOutPhotos}
+                label="Ảnh hiện trạng ô lúc trả kho"
+                hint="Chụp toàn cảnh bên trong ô, cửa và khoá. Ảnh lưu vào biên bản, khách xem lại được — là căn cứ khi có tranh chấp."
+                mockLabel={`Hiện trạng ô ${task.storageUnitId || ''} lúc trả kho`}
+              />
+
               {/* Ghi chú biên bản */}
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú biên bản nghiệm thu</span>
@@ -2637,7 +2670,8 @@ export default function StaffTaskDetailPage() {
                 <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">
                   {!blockingPassed
                     ? 'Vui lòng hoàn thành đủ 3 mục Điều kiện bắt buộc (CCCD, Ô trống, Chữ ký khách).'
-                    : damageValidationError || 'Vui lòng kiểm tra lại thông tin biên bản.'}
+                    : damageValidationError
+                      || (checkOutPhotos.length === 0 ? 'Cần ít nhất 1 ảnh hiện trạng ô lúc trả kho.' : 'Vui lòng kiểm tra lại thông tin biên bản.')}
                 </p>
               )}
             </div>
@@ -2651,7 +2685,10 @@ export default function StaffTaskDetailPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setChecks(CHECKIN_CHECKLIST.reduce((acc, item) => ({ ...acc, [item.key]: true }), {}))}
+                  onClick={() => {
+                    setChecks(CHECKIN_CHECKLIST.reduce((acc, item) => ({ ...acc, [item.key]: true }), {}));
+                    setCheckInPhotos(prev => withMockHandoverPhoto(prev, task, 'nhận kho'));
+                  }}
                   className="duo-btn-white px-4 py-2 text-xs gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
@@ -2720,6 +2757,15 @@ export default function StaffTaskDetailPage() {
                 </label>
               </div>
 
+              {/* BR-121: ảnh hiện trạng ô lúc bàn giao */}
+              <HandoverPhotoPicker
+                images={checkInPhotos}
+                onChange={setCheckInPhotos}
+                label="Ảnh hiện trạng ô lúc bàn giao"
+                hint="Chụp ô trống, sạch, khoá nguyên vẹn trước khi giao — lúc trả kho sẽ đối chiếu với ảnh này."
+                mockLabel={`Hiện trạng ô ${task.storageUnitId || ''} lúc nhận kho`}
+              />
+
               {/* Ghi chú */}
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú</span>
@@ -2746,7 +2792,10 @@ export default function StaffTaskDetailPage() {
               </button>
               {!canSubmitCheckIn && !submitting && (
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">
-                  {!allCheckInChecked ? 'Cần tick đủ 5 mục kiểm tra.' : rfid.trim() === '' ? 'Cần nhập mã thẻ RFID.' : 'Đang chờ mã PIN...'}
+                  {!allCheckInChecked ? 'Cần tick đủ 5 mục kiểm tra.'
+                    : rfid.trim() === '' ? 'Cần nhập mã thẻ RFID.'
+                    : checkInPhotos.length === 0 ? 'Cần ít nhất 1 ảnh hiện trạng ô.'
+                    : 'Đang chờ mã PIN...'}
                 </p>
               )}
             </div>
@@ -2833,8 +2882,10 @@ export default function StaffTaskDetailPage() {
         open={confirmSupportOpen}
         icon="support_agent"
         tone="green"
-        title="Xác nhận đã xử lý xong yêu cầu hỗ trợ?"
-        message={`Task hỗ trợ #${task.id} sẽ chuyển sang HOÀN THÀNH và phiếu #${task.ticketCode || ''} sẽ chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Khách hàng sẽ nhận được phản hồi: "${resolutionNote.trim()}".`}
+        title={isClaimInspection ? 'Lưu biên bản kiểm tra hiện trường?' : 'Xác nhận đã xử lý xong yêu cầu hỗ trợ?'}
+        message={isClaimInspection
+          ? `Task #${task.id} hoàn thành, hồ sơ ${claim?.claimCode || ''} chuyển sang Chờ quản lý thẩm định kèm ${inspectionImages.length} ảnh. Phiếu hỗ trợ vẫn đang xử lý.`
+          : `Task hỗ trợ #${task.id} sẽ chuyển sang HOÀN THÀNH và phiếu #${task.ticketCode || ''} sẽ chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Khách hàng sẽ nhận được phản hồi: "${resolutionNote.trim()}".`}
         confirmLabel="Xác nhận hoàn tất"
         submitting={submitting}
         onConfirm={handleResolveSupportSubmit}

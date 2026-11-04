@@ -63,4 +63,9 @@ public class RentalContract {
 
     @Column(name = "late_fee_waiver_note", length = 500)
     private String lateFeeWaiverNote;
+
+    // BR-127: FM chốt hồ sơ bồi thường lỗi cơ sở với lựa chọn "chấm dứt hợp đồng" → trả kho không phí phá HĐ,
+    // hoàn tiền thuê theo số ngày còn lại (thay công thức trả sớm PR-O2)
+    @Column(name = "fault_termination", nullable = false)
+    private Boolean faultTermination = false;
 }

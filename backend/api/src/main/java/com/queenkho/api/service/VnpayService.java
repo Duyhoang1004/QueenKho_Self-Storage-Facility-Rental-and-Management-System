@@ -93,7 +93,10 @@ public class VnpayService {
         BigDecimal depositAmount = (BigDecimal) r.get("deposit_amount");
         // BR-25: trừ đúng số tiền voucher đã chốt trên đơn (đơn cũ chưa có cột này → NEWKHO 100.000đ)
         BigDecimal voucherDiscount = r.get("voucher_discount") instanceof BigDecimal vd ? vd : PricingService.WELCOME_VOUCHER;
-        BigDecimal netAmount = rent.add(depositAmount).subtract(voucherDiscount);
+        // BR-125: + phí bảo hiểm gói khách chọn × số tháng (BASIC = 0)
+        BigDecimal premium = r.get("insurance_premium_monthly") instanceof BigDecimal p ? p : BigDecimal.ZERO;
+        BigDecimal insurance = premium.multiply(BigDecimal.valueOf(m));
+        BigDecimal netAmount = rent.add(depositAmount).subtract(voucherDiscount).add(insurance);
 
         return create("DEPOSIT", id, null, m, r.get("customer_id"), netAmount, depositAmount, ip, holdExpiresAt);
     }
@@ -140,7 +143,9 @@ public class VnpayService {
         // Flow 6 / PR-Q6: báo giá dùng chung với màn hình (GET /contracts/{id}/renewal-quote) và CHỐT CỨNG
         // số tiền tại thời điểm tạo link: tiền thuê theo % ưu đãi gia hạn của BOM + phí trễ (0 nếu FM đã miễn)
         var quote = pricing.quoteRenewal(c, m);
-        BigDecimal rentAmount = quote.rentAmount();
+        // BR-125: phí bảo hiểm các tháng gia hạn ghi chung dòng MONTHLY_RENT (tổng nhóm vẫn khớp totalAmount)
+        BigDecimal insuranceAmount = quote.insuranceAmount() != null ? quote.insuranceAmount() : BigDecimal.ZERO;
+        BigDecimal rentAmount = quote.rentAmount().add(insuranceAmount);
         BigDecimal lateFeeAmount = quote.lateFeeAmount();
         BigDecimal totalAmount = quote.totalAmount();
 

@@ -19,7 +19,9 @@ public record RentalPolicyRequest(
     Boolean allowLateFeeWaiver,
     // PR-Q14 / PR-Q15: % giá ngày tính phí chiếm dụng (100–300) và phí lưu giữ hàng sau thanh lý (0–100)
     @Min(100) @Max(300) Integer overstayPercent,
-    @Min(0) @Max(100) Integer heldGoodsFeePercent
+    @Min(0) @Max(100) Integer heldGoodsFeePercent,
+    // PR-Q16: % giá tháng tính phí dọn & di dời hàng khi thanh lý (0–100)
+    @Min(0) @Max(100) Integer goodsMovingFeePercent
 ) {
     // Giữ tương thích chỗ gọi cũ chỉ có 4 trường gốc
     public RentalPolicyRequest(Integer depositMonthMultiplier, Integer cancelFeePercent,
@@ -36,6 +38,6 @@ public record RentalPolicyRequest(
                                Boolean allowLateFeeWaiver) {
         this(depositMonthMultiplier, cancelFeePercent, cancelFreeHours, lateFeePercentPerDay,
                 bookingDiscount3m, bookingDiscount6m, bookingDiscount12m,
-                renewalDiscount3m, renewalDiscount6m, renewalDiscount12m, allowLateFeeWaiver, null, null);
+                renewalDiscount3m, renewalDiscount6m, renewalDiscount12m, allowLateFeeWaiver, null, null, null);
     }
 }

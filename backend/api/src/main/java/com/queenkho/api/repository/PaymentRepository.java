@@ -24,7 +24,7 @@ public class PaymentRepository {
         try {
             return jdbcTemplate.queryForMap(
                     "SELECT r.id, r.reservation_code, r.customer_id, r.facility_id, r.deposit_amount, " +
-                    "r.duration_months, r.status, r.created_at, r.rent_discount_percent, r.voucher_discount, ut.base_price_monthly " +
+                    "r.duration_months, r.status, r.created_at, r.rent_discount_percent, r.voucher_discount, r.insurance_premium_monthly, ut.base_price_monthly " +
                     "FROM reservations r " + (lock ? "WITH (UPDLOCK, ROWLOCK) " : "") +
                     "JOIN unit_types ut ON ut.id = r.unit_type_id WHERE r.id = ?",
                     reservationId);

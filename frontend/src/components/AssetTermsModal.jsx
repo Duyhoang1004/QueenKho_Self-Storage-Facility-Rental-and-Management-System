@@ -1,16 +1,18 @@
 // Điều khoản xử lý tài sản khi không trả kho (v2) — khách tick đồng ý khi đặt kho, lưu reservations.terms_version.
 // Đổi nội dung → tăng version ở đây VÀ ReservationService.ASSET_TERMS_VERSION ở backend.
 // v2 (27/10/2026): gia hạn báo trước 3 ngày (PR-R10), phí chiếm dụng (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15).
-const TERMS_VERSION = 'v2'
+// v3 (04/11/2026): phí dọn & di dời hàng khi thanh lý (PR-Q16), chuyển ô cùng loại (BR-122), ảnh biên bản bàn giao (BR-121).
+const TERMS_VERSION = 'v3'
 
 const CLAUSES = [
   'Muốn thuê tiếp, Bên thuê gia hạn chậm nhất 3 ngày trước ngày hết hạn. Sau mốc này ô kho được mở cho khách khác đặt trước; Bên thuê chỉ còn gia hạn được nếu chưa có ai đặt ô.',
   'Hết hạn hợp đồng mà Bên thuê không gia hạn hoặc không trả kho, hợp đồng chuyển sang QUÁ HẠN: mã truy cập bị khoá, phí trễ tính theo chính sách thuê (10% tiền cọc mỗi ngày, tối đa 50%) và PHÍ CHIẾM DỤNG ô cho mỗi ngày quá hạn (mặc định 150% giá thuê theo ngày, không giới hạn). Phí trừ vào tiền cọc, phần vượt cọc là khoản nợ Bên thuê phải thanh toán.',
   'QueenKho liên hệ Bên thuê ít nhất 3 lần qua số điện thoại / email đã đăng ký.',
-  'Quá hạn 15 ngày (theo chính sách thuê), QueenKho có quyền THANH LÝ hợp đồng: thu hồi toàn bộ khoá, mã PIN, thẻ RFID và mở ô kho với sự có mặt của ít nhất 2 nhân sự. Tài sản được kiểm kê, chụp ảnh, lập biên bản và chuyển sang khu lưu giữ.',
+  'Quá hạn 15 ngày (theo chính sách thuê), QueenKho có quyền THANH LÝ hợp đồng: thu hồi toàn bộ khoá, mã PIN, thẻ RFID và mở ô kho với sự có mặt của ít nhất 2 nhân sự. Tài sản được kiểm kê, chụp ảnh, lập biên bản và chuyển sang khu lưu giữ. Bên thuê chịu PHÍ DỌN & DI DỜI HÀNG một lần (mặc định 30% giá thuê tháng của ô), trừ vào tiền cọc; phần vượt cọc là khoản nợ.',
   'Tài sản được lưu giữ 60 ngày kể từ ngày thanh lý, tính PHÍ LƯU GIỮ mỗi ngày (mặc định 20% giá thuê theo ngày của ô cũ). Trong thời gian này Bên thuê nhận lại được sau khi thanh toán đủ các khoản còn nợ và phí lưu giữ.',
   'Hết thời hạn lưu giữ, Bên thuê đồng ý để QueenKho BÁN THANH LÝ tài sản; tài sản không còn giá trị được tiêu huỷ có biên bản. Tiền bán được dùng để trừ nợ và chi phí lưu giữ, phần còn dư được hoàn lại cho Bên thuê.',
   'Hàng cấm, chất nguy hiểm, giấy tờ tuỳ thân được giao ngay cho cơ quan công an / UBND phường, không áp dụng mục 5.',
+  'Biên bản nhận kho và trả kho có ảnh hiện trạng ô; hư hỏng của ô được xác định bằng cách đối chiếu hai bộ ảnh này. QueenKho có thể chuyển hợp đồng sang ô khác CÙNG LOẠI tại cùng cơ sở (giá thuê, mã PIN giữ nguyên) khi ô có sự cố, khi Bên thuê yêu cầu hoặc khi đã thống nhất với Bên thuê; nếu do sự cố của cơ sở, QueenKho hỗ trợ chuyển hàng miễn phí.',
   'Bên thuê xác nhận đã đọc, hiểu và đồng ý điều khoản này khi đặt kho.',
 ]
 

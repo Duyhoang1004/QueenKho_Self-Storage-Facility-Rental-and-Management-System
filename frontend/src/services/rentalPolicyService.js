@@ -33,6 +33,8 @@ export async function createRentalPolicyVersion(facilityId, values) {
     // PR-Q14 / PR-Q15: % phí chiếm dụng khi quá hạn + % phí lưu giữ hàng sau thanh lý
     overstayPercent: optionalNumber(values.overstayPercent),
     heldGoodsFeePercent: optionalNumber(values.heldGoodsFeePercent),
+    // PR-Q16: % giá tháng tính phí dọn & di dời hàng khi thanh lý
+    goodsMovingFeePercent: optionalNumber(values.goodsMovingFeePercent),
   });
   return response.data;
 }

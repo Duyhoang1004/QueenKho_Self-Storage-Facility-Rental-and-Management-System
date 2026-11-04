@@ -68,10 +68,20 @@ public class AccessPolicy {
                 scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
         group("HELD_GOODS_MANAGE", "Hàng lưu giữ sau thanh lý",
                 "PR-Q10: trả khách, bán thanh lý, tiêu huỷ, giao cơ quan chức năng", scopes("FACILITY_MANAGER", FACILITY));
-        group("RESERVATION_MANAGE", "Duyệt đơn, gán ô, No-Show, dời lịch",
-                "Flow 1 / 2: gán ô đúng loại cho đơn đã cọc", scopes("FACILITY_MANAGER", FACILITY));
-        group("CONTRACT_MANAGE", "Quá hạn: liên hệ, miễn phí trễ, thanh lý",
+        group("RESERVATION_MANAGE", "Duyệt đơn, gán ô, chuyển ô, No-Show, dời lịch",
+                "Flow 1 / 2: gán ô đúng loại cho đơn đã cọc, chuyển hợp đồng sang ô khác (BR-122)",
+                scopes("FACILITY_MANAGER", FACILITY));
+        group("CONTRACT_MANAGE", "Quá hạn: liên hệ, thanh lý",
                 "Flow 6: theo dõi hợp đồng quá hạn của cơ sở", scopes("FACILITY_MANAGER", FACILITY));
+        group("LATE_FEE_WAIVE", "Miễn phí trễ cho hợp đồng quá hạn",
+                "Flow 6 (04/11/2026): FM miễn cho cơ sở mình (khi chính sách cho phép), BOM miễn cho mọi cơ sở",
+                scopes("FACILITY_MANAGER", FACILITY, "BOM", SYSTEM));
+        group("CLAIM_VIEW", "Xem hồ sơ bồi thường hàng hư / mất",
+                "BR-126: danh sách, chi tiết, ảnh, bảng tính; BOM theo dõi chi phí bồi thường toàn chuỗi",
+                scopes("FACILITY_MANAGER", FACILITY, "BOM", SYSTEM));
+        group("CLAIM_MANAGE", "Chốt và chi trả bồi thường",
+                "BR-127 / BR-128: xác định lỗi, mức bồi thường, chi trả có bằng chứng, gửi hồ sơ bảo hiểm",
+                scopes("FACILITY_MANAGER", FACILITY));
         group("STORAGE_MANAGE", "Danh mục ô kho",
                 "Flow 5: loại, kích thước, vị trí, giá, trạng thái ô", scopes("FACILITY_MANAGER", FACILITY));
         group("STAFF_MANAGE", "Quản lý nhân viên cơ sở",
@@ -109,6 +119,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/facilities/{id:\\d+}/availability", PUBLIC);
         rule("GET", "/api/v1/facilities/{id:\\d+}/pricing", PUBLIC);
         rule("GET", "/api/v1/unit-types", PUBLIC);
+        rule("GET", "/api/v1/insurance-plans", PUBLIC); // BR-125: gói bảo hiểm cho trang đặt kho
         rule("GET", "/api/payments/vnpay/return", PUBLIC);
         rule("GET", "/api/payments/vnpay/ipn", PUBLIC);
         // Đăng xuất tự đọc token: token đã hết hạn vẫn trả 200 (FE không bị kẹt vòng lặp 401)
@@ -129,6 +140,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/contracts/{id}/cancel-checkout", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/contracts/{id}/renewal-quote", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/contracts/{id}/renewal-eligibility", "CUSTOMER_RENTAL"); // PR-R10 / PR-R11
+        rule("POST", "/api/v1/contracts/{id}/online-check-in", "CUSTOMER_RENTAL"); // BR-124
         rule("POST", "/api/payments/vnpay/create-renewal", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/payments/my", "CUSTOMER_PAYMENT");
         rule("POST", "/api/payments/vnpay/create-debt", "CUSTOMER_PAYMENT");
@@ -140,10 +152,23 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/manager/overdue", "CONTRACT_MANAGE");
         rule("GET", "/api/v1/contracts/{id:\\d+}", "CONTRACT_VIEW");
         rule("GET", "/api/v1/contracts/{id}/unit-location", "CONTRACT_VIEW"); // UC-06: bản đồ chỉ xem
+        rule("GET", "/api/v1/contracts/{id}/handover-records", "CONTRACT_VIEW"); // BR-121: biên bản + ảnh
+        rule("GET", "/api/v1/contracts/{id}/unit-transfers", "CONTRACT_VIEW");   // BR-122: lịch sử chuyển ô
+        rule("GET", "/api/v1/contracts/{id}/transfer-options", "RESERVATION_MANAGE");
+        rule("POST", "/api/v1/contracts/{id}/transfer-unit", "RESERVATION_MANAGE");
         rule(null, "/api/v1/contracts/{id}/overdue-contacts", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/liquidate", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/refund-remaining-deposit", "CONTRACT_MANAGE");
-        rule("POST", "/api/v1/contracts/{id}/waive-late-fee", "CONTRACT_MANAGE");
+        rule("POST", "/api/v1/contracts/{id}/waive-late-fee", "LATE_FEE_WAIVE");
+        rule("GET", "/api/v1/contracts/overdue-all", "LATE_FEE_WAIVE");          // BOM: quá hạn toàn chuỗi
+        rule("GET", "/api/v1/contracts/{id}/sensor-readings", "CONTRACT_VIEW"); // BR-129
+
+        // Bồi thường hàng hư / mất (ticket hỗ trợ GOODS_DAMAGE / GOODS_LOSS)
+        rule("GET", "/api/v1/claims", "CLAIM_VIEW");
+        rule("GET", "/api/v1/claims/{id:\\d+}", "CLAIM_VIEW");
+        rule("POST", "/api/v1/claims/{id}/quote", "CLAIM_MANAGE");
+        rule("POST", "/api/v1/claims/{id}/decide", "CLAIM_MANAGE");
+        rule("POST", "/api/v1/claims/{id}/pay", "CLAIM_MANAGE");
 
         // Đơn đặt chỗ phía quản lý
         rule("GET", "/api/v1/reservations/pending", "RESERVATION_MANAGE");
@@ -212,6 +237,8 @@ public class AccessPolicy {
         rule("POST", "/api/v1/dev/simulation/contracts/{id}/make-overdue", "DEV_SIM_MANAGER");
         rule("POST", "/api/v1/dev/simulation/contracts/{id}/expire-soon", "DEV_SIM_CUSTOMER");
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/make-overdue", "DEV_SIM_MANAGER");
+        rule("POST", "/api/v1/dev/simulation/contracts/{id}/sensor-alert", "DEV_SIM_CUSTOMER"); // BR-129
+        rule("POST", "/api/v1/dev/simulation/claims/{id}/insurance-payout", "DEV_SIM_MANAGER"); // BR-128
     }
 
     private static Map<String, String> scopes(String... roleAndScope) {

@@ -8,6 +8,7 @@ import com.queenkho.api.dto.ContactReportRequest;
 import com.queenkho.api.dto.DamageCaseResponse;
 import com.queenkho.api.dto.ExtendSupportTaskRequest;
 import com.queenkho.api.dto.HandoverRecordResponse;
+import com.queenkho.api.dto.OnlineCheckInRequest;
 import com.queenkho.api.dto.RefundCalculationResult;
 import com.queenkho.api.dto.ResolveSupportTaskRequest;
 import com.queenkho.api.dto.StaffTaskDetailResponse;
@@ -128,6 +129,10 @@ public class StaffTaskService {
 
     @Autowired
     private LateFeeService lateFeeService;
+
+    // BR-126: task hỗ trợ của ticket hàng hư / mất = kiểm tra hiện trường cho hồ sơ bồi thường
+    @Autowired(required = false)
+    private CompensationClaimService compensationClaimService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -726,6 +731,8 @@ public class StaffTaskService {
         record.setLockIntact(true);
         record.setCustomerSignatureConfirmed(true);
         record.setNotes(notes);
+        record.setEvidenceImageUrls(serializeEvidenceImages(request.getEvidenceImages()));
+        record.setCheckInMethod("COUNTER");
         handoverRecordRepository.save(record);
 
         // 6. Kích hoạt hợp đồng + cấp mã mở khoá
@@ -786,6 +793,23 @@ public class StaffTaskService {
         if (request.getNotes() != null && request.getNotes().trim().length() > 1000) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Ghi chú tối đa 1000 ký tự");
         }
+        validateHandoverPhotos(request.getEvidenceImages(), "bàn giao");
+    }
+
+    // BR-121: biên bản check-in / nghiệm thu phải có ảnh hiện trạng ô (1–10 ảnh) — là căn cứ khi tranh chấp
+    // ai làm hỏng ô / hàng. So ảnh lúc nhận với ảnh lúc trả để biết hư hỏng phát sinh trong thời gian thuê
+    static final int MAX_HANDOVER_PHOTOS = 10;
+
+    private void validateHandoverPhotos(List<String> images, String action) {
+        long count = images == null ? 0 : images.stream().filter(s -> s != null && !s.isBlank()).count();
+        if (count == 0) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "HANDOVER_PHOTO_REQUIRED",
+                    "Biên bản " + action + " bắt buộc có ít nhất 1 ảnh hiện trạng ô kho");
+        }
+        if (count > MAX_HANDOVER_PHOTOS) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Biên bản " + action + " tối đa " + MAX_HANDOVER_PHOTOS + " ảnh");
+        }
     }
 
     // UPDATE không ăn dòng nào → đọc lại task để báo đúng lý do
@@ -812,6 +836,145 @@ public class StaffTaskService {
         }
         return new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_PROGRESS",
                 "Bạn cần nhận việc trước khi lập biên bản");
+    }
+
+    // ================== BR-124: CHECK-IN ONLINE (KHÁCH TỰ NHẬN KHO) ==================
+
+    /**
+     * BR-124: khách tới cơ sở đúng ngày hẹn, tự check-in trên app thay vì chờ Staff ở quầy.
+     * Xác minh danh tính = CCCD khớp CCCD đã lưu; khách tự kiểm tra ô + chụp ảnh hiện trạng (BR-121) + cam kết hàng cấm.
+     * 1 transaction: task CHECK_IN COMPLETED (ghi chú "khách tự check-in"); biên bản CHECK_IN method ONLINE, không có Staff;
+     * hợp đồng ACTIVE + PIN (không cấp thẻ RFID — nhận tại quầy nếu cần); log; thông báo khách / FM / Staff đang giữ task.
+     */
+    @Transactional
+    public HandoverRecordResponse onlineCheckIn(Integer contractId, Integer customerId, OnlineCheckInRequest request) {
+        validateOnlineCheckInRequest(request);
+
+        RentalContract contract = rentalContractRepository.findDetailById(contractId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Không tìm thấy hợp đồng"));
+        User customer = contract.getCustomer();
+        if (customer == null || !customer.getId().equals(customerId)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_OWNER", "Hợp đồng không thuộc về bạn");
+        }
+        if (!"PENDING_CHECK_IN".equals(contract.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
+                    "Hợp đồng không ở trạng thái chờ nhận kho");
+        }
+
+        // Xác minh danh tính: CCCD khách nhập phải khớp CCCD đã lưu khi đặt kho (PR-B5)
+        String storedCccd = customer.getCccd() != null ? customer.getCccd().trim() : "";
+        if (storedCccd.isEmpty()) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "IDENTITY_MISSING",
+                    "Tài khoản chưa có CCCD nên không check-in online được, vui lòng nhận kho tại quầy");
+        }
+        if (!storedCccd.equals(request.getCccd().trim())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "IDENTITY_MISMATCH",
+                    "Số CCCD không khớp với thông tin đã đăng ký khi đặt kho");
+        }
+
+        // Cùng mốc với check-in tại quầy (PR-C1): chỉ từ ngày hẹn, trước 21:00 (hạn task)
+        LocalDate appointmentDate = contract.getStartDate();
+        if (contract.getReservation() != null && contract.getReservation().getExpectedAppointmentTime() != null) {
+            appointmentDate = contract.getReservation().getExpectedAppointmentTime().toLocalDate();
+        }
+        if (appointmentDate != null && LocalDate.now().isBefore(appointmentDate)) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY",
+                    "Bạn hẹn nhận kho ngày " + appointmentDate.format(DATE_FMT) + ", chưa check-in được trước ngày hẹn");
+        }
+
+        StaffTask task = staffTaskRepository
+                .findByContractIdAndTaskTypeAndStatusIn(contractId, "CHECK_IN", OPEN_STATUSES)
+                .stream().findFirst()
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_FOUND",
+                        "Không tìm thấy lịch nhận kho đang mở, vui lòng liên hệ cơ sở"));
+        Integer holderStaffId = task.getStaff() != null ? task.getStaff().getId() : null;
+        LocalDateTime now = LocalDateTime.now();
+        String taskNote = appendTaskNote(task.getNote(), "Khách tự check-in online lúc " + now.format(TS_FMT));
+        if (staffTaskRepository.completeCheckInOnline(task.getId(), now, taskNote) == 0) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_OVERDUE",
+                    "Đã quá 21:00 ngày hẹn nhận kho — vui lòng liên hệ cơ sở để dời lịch");
+        }
+
+        // Đọc lại sau UPDATE (clearAutomatically đã xoá cache Hibernate)
+        contract = rentalContractRepository.findDetailById(contractId).orElseThrow();
+        String pin = suggestPin();
+
+        HandoverRecord record = new HandoverRecord();
+        record.setContract(contract);
+        record.setStaff(null);
+        record.setRecordType("CHECK_IN");
+        record.setCheckInMethod("ONLINE");
+        record.setIdentityVerified(true);
+        record.setUnitEmpty(true);
+        record.setUnitClean(true);
+        record.setLockIntact(true);
+        record.setCustomerSignatureConfirmed(true);
+        String notes = "Khách tự check-in online, đã cam kết không lưu hàng cấm / chất nguy hiểm.";
+        if (request.getNotes() != null && !request.getNotes().isBlank()) {
+            notes += " Ghi chú của khách: " + request.getNotes().trim();
+        }
+        record.setNotes(notes);
+        record.setEvidenceImageUrls(serializeEvidenceImages(request.getEvidenceImages()));
+        handoverRecordRepository.save(record);
+
+        contract.setStatus("ACTIVE");
+        contract.setAccessPinCode(pin);
+        contract.setRfidCardCode(null);
+        rentalContractRepository.save(contract);
+
+        String unitId = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "";
+        activityLogService.log(customerId,
+                "[CHECK_IN_ONLINE] Khách tự check-in online HĐ " + contract.getContractCode() + ", ô " + unitId,
+                "rental_contracts", String.valueOf(contract.getId()));
+
+        String contractUrl = contract.getReservation() != null
+                ? "/kho-cua-toi/hop-dong/" + contract.getReservation().getId() : "/kho-cua-toi";
+        // BR-117: không gửi PIN qua email — khách xem PIN trong trang hợp đồng
+        if (notificationService != null) {
+            notificationService.notifyCustomer(customerId,
+                    "Check-in online thành công — hợp đồng " + contract.getContractCode() + " đã kích hoạt",
+                    "Ô " + unitId + " đã bàn giao cho bạn, hợp đồng có hiệu lực đến " + contract.getEndDate()
+                            + ". Mã PIN xem trong trang hợp đồng; cần thẻ RFID thì nhận tại quầy.",
+                    "ASSIGNED", contractUrl);
+            notificationService.notifyFacilityManagers(task.getFacilityId(),
+                    "Khách tự check-in online",
+                    "HĐ " + contract.getContractCode() + " (ô " + unitId + ") đã được khách tự nhận kho, kèm ảnh hiện trạng.",
+                    "TASK", "/manager/tasks/" + task.getId());
+            if (holderStaffId != null) {
+                notificationService.notifyStaff(holderStaffId,
+                        "Khách đã tự check-in online",
+                        "Task nhận kho HĐ " + contract.getContractCode() + " đã được khách tự hoàn tất, bạn không cần bàn giao nữa.",
+                        "TASK", "/staff/tasks/" + task.getId());
+            }
+        }
+
+        entityManager.flush();
+        return toHandoverResponse(record);
+    }
+
+    private void validateOnlineCheckInRequest(OnlineCheckInRequest request) {
+        if (request == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu nội dung check-in");
+        }
+        if (request.getCccd() == null || request.getCccd().isBlank()) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Vui lòng nhập số CCCD để xác minh");
+        }
+        boolean unitOk = Boolean.TRUE.equals(request.getUnitEmpty())
+                && Boolean.TRUE.equals(request.getUnitClean())
+                && Boolean.TRUE.equals(request.getLockIntact());
+        if (!unitOk) {
+            // Ô không đạt thì không tự nhận — để Staff kiểm tra, tránh khách nhận ô lỗi rồi bị tính lỗi lúc trả
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CHECKLIST_INCOMPLETE",
+                    "Ô kho chưa đạt (chưa trống / chưa sạch / khoá có vấn đề) — vui lòng báo nhân viên tại quầy, không tự nhận kho");
+        }
+        if (!Boolean.TRUE.equals(request.getProhibitedGoodsCommitted())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CHECKLIST_INCOMPLETE",
+                    "Bạn cần cam kết không lưu trữ hàng cấm / chất nguy hiểm");
+        }
+        if (request.getNotes() != null && request.getNotes().trim().length() > 500) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Ghi chú tối đa 500 ký tự");
+        }
+        validateHandoverPhotos(request.getEvidenceImages(), "check-in online");
     }
 
     // ================== UC-27: XỬ LÝ YÊU CẦU HỖ TRỢ (STAFF & FM) ==================
@@ -862,7 +1025,14 @@ public class StaffTaskService {
 
         // Cập nhật ticket sang RESOLVED
         String ticketCode = "#" + supportRequestId;
-        if (supportRequestId != null) {
+        SupportRequest linkedTicket = supportRequestId == null ? null : supportRequestRepository.findById(supportRequestId).orElse(null);
+        if (linkedTicket != null && CompensationClaimService.isClaimIssue(linkedTicket.getIssueType())
+                && compensationClaimService != null) {
+            // BR-126: ticket hàng hư / mất → "hoàn tất" = biên bản kiểm tra hiện trường; ticket vẫn đang xử lý chờ FM chốt bồi thường
+            compensationClaimService.recordInspection(linkedTicket.getId(), staff, resolutionNote,
+                    request.getInspectionImages(), request.getPreliminaryCause());
+            ticketCode = linkedTicket.getTicketCode();
+        } else if (supportRequestId != null) {
             SupportRequest sr = supportRequestRepository.findById(supportRequestId)
                     .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND",
                             "Không tìm thấy ticket hỗ trợ liên kết"));
@@ -1148,6 +1318,8 @@ public class StaffTaskService {
         record.setLockIntact(Boolean.TRUE.equals(request.getLockIntact()));
         record.setCustomerSignatureConfirmed(Boolean.TRUE.equals(request.getCustomerSignatureConfirmed()));
         record.setNotes(notes);
+        record.setEvidenceImageUrls(serializeEvidenceImages(request.getEvidenceImages()));
+        record.setCheckInMethod("COUNTER");
         handoverRecordRepository.save(record);
 
         // 5. UC-24: Lưu danh sách sự cố hư hỏng (nếu có).
@@ -1583,6 +1755,7 @@ public class StaffTaskService {
         if (request.getNotes() != null && request.getNotes().trim().length() > 1000) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Ghi chú tối đa 1000 ký tự");
         }
+        validateHandoverPhotos(request.getEvidenceImages(), "nghiệm thu");
 
         boolean conditionFailed = !Boolean.TRUE.equals(request.getUnitClean()) || !Boolean.TRUE.equals(request.getLockIntact());
         List<CheckOutRequest.DamageItemRequest> damages = request.getDamageCases() != null
@@ -1960,11 +2133,14 @@ public class StaffTaskService {
                 .ticketCreatedAt(sr != null ? sr.getCreatedAt() : null)
                 .ticketResolvedAt(sr != null ? sr.getResolvedAt() : null)
                 .ticketClosedAt(sr != null ? sr.getClosedAt() : null)
+                .claim(sr != null && CompensationClaimService.isClaimIssue(sr.getIssueType()) && compensationClaimService != null
+                        ? compensationClaimService.byTicketIds(List.of(sr.getId())).get(sr.getId()) : null)
                 .build();
     }
 
     private HandoverRecordResponse toHandoverResponse(HandoverRecord record) {
         User staff = record.getStaff();
+        RentalContract contract = record.getContract();
         return HandoverRecordResponse.builder()
                 .id(record.getId())
                 .recordType(record.getRecordType())
@@ -1974,10 +2150,21 @@ public class StaffTaskService {
                 .lockIntact(record.getLockIntact())
                 .customerSignatureConfirmed(record.getCustomerSignatureConfirmed())
                 .notes(record.getNotes())
-                .staffId(staff.getId())
-                .staffName(staff.getFullName())
+                .staffId(staff != null ? staff.getId() : null)
+                .staffName(staff != null ? staff.getFullName() : "Khách tự check-in online")
                 .createdAt(record.getCreatedAt())
+                .evidenceImages(parseEvidenceImages(record.getEvidenceImageUrls()))
+                .checkInMethod(record.getCheckInMethod())
+                .contractCode(contract != null ? contract.getContractCode() : null)
                 .build();
+    }
+
+    // BR-121: khách / Staff / FM xem lại mọi biên bản bàn giao của 1 hợp đồng (quyền đã kiểm tra ở controller)
+    @Transactional(readOnly = true)
+    public List<HandoverRecordResponse> getHandoverRecords(Integer contractId) {
+        return handoverRecordRepository.findByContractIdOrderByIdAsc(contractId).stream()
+                .map(this::toHandoverResponse)
+                .toList();
     }
 
     // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
@@ -2289,6 +2476,20 @@ public class StaffTaskService {
         return new EarlyReturn(usedMonths, baseMonthlyPrice, refund);
     }
 
+    /**
+     * BR-127: chấm dứt hợp đồng do lỗi cơ sở (hồ sơ bồi thường chọn TERMINATE) → không phí phá HĐ,
+     * hoàn tiền thuê kỳ hiện tại theo số NGÀY còn lại (giữ nguyên ưu đãi đã hưởng, gồm cả phí bảo hiểm các ngày chưa dùng).
+     */
+    static EarlyReturn faultTerminationReturn(LocalDate periodStart, LocalDate periodEnd, LocalDate actualDate, BigDecimal rentPaid) {
+        long totalDays = Math.max(1, ChronoUnit.DAYS.between(periodStart, periodEnd));
+        long remainingDays = Math.max(0, ChronoUnit.DAYS.between(actualDate, periodEnd));
+        BigDecimal refund = rentPaid.multiply(BigDecimal.valueOf(remainingDays))
+                .divide(BigDecimal.valueOf(totalDays), 0, RoundingMode.HALF_UP);
+        long usedDays = totalDays - Math.min(totalDays, remainingDays);
+        int usedMonths = (int) Math.max(1, (usedDays + 29) / 30);
+        return new EarlyReturn(usedMonths, BigDecimal.ZERO, refund.max(BigDecimal.ZERO));
+    }
+
     public RefundCalculationResult calculateCheckoutRefund(RentalContract contract, LocalDate actualCheckoutDate, BigDecimal totalDamageCost) {
         if (totalDamageCost == null) {
             totalDamageCost = BigDecimal.ZERO;
@@ -2371,7 +2572,15 @@ public class StaffTaskService {
         BigDecimal breakFee = BigDecimal.ZERO;
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
 
-        if (isEarlyCheckout) {
+        if (isEarlyCheckout && Boolean.TRUE.equals(contract.getFaultTermination())) {
+            EarlyReturn early = faultTerminationReturn(periodStart, endDate, actualDate, rentPaid);
+            usedMonths = early.usedMonths();
+            breakFee = BigDecimal.ZERO;
+            earlyRentRefund = early.refund();
+        } else if (isEarlyCheckout) {
+            // BR-125: phí bảo hiểm không hoàn khi khách tự trả sớm — trừ ra khỏi tiền thuê kỳ đã trả trước khi áp PR-O2
+            BigDecimal premiumPaid = PricingService.insurancePremiumMonthly(contract).multiply(BigDecimal.valueOf(periodMonths));
+            rentPaid = rentPaid.subtract(premiumPaid).max(BigDecimal.ZERO);
             EarlyReturn early = earlyReturn(periodStart, periodMonths, actualDate, baseMonthlyPrice, rentPaid);
             usedMonths = early.usedMonths();
             breakFee = early.breakFee();

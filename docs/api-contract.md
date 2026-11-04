@@ -895,3 +895,91 @@ Thay đổi API cũ:
 | `POST /api/v1/dev/simulation/contracts/{id}/expire-soon?days=3` | CUSTOMER (HĐ của mình), FM | HĐ ACTIVE: `end_date` = hôm nay + `days` (1–7, giữ số tháng) rồi chạy ngay job nhắc gia hạn → `{ message, endDate }` |
 | `POST /api/v1/dev/simulation/tasks/{id}/make-overdue` | FM | Task OPEN / IN_PROGRESS: hạn lùi 1 phút rồi chạy ngay job quá hạn → `{ status: "OVERDUE" }` |
 - `make-overdue` cho HĐ `TERMINATION_PENDING`: vẫn yêu cầu `days` > 5 (lịch hẹn muộn nhất là `end_date` + 5).
+
+## Góp ý giảng viên 04/11/2026 — bằng chứng bàn giao, chuyển ô, ưu tiên, check-in online, phí di dời (D-13)
+
+> SQL: chạy `sql_script/Update_bang_chung_chuyen_o.sql` (DB đang dùng) — thêm `handover_records.evidence_image_urls`, `check_in_method`, `staff_id` cho phép NULL; bảng `unit_transfers`; `rental_policy.goods_moving_fee_percent`. `QueenKho.sql` / `QueenKho_full.sql` / `QueenKho_TongHop.sql` đã có sẵn.
+
+### BR-121 — Ảnh hiện trạng ô trong biên bản
+- `POST /api/v1/staff-tasks/{id}/check-in` và `POST /api/v1/staff-tasks/{id}/check-out`: thêm **bắt buộc** `evidenceImages: [url | dataURI]` (1–10 ảnh) → thiếu `400 HANDOVER_PHOTO_REQUIRED`.
+- `handoverRecord` trong chi tiết task thêm `evidenceImages`, `checkInMethod`, `contractCode`; `staffId` / `staffName` = null / "Khách tự check-in online" với biên bản online.
+
+| API | Quyền | Mô tả |
+|---|---|---|
+| `GET /api/v1/contracts/{id}/handover-records` | Khách chủ HĐ, Staff / FM cùng cơ sở (`CONTRACT_VIEW`) | Mọi biên bản của HĐ, cũ trước: `[{ id, recordType: CHECK_IN/CHECK_OUT, checkInMethod: COUNTER/ONLINE, identityVerified, unitEmpty, unitClean, lockIntact, customerSignatureConfirmed, notes, staffId, staffName, createdAt, evidenceImages: [] }]` |
+
+### BR-124 — Check-in online
+`POST /api/v1/contracts/{id}/online-check-in` (khách chủ HĐ, `CUSTOMER_RENTAL`)
+```json
+{ "cccd": "<12 số CCCD đã lưu khi đặt kho>", "unitEmpty": true, "unitClean": true, "lockIntact": true,
+  "prohibitedGoodsCommitted": true, "evidenceImages": ["http://localhost:8080/uploads/..."], "notes": "tuỳ chọn ≤ 500" }
+```
+→ `200` biên bản vừa lập (dạng như `handover-records`). Hợp đồng `ACTIVE` + PIN (xem ở `GET /contracts?reservationId=`), không cấp RFID.
+Lỗi: `400 INVALID_INPUT`, `400 CHECKLIST_INCOMPLETE` (ô không đạt / chưa cam kết), `400 HANDOVER_PHOTO_REQUIRED`, `400 IDENTITY_MISMATCH`, `409 IDENTITY_MISSING`, `403 FORBIDDEN_OWNER`, `409 CONTRACT_STATUS_INVALID`, `409 CHECK_IN_TOO_EARLY`, `409 TASK_NOT_FOUND`, `409 TASK_OVERDUE`.
+
+### BR-122 — Chuyển ô cho hợp đồng (FM, nhóm quyền `RESERVATION_MANAGE`)
+| API | Mô tả |
+|---|---|
+| `GET /api/v1/contracts/{id}/transfer-options` | Ô `AVAILABLE` cùng cơ sở + cùng loại: `[{ id, unitTypeName, areaSqm, floor, zone, roomNumber, status }]` |
+| `POST /api/v1/contracts/{id}/transfer-unit` | Body `{ toUnitId, reasonType: FACILITY_ISSUE / CUSTOMER_REQUEST / REARRANGE, reason (10–500), oldUnitMaintenance }` (`FACILITY_ISSUE` luôn đưa ô cũ vào bảo trì) → `{ id, contractId, contractCode, fromUnitId, toUnitId, reasonType, reason, oldUnitStatus, movedByName, createdAt }` |
+| `GET /api/v1/contracts/{id}/unit-transfers` | Lịch sử chuyển ô (khách chủ HĐ / Staff / FM — `CONTRACT_VIEW`), mới trước |
+
+Lỗi: `400 INVALID_INPUT`, `400 UNIT_TYPE_MISMATCH`, `400 UNIT_NOT_IN_FACILITY`, `404 UNIT_NOT_FOUND`, `403 FORBIDDEN_FACILITY`, `409 CONTRACT_NOT_TRANSFERABLE`, `409 UNIT_NOT_AVAILABLE`, `409 SLOT_IN_USE`.
+
+### BR-123 — Ưu tiên khách cũ + gói dài
+`GET /api/v1/reservations/pending`: thêm `priorityScore`, `pastRentalCount`, `priorityLabel`; danh sách đã sắp xếp theo điểm (cao trước) → ngày nhận kho → ngày cọc.
+
+### PR-Q16 — Phí dọn & di dời hàng khi thanh lý
+- Chính sách thuê (`GET /api/v1/rental-policies/...`, tạo phiên bản mới): thêm `goodsMovingFeePercent` (0–100, mặc định 30, % giá tháng).
+- `GET /api/v1/contracts/manager/overdue`: thêm `goodsMovingFeeAmount` (số sẽ trừ khi thanh lý; HĐ đã thanh lý = số đã chốt).
+- `POST /api/v1/contracts/{id}/liquidate`: response thêm `goodsMovingFeeAmount`, `goodsMovingDebtAmount`. Giao dịch ghi `payment_type = OVERSTAY_FEE` với mã `MV-OFF-…` (trừ cọc) / `MV-DEBT-…` (nợ `PENDING`, trả ở UC-20).
+- Điều khoản tài sản lên **v3** (`reservations.terms_version`); chỉ HĐ v3 bị tính phí này.
+
+## Bảo hiểm hàng hoá, bồi thường hàng hư / mất, cảm biến, BOM miễn phí trễ (04/11/2026, D-14)
+
+> SQL: chạy `sql_script/Update_bao_hiem_boi_thuong.sql` sau `Update_bang_chung_chuyen_o.sql` — thêm cột bảo hiểm vào `reservations`, `rental_contracts.fault_termination`, bảng `compensation_claims`, `unit_sensor_readings`. `QueenKho.sql` / `QueenKho_full.sql` / `QueenKho_TongHop.sql` đã có sẵn.
+
+### BR-125 — Gói bảo hiểm
+- `GET /api/v1/insurance-plans` (công khai) → `[{ code: BASIC | ADVANCED | PREMIUM, label, monthlyPremium, coverageLimit, insured, noDeclarationCap }]`.
+- `POST /api/v1/reservations`: thêm `insurancePlan` (mặc định `BASIC`), `declaredGoodsValue` (tuỳ chọn, 0–10 tỷ). Gói lạ → `400 INVALID_INSURANCE_PLAN`.
+- `POST /api/payments/vnpay/create`: `amount` = tiền thuê + cọc − voucher + `insurance_premium_monthly` × số tháng.
+- `GET /api/v1/contracts/{id}/renewal-quote`: mỗi gói thêm `insuranceAmount` (đã cộng vào `totalAmount`); link gia hạn ghi phí bảo hiểm chung dòng `MONTHLY_RENT`.
+- `CustomerContractResponse` (`GET /contracts?reservationId=`, `/contracts/{id}`): thêm `insurancePlan`, `insurancePlanLabel`, `insurancePremiumMonthly`, `declaredGoodsValue`, `coverageCap`, `insured`, `faultTermination`.
+
+### BR-126 — Khách báo hàng hư / mất
+`POST /api/v1/support-requests` với `issueType` = `GOODS_DAMAGE` / `GOODS_LOSS` (khẩn):
+```json
+{ "contractId": 8, "issueType": "GOODS_DAMAGE", "description": "Hang bi am moc...",
+  "itemsDescription": "2 thung sach 4.000.000, 1 tu go 16.000.000", "claimedAmount": 20000000,
+  "incidentDate": "2026-11-04", "evidenceImages": ["http://localhost:8080/uploads/..."] }
+```
+Lỗi: `400 INVALID_CLAIM` (thiếu danh sách / số tiền / ngày sai), `400 EVIDENCE_IMAGE_REQUIRED` (hàng hư thiếu ảnh). Ticket trả về thêm `claim` (hồ sơ bồi thường, dạng như `GET /claims/{id}`).
+- `POST /api/v1/staff-tasks/{id}/resolve-support` cho ticket hàng hư / mất = biên bản kiểm tra: thêm bắt buộc `inspectionImages` (1–10), `preliminaryCause` (`CUSTOMER` / `FACILITY` / `FORCE_MAJEURE` / `UNKNOWN`), `resolutionNote` ≥ 10 ký tự → hồ sơ `INSPECTED`, ticket vẫn `IN_PROGRESS`. Chi tiết task (`GET /staff-tasks/{id}`) thêm `claim`.
+- `POST /api/v1/support-requests/{id}/reopen`: hồ sơ đã chấp nhận / chi trả → `409 CLAIM_ALREADY_SETTLED`; hồ sơ bị từ chối → quay lại `SUBMITTED`.
+
+### BR-127 / BR-128 — Hồ sơ bồi thường
+| API | Quyền | Mô tả |
+|---|---|---|
+| `GET /api/v1/claims?facilityId=` | FM (cơ sở mình), BOM (`CLAIM_VIEW`) | Danh sách hồ sơ, mới trước |
+| `GET /api/v1/claims/{id}` | FM, BOM | Chi tiết: khách đề nghị + ảnh, bảo hiểm / trần, kiểm tra hiện trường, quyết định, chi trả, hồ sơ bảo hiểm |
+| `POST /api/v1/claims/{id}/quote` | FM (`CLAIM_MANAGE`) | Body `{ liableParty, assessedValue, damagePercent, unusableDays }` → `{ goodsLoss, coverageCap, goodsCompensation, penaltyAmount, rentRefundAmount, totalCompensation, insuranceClaimable, explanation }` |
+| `POST /api/v1/claims/{id}/decide` | FM | Body như quote + `resolution` (`CONTINUE` / `TERMINATE`), `note` (10–1000) → `APPROVED` / `REJECTED`; `TERMINATE` bật `fault_termination` |
+| `POST /api/v1/claims/{id}/pay` | FM | Body `{ paymentMethod: BANK_TRANSFER / CASH, evidenceImageUrl, bankTransactionCode, cashReceiptConfirmed }` → `PAID`, giao dịch `COMPENSATION`, gói có bảo hiểm → `insuranceStatus = SUBMITTED`, `insuranceRef = QKINS-…` |
+
+Lỗi: `404 CLAIM_NOT_FOUND`, `403 FORBIDDEN_ROLE` / `FORBIDDEN_FACILITY`, `409 CLAIM_STATUS_INVALID`, `400 INVALID_INPUT`, `400 PAYMENT_EVIDENCE_REQUIRED`, `409 CONTRACT_STATUS_INVALID` (chọn TERMINATE khi HĐ đã kết thúc).
+- `GET /api/v1/bom/revenue/overview`: thêm `compensationPaid` (tổng `COMPENSATION` trong kỳ) và `insuranceRecovered` (bảo hiểm đã trả cơ sở) — không trừ vào `netRevenue`.
+- `GET /api/v1/payments/my`: giao dịch `COMPENSATION` tính vào `totalRefunded` (tiền khách nhận lại).
+
+### BR-129 — Cảm biến
+`GET /api/v1/contracts/{id}/sensor-readings?days=3&around=yyyy-MM-dd` (khách chủ HĐ, Staff, FM — `CONTRACT_VIEW`) →
+`{ storageUnitId, from, to, readings: [{ temperature, humidity, alert, recordedAt }], alertCount, latest, tempMin: 15, tempMax: 30, humidityMax: 75 }`. `days` 1–14; có `around` thì lấy ± `days` quanh ngày đó.
+
+### BR-130 — BOM miễn phí trễ
+- `POST /api/v1/contracts/{id}/waive-late-fee`: nhóm quyền mới `LATE_FEE_WAIVE` (FM cơ sở mình khi chính sách cho phép, BOM mọi cơ sở). BOM không bị chặn bởi `allow_late_fee_waiver`.
+- `GET /api/v1/contracts/overdue-all?facilityId=` (`LATE_FEE_WAIVE`): BOM xem quá hạn toàn chuỗi (lọc cơ sở tuỳ chọn), FM chỉ thấy cơ sở mình. Response như `/contracts/manager/overdue` + `facilityName`.
+
+### Demo — Giả lập mới
+| API | Quyền | Mô tả |
+|---|---|---|
+| `POST /api/v1/dev/simulation/contracts/{id}/sensor-alert` | khách chủ HĐ, FM | Ghi 12 giờ số đo (tăng dần tới 36°C, 88%) → cảnh báo khách + FM, sinh task bảo trì `SENSOR` |
+| `POST /api/v1/dev/simulation/claims/{id}/insurance-payout` | FM | Bên bảo hiểm (mô phỏng) duyệt & chi trả hồ sơ `SUBMITTED` → `insuranceStatus = PAID` |

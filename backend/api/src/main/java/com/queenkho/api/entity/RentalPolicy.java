@@ -71,6 +71,10 @@ public class RentalPolicy {
     @Column(name = "held_goods_fee_percent", nullable = false)
     private Integer heldGoodsFeePercent = 20;
 
+    // PR-Q16 (04/11/2026): phí dọn & di dời hàng khi thanh lý = giá tháng × % (0–100), thu 1 lần
+    @Column(name = "goods_moving_fee_percent", nullable = false)
+    private Integer goodsMovingFeePercent = 30;
+
     @Column(nullable = false)
     private Integer version;
 

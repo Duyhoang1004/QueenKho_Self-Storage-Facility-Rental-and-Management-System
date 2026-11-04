@@ -9,6 +9,7 @@ const managerMenuItems = [
   { path: '/manager/tasks', icon: 'assignment', label: 'Bảng công việc' },
   { path: '/manager/overdue', icon: 'event_busy', label: 'Hợp đồng quá hạn' },
   { path: '/manager/held-goods', icon: 'inventory_2', label: 'Hàng đang lưu giữ' },
+  { path: '/manager/claims', icon: 'gavel', label: 'Bồi thường hàng hoá' },
   { path: '/manager/refunds', icon: 'payments', label: 'Hoàn tiền' },
   { path: '/manager/storage', icon: 'grid_view', label: 'Quản lý danh mục kho' },
   { path: '/manager/staff', icon: 'badge', label: 'Quản lý nhân viên' },

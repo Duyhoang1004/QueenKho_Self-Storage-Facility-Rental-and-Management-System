@@ -29,56 +29,56 @@ class VoucherBusinessTest {
 
     @ParameterizedTest @ValueSource(strings = {"0", "50000", "100000", "200000"})
     void fixedVoucherCannotReduceDepositWhenRentIsSmallerThanDiscount(String rent) {
-        var discount = (BigDecimal) service.quote("TEST", 10, 1, 3, money(rent)).get("discount");
+        var discount = (BigDecimal) service.quote("TEST", 10, 1, 1, 3, money(rent)).get("discount");
         assertEquals(0, money(rent).min(money("100000")).compareTo(discount));
     }
 
     @Test void percentVoucherRespectsItsMonetaryCap() {
         voucher.setDiscountType("PERCENT"); voucher.setDiscountValue(money("50"));
         voucher.setMaxDiscount(money("200000"));
-        assertEquals(0, money("200000").compareTo((BigDecimal) service.quote(" test ", 10, 1, 3, money("1000000")).get("discount")));
+        assertEquals(0, money("200000").compareTo((BigDecimal) service.quote(" test ", 10, 1, 1, 3, money("1000000")).get("discount")));
     }
 
     @Test void inactiveVoucherExplicitlyEnteredByCustomerIsRejected() {
         voucher.setStatus("INACTIVE");
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void expiredVoucherIsRejected() {
         voucher.setEndAt(LocalDateTime.now().minusSeconds(1));
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void futureVoucherIsNotActiveEarly() {
         voucher.setStartAt(LocalDateTime.now().plusDays(1));
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void voucherRestrictedToAnotherFacilityIsRejected() {
         voucher.setFacilityId(2);
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void packageShorterThanMinimumCannotUseVoucher() {
         voucher.setMinMonths(6);
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void heldLastUsageCountsBeforePaymentCompletes() {
         voucher.setUsageLimit(1);
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(1))).thenReturn(1);
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void perCustomerUsageCannotBeBypassedByAnotherBooking() {
         voucher.setPerUserLimit(1);
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(1), eq(10))).thenReturn(1);
-        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 3, money("1000000")));
+        assertThrows(RuntimeException.class, () -> service.quote("TEST", 10, 1, 1, 3, money("1000000")));
     }
 
     @Test void unusableDefaultVoucherDoesNotBlockOtherwiseValidBooking() {
         voucher.setEndAt(LocalDateTime.now().minusDays(1));
         when(vouchers.findFirstByIsDefaultTrueAndStatusOrderByIdAsc("ACTIVE")).thenReturn(Optional.of(voucher));
-        assertEquals(0, ((BigDecimal) service.quote(null, 10, 1, 3, money("1000000")).get("discount")).signum());
+        assertEquals(0, ((BigDecimal) service.quote(null, 10, 1, 1, 3, money("1000000")).get("discount")).signum());
     }
 }

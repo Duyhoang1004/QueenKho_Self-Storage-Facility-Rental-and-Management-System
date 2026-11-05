@@ -1,5 +1,6 @@
 param(
     [string]$MockitoAgent = '',
+    [string]$TestPattern = '*Test',
     [switch]$SqlServer,
     [switch]$Api
 )
@@ -32,10 +33,10 @@ if (-not $MockitoAgent) {
     if ($businessJar) { $MockitoAgent = $businessJar.FullName }
 }
 
-$businessMavenArgs = @('-Dtest=*Test', 'test')
+$businessMavenArgs = @("-Dtest=$TestPattern", 'test')
 if ($MockitoAgent) {
     if (-not (Test-Path -LiteralPath $MockitoAgent)) { throw 'Mockito agent jar does not exist.' }
-    $businessMavenArgs = @('-Dtest=*Test', "-DargLine=-javaagent:`"$MockitoAgent`"", 'test')
+    $businessMavenArgs = @("-Dtest=$TestPattern", "-DargLine=-javaagent:`"$MockitoAgent`"", 'test')
 }
 
 Push-Location $businessBackend

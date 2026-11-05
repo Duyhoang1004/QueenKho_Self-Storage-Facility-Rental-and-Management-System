@@ -157,6 +157,41 @@ Thấy `CUSTOMER 5`, `FACILITY_MANAGER 6`, `STAFF 18` -> Thành công.
 
 ## 4. Chạy Dự Án & Tài Khoản Test
 
+### Chạy toàn bộ bằng Docker (không cần cài Java, Node.js hay SQL Server riêng)
+
+Mở Docker Desktop, chờ Engine sẵn sàng, rồi chạy tại thư mục gốc repo:
+
+```bash
+docker compose up -d --build
+docker compose ps -a
+```
+
+- Web: http://localhost:5173
+- Backend: http://localhost:8080
+- SQL Server từ SSMS: `localhost,1434`, user `sa`, password `12345678@Password`.
+
+Lần đầu cần thời gian tải image, build và tạo dữ liệu mẫu. `db-init` kết thúc với
+`Exited (0)` là bình thường; backend và frontend phải có trạng thái `healthy`.
+Script tự tạo database khi chưa có và áp dụng các cập nhật schema khi đã có dữ liệu.
+Lịch sử cập nhật lưu trong bảng `docker_schema_history` để không chạy lại các bản đã áp dụng.
+Nếu bước SQL lỗi, backend sẽ chờ thay vì khởi động với schema thiếu.
+
+Frontend Docker phục vụ bản build bằng Nginx, có proxy `/api/`, `/uploads/` và hỗ trợ
+refresh các trang như `/login`, `/manager`. Sau khi sửa code, chạy lại lệnh build ở trên.
+Chạy ngoài Docker vẫn dùng Vite và API `localhost:8080` như hướng dẫn bên dưới.
+Image backend đóng gói với `-Dmaven.test.skip=true`; bộ test backend cần chạy riêng
+(hiện `VoucherBusinessTest` còn gọi chữ ký cũ của `VoucherService.quote`).
+
+Xem lỗi và dừng ứng dụng:
+
+```bash
+docker compose logs --tail=100 db-init backend frontend
+docker compose down
+```
+
+`docker compose down` giữ database trong volume `sql_data` và ảnh trong
+`backend/uploads`. Không thêm `-v` nếu muốn giữ database.
+
 ### Backend (Spring Boot)
 ```bash
 cd backend/api

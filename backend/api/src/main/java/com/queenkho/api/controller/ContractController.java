@@ -7,6 +7,8 @@ import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.service.UnitTransferService;
 import com.queenkho.api.service.UnitSensorService;
 import com.queenkho.api.service.InsurancePlan;
+import com.queenkho.api.service.HeldGoodsService;
+import com.queenkho.api.service.OperationsCatalogService;
 import com.queenkho.api.dto.CustomerContractResponse;
 import com.queenkho.api.dto.OnlineCheckInRequest;
 import com.queenkho.api.dto.TransferUnitRequest;
@@ -74,6 +76,12 @@ public class ContractController {
 
     @Autowired
     private UnitSensorService unitSensorService;
+
+    @Autowired
+    private OperationsCatalogService operationsCatalogService;
+
+    @Autowired
+    private HeldGoodsService heldGoodsService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -326,6 +334,11 @@ public class ContractController {
         dto.setCoverageCap(plan.coverageCap(rc.getReservation().getDeclaredGoodsValue()));
         dto.setInsured(plan.insured());
         dto.setFaultTermination(Boolean.TRUE.equals(rc.getFaultTermination()));
+        dto.setGoodsCategories(operationsCatalogService.goodsLabels(rc.getReservation().getGoodsCategoryCodes()));
+        dto.setGoodsDescription(rc.getReservation().getGoodsDescription());
+        // BR-134: thanh lý rồi mà chưa có hồ sơ kho tổng → đang chờ nhân viên chuyển hàng
+        dto.setCentralStorage(heldGoodsService.latestForContract(rc.getId()).orElse(null));
+        dto.setRelocationPending("LIQUIDATED".equals(rc.getStatus()) && dto.getCentralStorage() == null);
         return dto;
     }
 

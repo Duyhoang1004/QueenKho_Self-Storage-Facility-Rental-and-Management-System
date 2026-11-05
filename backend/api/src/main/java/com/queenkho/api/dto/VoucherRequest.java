@@ -19,6 +19,7 @@ public class VoucherRequest {
     private BigDecimal maxDiscount;    // chỉ cho PERCENT, bỏ trống = không trần
     private Integer minMonths;         // 1 / 3 / 6 / 12
     private Integer facilityId;        // bỏ trống = mọi cơ sở
+    private Integer unitTypeId;        // 05/11/2026: bỏ trống = mọi loại kho
     private LocalDateTime startAt;
     private LocalDateTime endAt;       // bỏ trống = không hết hạn
     private Integer usageLimit;        // bỏ trống = không giới hạn

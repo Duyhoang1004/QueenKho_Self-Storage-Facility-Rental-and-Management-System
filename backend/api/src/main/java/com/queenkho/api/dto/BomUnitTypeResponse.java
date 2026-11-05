@@ -20,6 +20,7 @@ public class BomUnitTypeResponse {
     private String suggestedCapacity;
     private String dimensions;
     private String features;
+    private String temperatureClass;     // BR-131: NORMAL / COLD (kho lạnh) / FROZEN (kho đông)
     private String status;              // ACTIVE / INACTIVE (PR-M4)
 
     // Thống kê số lượng ô kho

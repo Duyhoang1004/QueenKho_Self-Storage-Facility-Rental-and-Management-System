@@ -163,10 +163,11 @@ public class ContractService {
                 throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + prevCheckoutDate + ").");
             }
         } else if ("ACTIVE".equals(contract.getStatus())) {
-            // PR-O1: Cho phép hẹn từ ngày mai đến end_date + 5 ngày (ân hạn chuyển đồ, phí tính theo PR-O14)
-            LocalDate maxAllowedDate = contract.getEndDate() != null ? contract.getEndDate().plusDays(5) : today.plusDays(30);
+            // PR-O1 (sửa 05/11/2026, D-15): bỏ ân hạn 5 ngày — hẹn trả kho từ ngày mai đến hết ngày end_date
+            LocalDate maxAllowedDate = contract.getEndDate() != null ? contract.getEndDate() : today.plusDays(30);
             if (checkoutDate.isAfter(maxAllowedDate)) {
-                throw new IllegalArgumentException("Ngày hẹn trả kho không được vượt quá 5 ngày ân hạn sau khi hết hạn hợp đồng (" + maxAllowedDate + ").");
+                throw new IllegalArgumentException("Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất " + maxAllowedDate
+                        + "). Muốn dùng kho lâu hơn vui lòng gia hạn.");
             }
         } else if ("OVERDUE".equals(contract.getStatus())) {
             // PR-O1: HĐ đang OVERDUE được hẹn trả kho trong 3 ngày tới
@@ -396,7 +397,7 @@ public class ContractService {
                         "  AND COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
                         "                WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
                         "                  AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), " +
-                        "               DATEADD(DAY, 5, c.end_date)) < ?",
+                        "               c.end_date) < ?",
                 today, today
         );
 
@@ -782,17 +783,43 @@ public class ContractService {
         // khách không gia hạn mà bị thanh lý thì việc miễn phí trễ hết hiệu lực.
         contract.setLateFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
-        if (!lateFeeCalc.isCanLiquidate()) {
+        // D-15 (05/11/2026): điều khoản v4 — quá hạn là chuyển hàng vào kho tổng ngay, không chờ 15 ngày / 3 lần liên hệ
+        boolean centralStorageTerms = LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion());
+        if (!centralStorageTerms && !lateFeeCalc.isCanLiquidate()) {
             throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
                     "Hợp đồng chưa đủ số ngày để thanh lý (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
         }
         // Điều khoản xử lý tài sản (mục 2): phải liên hệ khách đủ số lần trước khi thanh lý
         int contactCount = countOverdueContacts(contract.getId());
-        if (contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
+        if (!centralStorageTerms && contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
             throw new ContractException(HttpStatus.CONFLICT, "NOT_ENOUGH_CONTACTS",
                     "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi thanh lý (hiện có: " + contactCount + ")");
         }
 
+        return performLiquidation(contract, manager.getId(), request.getNote().trim(), lateFeeCalc);
+    }
+
+    /**
+     * D-15 (05/11/2026): job 00:05 tự thanh lý hợp đồng quá hạn của khách đồng ý điều khoản v4 — không còn ân hạn,
+     * hôm sau ngày hết hạn là mở ô, kiểm kê và chuyển hàng vào kho tổng (task MAINTENANCE lý do LIQUIDATION).
+     * Trả false nếu hợp đồng không còn quá hạn / không thuộc điều khoản v4.
+     */
+    @Transactional
+    public boolean autoRelocateToCentralWarehouse(Integer contractId, Integer systemUserId) {
+        RentalContract contract = rentalContractRepository.findDetailById(contractId).orElse(null);
+        if (contract == null || !"OVERDUE".equalsIgnoreCase(contract.getStatus())
+                || !LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion())) {
+            return false;
+        }
+        contract.setLateFeeWaived(false);
+        var lateFeeCalc = lateFeeService.calculateLateFee(contract);
+        performLiquidation(contract, systemUserId,
+                "Tự động: hết hạn không gia hạn / không trả kho, chuyển hàng vào kho tổng (D-15)", lateFeeCalc);
+        return true;
+    }
+
+    private Map<String, Object> performLiquidation(RentalContract contract, Integer actorId, String note,
+                                                   LateFeeCalculationResult lateFeeCalc) {
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal lateFee = lateFeeCalc.getLateFeeAmount(); // Đã trần 50% cọc
         // PR-Q14: phí chiếm dụng trừ tiếp vào phần cọc còn lại; thiếu bao nhiêu thành khoản nợ OVERSTAY_FEE
@@ -837,7 +864,7 @@ public class ContractService {
         if (contract.getStorageUnit() != null) {
             staffTaskService.createMaintenanceTask(contract, "LIQUIDATION", "Dọn ô " + contract.getStorageUnit().getId()
                     + " sau thanh lý HĐ " + contract.getContractCode()
-                    + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển sang khu lưu giữ");
+                    + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển vào kho tổng (không bán)");
         }
 
         // 5. Ghi 1 giao dịch payment_transactions loại LATE_FEE, phương thức DEPOSIT_OFFSET, trạng thái SUCCESS
@@ -888,11 +915,11 @@ public class ContractService {
         }
 
         // 6. Ghi activity_logs "[LIQUIDATION] HĐ <mã>: <note>" do chính FM ghi, KHÔNG nuốt lỗi ghi log
-        String logAction = "[LIQUIDATION] HĐ " + contract.getContractCode() + ": " + request.getNote().trim();
+        String logAction = "[LIQUIDATION] HĐ " + contract.getContractCode() + ": " + note;
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
-                manager.getId(),
+                actorId,
                 logAction,
                 String.valueOf(contract.getId())
         );
@@ -901,8 +928,9 @@ public class ContractService {
         if (notificationService != null && customerId != null) notificationService.notifyCustomer(
                 customerId,
                 "Hợp đồng " + contract.getContractCode() + " đã bị thanh lý",
-                "Hợp đồng quá hạn kéo dài nên đã được thanh lý theo điều khoản bạn đồng ý. Hàng còn trong ô (nếu có) được kiểm kê "
-                        + "và lưu giữ tại cơ sở; vui lòng liên hệ quản lý cơ sở để nhận lại và thanh toán các khoản còn nợ.",
+                "Hợp đồng đã hết hạn mà chưa gia hạn / trả kho nên đã được thanh lý theo điều khoản bạn đồng ý. Hàng trong ô được "
+                        + "kiểm kê, chụp ảnh và chuyển vào KHO TỔNG (QueenKho không bán hàng của bạn). Xem vị trí, phí lưu giữ và cách "
+                        + "nhận lại trong trang hợp đồng.",
                 "LIQUIDATION",
                 reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
 

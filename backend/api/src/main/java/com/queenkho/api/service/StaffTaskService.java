@@ -134,6 +134,10 @@ public class StaffTaskService {
     @Autowired(required = false)
     private CompensationClaimService compensationClaimService;
 
+    // BR-131: tên loại hàng khách khai báo (hiện ở chi tiết task check-in)
+    @Autowired(required = false)
+    private OperationsCatalogService operationsCatalogService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -730,6 +734,7 @@ public class StaffTaskService {
         record.setUnitClean(true);
         record.setLockIntact(true);
         record.setCustomerSignatureConfirmed(true);
+        record.setProhibitedGoodsCommitted(true);
         record.setNotes(notes);
         record.setEvidenceImageUrls(serializeEvidenceImages(request.getEvidenceImages()));
         record.setCheckInMethod("COUNTER");
@@ -779,7 +784,12 @@ public class StaffTaskService {
                 && Boolean.TRUE.equals(request.getCustomerSignatureConfirmed());
         if (!allChecked) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CHECKLIST_INCOMPLETE",
-                    "Phải hoàn thành đủ 5 mục kiểm tra mới được bàn giao");
+                    "Phải hoàn thành đủ 6 mục kiểm tra mới được bàn giao");
+        }
+        // PR-C7 / BR-132: kiểm tra hàng mang vào khớp loại hàng khai báo, không có chất cháy nổ / hàng cấm
+        if (!Boolean.TRUE.equals(request.getGoodsChecked())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_CHECK_REQUIRED",
+                    "Phải kiểm tra hàng khách mang vào (khớp khai báo, không có hàng cấm) trước khi bàn giao");
         }
         if (request.getAccessPinCode() == null || !request.getAccessPinCode().trim().matches("\\d{6}")) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Mã PIN phải gồm đúng 6 chữ số");
@@ -904,6 +914,7 @@ public class StaffTaskService {
         record.setStaff(null);
         record.setRecordType("CHECK_IN");
         record.setCheckInMethod("ONLINE");
+        record.setProhibitedGoodsCommitted(true);
         record.setIdentityVerified(true);
         record.setUnitEmpty(true);
         record.setUnitClean(true);
@@ -1636,7 +1647,7 @@ public class StaffTaskService {
         if (recordGoods && done.getContract() != null) {
             heldGoodsService.createFromCleanup(done, done.getContract(), user,
                     request.getInventoryNote().trim(), inventoryImages,
-                    request.getWitnessNote().trim(), request.getStorageLocation().trim());
+                    request.getWitnessNote().trim(), request.getStorageLocation().trim(), request.getCentralWarehouseId());
         }
 
         activityLogService.log(
@@ -1676,7 +1687,14 @@ public class StaffTaskService {
         }
         String location = request.getStorageLocation() != null ? request.getStorageLocation().trim() : "";
         if (location.isEmpty() || location.length() > 100) {
-            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Ghi rõ khu lưu giữ hàng (tối đa 100 ký tự)");
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Ghi rõ vị trí kệ trong kho tổng (tối đa 100 ký tự)");
+        }
+        // BR-134 (05/11/2026): hàng của khách quá hạn chuyển vào kho tổng đang hoạt động
+        boolean warehouseOk = request.getCentralWarehouseId() != null && operationsCatalogService != null
+                && operationsCatalogService.findWarehouse(request.getCentralWarehouseId())
+                        .filter(w -> "ACTIVE".equals(w.getStatus())).isPresent();
+        if (!warehouseOk) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Chọn kho tổng nhận hàng (đang hoạt động)");
         }
         if (images.isEmpty()) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVENTORY_REQUIRED", "Bắt buộc ít nhất 1 ảnh kiểm kê hàng của khách");
@@ -2135,6 +2153,10 @@ public class StaffTaskService {
                 .ticketClosedAt(sr != null ? sr.getClosedAt() : null)
                 .claim(sr != null && CompensationClaimService.isClaimIssue(sr.getIssueType()) && compensationClaimService != null
                         ? compensationClaimService.byTicketIds(List.of(sr.getId())).get(sr.getId()) : null)
+                .goodsCategories(contract != null && contract.getReservation() != null && operationsCatalogService != null
+                        ? operationsCatalogService.goodsLabels(contract.getReservation().getGoodsCategoryCodes()) : null)
+                .goodsDescription(contract != null && contract.getReservation() != null
+                        ? contract.getReservation().getGoodsDescription() : null)
                 .build();
     }
 
@@ -2149,6 +2171,7 @@ public class StaffTaskService {
                 .unitClean(record.getUnitClean())
                 .lockIntact(record.getLockIntact())
                 .customerSignatureConfirmed(record.getCustomerSignatureConfirmed())
+                .prohibitedGoodsCommitted(record.getProhibitedGoodsCommitted())
                 .notes(record.getNotes())
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : "Khách tự check-in online")

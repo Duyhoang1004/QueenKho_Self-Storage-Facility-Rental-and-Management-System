@@ -24,6 +24,11 @@ public class HeldGoodsResponse {
     private List<String> evidenceImages;
     private String witnessNote;
     private String storageLocation;
+    // BR-134: kho tổng đang giữ hàng
+    private Integer centralWarehouseId;
+    private String centralWarehouseName;
+    private String centralWarehouseAddress;
+    private String centralWarehouseHotline;
 
     private String status;
     private LocalDate holdUntil;

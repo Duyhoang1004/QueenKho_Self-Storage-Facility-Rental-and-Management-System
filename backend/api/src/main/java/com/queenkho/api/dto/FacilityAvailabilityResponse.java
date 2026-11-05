@@ -44,6 +44,14 @@ public class FacilityAvailabilityResponse {
         private int availableCount;
         private int totalBookings;
         private LocalDate availableFrom; // PR-R11: null = còn ô ngay; có giá trị = chỉ nhận được từ ngày này
+        private String temperatureClass = "NORMAL"; // BR-131: NORMAL / COLD / FROZEN
+
+        public UnitTypeSlot(Integer unitTypeId, String unitTypeName, BigDecimal areaSqm, BigDecimal basePriceMonthly,
+                            String dimensions, String suggestedCapacity, String features, int totalUnits,
+                            int availableCount, int totalBookings, LocalDate availableFrom) {
+            this(unitTypeId, unitTypeName, areaSqm, basePriceMonthly, dimensions, suggestedCapacity, features, totalUnits,
+                    availableCount, totalBookings, availableFrom, "NORMAL");
+        }
     }
 }
 

@@ -373,17 +373,18 @@ export default function CustomerContractPage() {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="text-base font-black text-[#FF4B4B]">
-                Hợp đồng đã bị thanh lý do quá hạn kéo dài
+                Hợp đồng đã bị thanh lý do hết hạn mà chưa gia hạn / trả kho
               </span>
               <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FF4B4B] text-white">
                 ĐÃ THANH LÝ
               </span>
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
-              Hợp đồng đã bị thanh lý do quá hạn kéo dài; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong>; vui lòng đến cơ sở làm việc với quản lý.
+              Hợp đồng đã bị thanh lý theo điều khoản bạn đồng ý; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc để trừ các khoản phí.
               {!contract.heldGoodsStatus && (
                 <>
-                  {" "}Nhân viên sẽ mở kho, kiểm kê và lưu giữ hàng của bạn <strong>60 ngày</strong>; quá thời hạn sẽ được xử lý theo{" "}
+                  {" "}Nhân viên đang mở kho, kiểm kê, chụp ảnh và <strong>chuyển hàng của bạn vào kho tổng</strong> của QueenKho
+                  (không bán hàng của bạn). Thông tin kho tổng sẽ hiện ở đây khi chuyển xong — xem{" "}
                   <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
                     Điều khoản xử lý tài sản
                   </button>.
@@ -394,35 +395,75 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* PR-Q10: hàng của khách đang lưu giữ / đã xử lý sau thanh lý */}
-      {contract.heldGoodsStatus && (
-        <div className="bg-[#FAF5FF] border-2 border-[#C084FC] rounded-2xl p-5 flex items-start gap-4">
-          <span className="material-symbols-outlined text-[#9333EA] text-[28px]">inventory_2</span>
-          <div className="flex flex-col gap-1 text-xs font-bold text-[#4B4B4B] leading-relaxed">
-            <span className="text-base font-black text-[#9333EA]">Hàng của bạn sau thanh lý</span>
-            {contract.heldGoodsStatus === "HOLDING" ? (
-              <span>
-                Đang được lưu giữ tại <strong>{contract.heldGoodsLocation}</strong> đến hết ngày{" "}
-                <strong className="text-[#FF4B4B]">{formatDate(contract.heldGoodsHoldUntil)}</strong>. Vui lòng đến cơ sở,
-                thanh toán các khoản còn nợ để nhận lại. Quá hạn, hàng sẽ được xử lý theo{" "}
-                <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
-                  Điều khoản xử lý tài sản
-                </button>{" "}
-                (bán thanh lý, phần dư được hoàn lại cho bạn).
+      {/* PR-Q10 / BR-134 (05/11/2026): hàng của khách ở kho tổng sau thanh lý — giữ tới khi khách nhận lại, không bán */}
+      {contract.heldGoodsStatus && (() => {
+        const cs = contract.centralStorage || {}
+        const debt = Number(cs.customerDebt) || 0
+        const storageFee = Number(cs.estimatedStorageFee) || 0
+        const deposit = Number(cs.depositHeld ?? contract.depositHeldAmount) || 0
+        const toPay = Math.max(0, debt + Math.max(0, storageFee - deposit))
+        return (
+          <div className="bg-[#FAF5FF] border-2 border-[#C084FC] rounded-2xl p-5 flex items-start gap-4">
+            <span className="material-symbols-outlined text-[#9333EA] text-[28px]">home_storage</span>
+            <div className="flex flex-col gap-2 text-xs font-bold text-[#4B4B4B] leading-relaxed flex-1 min-w-0">
+              <span className="text-base font-black text-[#9333EA]">
+                {contract.heldGoodsStatus === "HOLDING" ? "Hàng của bạn đang ở kho tổng" : "Hàng của bạn sau thanh lý"}
               </span>
-            ) : (
-              <span>
-                {{
-                  RETURNED: "Bạn đã nhận lại hàng.",
-                  SOLD: "Hàng đã được bán thanh lý theo điều khoản; phần dư (nếu có) sẽ được quản lý cơ sở hoàn cho bạn.",
-                  DESTROYED: "Hàng không còn giá trị đã được tiêu huỷ có biên bản theo điều khoản.",
-                  HANDED_TO_AUTHORITY: "Hàng đã được giao cho cơ quan chức năng theo quy định.",
-                }[contract.heldGoodsStatus]}
-              </span>
-            )}
+              {contract.heldGoodsStatus === "HOLDING" ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white border border-[#E9D5FF] rounded-xl p-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Kho tổng</p>
+                      <p className="font-black">{cs.centralWarehouseName || "Khu lưu giữ của cơ sở"}</p>
+                      {cs.centralWarehouseAddress && <p className="text-[11px] text-[#777777]">{cs.centralWarehouseAddress}</p>}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Hotline · vị trí</p>
+                      <p className="font-black">{cs.centralWarehouseHotline || contract.facilityHotline || "—"}</p>
+                      <p className="text-[11px] text-[#777777]">{cs.storageLocation || contract.heldGoodsLocation}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Nhập kho tổng</p>
+                      <p className="font-black">{formatDate(cs.createdAt)} · đã giữ {cs.heldDays ?? 0} ngày</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Phí lưu giữ</p>
+                      <p className="font-black">
+                        {Number(cs.storageFeePerDay) > 0 ? `${formatVND(cs.storageFeePerDay)}/ngày · tạm tính ${formatVND(storageFee)}` : "Không tính"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-[#E9D5FF] rounded-xl p-3 flex flex-col gap-1">
+                    <div className="flex justify-between"><span>Khoản nợ chưa thanh toán</span><span className="font-black text-[#FF4B4B]">{formatVND(debt)}</span></div>
+                    <div className="flex justify-between"><span>Phí lưu giữ tạm tính</span><span className="font-black">{formatVND(storageFee)}</span></div>
+                    <div className="flex justify-between"><span>Trừ cọc còn giữ</span><span className="font-black text-[#58A700]">- {formatVND(Math.min(deposit, storageFee))}</span></div>
+                    <div className="flex justify-between pt-1 border-t border-[#F3E8FF]">
+                      <span className="font-black">Cần thanh toán để nhận lại hàng</span>
+                      <span className="font-black text-[#9333EA]">{formatVND(toPay)}</span>
+                    </div>
+                  </div>
+                  <span>
+                    QueenKho <strong>không bán</strong> hàng của bạn — hàng được giữ nguyên tới khi bạn nhận lại, phí lưu giữ tính tới ngày nhận.
+                    Thanh toán khoản nợ trong mục Thanh toán rồi gọi hotline hẹn ngày tới kho tổng nhận hàng. Xem{" "}
+                    <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
+                      Điều khoản xử lý tài sản
+                    </button>.
+                  </span>
+                </>
+              ) : (
+                <span>
+                  {{
+                    RETURNED: "Bạn đã nhận lại hàng.",
+                    SOLD: "Hàng đã được bán thanh lý theo điều khoản cũ; phần dư (nếu có) đã được quản lý cơ sở hoàn cho bạn.",
+                    DESTROYED: "Hàng không còn giá trị đã được tiêu huỷ có biên bản theo điều khoản cũ.",
+                    HANDED_TO_AUTHORITY: "Hàng đã được giao cho cơ quan chức năng theo quy định.",
+                  }[contract.heldGoodsStatus]}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Banner HD */}
       <div className="bg-[#1CB0F6] border-b-4 border-[#1899D6] rounded-2xl p-6 text-white flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -521,7 +562,7 @@ export default function CustomerContractPage() {
                 )}
                 {contract.liquidationDaysThreshold && (
                   <span className="block mt-1">
-                    Quá hạn quá {contract.liquidationDaysThreshold} ngày, cơ sở có quyền thanh lý hợp đồng và chuyển hàng sang khu lưu giữ.
+                    Quá hạn quá {contract.liquidationDaysThreshold} ngày, cơ sở có quyền thanh lý hợp đồng và chuyển hàng vào kho tổng.
                   </span>
                 )}
                 {contract.isPinLocked && (
@@ -652,6 +693,19 @@ export default function CustomerContractPage() {
                   value={formatDate(contract.endDate)}
                 />
               </div>
+
+              {/* BR-131: loại hàng khách khai báo khi đặt kho */}
+              {contract.goodsCategories?.length > 0 && (
+                <div className="rounded-2xl border-2 border-[#E5E5E5] px-4 py-3 flex flex-col gap-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#AFAFAF]">Loại hàng gửi kho</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {contract.goodsCategories.map((name) => (
+                      <span key={name} className="text-[11px] font-black bg-[#DDF4FF] border border-[#84D8FF] text-[#1899D6] px-2 py-0.5 rounded-full">{name}</span>
+                    ))}
+                  </div>
+                  {contract.goodsDescription && <span className="text-xs font-bold text-[#777777]">{contract.goodsDescription}</span>}
+                </div>
+              )}
 
               {/* Điều khoản xử lý tài sản khi không trả kho — khách đã đồng ý lúc đặt kho */}
               <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[#E5E5E5] px-4 py-3">

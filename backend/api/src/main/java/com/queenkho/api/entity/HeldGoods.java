@@ -42,6 +42,10 @@ public class HeldGoods {
     @Column(name = "storage_location", nullable = false, length = 100)
     private String storageLocation;
 
+    // BR-134 (05/11/2026): kho tổng đang giữ hàng (storage_location = vị trí kệ trong kho tổng)
+    @Column(name = "central_warehouse_id")
+    private Integer centralWarehouseId;
+
     // HOLDING / RETURNED / SOLD / DESTROYED / HANDED_TO_AUTHORITY
     @Column(nullable = false, length = 30)
     private String status = "HOLDING";

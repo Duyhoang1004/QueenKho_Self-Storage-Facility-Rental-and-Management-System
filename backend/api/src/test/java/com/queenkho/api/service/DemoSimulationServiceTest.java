@@ -34,6 +34,7 @@ class DemoSimulationServiceTest {
     @Mock ReservationCleanupService cleanupService;
     @Mock SupportRequestService supportRequestService;
     @Mock ActivityLogService activityLogService;
+    @Mock ContractOverdueJob contractOverdueJob;
 
     DemoSimulationService service;
     final CurrentUser fm = new CurrentUser(6, "FACILITY_MANAGER", 1, "FM Tân Bình", "fm@x.com");
@@ -46,6 +47,7 @@ class DemoSimulationServiceTest {
     void setUp() {
         service = new DemoSimulationService(jdbcTemplate, cleanupService, supportRequestService, activityLogService, true);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "entityManager", entityManager);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "contractOverdueJob", contractOverdueJob);
     }
 
     private static Map<String, Object> map(Object... kv) {
@@ -214,11 +216,26 @@ class DemoSimulationServiceTest {
     }
 
     @Test
-    @DisplayName("Khách không tới trả kho: còn trong 5 ngày ân hạn → 400, chưa đổi gì")
-    void makeOverdueMissedCheckoutRespectsGrace() {
+    @DisplayName("D-15 bỏ ân hạn 5 ngày: khách hẹn trả mà không tới, quá hạn 1 ngày là OVERDUE ngay")
+    void makeOverdueMissedCheckoutNoGrace() {
         activeContract("TERMINATION_PENDING", 1);
-        assertEquals("INVALID_INPUT", code(() -> service.makeOverdue(9, 5, fm)));
-        verify(jdbcTemplate, never()).update(contains("UPDATE rental_contracts"), any(), any(), any());
+
+        service.makeOverdue(9, 1, fm);
+
+        verify(jdbcTemplate).update(contains("status = 'OVERDUE', late_fee_waived = 0"), any(LocalDate.class),
+                eq(LocalDate.now().minusDays(1)), eq(9));
+    }
+
+    @Test
+    @DisplayName("D-15 điều khoản v4: giả lập quá hạn chạy luôn bước thanh lý + chuyển kho tổng như job 00:05")
+    void makeOverdueRelocatesV4() {
+        activeContract("ACTIVE", 1);
+        when(contractOverdueJob.relocateToCentralWarehouse(9)).thenReturn(1);
+
+        Map<String, Object> result = service.makeOverdue(9, 1, fm);
+
+        verify(contractOverdueJob).relocateToCentralWarehouse(9);
+        assertTrue(String.valueOf(result.get("message")).contains("kho tổng"));
     }
 
     // ---------- 1b. khách tới trả kho hôm nay ----------

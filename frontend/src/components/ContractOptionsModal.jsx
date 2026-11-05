@@ -27,12 +27,12 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
   const prevScheduledDate = contract?.scheduledCheckoutDate || contract?.endDate
 
-  // PR-O1: hẹn từ ngày mai; HĐ ACTIVE đến end_date + 5 ngày; HĐ OVERDUE trong 3 ngày tới
+  // PR-O1 (sửa 05/11/2026, D-15 bỏ ân hạn 5 ngày): hẹn từ ngày mai đến hết end_date; HĐ OVERDUE (điều khoản cũ) trong 3 ngày tới
   const maxCheckoutDate = isOverdue
     ? addDays(today, 3)
     : isTerminationPending
-    ? (prevScheduledDate || addDays(contract?.endDate, 5))
-    : addDays(contract?.endDate, 5)
+    ? (prevScheduledDate || contract?.endDate)
+    : contract?.endDate
 
   const getInitialCheckoutDate = () => {
     const initialDate = contract?.scheduledCheckoutDate || (isOverdue ? tomorrow : contract?.endDate)
@@ -203,7 +203,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
 
     if (!isTerminationPending && maxCheckoutDate && checkoutDate > maxCheckoutDate) {
-      setCheckoutError(`Ngày hẹn trả kho không được vượt quá 5 ngày ân hạn sau khi hết hạn hợp đồng (${formatDate(maxCheckoutDate)}).`)
+      setCheckoutError(`Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất ${formatDate(maxCheckoutDate)}). Muốn dùng kho lâu hơn vui lòng gia hạn.`)
       return
     }
 
@@ -245,7 +245,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
-  // Bảng tính dự kiến trả sớm (PR-O2) và phí ân hạn (PR-O14)
+  // Bảng tính dự kiến trả sớm (PR-O2) và phí quá hạn (HĐ đã quá hạn — điều khoản cũ)
   const isEarlyCheckout = checkoutDate && contract?.endDate && checkoutDate < contract.endDate
   const isGraceOrOverdue = checkoutDate && contract?.endDate && checkoutDate > contract.endDate
 
@@ -291,23 +291,17 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
+  // D-15: không còn ân hạn — chỉ HĐ đã quá hạn mới có ngày trả sau end_date
   let graceCalc = null
   if (isGraceOrOverdue) {
     const eDate = new Date(contract.endDate)
     const cDate = new Date(checkoutDate)
     const diffDays = Math.ceil(Math.abs(cDate - eDate) / (1000 * 60 * 60 * 24))
-    if (diffDays === 1) {
-      graceCalc = { days: diffDays, fee: 0, isFree: true }
-    } else if (diffDays >= 2 && diffDays <= 5) {
-      graceCalc = { days: diffDays, fee: Math.round((basePrice / 30) * (diffDays - 1)), isFree: false }
-    } else {
-      // PR-Q14: lỡ ân hạn → phí trễ (trần 50% cọc) + phí chiếm dụng mỗi ngày quá hạn (không trần)
-      graceCalc = {
-        days: diffDays,
-        fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10),
-        overstay: Number(contract.overstayDailyAmount || 0) * diffDays,
-        isOverdue: true,
-      }
+    // PR-Q14: phí trễ (trần 50% cọc) + phí chiếm dụng mỗi ngày quá hạn (không trần)
+    graceCalc = {
+      days: diffDays,
+      fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10),
+      overstay: Number(contract.overstayDailyAmount || 0) * diffDays,
     }
   }
 
@@ -545,7 +539,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
                   <span className="flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[16px] text-amber-600">schedule</span>
-                    Phí ngày ân hạn đã sử dụng:
+                    Phí trễ hạn:
                   </span>
                   <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
                 </div>
@@ -626,11 +620,6 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   Quá hạn (≤ 3 ngày)
                 </span>
               )}
-              {!isOverdue && isGraceOrOverdue && (
-                <span className="text-[11px] text-amber-700 bg-amber-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Ân hạn 5 ngày
-                </span>
-              )}
               {!isOverdue && isEarlyCheckout && (
                 <span className="text-[11px] text-emerald-700 bg-emerald-100 font-semibold px-2 py-0.5 rounded shrink-0">
                   Trả sớm (PR-O2)
@@ -680,21 +669,15 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             )}
 
-            {/* Thông tin ân hạn dọn đồ (PR-O14) */}
+            {/* Phí quá hạn dự kiến (HĐ đã quá hạn) — D-15 đã bỏ ân hạn 5 ngày */}
             {isGraceOrOverdue && graceCalc && (
-              <div className={`p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1 ${graceCalc.isFree ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+              <div className="p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1 bg-amber-50 border-amber-200 text-amber-900">
                 <div className="flex items-center gap-1.5 font-bold">
-                  <span className="material-symbols-outlined text-[20px]">{graceCalc.isFree ? 'info' : 'warning'}</span>
-                  <span className="font-black text-sm">
-                    {graceCalc.isFree ? 'Ân hạn dọn đồ miễn phí (PR-O14)' : 'Phí ân hạn dọn đồ (PR-O14)'}
-                  </span>
+                  <span className="material-symbols-outlined text-[20px]">warning</span>
+                  <span className="font-black text-sm">Phí quá hạn dự kiến</span>
                 </div>
                 <p className="leading-relaxed text-[11px]">
-                  {graceCalc.isFree
-                    ? 'Ngày đầu tiên sau khi kết thúc hợp đồng được miễn phí hoàn toàn để quý khách thuận tiện chuyển đồ.'
-                    : graceCalc.isOverdue
-                    ? `Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}` : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`
-                    : `Ngày thứ ${graceCalc.days} sau hạn HĐ: Tính tiền thuê theo ngày (${formatVND(Math.round(basePrice / 30))}/ngày). Phí ân hạn dự kiến: ${formatVND(graceCalc.fee)} (sẽ được khấu trừ trực tiếp vào tiền cọc khi nghiệm thu).`}
+                  {`Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}` : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
                 </p>
               </div>
             )}

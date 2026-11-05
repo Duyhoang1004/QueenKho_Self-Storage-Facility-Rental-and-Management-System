@@ -89,4 +89,11 @@ public class Reservation {
     // Giá trị hàng khách khai báo — căn cứ trần bồi thường (NULL = không khai báo → trần thấp)
     @Column(name = "declared_goods_value", precision = 15, scale = 2)
     private java.math.BigDecimal declaredGoodsValue;
+
+    // BR-131 (05/11/2026): loại hàng khách khai báo (mã goods_categories, ngăn bởi dấu phẩy) + mô tả thêm
+    @Column(name = "goods_category_codes", length = 300)
+    private String goodsCategoryCodes;
+
+    @Column(name = "goods_description", length = 500)
+    private String goodsDescription;
 }

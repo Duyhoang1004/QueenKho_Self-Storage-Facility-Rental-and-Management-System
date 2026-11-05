@@ -40,6 +40,10 @@ public class Voucher {
     @Column(name = "facility_id")
     private Integer facilityId;           // NULL = mọi cơ sở
 
+    // 05/11/2026: voucher chỉ áp cho 1 loại kho (NULL = mọi loại kho)
+    @Column(name = "unit_type_id")
+    private Integer unitTypeId;
+
     @Column(name = "start_at", nullable = false)
     private LocalDateTime startAt;
 

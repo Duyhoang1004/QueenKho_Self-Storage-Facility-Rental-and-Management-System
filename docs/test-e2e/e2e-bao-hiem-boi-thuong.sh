@@ -18,7 +18,7 @@ IMG='"http://e2e/hien-trang.png"'
 ok()   { PASS=$((PASS+1)); echo "  ✅ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
 check(){ if [ "$2" == "$3" ]; then ok "$1 ($2)"; else bad "$1: mong đợi [$3], thực tế [$2]"; fi; }
-sql()  { sqlcmd -S localhost -U sa -P 12345 -d QueenKhoDB -C -h-1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^$/d'; }
+sql()  { sqlcmd -S localhost -U sa -P 12345 -d QueenKhoDB -C -I -h-1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^$/d'; }
 jget() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const o=JSON.parse(s);const v=($1);console.log(v===undefined?'':typeof v==='object'?JSON.stringify(v):v)}catch(e){console.log('PARSE_ERR')}})"; }
 login(){ curl -s -X POST $API/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$1\",\"password\":\"123456\"}" | jget "o.token"; }
 call() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -X $m -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d "$d" "$u"; else curl -s -X $m -H "Authorization: Bearer $t" "$u"; fi; }
@@ -49,10 +49,10 @@ echo "Loại kho #$TYPE, giá $PRICE/tháng"
 
 echo "== BR-125: gói bảo hiểm khi đặt kho"
 check "Có 3 gói, Nâng cao 50.000/tháng trần 200 triệu" "$(curl -s $API/insurance-plans | jget 'o.length+"/"+o[1].code+"/"+o[1].monthlyPremium+"/"+o[1].coverageLimit')" "3/ADVANCED/50000/200000000"
-check "Gói lạ → 400" "$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$TYPE,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"insurancePlan\":\"VIP\"}" | jget 'o.error')" "INVALID_INSURANCE_PLAN"
-R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$TYPE,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"insurancePlan\":\"ADVANCED\",\"declaredGoodsValue\":30000000}")
+check "Gói lạ → 400" "$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$TYPE,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"goodsCategoryCodes\":[\"HOUSEHOLD\"],\"insurancePlan\":\"VIP\"}" | jget 'o.error')" "INVALID_INSURANCE_PLAN"
+R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":$TYPE,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"goodsCategoryCodes\":[\"HOUSEHOLD\"],\"insurancePlan\":\"ADVANCED\",\"declaredGoodsValue\":30000000}")
 RES=$(echo "$R" | jget 'o.id'); echo "  đơn #$RES $(echo "$R" | jget 'o.reservationCode')"
-check "Đơn chốt gói + phí/tháng + giá trị khai báo + điều khoản v3" "$(sql "SELECT insurance_plan+'/'+CAST(CAST(insurance_premium_monthly AS INT) AS VARCHAR)+'/'+CAST(CAST(declared_goods_value AS BIGINT) AS VARCHAR)+'/'+terms_version FROM reservations WHERE id=$RES")" "ADVANCED/50000/30000000/v3"
+check "Đơn chốt gói + phí/tháng + giá trị khai báo + điều khoản v4" "$(sql "SELECT insurance_plan+'/'+CAST(CAST(insurance_premium_monthly AS INT) AS VARCHAR)+'/'+CAST(CAST(declared_goods_value AS BIGINT) AS VARCHAR)+'/'+terms_version FROM reservations WHERE id=$RES")" "ADVANCED/50000/30000000/v4"
 DEP=$(sql "SELECT CAST(deposit_amount AS INT) FROM reservations WHERE id=$RES")
 DISC=$(sql "SELECT CAST(rent_discount_percent AS INT) FROM reservations WHERE id=$RES")
 VD=$(sql "SELECT CAST(voucher_discount AS INT) FROM reservations WHERE id=$RES")
@@ -69,7 +69,7 @@ C=$(sql "SELECT id FROM rental_contracts WHERE reservation_id=$RES")
 T=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C AND task_type='CHECK_IN'")
 call POST $FM "$API/staff-tasks/$T/assign?staffId=$ST1_ID" >/dev/null
 PIN=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-CI="\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBH-$RES\""
+CI="\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"goodsChecked\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBH-$RES\""
 check "Check-in thiếu ảnh → 400" "$(call POST $ST1 "$API/staff-tasks/$T/check-in" "{$CI}" | jget 'o.error')" "HANDOVER_PHOTO_REQUIRED"
 check "Check-in có ảnh" "$(code POST $ST1 "$API/staff-tasks/$T/check-in" "{$CI,\"evidenceImages\":[$IMG]}")" "200"
 check "Khách xem biên bản kèm ảnh" "$(call GET $KH "$API/contracts/$C/handover-records" | jget 'o[0].recordType+"/"+o[0].evidenceImages.length')" "CHECK_IN/1"
@@ -118,6 +118,8 @@ check "BOM xem hồ sơ toàn chuỗi" "$(call GET $BOM "$API/claims" | jget "o.
 check "Báo cáo BOM có chi bồi thường" "$(call GET $BOM "$API/bom/revenue/overview?period=YEAR&year=$(date +%Y)" | jget 'o.compensationPaid>0')" "true"
 
 echo "== Flow 6: BOM miễn phí trễ"
+# Điều khoản v4 (D-15) quá hạn là thanh lý + chuyển kho tổng ngay; miễn phí trễ chỉ còn ý nghĩa với HĐ điều khoản cũ
+sql "UPDATE reservations SET terms_version='v3' WHERE id=$RES" >/dev/null
 check "Giả lập quá hạn 3 ngày" "$(code POST $FM "$SIM/contracts/$C/make-overdue?days=3")" "200"
 check "BOM thấy HĐ trong danh sách quá hạn toàn chuỗi" "$(call GET $BOM "$API/contracts/overdue-all" | jget "o.some(c=>c.contractId===$C)")" "true"
 check "BOM miễn phí trễ" "$(call POST $BOM "$API/contracts/$C/waive-late-fee" '{"reason":"E2E BOM mien phi tre"}' | jget 'o.lateFeeWaived')" "true"

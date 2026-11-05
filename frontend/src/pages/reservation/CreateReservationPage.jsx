@@ -6,6 +6,8 @@ import { getFacilityAvailability, getFacilityPricing } from '../../services/faci
 import AssetTermsModal from '../../components/AssetTermsModal'
 import { validateVoucher } from '../../services/voucherService'
 import { getInsurancePlans } from '../../services/claimService'
+import { getGoodsCategories, TEMPERATURE_LABELS } from '../../services/catalogService'
+import GoodsCategoryDropdown from '../../components/GoodsCategoryDropdown'
 
 // BR-125: dự phòng khi chưa tải được danh sách gói từ backend (GET /insurance-plans)
 const FALLBACK_PLANS = [
@@ -31,6 +33,7 @@ function buildUnit(availability, unitTypeId) {
     branch: facility.name,
     address: facility.address,
     hotline: facility.hotline,
+    temperatureClass: slot.temperatureClass || 'NORMAL', // BR-131
   }
 }
 
@@ -71,6 +74,10 @@ export default function CreateReservationPage() {
   const [insurancePlans, setInsurancePlans] = useState(FALLBACK_PLANS)
   const [insurancePlan, setInsurancePlan] = useState('BASIC')
   const [declaredValue, setDeclaredValue] = useState('')
+  // BR-131 (05/11/2026): loại hàng gửi kho — BOM quản lý danh mục, thực phẩm chỉ cho kho lạnh / đông
+  const [goodsCategories, setGoodsCategories] = useState([])
+  const [goodsCodes, setGoodsCodes] = useState([])
+  const [goodsDescription, setGoodsDescription] = useState('')
   const [agreed, setAgreed] = useState(false)
   // Điều khoản xử lý tài sản khi không trả kho — bắt buộc, backend lưu phiên bản + thời điểm đồng ý
   const [termsAccepted, setTermsAccepted] = useState(false)
@@ -161,6 +168,9 @@ export default function CreateReservationPage() {
     getFacilityPricing(facilityId).then(setPricing).catch(() => setPricing(null))
   }, [hasParams, facilityId])
   useEffect(() => {
+    getGoodsCategories().then((list) => setGoodsCategories(Array.isArray(list) ? list : [])).catch(() => setGoodsCategories([]))
+  }, [])
+  useEffect(() => {
     getInsurancePlans()
       .then((plans) => { if (Array.isArray(plans) && plans.length) setInsurancePlans(plans) })
       .catch(() => {})
@@ -238,6 +248,7 @@ export default function CreateReservationPage() {
     ? Math.min(declaredNumber, Number(selectedPlan.coverageLimit))
     : Math.min(NO_DECLARATION_CAP, Number(selectedPlan.coverageLimit))
   const totalPayment = netRent + deposit - voucherApplied.discount + insuranceTotal
+  const needsGoodsNote = goodsCategories.some((c) => c.requiresNote && goodsCodes.includes(c.code))
 
   const handleSubmit = async () => {
     if (!isAuthenticated || !sessionUser?.userId) {
@@ -254,6 +265,14 @@ export default function CreateReservationPage() {
     }
     if (!startDate) {
       setError('Vui lòng chọn ngày bắt đầu nhận kho.')
+      return
+    }
+    if (goodsCodes.length === 0) {
+      setError('Vui lòng chọn loại hàng sẽ gửi kho.')
+      return
+    }
+    if (needsGoodsNote && goodsDescription.trim().length < 3) {
+      setError('Bạn chọn "Khác" — vui lòng mô tả rõ loại hàng sẽ gửi.')
       return
     }
     // PR-R11: ô "sắp trống" chỉ giao được từ ngày khách cũ hết ân hạn
@@ -282,6 +301,8 @@ export default function CreateReservationPage() {
         voucherCode: customVoucherCode || undefined,
         insurancePlan,
         declaredGoodsValue: declaredNumber > 0 ? declaredNumber : undefined,
+        goodsCategoryCodes: goodsCodes,
+        goodsDescription: goodsDescription.trim() || undefined,
       })
       // Đồng bộ thông tin SĐT và CCCD mới nhất vào phiên đăng nhập hiện tại
       sessionStorage.setItem('user', JSON.stringify({
@@ -363,12 +384,43 @@ export default function CreateReservationPage() {
         {/* Cột trái */}
         <div className="flex flex-col gap-6">
 
-          {/* Section 1: Thông tin khoang kho */}
+          {/* Section 1 (họp nhóm 05/11/2026): chọn ngày nhận kho trước tiên */}
+          <div className="duo-card p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-2xl bg-[#CE82FF] border-b-2 border-[#A568CC] flex items-center justify-center text-white text-xs font-black">
+                1
+              </div>
+              <span className="text-base font-black text-[#4B4B4B]">Ngày bắt đầu nhận kho <span className="text-[#FF4B4B]">*</span></span>
+            </div>
+            <div className="relative">
+              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">
+                calendar_month
+              </span>
+              <input
+                type="date"
+                value={startDate}
+                min={minStartDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="duo-input w-full pl-11"
+              />
+            </div>
+            {availableFrom && (
+              <p className="text-xs font-bold text-[#1899D6] mt-2">
+                Loại kho này đang hết ô trống — quý khách đặt trước ô sắp được trả, nhận kho từ ngày {availableFrom.split('-').reverse().join('/')}.
+                Nếu tới ngày nhận cơ sở chưa bàn giao được ô, quý khách được huỷ và hoàn 100%.
+              </p>
+            )}
+            <p className="text-xs font-bold text-[#AFAFAF] mt-2">
+              🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
+            </p>
+          </div>
+
+          {/* Section 2: Thông tin khoang kho */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] flex items-center justify-center text-white text-xs font-black">
-                  1
+                  2
                 </div>
                 <span className="text-base font-black text-[#4B4B4B]">Thông tin khoang kho</span>
               </div>
@@ -389,6 +441,9 @@ export default function CreateReservationPage() {
                   <span className="text-[11px] font-black uppercase bg-[#DDF4FF] border border-[#84D8FF] text-[#1CB0F6] px-2 py-0.5 rounded-full">
                     Còn {unit.availableCount} ô trống
                   </span>
+                  <span className="text-[11px] font-black uppercase bg-[#F3E5FF] border border-[#CE82FF] text-[#A568CC] px-2 py-0.5 rounded-full">
+                    {TEMPERATURE_LABELS[unit.temperatureClass] || 'Kho thường'}
+                  </span>
                 </div>
                 <p className="text-xs font-bold text-[#AFAFAF] mt-1">
                   Chi nhánh: {unit.branch} ({unit.address})
@@ -407,14 +462,14 @@ export default function CreateReservationPage() {
             </div>
           </div>
 
-          {/* Section 2: Thời hạn thuê */}
+          {/* Section 3: Thời hạn thuê */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#1CB0F6] border-b-2 border-[#1899D6] flex items-center justify-center text-white text-xs font-black">
-                  2
+                  3
                 </div>
-                <span className="text-base font-black text-[#4B4B4B]">Thời hạn thuê & Ngày nhận kho</span>
+                <span className="text-base font-black text-[#4B4B4B]">Thời hạn thuê & Bảo hiểm</span>
               </div>
               <span className="text-xs font-black uppercase text-[#1CB0F6] bg-[#DDF4FF] border-2 border-[#84D8FF] px-3 py-1 rounded-full">
                 Linh hoạt gia hạn
@@ -425,7 +480,7 @@ export default function CreateReservationPage() {
               Thời hạn cam kết thuê tối thiểu
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {durationOptions.map((opt) => (
                 <button
                   key={opt.months}
@@ -459,33 +514,6 @@ export default function CreateReservationPage() {
                   )}
                 </button>
               ))}
-            </div>
-
-            <div>
-              <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-2 block">
-                Ngày bắt đầu nhận kho <span className="text-[#FF4B4B]">*</span>
-              </label>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">
-                  calendar_month
-                </span>
-                <input
-                  type="date"
-                  value={startDate}
-                  min={minStartDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="duo-input w-full pl-11"
-                />
-              </div>
-              {availableFrom && (
-                <p className="text-xs font-bold text-[#1899D6] mt-2">
-                  Loại kho này đang hết ô trống — quý khách đặt trước ô sắp được trả, nhận kho từ ngày {availableFrom.split('-').reverse().join('/')}.
-                  Nếu tới ngày nhận cơ sở chưa bàn giao được ô, quý khách được huỷ và hoàn 100%.
-                </p>
-              )}
-              <p className="text-xs font-bold text-[#AFAFAF] mt-2">
-                🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
-              </p>
             </div>
 
             {/* BR-125: gói bảo hiểm hàng hoá */}
@@ -538,12 +566,50 @@ export default function CreateReservationPage() {
             </div>
           </div>
 
-          {/* Section 3: Thông tin khách hàng */}
+          {/* Section 4 — BR-131: loại hàng gửi kho (Staff đối chiếu lúc nhận kho) */}
+          <div className="duo-card p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-2xl bg-[#FFC800] border-b-2 border-[#E5A800] flex items-center justify-center text-white text-xs font-black">
+                4
+              </div>
+              <span className="text-base font-black text-[#4B4B4B]">Loại hàng gửi kho <span className="text-[#FF4B4B]">*</span></span>
+            </div>
+            <GoodsCategoryDropdown
+              categories={goodsCategories}
+              value={goodsCodes}
+              onChange={setGoodsCodes}
+              temperatureClass={unit.temperatureClass}
+            />
+            {goodsCategories.length === 0 && (
+              <p className="text-[11px] font-bold text-[#FF4B4B] mt-2">Chưa tải được danh mục loại hàng, vui lòng tải lại trang.</p>
+            )}
+            {(needsGoodsNote || goodsDescription) && (
+              <label className="flex flex-col gap-1.5 mt-3">
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
+                  Mô tả hàng {needsGoodsNote && <span className="text-[#FF4B4B]">*</span>}
+                </span>
+                <input
+                  type="text"
+                  maxLength={500}
+                  value={goodsDescription}
+                  onChange={(e) => setGoodsDescription(e.target.value)}
+                  placeholder="VD: dụng cụ câu cá, đồ thể thao..."
+                  className="duo-input"
+                />
+              </label>
+            )}
+            <p className="text-[11px] font-bold text-[#777777] mt-3">
+              Nhân viên sẽ kiểm tra hàng khi bạn nhận kho: hàng phải khớp loại đã khai báo, không có chất dễ cháy nổ, hàng cấm.
+              {unit.temperatureClass === 'NORMAL' && ' Thực phẩm chỉ gửi được ở kho lạnh / kho đông.'}
+            </p>
+          </div>
+
+          {/* Section 5: Thông tin khách hàng */}
           <div className="duo-card p-6">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] flex items-center justify-center text-white text-xs font-black">
-                  3
+                  5
                 </div>
                 <span className="text-base font-black text-[#4B4B4B]">Thông tin khách hàng</span>
               </div>
@@ -651,7 +717,7 @@ export default function CreateReservationPage() {
               </label>
             </div>
 
-            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (căn cứ để bán thanh lý hàng sau thanh lý HĐ) */}
+            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (v4: chuyển hàng vào kho tổng, không bán) */}
             <div className="flex items-start gap-3 mt-3">
               <input
                 type="checkbox"
@@ -669,8 +735,9 @@ export default function CreateReservationPage() {
                 >
                   Điều khoản xử lý tài sản khi không trả kho
                 </button>
-                : quá hạn 30 ngày sẽ bị thanh lý hợp đồng, hàng được lưu giữ 60 ngày rồi{' '}
-                <span className="font-black text-[#FF4B4B]">bán thanh lý để trừ nợ</span>.
+                : hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị thanh lý và hàng được{' '}
+                <span className="font-black text-[#FF4B4B]">chuyển vào kho tổng, tính phí lưu giữ mỗi ngày</span>{' '}
+                (QueenKho không bán hàng của bạn).
               </label>
             </div>
             <AssetTermsModal

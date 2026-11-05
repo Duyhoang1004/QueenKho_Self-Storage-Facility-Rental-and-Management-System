@@ -18,6 +18,7 @@ public class UnitTypeResponse {
     private String dimensions;
     private String features;
     private String status;
+    private String temperatureClass;     // BR-131: NORMAL / COLD (kho lạnh) / FROZEN (kho đông)
 
     public UnitTypeResponse(Integer id, String name, BigDecimal areaSqm, BigDecimal volumeCbm,
                             BigDecimal basePriceMonthly, String suggestedCapacity, String dimensions, String features) {

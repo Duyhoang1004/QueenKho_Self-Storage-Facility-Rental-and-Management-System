@@ -49,6 +49,8 @@ public class LateFeeService {
     // PR-Q16 (04/11/2026): phí dọn & di dời hàng khi thanh lý — chỉ áp dụng khách đã đồng ý điều khoản từ v3
     public static final int DEFAULT_GOODS_MOVING_FEE_PERCENT = 30;
     public static final String MOVING_FEE_TERMS_VERSION = "v3";
+    // D-15 (05/11/2026): từ điều khoản v4 — bỏ ân hạn, quá hạn là chuyển hàng vào kho tổng ngay, giữ hàng không thời hạn, không bán
+    public static final String CENTRAL_STORAGE_TERMS_VERSION = "v4";
 
     @Autowired
     private RentalPolicyRepository rentalPolicyRepository;
@@ -85,6 +87,11 @@ public class LateFeeService {
         RentalPolicy policy = policyOf(contract);
         return policy != null && policy.getHeldGoodsFeePercent() != null
                 ? policy.getHeldGoodsFeePercent() : DEFAULT_HELD_GOODS_FEE_PERCENT;
+    }
+
+    /** D-15: khách đã đồng ý điều khoản kho tổng (v4 trở đi) */
+    public static boolean acceptsCentralStorageTerms(String termsVersion) {
+        return termsVersion != null && termsVersion.compareTo(CENTRAL_STORAGE_TERMS_VERSION) >= 0;
     }
 
     /** Khách đã đồng ý điều khoản có phí dọn & di dời hàng chưa (v3 trở đi) */

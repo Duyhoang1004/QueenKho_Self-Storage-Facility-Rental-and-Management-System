@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getHeldGoods, resolveHeldGoods } from '../../services/heldGoodsService'
-import SimulationButton from '../../components/SimulationButton'
 import AssetTermsModal from '../../components/AssetTermsModal'
-import { simulateExpireHeldGoods } from '../../services/simulationService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 
 const PAGE_SIZE = 5
 
-// PR-Q10: Hàng của khách lưu giữ sau thanh lý — Điều khoản xử lý tài sản khi không trả kho (v1)
-// Lưu giữ 60 ngày → khách nhận lại (hết nợ) / bán thanh lý (hết hạn + đã đồng ý điều khoản) / tiêu huỷ (hết hạn)
-// / giao cơ quan chức năng (bất cứ lúc nào: hàng cấm, giấy tờ tuỳ thân).
+// PR-Q10 (sửa 05/11/2026, D-15 / BR-134): hàng của khách sau thanh lý được giữ ở KHO TỔNG tới khi khách nhận lại.
+// QueenKho không bán / tiêu huỷ hàng của khách. Chỉ còn 2 cách xử lý: khách nhận lại (hết nợ + phí lưu giữ)
+// hoặc giao cơ quan chức năng (hàng cấm, giấy tờ tuỳ thân). SOLD / DESTROYED chỉ còn để hiện hồ sơ cũ.
 
 const OUTCOMES = {
   RETURNED: { label: 'Khách nhận lại', icon: 'assignment_return', btn: 'duo-btn-green', badge: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
@@ -19,10 +17,11 @@ const OUTCOMES = {
   HANDED_TO_AUTHORITY: { label: 'Giao cơ quan chức năng', icon: 'local_police', btn: 'duo-btn-white', badge: 'bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]' },
 }
 
+// Nút xử lý đang dùng
+const ACTIONS = ['RETURNED', 'HANDED_TO_AUTHORITY']
+
 const NOTE_PLACEHOLDER = {
   RETURNED: 'VD: Khách Nguyễn Văn A (CCCD ...) đã kiểm tra và nhận đủ 12 thùng hàng, ký biên bản bàn giao.',
-  SOLD: 'VD: Bán thanh lý cho cơ sở thu mua X, biên bản bán số 03/2026, có ảnh chứng từ.',
-  DESTROYED: 'VD: Hàng hư hỏng không còn giá trị, tiêu huỷ có biên bản, 2 nhân sự chứng kiến.',
   HANDED_TO_AUTHORITY: 'VD: Giao CA phường 4 (cán bộ ...) 1 túi giấy tờ tuỳ thân, biên bản giao nhận số ...',
 }
 
@@ -46,20 +45,13 @@ function formatDateTime(val) {
 // Vì sao nút xử lý bị khoá (null = bấm được)
 function blockReason(item, outcome) {
   if (outcome === 'RETURNED' && Number(item.customerDebt) > 0) return `Khách còn nợ ${formatVND(item.customerDebt)} — phải trả hết trước khi nhận lại`
-  if (outcome === 'SOLD' && !item.holdExpired) return `Chưa hết hạn lưu giữ (đến ${formatDate(item.holdUntil)})`
-  if (outcome === 'SOLD' && !item.termsVersion) return 'Khách chưa đồng ý điều khoản (đơn cũ) — không được bán'
-  if (outcome === 'DESTROYED' && !item.holdExpired) return `Chưa hết hạn lưu giữ (đến ${formatDate(item.holdUntil)})`
   return null
 }
 
 function HoldBadge({ item }) {
-  if (item.holdExpired) {
-    return <span className="duo-badge bg-[#FFDFDF] text-[#EA2B2B] border-2 border-[#FF4B4B] whitespace-nowrap">Hết hạn lưu giữ</span>
-  }
-  const urgent = item.daysLeft <= 7
   return (
-    <span className={`duo-badge border-2 whitespace-nowrap ${urgent ? 'bg-[#FFF8E1] text-[#B78900] border-[#FFC800]' : 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]'}`}>
-      Còn {item.daysLeft} ngày
+    <span className="duo-badge border-2 whitespace-nowrap bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]">
+      Ở kho tổng {item.heldDays ?? 0} ngày
     </span>
   )
 }
@@ -79,7 +71,6 @@ export default function HeldGoodsPage() {
   // Modal xử lý
   const [modal, setModal] = useState(null) // { item, outcome }
   const [note, setNote] = useState('')
-  const [proceeds, setProceeds] = useState('')
   const [feeCollected, setFeeCollected] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [modalError, setModalError] = useState('')
@@ -103,7 +94,6 @@ export default function HeldGoodsPage() {
   const openModal = (item, outcome) => {
     setModal({ item, outcome })
     setNote('')
-    setProceeds('')
     setFeeCollected(false)
     setModalError('')
   }
@@ -114,17 +104,12 @@ export default function HeldGoodsPage() {
       setModalError('Ghi chú / biên bản bắt buộc, tối thiểu 10 ký tự.')
       return
     }
-    if (modal.outcome === 'SOLD' && (proceeds === '' || Number(proceeds) < 0)) {
-      setModalError('Nhập số tiền bán thanh lý (≥ 0).')
-      return
-    }
     setSubmitting(true)
     setModalError('')
     try {
       await resolveHeldGoods(modal.item.id, {
         outcome: modal.outcome,
         note: note.trim(),
-        proceedsAmount: modal.outcome === 'SOLD' ? Number(proceeds) : null,
         storageFeeCollected: modal.outcome === 'RETURNED' ? feeCollected : null,
       })
       setToast(`Đã ghi nhận "${OUTCOMES[modal.outcome].label}" cho hàng HĐ ${modal.item.contractCode}`)
@@ -138,12 +123,7 @@ export default function HeldGoodsPage() {
     }
   }
 
-  // Dự tính khi bán: tiền bán trừ nợ trước, rồi trừ phí lưu giữ (PR-Q15), phần dư + cọc còn giữ hoàn khách
-  const saleProceeds = Number(proceeds) || 0
-  const saleDebtOffset = modal ? Math.min(saleProceeds, Number(modal.item.customerDebt) || 0) : 0
   const storageFee = modal && modal.outcome !== 'HANDED_TO_AUTHORITY' ? Number(modal.item.estimatedStorageFee) || 0 : 0
-  const saleFeeOffset = Math.min(storageFee, saleProceeds - saleDebtOffset)
-  const saleSurplus = saleProceeds - saleDebtOffset - saleFeeOffset
   // Khách nhận lại: phí lưu giữ trừ vào cọc còn giữ, thiếu thì thu tại quầy
   const feeAtCounter = modal ? Math.max(0, storageFee - (Number(modal.item.depositHeld) || 0)) : 0
 
@@ -155,9 +135,9 @@ export default function HeldGoodsPage() {
             <span className="material-symbols-outlined text-[26px]">inventory_2</span>
           </div>
           <div>
-            <h1 className="text-2xl font-black text-[#4B4B4B] tracking-tight">Hàng đang lưu giữ</h1>
+            <h1 className="text-2xl font-black text-[#4B4B4B] tracking-tight">Hàng ở kho tổng</h1>
             <p className="text-xs font-bold text-[#AFAFAF]">
-              Hàng của khách sau thanh lý hợp đồng — lưu giữ 60 ngày theo{' '}
+              Hàng của khách sau thanh lý hợp đồng — giữ ở kho tổng tới khi khách nhận lại, không bán, theo{' '}
               <button type="button" onClick={() => setTermsOpen(true)} className="text-[#1CB0F6] hover:underline cursor-pointer font-black">
                 Điều khoản xử lý tài sản
               </button>
@@ -193,7 +173,7 @@ export default function HeldGoodsPage() {
         <ListBoxHeader
           icon="inventory_2"
           title={tab === 'HOLDING' ? 'Danh sách hàng đang lưu giữ' : 'Hồ sơ hàng đã xử lý'}
-          subtitle="Lưu giữ 60 ngày theo Điều khoản xử lý tài sản"
+          subtitle="Giữ tới khi khách nhận lại — tính phí lưu giữ mỗi ngày"
           count={items.length}
           countLabel="hồ sơ"
           accentColor="bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]"
@@ -241,9 +221,7 @@ export default function HeldGoodsPage() {
               <div
                 key={item.id}
                 className={`rounded-2xl border-2 border-b-4 bg-white p-4 transition-all ${
-                  tab === 'HOLDING' && item.holdExpired
-                    ? 'border-[#FF4B4B]'
-                    : 'border-[#E5E5E5] hover:border-[#1CB0F6]'
+                  'border-[#E5E5E5] hover:border-[#1CB0F6]'
                 } ${viewMode === 'list' ? 'flex flex-col lg:flex-row lg:items-center justify-between gap-4' : 'flex flex-col gap-3.5'}`}
               >
                 {/* Cột trái: Thông tin hợp đồng, khách hàng, khu lưu giữ & biên bản */}
@@ -275,12 +253,15 @@ export default function HeldGoodsPage() {
                   {/* Dải thông số ngang thuôn dài */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-[#FAFAFA] border border-[#EFEFEF] rounded-xl px-3.5 py-2.5">
                     <div>
-                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Khu lưu giữ</p>
-                      <p className="font-black text-[#4B4B4B] truncate">{item.storageLocation}</p>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Kho tổng · vị trí</p>
+                      <p className="font-black text-[#4B4B4B] truncate" title={item.centralWarehouseAddress || ''}>
+                        {item.centralWarehouseName || 'Khu lưu giữ cơ sở'}
+                      </p>
+                      <p className="text-[11px] font-bold text-[#777777] truncate">{item.storageLocation}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Lưu đến hết ngày</p>
-                      <p className="font-black text-[#4B4B4B]">{formatDate(item.holdUntil)}</p>
+                      <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Nhập kho tổng</p>
+                      <p className="font-black text-[#4B4B4B]">{formatDate(item.createdAt)}</p>
                     </div>
                     <div>
                       <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Nợ còn lại của khách</p>
@@ -291,10 +272,10 @@ export default function HeldGoodsPage() {
                     <div>
                       <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Điều khoản</p>
                       <p className={`font-black ${item.termsVersion ? 'text-[#58A700]' : 'text-[#B78900]'}`}>
-                        {item.termsVersion ? `Đã đồng ý (${item.termsVersion})` : 'Đơn cũ — không bán'}
+                        {item.termsVersion ? `Đã đồng ý (${item.termsVersion})` : 'Đơn cũ — chưa đồng ý'}
                       </p>
                     </div>
-                    {/* PR-Q15: phí lưu giữ hàng (chỉ đơn đồng ý điều khoản v2) */}
+                    {/* PR-Q15: phí lưu giữ hàng (đơn đồng ý điều khoản v2 trở lên; v4 tính tới ngày nhận lại) */}
                     {Number(item.storageFeePerDay) > 0 && (
                       <div className="col-span-2 sm:col-span-4 pt-1 border-t border-[#EAEAEA]">
                         <p className="text-[10px] font-black uppercase text-[#AFAFAF]">Phí lưu giữ</p>
@@ -338,7 +319,8 @@ export default function HeldGoodsPage() {
                 {/* Cột phải: Các nút hành động hoặc kết quả xử lý */}
                 {tab === 'HOLDING' ? (
                   <div className={`flex flex-wrap items-center gap-2 ${viewMode === 'list' ? 'lg:w-[250px] lg:flex-col lg:items-stretch shrink-0 lg:border-l-2 lg:border-[#F0F0F0] lg:pl-4' : ''}`}>
-                    {Object.entries(OUTCOMES).map(([key, meta]) => {
+                    {ACTIONS.map((key) => {
+                      const meta = OUTCOMES[key]
                       const reason = blockReason(item, key)
                       return (
                         <button
@@ -354,14 +336,6 @@ export default function HeldGoodsPage() {
                         </button>
                       )
                     })}
-                    {!item.holdExpired && (
-                      <SimulationButton
-                        label="Hết hạn lưu giữ"
-                        description={`Lùi hạn lưu giữ hàng HĐ ${item.contractCode} về hôm qua (đã qua 60 ngày) để bán thanh lý / tiêu huỷ được ngay.`}
-                        onRun={() => simulateExpireHeldGoods(item.id)}
-                        onDone={reload}
-                      />
-                    )}
                   </div>
                 ) : (
                   <div className={`rounded-2xl border-2 border-[#E5E5E5] p-3.5 flex flex-col gap-1.5 text-xs ${viewMode === 'list' ? 'lg:w-[320px] shrink-0' : ''}`}>
@@ -403,29 +377,6 @@ export default function HeldGoodsPage() {
               </span>
               <h2 className="text-base font-black text-[#4B4B4B]">HĐ {modal.item.contractCode}</h2>
             </div>
-
-            {modal.outcome === 'SOLD' && (
-              <div className="flex flex-col gap-2">
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] font-black uppercase text-[#777777]">Tiền bán thanh lý (VNĐ) *</span>
-                  <input type="number" min={0} step={10000} value={proceeds} onChange={(e) => setProceeds(e.target.value)}
-                    className="duo-input text-sm font-mono font-black" placeholder="0" />
-                </label>
-                <div className="rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
-                  <div className="flex justify-between"><span>Trừ nợ còn lại của khách</span><span className="text-[#FF4B4B]">- {formatVND(saleDebtOffset)}</span></div>
-                  {storageFee > 0 && (
-                    <div className="flex justify-between"><span>Trừ phí lưu giữ ({modal.item.heldDays} ngày)</span><span className="text-[#FF4B4B]">- {formatVND(saleFeeOffset)}</span></div>
-                  )}
-                  <div className="flex justify-between"><span>Phần dư hoàn khách</span><span className="text-[#1899D6]">{formatVND(saleSurplus)}</span></div>
-                  {Number(modal.item.depositHeld) > 0 && (
-                    <p className="text-[11px] text-[#777777]">
-                      + Cọc còn giữ {formatVND(modal.item.depositHeld)} được gộp vào lần hoàn này nếu chưa tạo yêu cầu hoàn cọc riêng.
-                    </p>
-                  )}
-                  <p className="text-[11px] text-[#777777]">Có tiền hoàn → hệ thống tạo task Hoàn tiền cho Quản lý.</p>
-                </div>
-              </div>
-            )}
 
             {/* PR-Q15: khách nhận lại — phí lưu giữ trừ vào cọc, thiếu thì thu tại quầy */}
             {modal.outcome === 'RETURNED' && storageFee > 0 && (

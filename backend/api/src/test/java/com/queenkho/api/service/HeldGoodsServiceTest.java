@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-// PR-Q10: xử lý hàng của khách lưu giữ sau thanh lý — đúng điều kiện điều khoản, tiền bán trừ nợ rồi hoàn khách
+// PR-Q10 (sửa 05/11/2026, D-15): xử lý hàng của khách giữ ở kho tổng — chỉ trả khách / giao cơ quan chức năng, không bán
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class HeldGoodsServiceTest {
@@ -106,49 +106,31 @@ class HeldGoodsServiceTest {
     }
 
     @Test
-    @DisplayName("Bán thanh lý: tiền bán 2.000.000 trừ nợ 500.000, dư 1.500.000 + cọc còn giữ 1.000.000 → task REFUND 2.500.000")
-    void sellOffsetsDebtThenRefunds() {
-        debt("500000");
-        when(jdbcTemplate.queryForObject(contains("task_type = 'REFUND'"), eq(Integer.class), any())).thenReturn(0);
-        when(jdbcTemplate.queryForList(contains("status = 'PENDING'"), (Object) any(), (Object) any()))
-                .thenReturn(List.of(Map.of("id", 70, "amount", new BigDecimal("500000"), "user_id", 2, "contract_id", 3)));
-
-        service.resolve(5, 6, req("SOLD", "2000000"));
-
-        verify(heldGoodsRepository).resolve(eq(5), eq("SOLD"), anyString(), eq(manager),
-                eq(new BigDecimal("2000000")), eq(new BigDecimal("500000")), eq(new BigDecimal("2500000")), isNull());
-        verify(jdbcTemplate).update(contains("payment_method = 'GOODS_SALE'"), eq(70));
-        ArgumentCaptor<StaffTask> task = ArgumentCaptor.forClass(StaffTask.class);
-        verify(staffTaskRepository).save(task.capture());
-        assertEquals("REFUND", task.getValue().getTaskType());
-        assertTrue(task.getValue().getNote().contains("THỰC HOÀN 2.500.000đ"));
-        verify(jdbcTemplate).update(contains("'REFUND', 'BANK_TRANSFER'"), startsWith("REF-SALE-9-"), eq(2), eq(9), eq(new BigDecimal("2500000")));
-    }
-
-    @Test
-    @DisplayName("Bán thanh lý khi FM đã tạo yêu cầu hoàn cọc riêng → chỉ hoàn phần dư tiền bán")
-    void sellDoesNotRefundDepositTwice() {
-        when(jdbcTemplate.queryForObject(contains("task_type = 'REFUND'"), eq(Integer.class), any())).thenReturn(1);
-
-        service.resolve(5, 6, req("SOLD", "800000"));
-
-        verify(heldGoodsRepository).resolve(eq(5), eq("SOLD"), anyString(), eq(manager),
-                eq(new BigDecimal("800000")), eq(BigDecimal.ZERO), eq(new BigDecimal("800000")), isNull());
-    }
-
-    @Test
-    @DisplayName("Bán thanh lý: chưa hết 60 ngày → 409 HOLD_NOT_EXPIRED; khách chưa đồng ý điều khoản → 409 TERMS_NOT_ACCEPTED; thiếu tiền bán → 400")
-    void sellGuards() {
-        goods.setHoldUntil(LocalDate.now().plusDays(10));
-        assertEquals("HOLD_NOT_EXPIRED", code(req("SOLD", "100000")));
-
-        goods.setHoldUntil(LocalDate.now().minusDays(1));
-        reservation.setTermsVersion(null);
-        assertEquals("TERMS_NOT_ACCEPTED", code(req("SOLD", "100000")));
-
-        reservation.setTermsVersion("v1");
-        assertEquals("INVALID_INPUT", code(req("SOLD", null)));
+    @DisplayName("D-15: không bán / tiêu huỷ hàng của khách → 409 GOODS_SALE_NOT_ALLOWED, kể cả đã hết hạn lưu giữ")
+    void saleAndDestroyNotAllowed() {
+        assertEquals("GOODS_SALE_NOT_ALLOWED", code(req("SOLD", "2000000")));
+        assertEquals("GOODS_SALE_NOT_ALLOWED", code(req("DESTROYED", null)));
         verify(heldGoodsRepository, never()).resolve(any(), any(), any(), any(), any(), any(), any(), any());
+        verify(staffTaskRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Giao cơ quan chức năng (hàng cấm) làm ngay được, không chờ hết hạn")
+    void handOverToAuthorityAnytime() {
+        goods.setHoldUntil(LocalDate.now().plusDays(30));
+        service.resolve(5, 6, req("HANDED_TO_AUTHORITY", null));
+        verify(heldGoodsRepository).resolve(eq(5), eq("HANDED_TO_AUTHORITY"), anyString(), eq(manager), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("D-15 điều khoản v4: giữ hàng không thời hạn → phí lưu giữ tính tới ngày nhận (80 ngày = 1.600.000), điều khoản v2 chặn 60 ngày")
+    void storageFeeUncappedForV4() {
+        agreedTermsV2();
+        goods.setHoldUntil(LocalDate.now().minusDays(20)); // đã lưu 80 ngày
+        assertEquals(0, new BigDecimal("1200000").compareTo(service.storageFee(goods, LocalDate.now())));
+
+        reservation.setTermsVersion("v4");
+        assertEquals(0, new BigDecimal("1600000").compareTo(service.storageFee(goods, LocalDate.now())));
     }
 
     @Test
@@ -161,16 +143,6 @@ class HeldGoodsServiceTest {
         goods.setHoldUntil(LocalDate.now().plusDays(30));
         service.resolve(5, 6, req("RETURNED", null));
         verify(heldGoodsRepository).resolve(eq(5), eq("RETURNED"), anyString(), eq(manager), isNull(), isNull(), isNull(), isNull());
-    }
-
-    @Test
-    @DisplayName("Tiêu huỷ phải chờ hết hạn; giao cơ quan chức năng làm ngay được")
-    void destroyWaitsHandOverDoesNot() {
-        goods.setHoldUntil(LocalDate.now().plusDays(30));
-        assertEquals("HOLD_NOT_EXPIRED", code(req("DESTROYED", null)));
-
-        service.resolve(5, 6, req("HANDED_TO_AUTHORITY", null));
-        verify(heldGoodsRepository).resolve(eq(5), eq("HANDED_TO_AUTHORITY"), anyString(), eq(manager), isNull(), isNull(), isNull(), isNull());
     }
 
     @Test
@@ -196,20 +168,6 @@ class HeldGoodsServiceTest {
         StorageUnit unit = new StorageUnit();
         unit.setUnitType(unitType);
         contract.setStorageUnit(unit);
-    }
-
-    @Test
-    @DisplayName("PR-Q15 bán thanh lý: lưu đủ 60 ngày → phí lưu giữ 1.200.000 trừ vào tiền bán, hoàn 800.000 + cọc 1.000.000")
-    void sellChargesStorageFeeFromProceeds() {
-        agreedTermsV2();
-        when(jdbcTemplate.queryForObject(contains("task_type = 'REFUND'"), eq(Integer.class), any())).thenReturn(0);
-
-        service.resolve(5, 6, req("SOLD", "2000000"));
-
-        verify(heldGoodsRepository).resolve(eq(5), eq("SOLD"), anyString(), eq(manager), eq(new BigDecimal("2000000")),
-                eq(BigDecimal.ZERO), eq(new BigDecimal("1800000")), eq(new BigDecimal("1200000")));
-        verify(jdbcTemplate).update(contains("'OVERSTAY_FEE'"), startsWith("HG-G-9-"), eq(2), isNull(), eq(9),
-                eq("GOODS_SALE"), eq(new BigDecimal("1200000")));
     }
 
     @Test

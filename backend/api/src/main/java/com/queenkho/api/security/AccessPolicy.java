@@ -120,6 +120,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/facilities/{id:\\d+}/pricing", PUBLIC);
         rule("GET", "/api/v1/unit-types", PUBLIC);
         rule("GET", "/api/v1/insurance-plans", PUBLIC); // BR-125: gói bảo hiểm cho trang đặt kho
+        rule("GET", "/api/v1/goods-categories", PUBLIC); // BR-131: loại hàng cho trang đặt kho
         rule("GET", "/api/payments/vnpay/return", PUBLIC);
         rule("GET", "/api/payments/vnpay/ipn", PUBLIC);
         // Đăng xuất tự đọc token: token đã hết hạn vẫn trả 200 (FE không bị kẹt vòng lặp 401)
@@ -217,6 +218,9 @@ public class AccessPolicy {
         rule(null, "/api/v1/facilities/bom/**", "BOM_CATALOG");
         rule(null, "/api/v1/unit-types/**", "BOM_CATALOG");
         rule(null, "/api/v1/bom/vouchers/**", "BOM_VOUCHER");
+        rule(null, "/api/v1/bom/goods-categories/**", "BOM_CATALOG");   // BR-131
+        rule(null, "/api/v1/bom/central-warehouses/**", "BOM_CATALOG"); // BR-134
+        rule("GET", "/api/v1/central-warehouses", AUTHENTICATED);         // BR-134: FM / Staff chọn kho tổng
 
         // Admin
         rule(null, "/api/v1/admin/users/**", "ADMIN_ACCOUNTS");

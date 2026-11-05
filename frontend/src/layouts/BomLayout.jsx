@@ -8,6 +8,8 @@ const bomMenuItems = [
   { path: '/bom/unit-types', icon: 'sell', label: 'Bảng giá dịch vụ' },
   { path: '/bom/policies', icon: 'policy', label: 'Chính sách thuê' },
   { path: '/bom/vouchers', icon: 'confirmation_number', label: 'Voucher đặt kho' },
+  { path: '/bom/goods-categories', icon: 'category', label: 'Loại hàng gửi kho' },
+  { path: '/bom/central-warehouses', icon: 'home_storage', label: 'Kho tổng' },
   { path: '/bom/revenue', icon: 'monitoring', label: 'Báo cáo doanh thu' },
   { path: '/bom/overdue', icon: 'event_busy', label: 'Hợp đồng quá hạn' },
   { path: '/bom/claims', icon: 'gavel', label: 'Bồi thường hàng hoá' },

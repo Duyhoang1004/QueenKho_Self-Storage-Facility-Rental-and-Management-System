@@ -224,6 +224,7 @@ class StaffTaskAssignAndRefundTest {
         request.setUnitClean(true);
         request.setLockIntact(true);
         request.setCustomerSignatureConfirmed(true);
+        request.setGoodsChecked(true);
         request.setAccessPinCode("123456");
         request.setRfidCardCode("RFID-1");
         request.setEvidenceImages(List.of("http://x/hien-trang.png")); // BR-121
@@ -244,6 +245,7 @@ class StaffTaskAssignAndRefundTest {
         request.setUnitClean(true);
         request.setLockIntact(true);
         request.setCustomerSignatureConfirmed(true);
+        request.setGoodsChecked(true);
         request.setAccessPinCode("123456");
         request.setRfidCardCode("RFID-1");
 

@@ -60,6 +60,7 @@ import BomRentalPoliciesPage from './pages/bom/BomRentalPoliciesPage';
 import BomRevenuePage from './pages/bom/BomRevenuePage';
 import BomVouchersPage from './pages/bom/BomVouchersPage';
 import BomOverduePage from './pages/bom/BomOverduePage';
+import BomCatalogPage from './pages/bom/BomCatalogPage';
 import ClaimsPage from './pages/manager/ClaimsPage';
 
 /**
@@ -193,6 +194,8 @@ export default function App() {
         <Route path="/bom/vouchers" element={<BomVouchersPage />} />
         <Route path="/bom/revenue" element={<BomRevenuePage />} />
         <Route path="/bom/overdue" element={<BomOverduePage />} />
+        <Route path="/bom/goods-categories" element={<BomCatalogPage />} />
+        <Route path="/bom/central-warehouses" element={<BomCatalogPage />} />
         <Route path="/bom/claims" element={<ClaimsPage />} />
         <Route path="/bom/claims/:id" element={<ClaimsPage />} />
       </Route>

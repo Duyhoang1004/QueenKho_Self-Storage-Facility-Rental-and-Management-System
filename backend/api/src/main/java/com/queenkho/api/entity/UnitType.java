@@ -40,4 +40,9 @@ public class UnitType {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private String status = "ACTIVE"; // ACTIVE / INACTIVE (UC-05, PR-M4)
+
+    // BR-131 (05/11/2026): NORMAL (kho thường) / COLD (kho lạnh) / FROZEN (kho đông) — thực phẩm chỉ gửi kho lạnh / đông
+    @Column(name = "temperature_class", nullable = false, length = 10)
+    @Builder.Default
+    private String temperatureClass = "NORMAL";
 }

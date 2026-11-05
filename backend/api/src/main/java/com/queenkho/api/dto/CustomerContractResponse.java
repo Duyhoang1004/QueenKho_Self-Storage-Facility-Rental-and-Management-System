@@ -96,6 +96,13 @@ public class CustomerContractResponse {
     // BR-127: hồ sơ bồi thường cho phép chấm dứt hợp đồng không phí phá HĐ
     private Boolean faultTermination;
 
+    // BR-131 (05/11/2026): loại hàng khách khai báo
+    private java.util.List<String> goodsCategories;
+    private String goodsDescription;
+    // BR-134: hàng ở kho tổng (khách quá hạn) — relocationPending = đã thanh lý, đang chờ chuyển hàng vào kho tổng
+    private Boolean relocationPending;
+    private HeldGoodsResponse centralStorage;
+
     public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
                                     String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
                                     String floor, String zone, String roomNumber, String status, LocalDate startDate,
@@ -124,6 +131,6 @@ public class CustomerContractResponse {
                 facilityId, lateFeeWaived, lateFeeWaiverNote, facilityDamageFee, termsVersion, termsAcceptedAt,
                 heldGoodsStatus, heldGoodsHoldUntil, heldGoodsStorageLocation, facilityName, facilityAddress,
                 facilityHotline, customerEmail, customerCccd, overstayDailyAmount, overstayFeeAmount, totalOverdueCharge,
-                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null);
+                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

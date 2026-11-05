@@ -33,7 +33,6 @@ public class DemoSimulationService {
     private static final LocalTime CLOSING_TIME = LocalTime.of(21, 0);
     private static final LocalTime APPOINTMENT_TIME = LocalTime.of(9, 0);
     public static final int MAX_OVERDUE_DAYS = 90;
-    private static final int CHECKOUT_GRACE_DAYS = 5;
 
     private final JdbcTemplate jdbcTemplate;
     private final ReservationCleanupService reservationCleanupService;
@@ -44,7 +43,7 @@ public class DemoSimulationService {
     @PersistenceContext
     private EntityManager entityManager;
 
-    public static final int MAX_EXPIRE_SOON_DAYS = 7;
+    public static final int MAX_EXPIRE_SOON_DAYS = 15; // 05/11/2026: mốc nhắc 15 / 10 / 7 / 3 / 1
 
     // Thêm sau (PR-R9, task quá hạn) — inject qua field để giữ nguyên constructor đang dùng trong test
     @Autowired(required = false)
@@ -52,6 +51,10 @@ public class DemoSimulationService {
 
     @Autowired(required = false)
     private StaffTaskService staffTaskService;
+
+    // D-15: giả lập quá hạn chạy luôn bước chuyển kho tổng
+    @Autowired(required = false)
+    private ContractOverdueJob contractOverdueJob;
 
     // BR-128 / BR-129 (04/11/2026): bảo hiểm chi trả, cảm biến vượt ngưỡng
     @Autowired(required = false)
@@ -250,12 +253,7 @@ public class DemoSimulationService {
             throw notApplicable("Chỉ giả lập được cho hợp đồng đang thuê, chờ trả kho hoặc đang quá hạn");
         }
         boolean missedCheckout = "TERMINATION_PENDING".equals(previousStatus);
-        // PR-Q1: hẹn trả kho rồi thì còn 5 ngày ân hạn — chỉ quá hạn khi đã qua end_date + 5
-        if (missedCheckout && days <= CHECKOUT_GRACE_DAYS) {
-            throw new AccessException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Hợp đồng đã hẹn trả kho còn " + CHECKOUT_GRACE_DAYS + " ngày ân hạn — nhập từ "
-                            + (CHECKOUT_GRACE_DAYS + 1) + " ngày trở lên");
-        }
+        // D-15 (05/11/2026): đã bỏ ân hạn 5 ngày — hẹn trả mà không tới thì quá hạn từ ngày sau hạn
         int months = Math.max(1, toInt(contract.get("billing_cycle_months")));
         LocalDate endDate = LocalDate.now().minusDays(days);
         // Giữ đúng độ dài kỳ thuê: start = end − số tháng (tránh end < start làm sai tiền hoàn)
@@ -283,6 +281,11 @@ public class DemoSimulationService {
                 "rental_contracts", contractId);
         // BR-117: chạy ngay cảnh báo thanh lý (job thật chạy 8h sáng) để demo thấy chuông + email
         if (renewalReminderService != null) renewalReminderService.warnLiquidationContract(contractId);
+        // D-15: điều khoản v4 → chạy ngay bước thanh lý + chuyển kho tổng như job 00:05
+        if (contractOverdueJob != null && contractOverdueJob.relocateToCentralWarehouse(contractId) > 0) {
+            return result("Hợp đồng quá hạn " + days + " ngày — điều khoản v4: đã thanh lý, sinh việc chuyển hàng vào kho tổng",
+                    "endDate", endDate);
+        }
         return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày thanh lý (cần thêm "
                         + ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ)"
                 : "Hợp đồng quá hạn " + days + " ngày — đang tính phí trễ", "endDate", endDate);

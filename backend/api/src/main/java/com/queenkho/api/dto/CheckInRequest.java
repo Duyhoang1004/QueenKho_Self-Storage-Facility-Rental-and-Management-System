@@ -17,6 +17,8 @@ public class CheckInRequest {
     private Boolean unitClean;                   // ô kho sạch
     private Boolean lockIntact;                  // khoá nguyên vẹn
     private Boolean customerSignatureConfirmed;  // khách đã ký biên bản
+    // PR-C7 / BR-132 (05/11/2026): mục 6 — đã kiểm tra hàng mang vào khớp loại hàng khai báo, không có hàng cấm
+    private Boolean goodsChecked;
 
     private String accessPinCode;  // 6 chữ số, lấy từ GET /staff-tasks/pin-suggestion
     private String rfidCardCode;   // mã in trên thẻ từ phát cho khách

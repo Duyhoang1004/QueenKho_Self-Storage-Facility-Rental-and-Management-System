@@ -18,7 +18,7 @@ import java.util.Map;
 
 /**
  * PR-R9 (BR-118): nhắc gia hạn hợp đồng ACTIVE sắp hết hạn — thông báo trong chuông + email.
- *  - Mốc nhắc: còn 7, 3, 1 ngày. Mỗi mốc gửi 1 lần (refKey RENEWAL:{hợp đồng}:{end_date}:{mốc}); gia hạn xong
+ *  - Mốc nhắc: còn 15, 10, 7, 3, 1 ngày (sửa 05/11/2026). Mỗi mốc gửi 1 lần (refKey RENEWAL:{hợp đồng}:{end_date}:{mốc}); gia hạn xong
  *    end_date đổi → kỳ mới nhắc lại từ đầu.
  *  - Lỡ ngày chạy job (server tắt) vẫn nhắc ở lần chạy sau: còn 5 ngày → gửi mốc 7, còn 2 ngày → gửi mốc 3.
  *  - Hợp đồng đã hẹn trả kho (TERMINATION_PENDING) không nhắc.
@@ -28,7 +28,8 @@ import java.util.Map;
 @Service
 public class RenewalReminderService {
 
-    public static final List<Integer> REMIND_DAYS = List.of(1, 3, 7);
+    // Họp nhóm 05/11/2026: nhắc sớm hơn — còn 15 / 10 / 7 / 3 / 1 ngày
+    public static final List<Integer> REMIND_DAYS = List.of(1, 3, 7, 10, 15);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     public static final int LIQUIDATION_WARN_DAYS = 3;
@@ -116,7 +117,7 @@ public class RenewalReminderService {
         return String.format("%,d", value.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', '.');
     }
 
-    /** Quét toàn bộ hợp đồng ACTIVE còn ≤ 7 ngày. Trả số nhắc mới gửi. */
+    /** Quét toàn bộ hợp đồng ACTIVE còn ≤ 15 ngày. Trả số nhắc mới gửi. */
     @Transactional
     public int remindAll() {
         LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
@@ -139,7 +140,8 @@ public class RenewalReminderService {
     }
 
     private static final String CONTRACT_SQL =
-            "SELECT c.id, c.contract_code, c.end_date, c.customer_id, c.reservation_id, c.storage_unit_id " +
+            "SELECT c.id, c.contract_code, c.end_date, c.customer_id, c.reservation_id, c.storage_unit_id, " +
+                    "(SELECT r.terms_version FROM reservations r WHERE r.id = c.reservation_id) AS terms_version " +
                     "FROM rental_contracts c ";
 
     private boolean remind(Map<String, Object> row, LocalDate today) {
@@ -158,7 +160,12 @@ public class RenewalReminderService {
                     ? "Đã qua hạn chót gia hạn ưu tiên " + deadline.format(DATE_FMT)
                         + " — ô có thể đã được khách khác đặt trước. Hãy gia hạn ngay (nếu ô còn) hoặc hẹn ngày trả kho."
                     : "Gia hạn trước ngày " + deadline.format(DATE_FMT)
-                        + " để chắc chắn giữ ô; sau mốc này ô có thể được nhận đặt trước cho khách khác.");
+                        + " để chắc chắn giữ ô; sau mốc này ô có thể được nhận đặt trước cho khách khác.")
+                // D-15: điều khoản v4 — hết hạn là chuyển hàng vào kho tổng ngay, không còn ân hạn
+                + (LateFeeService.acceptsCentralStorageTerms((String) row.get("terms_version"))
+                    ? " Hết ngày " + endDate.format(DATE_FMT) + " mà chưa gia hạn hoặc trả kho, hôm sau QueenKho mở ô, kiểm kê và"
+                        + " chuyển hàng vào kho tổng (có phí di dời + phí lưu giữ theo ngày)."
+                    : "");
         Object reservationId = row.get("reservation_id");
         String refKey = "RENEWAL:" + contractId + ":" + endDate + ":" + milestone;
         return notificationService.notifyCustomer(((Number) row.get("customer_id")).intValue(), refKey,

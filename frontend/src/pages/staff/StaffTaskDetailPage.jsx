@@ -18,6 +18,7 @@ import UnitLocationMap from '../../components/UnitLocationMap';
 import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
+import { getCentralWarehouses } from '../../services/catalogService';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -79,13 +80,16 @@ const UNIT_STATUS_LABEL = {
   RESERVED: 'Đã giữ chỗ',
 };
 
-// 5 mục kiểm tra của biên bản Check-in (UC-18) — cả 5 mục phải đạt
+// 6 mục kiểm tra của biên bản Check-in (UC-18) — cả 6 mục phải đạt
+// Mục 6 (họp nhóm 05/11/2026, PR-C7 / BR-132): kiểm tra hàng khách mang vào; biên bản lưu ở prohibitedGoodsCommitted
 const CHECKIN_CHECKLIST = [
   { key: 'identityVerified',           label: 'Đã xác minh CCCD của khách',     hint: 'Đối chiếu CCCD với thông tin đặt chỗ' },
   { key: 'unitEmpty',                  label: 'Ô kho trống',                    hint: 'Không còn đồ của người thuê trước' },
   { key: 'unitClean',                  label: 'Ô kho sạch sẽ',                  hint: 'Sàn, tường, cửa đã vệ sinh' },
   { key: 'lockIntact',                 label: 'Khoá SmartLock nguyên vẹn',      hint: 'Khoá hoạt động, không trầy xước' },
   { key: 'customerSignatureConfirmed', label: 'Khách đã ký biên bản bàn giao',  hint: 'Khách ký xác nhận trên biên bản giấy' },
+  { key: 'goodsChecked', recordKey: 'prohibitedGoodsCommitted', label: 'Đã kiểm tra hàng mang vào',
+    hint: 'Hàng khớp loại khách khai báo, không có chất dễ cháy nổ / hàng cấm' },
 ];
 
 // 5 mục kiểm tra của biên bản Nghiệm thu trả kho (UC-23) — chia nhóm bắt buộc vs hiện trạng
@@ -295,8 +299,10 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // PR-Q10: dọn kho sau thanh lý → biên bản kiểm kê hàng của khách, lập hồ sơ lưu giữ 60 ngày
+  // PR-Q10 (sửa 05/11/2026): dọn kho sau thanh lý → kiểm kê hàng của khách, chuyển vào kho tổng (BR-134, không bán)
   const [noGoodsLeft, setNoGoodsLeft] = useState(false);
+  const [warehouses, setWarehouses] = useState([]);
+  const [warehouseId, setWarehouseId] = useState('');
   const [inventoryNote, setInventoryNote] = useState('');
   const [witnessNote, setWitnessNote] = useState('');
   const [storageLocation, setStorageLocation] = useState('');
@@ -305,13 +311,25 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   // Task cũ chưa có maintenanceReason: suy ra từ hợp đồng
   const isLiquidation = task.maintenanceReason === 'LIQUIDATION'
     || (!task.maintenanceReason && task.contractStatus === 'LIQUIDATED');
+
+  useEffect(() => {
+    if (!isLiquidation) return;
+    getCentralWarehouses()
+      .then(list => {
+        const items = Array.isArray(list) ? list : [];
+        setWarehouses(items);
+        if (items.length === 1) setWarehouseId(String(items[0].id));
+      })
+      .catch(() => setWarehouses([]));
+  }, [isLiquidation]);
   const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
   const blocked = maintenanceBlockedReason(task, userId, isManager);
   const noteValid = note.trim().length >= MAINTENANCE_NOTE_MIN && note.trim().length <= NOTES_MAX;
   const inventoryError = !isLiquidation || noGoodsLeft ? null
     : inventoryNote.trim().length < 10 ? 'Liệt kê hàng kiểm kê (tối thiểu 10 ký tự).'
     : !witnessNote.trim() ? 'Ghi rõ người mở kho / chứng kiến.'
-    : !storageLocation.trim() ? 'Ghi rõ khu lưu giữ hàng.'
+    : !warehouseId ? 'Chọn kho tổng nhận hàng.'
+    : !storageLocation.trim() ? 'Ghi rõ vị trí kệ trong kho tổng.'
     : inventoryImages.length === 0 ? 'Cần ít nhất 1 ảnh kiểm kê.'
     : null;
 
@@ -326,11 +344,12 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
 
   const fillDemo = () => {
     if (isLiquidation) {
-      setNote('Đã cùng Quản lý mở kho, kiểm kê, chụp ảnh, niêm phong hàng và chuyển sang khu lưu giữ. Ô đã dọn sạch.');
+      setNote('Đã cùng Quản lý mở kho, kiểm kê, chụp ảnh, niêm phong hàng và chuyển vào kho tổng. Ô đã dọn sạch.');
       setNoGoodsLeft(false);
       setInventoryNote('12 thùng carton đồ gia dụng (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp, 1 túi quần áo.');
       setWitnessNote('Nhân viên kho + Quản lý cơ sở, có đại diện tổ dân phố chứng kiến');
-      setStorageLocation('Khu lưu giữ K2 - kệ 3');
+      setStorageLocation('Dãy B - kệ 3');
+      if (!warehouseId && warehouses.length) setWarehouseId(String(warehouses[0].id));
       setInventoryImages([
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (1)'),
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
@@ -355,7 +374,10 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
     if (isLiquidation) {
       Object.assign(payload, noGoodsLeft
         ? { noGoodsLeft: true }
-        : { inventoryNote: inventoryNote.trim(), witnessNote: witnessNote.trim(), storageLocation: storageLocation.trim(), inventoryImages });
+        : {
+          inventoryNote: inventoryNote.trim(), witnessNote: witnessNote.trim(), storageLocation: storageLocation.trim(),
+          centralWarehouseId: Number(warehouseId), inventoryImages,
+        });
     }
     completeMaintenanceTask(task.id, payload)
       .then(data => {
@@ -363,7 +385,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         onToast({
           type: 'success',
           message: data.heldGoodsId
-            ? `Đã dọn xong ô ${data.storageUnitId}. Lập hồ sơ lưu giữ hàng #${data.heldGoodsId} đến ${formatDate(data.heldGoodsHoldUntil)}.`
+            ? `Đã dọn xong ô ${data.storageUnitId}. Hàng đã vào kho tổng — hồ sơ lưu giữ #${data.heldGoodsId}.`
             : `Đã hoàn tất bảo trì. Ô ${data.storageUnitId} sẵn sàng cho thuê.`,
         });
       })
@@ -407,7 +429,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
             'Ít nhất 2 nhân sự cùng mở kho (Staff + Quản lý cơ sở).',
             'Kiểm kê, chụp ảnh toàn bộ hàng của khách, lập biên bản có chữ ký người chứng kiến.',
             'Hàng cấm / chất nguy hiểm / giấy tờ tuỳ thân: giao ngay công an hoặc UBND phường.',
-            'Niêm phong, chuyển hàng sang khu lưu giữ — lưu 60 ngày trước khi bán thanh lý.',
+            'Niêm phong, chuyển hàng vào KHO TỔNG — giữ tới khi khách nhận lại, không bán.',
           ].map(line => (
             <p key={line} className="text-xs font-bold text-[#4B4B4B] flex gap-1.5">
               <span className="text-[#B78900]">•</span>{line}
@@ -431,7 +453,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           </p>
           {task.heldGoodsId && (
             <p className="text-xs font-bold text-[#4B4B4B]">
-              Hàng của khách: hồ sơ lưu giữ #{task.heldGoodsId}, lưu đến hết ngày {formatDate(task.heldGoodsHoldUntil)}.
+              Hàng của khách đã chuyển vào kho tổng: hồ sơ lưu giữ #{task.heldGoodsId} (giữ tới khi khách nhận lại).
               {isManager && <> <Link to="/manager/held-goods" className="text-[#1CB0F6] font-black hover:underline">Xem hàng đang lưu giữ</Link></>}
             </p>
           )}
@@ -468,7 +490,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
               value={note}
               onChange={e => setNote(e.target.value)}
               rows={3}
-              placeholder={isLiquidation ? 'VD: Kiểm kê 12 thùng hàng, chuyển sang khu lưu giữ K2, dọn sạch ô...' : 'VD: Thay vách ngăn, sửa khoá, vệ sinh ô...'}
+              placeholder={isLiquidation ? 'VD: Kiểm kê 12 thùng hàng, chuyển vào kho tổng, dọn sạch ô...' : 'VD: Thay vách ngăn, sửa khoá, vệ sinh ô...'}
               className="duo-input resize-none text-xs"
             />
             <span className={`text-[11px] font-bold self-end ${noteValid || !note ? 'text-[#AFAFAF]' : 'text-[#FF4B4B]'}`}>
@@ -502,9 +524,16 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
                         placeholder="Ít nhất 2 người" className="duo-input text-xs" />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase text-[#777777]">Khu lưu giữ *</span>
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Kho tổng nhận hàng *</span>
+                      <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="duo-input text-xs">
+                        <option value="">— Chọn kho tổng —</option>
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 sm:col-span-2">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Vị trí kệ trong kho tổng *</span>
                       <input type="text" maxLength={100} value={storageLocation} onChange={e => setStorageLocation(e.target.value)}
-                        placeholder="VD: Khu K2 - kệ 3" className="duo-input text-xs" />
+                        placeholder="VD: Dãy B - kệ 3" className="duo-input text-xs" />
                     </label>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -526,7 +555,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
                     </label>
                   </div>
                   <p className="text-[11px] font-bold text-[#777777]">
-                    Hoàn tất → lập hồ sơ lưu giữ 60 ngày ở trang "Hàng đang lưu giữ" của Quản lý cơ sở.
+                    Hoàn tất → lập hồ sơ hàng ở kho tổng (trang "Hàng ở kho tổng" của Quản lý cơ sở), giữ tới khi khách nhận lại.
                   </p>
                 </>
               )}
@@ -2151,10 +2180,10 @@ export default function StaffTaskDetailPage() {
                   {record ? (
                     <>
                       <ul className="flex flex-col gap-2">
-                        {CHECKIN_CHECKLIST.map(item => (
+                        {CHECKIN_CHECKLIST.filter(item => record[item.recordKey || item.key] != null).map(item => (
                           <li key={item.key} className="flex items-center gap-2 text-xs font-bold text-[#4B4B4B]">
-                            <span className={`material-symbols-outlined text-[20px] ${record[item.key] ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
-                              {record[item.key] ? 'check_circle' : 'cancel'}
+                            <span className={`material-symbols-outlined text-[20px] ${record[item.recordKey || item.key] ? 'text-[#58CC02]' : 'text-[#FF4B4B]'}`}>
+                              {record[item.recordKey || item.key] ? 'check_circle' : 'cancel'}
                             </span>
                             {item.label}
                           </li>
@@ -2681,7 +2710,7 @@ export default function StaffTaskDetailPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao</h2>
-                  <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 5 mục, cấp mã PIN + thẻ RFID rồi xác nhận.</p>
+                  <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 6 mục (gồm kiểm tra hàng), cấp mã PIN + thẻ RFID rồi xác nhận.</p>
                 </div>
                 <button
                   type="button"
@@ -2696,7 +2725,25 @@ export default function StaffTaskDetailPage() {
                 </button>
               </div>
 
-              {/* Checklist 5 mục */}
+              {/* BR-131: loại hàng khách khai báo khi đặt kho — đối chiếu với mục 6 */}
+              <div className="rounded-2xl border-2 border-[#FFC800] bg-[#FFFBEA] px-4 py-3">
+                <p className="text-[11px] font-black uppercase text-[#B78900] mb-1.5">Hàng khách khai báo</p>
+                {task.goodsCategories?.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {task.goodsCategories.map(name => (
+                      <span key={name} className="text-[11px] font-black bg-white border border-[#FFC800] text-[#4B4B4B] px-2 py-0.5 rounded-full">{name}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold text-[#777777]">Đơn đặt trước 05/11/2026 — chưa khai báo loại hàng, hỏi trực tiếp khách.</p>
+                )}
+                {task.goodsDescription && <p className="text-xs font-bold text-[#4B4B4B] mt-1.5">Mô tả: {task.goodsDescription}</p>}
+                <p className="text-[11px] font-bold text-[#777777] mt-1.5">
+                  Không bàn giao nếu hàng không khớp khai báo hoặc có chất dễ cháy nổ, hàng cấm.
+                </p>
+              </div>
+
+              {/* Checklist 6 mục */}
               <div className="flex flex-col gap-2">
                 {CHECKIN_CHECKLIST.map(item => (
                   <label
@@ -2792,7 +2839,7 @@ export default function StaffTaskDetailPage() {
               </button>
               {!canSubmitCheckIn && !submitting && (
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">
-                  {!allCheckInChecked ? 'Cần tick đủ 5 mục kiểm tra.'
+                  {!allCheckInChecked ? 'Cần tick đủ 6 mục kiểm tra.'
                     : rfid.trim() === '' ? 'Cần nhập mã thẻ RFID.'
                     : checkInPhotos.length === 0 ? 'Cần ít nhất 1 ảnh hiện trạng ô.'
                     : 'Đang chờ mã PIN...'}

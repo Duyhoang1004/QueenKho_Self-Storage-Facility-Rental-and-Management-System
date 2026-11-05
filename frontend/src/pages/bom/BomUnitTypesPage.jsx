@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { TEMPERATURE_LABELS } from '../../services/catalogService';
 import {
   getBomUnitTypes,
   createUnitType,
@@ -42,6 +43,7 @@ export default function BomUnitTypesPage() {
     dimensionHeight: '',
     suggestedCapacity: '',
     features: '',
+    temperatureClass: 'NORMAL',
     status: 'ACTIVE',
   });
   const [createErrors, setCreateErrors] = useState({});
@@ -55,6 +57,7 @@ export default function BomUnitTypesPage() {
     dimensions: '',
     suggestedCapacity: '',
     features: '',
+    temperatureClass: 'NORMAL',
     status: 'ACTIVE',
   });
   const [editErrors, setEditErrors] = useState({});
@@ -227,6 +230,7 @@ export default function BomUnitTypesPage() {
       dimensionHeight: '',
       suggestedCapacity: '',
       features: '',
+      temperatureClass: 'NORMAL',
       status: 'ACTIVE',
     });
     setCreateErrors({});
@@ -254,6 +258,7 @@ export default function BomUnitTypesPage() {
             : null,
         suggestedCapacity: createForm.suggestedCapacity?.trim() || null,
         features: createForm.features?.trim() || null,
+        temperatureClass: createForm.temperatureClass || 'NORMAL',
         status: createForm.status,
       };
 
@@ -281,6 +286,7 @@ export default function BomUnitTypesPage() {
       dimensions: ut.dimensions || '',
       suggestedCapacity: ut.suggestedCapacity || '',
       features: ut.features || '',
+      temperatureClass: ut.temperatureClass || 'NORMAL',
       status: ut.status || 'ACTIVE',
     });
     setEditErrors({});
@@ -307,6 +313,7 @@ export default function BomUnitTypesPage() {
         dimensions: editForm.dimensions?.trim() || null,
         suggestedCapacity: editForm.suggestedCapacity?.trim() || null,
         features: editForm.features?.trim() || null,
+        temperatureClass: editForm.temperatureClass || 'NORMAL',
         status: editForm.status,
       };
 
@@ -674,6 +681,9 @@ export default function BomUnitTypesPage() {
 
                       <td className="max-w-[260px] px-4 py-4 align-top">
                         <div className="text-sm font-black text-[#4B4B4B]">{ut.name}</div>
+                        <span className="mt-1 inline-flex rounded-full border border-[#CE82FF] bg-[#F3E5FF] px-2 py-0.5 text-[10px] font-black uppercase text-[#A568CC]">
+                          {TEMPERATURE_LABELS[ut.temperatureClass] || 'Kho thường'}
+                        </span>
                         <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[#777777]">
                           {ut.features || 'Chưa có mô tả đặc điểm'}
                         </p>
@@ -948,6 +958,22 @@ export default function BomUnitTypesPage() {
                 </div>
               </div>
 
+              {/* BR-131 (05/11/2026): loại kho — thực phẩm chỉ gửi kho lạnh / đông */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-[#777777] mb-1.5">
+                  Loại kho (nhiệt độ)
+                </label>
+                <select
+                  value={createForm.temperatureClass}
+                  onChange={(e) => setCreateForm({ ...createForm, temperatureClass: e.target.value })}
+                  className="w-full duo-input"
+                >
+                  {Object.entries(TEMPERATURE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Đặc điểm / Tiện ích */}
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider text-[#777777] mb-1.5">
@@ -1165,6 +1191,22 @@ export default function BomUnitTypesPage() {
                     className="w-full duo-input"
                   />
                 </div>
+              </div>
+
+              {/* BR-131 (05/11/2026): loại kho — thực phẩm chỉ gửi kho lạnh / đông */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-[#777777] mb-1.5">
+                  Loại kho (nhiệt độ)
+                </label>
+                <select
+                  value={editForm.temperatureClass}
+                  onChange={(e) => setEditForm({ ...editForm, temperatureClass: e.target.value })}
+                  className="w-full duo-input"
+                >
+                  {Object.entries(TEMPERATURE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Đặc điểm */}

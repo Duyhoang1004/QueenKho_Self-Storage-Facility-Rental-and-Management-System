@@ -193,7 +193,8 @@ public class FacilityService {
                 ut.getId(), ut.getName(), ut.getAreaSqm(),
                 ut.getBasePriceMonthly(), ut.getDimensions(),
                 ut.getSuggestedCapacity(), ut.getFeatures(),
-                (int) total, available, totalBookings, availableFrom
+                (int) total, available, totalBookings, availableFrom,
+                ut.getTemperatureClass() != null ? ut.getTemperatureClass() : "NORMAL"
             ));
         }
 

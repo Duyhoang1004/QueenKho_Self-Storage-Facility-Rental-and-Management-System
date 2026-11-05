@@ -58,7 +58,7 @@ public class VoucherService {
                 .orElseThrow(() -> invalid("INVALID_INPUT", "Loại kho không tồn tại"));
         int percent = pricingService.bookingDiscountPercent(pricingService.activePolicy(facilityId), months);
         BigDecimal rent = PricingService.discountedRent(unitType.getBasePriceMonthly(), months, percent);
-        Map<String, Object> quote = quote(code, customerId, facilityId, months, rent);
+        Map<String, Object> quote = quote(code, customerId, facilityId, unitTypeId, months, rent);
         return new VoucherQuoteResponse((Integer) quote.get("voucherId"), (String) quote.get("code"),
                 (String) quote.get("name"), (BigDecimal) quote.get("discount"), rent);
     }
@@ -69,18 +69,19 @@ public class VoucherService {
      * Trả map: voucherId, code, name, discount.
      */
     @Transactional(readOnly = true)
-    public Map<String, Object> quote(String rawCode, Integer customerId, Integer facilityId, int months, BigDecimal rentAmount) {
+    public Map<String, Object> quote(String rawCode, Integer customerId, Integer facilityId, Integer unitTypeId, int months,
+                                     BigDecimal rentAmount) {
         String code = rawCode == null ? "" : rawCode.trim().toUpperCase();
         Voucher voucher;
         if (code.isEmpty()) {
             voucher = voucherRepository.findFirstByIsDefaultTrueAndStatusOrderByIdAsc(ACTIVE).orElse(null);
-            if (voucher != null && validationError(voucher, customerId, facilityId, months) != null) {
+            if (voucher != null && validationError(voucher, customerId, facilityId, unitTypeId, months) != null) {
                 voucher = null;
             }
         } else {
             voucher = voucherRepository.findByCode(code)
                     .orElseThrow(() -> invalid("VOUCHER_INVALID", "Mã voucher không tồn tại"));
-            String error = validationError(voucher, customerId, facilityId, months);
+            String error = validationError(voucher, customerId, facilityId, unitTypeId, months);
             if (error != null) {
                 throw invalid("VOUCHER_INVALID", error);
             }
@@ -93,12 +94,14 @@ public class VoucherService {
         return result;
     }
 
-    String validationError(Voucher v, Integer customerId, Integer facilityId, int months) {
+    String validationError(Voucher v, Integer customerId, Integer facilityId, Integer unitTypeId, int months) {
         LocalDateTime now = LocalDateTime.now();
         if (!ACTIVE.equals(v.getStatus())) return "Mã voucher đang tạm dừng";
         if (v.getStartAt() != null && now.isBefore(v.getStartAt())) return "Mã voucher chưa đến thời gian áp dụng";
         if (v.getEndAt() != null && now.isAfter(v.getEndAt())) return "Mã voucher đã hết hạn";
         if (v.getFacilityId() != null && !v.getFacilityId().equals(facilityId)) return "Mã voucher không áp dụng cho cơ sở này";
+        // 05/11/2026: voucher gắn 1 loại kho thì chỉ áp cho loại kho đó
+        if (v.getUnitTypeId() != null && !v.getUnitTypeId().equals(unitTypeId)) return "Mã voucher không áp dụng cho loại kho này";
         if (v.getMinMonths() != null && months < v.getMinMonths()) {
             return "Mã voucher chỉ áp dụng cho gói thuê từ " + v.getMinMonths() + " tháng";
         }
@@ -145,8 +148,11 @@ public class VoucherService {
         jdbcTemplate.query("SELECT id, name FROM facilities", rs -> {
             facilityNames.put(rs.getInt("id"), rs.getString("name"));
         });
+        Map<Integer, String> unitTypeNames = new HashMap<>();
+        unitTypeRepository.findAll().forEach(t -> unitTypeNames.put(t.getId(), t.getName()));
         return voucherRepository.findAllByOrderByCreatedAtDesc().stream()
-                .map(v -> VoucherResponse.of(v, v.getFacilityId() != null ? facilityNames.get(v.getFacilityId()) : null))
+                .map(v -> VoucherResponse.of(v, v.getFacilityId() != null ? facilityNames.get(v.getFacilityId()) : null,
+                        v.getUnitTypeId() != null ? unitTypeNames.get(v.getUnitTypeId()) : null))
                 .toList();
     }
 
@@ -221,6 +227,10 @@ public class VoucherService {
             if (exists == null || exists == 0) throw invalid("INVALID_INPUT", "Cơ sở không tồn tại");
         }
         v.setFacilityId(r.getFacilityId());
+        if (r.getUnitTypeId() != null && unitTypeRepository.findById(r.getUnitTypeId()).isEmpty()) {
+            throw invalid("INVALID_INPUT", "Loại kho không tồn tại");
+        }
+        v.setUnitTypeId(r.getUnitTypeId());
 
         LocalDateTime start = r.getStartAt() != null ? r.getStartAt() : (v.getStartAt() != null ? v.getStartAt() : LocalDateTime.now());
         if (r.getEndAt() != null && !r.getEndAt().isAfter(start)) throw invalid("INVALID_INPUT", "Ngày kết thúc phải sau ngày bắt đầu");

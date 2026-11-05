@@ -93,4 +93,8 @@ public class StaffTaskDetailResponse {
 
     // BR-126: task hỗ trợ của ticket hàng hư / mất = kiểm tra hiện trường cho hồ sơ bồi thường
     private CompensationClaimResponse claim;
+
+    // BR-131 / BR-132: loại hàng khách khai báo khi đặt kho — Staff đối chiếu lúc check-in
+    private java.util.List<String> goodsCategories;
+    private String goodsDescription;
 }

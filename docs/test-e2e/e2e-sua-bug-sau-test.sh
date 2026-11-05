@@ -13,7 +13,7 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "  ✅ $1"; }
 bad()  { FAIL=$((FAIL+1)); echo "  ❌ $1"; }
 check(){ if [ "$2" == "$3" ]; then ok "$1 ($2)"; else bad "$1: mong đợi [$3], thực tế [$2]"; fi; }
-sql()  { sqlcmd -S localhost -U sa -P 12345 -d QueenKhoDB -C -h-1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^$/d'; }
+sql()  { sqlcmd -S localhost -U sa -P 12345 -d QueenKhoDB -C -I -h-1 -W -Q "SET NOCOUNT ON; $1" | tr -d '\r' | sed '/^$/d'; }
 jget() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const o=JSON.parse(s);const v=($1);console.log(v===undefined?'':typeof v==='object'?JSON.stringify(v):v)}catch(e){console.log('PARSE_ERR')}})"; }
 login(){ curl -s -X POST $API/auth/login -H "Content-Type: application/json" -d "{\"email\":\"$1\",\"password\":\"123456\"}" | jget "o.token"; }
 call() { local m=$1 t=$2 u=$3 d=$4; if [ -n "$d" ]; then curl -s -X $m -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d "$d" "$u"; else curl -s -X $m -H "Authorization: Bearer $t" "$u"; fi; }
@@ -53,7 +53,7 @@ RENT=$(echo "$Q" | jget 'Math.round(o.rentAmount)')
 check "Giảm 10% tiền thuê nhưng chạm trần 200.000" "$(echo "$Q" | jget 'o.discountAmount')" "200000"
 
 echo "== Đặt kho bằng voucher → VNPAY trừ đúng số đã chốt"
-R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":2,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"phone\":\"0900000211\",\"cccd\":\"079200000123\",\"voucherCode\":\"$VC\"}")
+R=$(call POST $KH "$API/reservations" "{\"facilityId\":1,\"unitTypeId\":2,\"startDate\":\"$TODAY\",\"durationMonths\":3,\"acceptedTerms\":true,\"goodsCategoryCodes\":[\"HOUSEHOLD\"],\"phone\":\"0900000211\",\"cccd\":\"079200000123\",\"voucherCode\":\"$VC\"}")
 RES=$(echo "$R" | jget 'o.id'); echo "  đơn #$RES $(echo "$R" | jget 'o.reservationCode')"
 check "Đơn chốt mã + số tiền giảm" "$(sql "SELECT voucher_code+'/'+CAST(CAST(voucher_discount AS INT) AS VARCHAR) FROM reservations WHERE id=$RES")" "$VC/200000"
 DEP=$(sql "SELECT CAST(deposit_amount AS INT) FROM reservations WHERE id=$RES")
@@ -81,7 +81,7 @@ T=$(sql "SELECT id FROM facility_tasks WHERE contract_id=$C AND task_type='CHECK
 call POST $FM "$API/staff-tasks/$T/assign?staffId=$ST1_ID" >/dev/null
 check "Staff nhận thông báo được giao việc" "$(call GET $ST1 "$API/notifications" | jget "o.some(n=>n.targetUrl==='/staff?highlightTaskId=$T')")" "true"
 PIN=$(call GET $ST1 "$API/staff-tasks/pin-suggestion" | jget 'o.accessPinCode')
-check "Staff check-in" "$(code POST $ST1 "$API/staff-tasks/$T/check-in" "{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBUG-$RES\"}")" "200"
+check "Staff check-in" "$(code POST $ST1 "$API/staff-tasks/$T/check-in" "{\"evidenceImages\":[\"http://e2e/hien-trang.png\"],\"identityVerified\":true,\"unitEmpty\":true,\"unitClean\":true,\"lockIntact\":true,\"customerSignatureConfirmed\":true,\"goodsChecked\":true,\"accessPinCode\":\"$PIN\",\"rfidCardCode\":\"RFID-E2EBUG-$RES\"}")" "200"
 check "HĐ ACTIVE" "$(sql "SELECT status FROM rental_contracts WHERE id=$C")" "ACTIVE"
 
 echo "== BR-111 + PR-S4: yêu cầu hỗ trợ → FM được báo; task quá hạn → FM gia hạn"

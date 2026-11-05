@@ -137,9 +137,18 @@ export default function ContractDetailPage() {
         </div>
       </div>
 
-      {/* Demo: tua thời gian để thấy phí trễ (3 ngày) và nút thanh lý (31 ngày) — ẩn khi backend tắt giả lập */}
+      {/* Demo: tua thời gian — mốc nhắc gia hạn 15/10/7/3/1 ngày (PR-R9), quá hạn 1 ngày (điều khoản v4: chuyển kho tổng ngay),
+          quá hạn 31 ngày (điều khoản cũ: nút thanh lý) — ẩn khi backend tắt giả lập */}
       {['ACTIVE', 'OVERDUE'].includes(contract.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
+          {contract.status === 'ACTIVE' && (
+            <SimulationButton
+              label="Còn 15 ngày hết hạn"
+              description="Dời ngày hết hạn về 15 ngày nữa và chạy ngay job nhắc gia hạn (mốc 15 ngày): khách nhận thông báo trong chuông và email."
+              onRun={() => simulateExpireSoon(contract.contractId, 15)}
+              onDone={() => setReloadTick((t) => t + 1)}
+            />
+          )}
           {contract.status === 'ACTIVE' && (
             <SimulationButton
               label="Còn 3 ngày hết hạn"
@@ -149,8 +158,14 @@ export default function ContractDetailPage() {
             />
           )}
           <SimulationButton
+            label="Quá hạn 1 ngày"
+            description="Cho hợp đồng hết hạn hôm qua. Khách đồng ý điều khoản v4: thanh lý ngay và sinh việc chuyển hàng vào kho tổng (như job 00:05). Điều khoản cũ: chuyển QUÁ HẠN, khoá PIN, tính phí trễ."
+            onRun={() => simulateOverdue(contract.contractId, 1)}
+            onDone={() => setReloadTick((t) => t + 1)}
+          />
+          <SimulationButton
             label="Quá hạn 3 ngày"
-            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách. Dùng để demo nút Miễn phí trễ."
+            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách (điều khoản v4 sẽ thanh lý + chuyển kho tổng luôn). Dùng để demo nút Miễn phí trễ với hợp đồng cũ."
             onRun={() => simulateOverdue(contract.contractId, 3)}
             onDone={() => setReloadTick((t) => t + 1)}
           />

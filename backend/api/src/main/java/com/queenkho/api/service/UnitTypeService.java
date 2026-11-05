@@ -49,6 +49,7 @@ public class UnitTypeService {
                         .dimensions(ut.getDimensions())
                         .features(ut.getFeatures())
                         .status(ut.getStatus())
+                        .temperatureClass(ut.getTemperatureClass())
                         .build())
                 .toList();
     }
@@ -107,6 +108,7 @@ public class UnitTypeService {
                     .dimensions(ut.getDimensions())
                     .features(ut.getFeatures())
                     .status(ut.getStatus())
+                    .temperatureClass(ut.getTemperatureClass())
                     .totalUnits(total)
                     .availableUnits(available)
                     .occupiedUnits(occupied)
@@ -161,6 +163,7 @@ public class UnitTypeService {
                 .dimensions(ut.getDimensions())
                 .features(ut.getFeatures())
                 .status(ut.getStatus())
+                .temperatureClass(ut.getTemperatureClass())
                 .totalUnits(total)
                 .availableUnits(available)
                 .occupiedUnits(occupied)
@@ -211,6 +214,7 @@ public class UnitTypeService {
                 .dimensions(request.getDimensions() != null ? request.getDimensions().trim() : null)
                 .features(request.getFeatures() != null ? request.getFeatures().trim() : null)
                 .status(initialStatus)
+                .temperatureClass(normalizeTemperature(request.getTemperatureClass()))
                 .build();
 
         unitTypeRepository.save(unitType);
@@ -268,6 +272,9 @@ public class UnitTypeService {
         unitType.setSuggestedCapacity(request.getSuggestedCapacity() != null ? request.getSuggestedCapacity().trim() : null);
         unitType.setDimensions(request.getDimensions() != null ? request.getDimensions().trim() : null);
         unitType.setFeatures(request.getFeatures() != null ? request.getFeatures().trim() : null);
+        if (request.getTemperatureClass() != null) {
+            unitType.setTemperatureClass(normalizeTemperature(request.getTemperatureClass()));
+        }
 
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
             unitType.setStatus(request.getStatus().trim().toUpperCase());
@@ -390,5 +397,15 @@ public class UnitTypeService {
         } catch (Exception ignored) {
         }
         return 1;
+    }
+
+    // BR-131: loại kho thường / lạnh / đông — sai giá trị → 400 INVALID_INPUT
+    static String normalizeTemperature(String value) {
+        String v = value == null || value.isBlank() ? "NORMAL" : value.trim().toUpperCase();
+        if (!OperationsCatalogService.TEMPERATURE_CLASSES.contains(v)) {
+            throw new UnitTypeException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Loại kho phải là NORMAL (thường), COLD (lạnh) hoặc FROZEN (đông)");
+        }
+        return v;
     }
 }

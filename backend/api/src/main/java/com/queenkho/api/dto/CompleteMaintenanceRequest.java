@@ -18,6 +18,7 @@ public class CompleteMaintenanceRequest {
     private Boolean noGoodsLeft;          // true = ô trống, khách không để lại gì → không lập hồ sơ lưu giữ
     private String inventoryNote;         // Danh sách hàng (10–2000 ký tự)
     private String witnessNote;           // Người mở kho / chứng kiến (≥ 2 người, tối đa 500 ký tự)
-    private String storageLocation;       // Khu lưu giữ (tối đa 100 ký tự)
+    private String storageLocation;       // Vị trí kệ trong kho tổng (tối đa 100 ký tự)
+    private Integer centralWarehouseId;   // BR-134 (05/11/2026): kho tổng nhận hàng (bắt buộc)
     private List<String> inventoryImages; // ≥ 1 ảnh kiểm kê (link upload)
 }

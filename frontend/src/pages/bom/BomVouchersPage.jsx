@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getAllFacilities } from '../../services/facilityService'
 import { createBomVoucher, getBomVouchers, setBomVoucherStatus, updateBomVoucher } from '../../services/voucherService'
+import { getBomUnitTypes } from '../../services/unitTypeService'
 
 // BR-25: BOM quản lý voucher đặt kho trực tuyến (tạo / sửa / tạm dừng, theo dõi lượt dùng)
+// BR-133 (05/11/2026): voucher có thể gắn riêng 1 loại kho
 
 const MONTH_OPTIONS = [1, 3, 6, 12]
 
@@ -14,6 +16,7 @@ const EMPTY_FORM = {
   maxDiscount: '',
   minMonths: 1,
   facilityId: '',
+  unitTypeId: '',
   startAt: '',
   endAt: '',
   usageLimit: '',
@@ -58,6 +61,7 @@ function validityState(v) {
 export default function BomVouchersPage() {
   const [vouchers, setVouchers] = useState([])
   const [facilities, setFacilities] = useState([])
+  const [unitTypes, setUnitTypes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
@@ -79,6 +83,7 @@ export default function BomVouchersPage() {
   useEffect(() => {
     fetchVouchers()
     getAllFacilities().then((data) => setFacilities(data || [])).catch(() => setFacilities([]))
+    getBomUnitTypes().then((data) => setUnitTypes(Array.isArray(data) ? data : [])).catch(() => setUnitTypes([]))
   }, [fetchVouchers])
 
   const openCreate = () => {
@@ -97,6 +102,7 @@ export default function BomVouchersPage() {
       maxDiscount: v.maxDiscount ?? '',
       minMonths: v.minMonths || 1,
       facilityId: v.facilityId ?? '',
+      unitTypeId: v.unitTypeId ?? '',
       startAt: toInputValue(v.startAt),
       endAt: toInputValue(v.endAt),
       usageLimit: v.usageLimit ?? '',
@@ -137,6 +143,7 @@ export default function BomVouchersPage() {
       maxDiscount: form.discountType === 'PERCENT' && form.maxDiscount !== '' ? Number(form.maxDiscount) : null,
       minMonths: Number(form.minMonths),
       facilityId: form.facilityId !== '' ? Number(form.facilityId) : null,
+      unitTypeId: form.unitTypeId !== '' ? Number(form.unitTypeId) : null,
       startAt: form.startAt ? `${form.startAt}:00` : null,
       endAt: form.endAt ? `${form.endAt}:00` : null,
       usageLimit: form.usageLimit !== '' ? Number(form.usageLimit) : null,
@@ -231,6 +238,7 @@ export default function BomVouchersPage() {
                   <td className="py-3 px-4 text-[11px]">
                     <p>Gói từ {v.minMonths} tháng</p>
                     <p className="text-[#777777]">{v.facilityName || 'Mọi cơ sở'}</p>
+                    <p className="text-[#777777]">{v.unitTypeName || 'Mọi loại kho'}</p>
                   </td>
                   <td className="py-3 px-4 text-[11px]">
                     {formatDateTime(v.startAt)} → {v.endAt ? formatDateTime(v.endAt) : 'không hết hạn'}
@@ -310,6 +318,13 @@ export default function BomVouchersPage() {
                 <select className="duo-input text-xs" value={form.facilityId} onChange={(e) => setField('facilityId', e.target.value)}>
                   <option value="">Mọi cơ sở</option>
                   {facilities.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#4B4B4B]">
+                Loại kho áp dụng
+                <select className="duo-input text-xs" value={form.unitTypeId} onChange={(e) => setField('unitTypeId', e.target.value)}>
+                  <option value="">Mọi loại kho</option>
+                  {unitTypes.map((u) => <option key={u.id} value={u.id}>{u.name}{u.status && u.status !== 'ACTIVE' ? ' (ngừng)' : ''}</option>)}
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#4B4B4B]">

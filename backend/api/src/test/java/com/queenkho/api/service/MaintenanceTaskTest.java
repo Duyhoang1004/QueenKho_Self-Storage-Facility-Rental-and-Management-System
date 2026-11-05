@@ -3,6 +3,7 @@ package com.queenkho.api.service;
 import com.queenkho.api.dto.CheckOutRequest;
 import com.queenkho.api.dto.CompleteMaintenanceRequest;
 import com.queenkho.api.dto.StaffTaskDetailResponse;
+import com.queenkho.api.entity.CentralWarehouse;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.Role;
 import com.queenkho.api.entity.StaffTask;
@@ -59,6 +60,7 @@ class MaintenanceTaskTest {
     @Mock HeldGoodsRepository heldGoodsRepository;
 
     @Mock LateFeeService lateFeeService;
+    @Mock OperationsCatalogService operationsCatalogService;
     @InjectMocks StaffTaskService service;
 
     User manager;
@@ -206,19 +208,25 @@ class MaintenanceTaskTest {
         CompleteMaintenanceRequest req = body("Đã dọn sạch ô sau thanh lý");
         req.setInventoryNote("12 thùng carton, 1 tủ lạnh mini");
         req.setWitnessNote("Staff 12 + FM Tân Bình");
-        req.setStorageLocation("Kho K2 - kệ 3");
+        req.setStorageLocation("Kệ A3");
         req.setInventoryImages(List.of("http://x/inv1.png", " "));
+        // BR-134: chọn kho tổng đang hoạt động
+        CentralWarehouse warehouse = new CentralWarehouse();
+        warehouse.setId(1);
+        warehouse.setStatus("ACTIVE");
+        when(operationsCatalogService.findWarehouse(1)).thenReturn(Optional.of(warehouse));
+        req.setCentralWarehouseId(1);
 
         service.completeMaintenanceTask(70, 12, req);
 
         verify(heldGoodsService).createFromCleanup(eq(task), eq(task.getContract()), eq(staff),
-                eq("12 thùng carton, 1 tủ lạnh mini"), eq(List.of("http://x/inv1.png")), eq("Staff 12 + FM Tân Bình"), eq("Kho K2 - kệ 3"));
+                eq("12 thùng carton, 1 tủ lạnh mini"), eq(List.of("http://x/inv1.png")), eq("Staff 12 + FM Tân Bình"), eq("Kệ A3"), eq(1));
 
         task.setStatus("IN_PROGRESS");
         CompleteMaintenanceRequest empty = body("Ô trống, khách không để lại gì");
         empty.setNoGoodsLeft(true);
         service.completeMaintenanceTask(70, 12, empty);
-        verify(heldGoodsService, times(1)).createFromCleanup(any(), any(), any(), any(), any(), any(), any());
+        verify(heldGoodsService, times(1)).createFromCleanup(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

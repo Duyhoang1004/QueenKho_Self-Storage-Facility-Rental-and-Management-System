@@ -65,8 +65,49 @@ CREATE TABLE unit_types (
     dimensions          NVARCHAR(100)  NULL,
     features            NVARCHAR(500)  NULL,
     status              NVARCHAR(20)   NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / INACTIVE (UC-05, PR-M4)
-    CONSTRAINT UQ_unit_types_name UNIQUE (name)                    -- PR-M3
+    temperature_class   NVARCHAR(10)   NOT NULL DEFAULT 'NORMAL',  -- NORMAL / COLD (kho lạnh) / FROZEN (kho đông)
+    CONSTRAINT UQ_unit_types_name UNIQUE (name),
+    CONSTRAINT CK_unit_types_temperature CHECK (temperature_class IN ('NORMAL', 'COLD', 'FROZEN'))                    -- PR-M3
 );
+GO
+
+/* ---------- 4b. goods_categories (BR-131: loại hàng khách khai báo khi đặt kho, BOM quản lý) ---------- */
+CREATE TABLE goods_categories (
+    id                    INT IDENTITY(1,1) PRIMARY KEY,
+    code                  NVARCHAR(30)  NOT NULL UNIQUE,
+    name                  NVARCHAR(100) NOT NULL,
+    description           NVARCHAR(300) NULL,
+    requires_cold_storage BIT NOT NULL DEFAULT 0,          -- chỉ gửi được ở kho lạnh / kho đông (vd thực phẩm)
+    requires_note         BIT NOT NULL DEFAULT 0,          -- bắt buộc mô tả thêm (vd "Khác")
+    sort_order            INT NOT NULL DEFAULT 0,
+    status                NVARCHAR(20)  NOT NULL DEFAULT 'ACTIVE', -- ACTIVE / INACTIVE
+    created_at            DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+GO
+INSERT INTO goods_categories (code, name, description, requires_cold_storage, requires_note, sort_order) VALUES
+(N'HOUSEHOLD',  N'Gia dụng',        N'Đồ dùng gia đình, dụng cụ nhà bếp, thiết bị nhỏ', 0, 0, 1),
+(N'STATIONERY', N'Văn phòng phẩm',  N'Giấy tờ, hồ sơ, sách vở, dụng cụ văn phòng',     0, 0, 2),
+(N'FOOD',       N'Thực phẩm',       N'Chỉ gửi ở kho lạnh hoặc kho đông',                1, 0, 3),
+(N'CLOTHING',   N'Quần áo',         N'Quần áo, chăn màn, giày dép',                      0, 0, 4),
+(N'FURNITURE',  N'Nội thất',        N'Bàn ghế, tủ, giường, đồ gỗ',                       0, 0, 5),
+(N'ELECTRONICS',N'Điện tử',         N'Thiết bị điện, điện tử, máy tính',                 0, 0, 6),
+(N'OTHER',      N'Khác',            N'Ghi rõ loại hàng',                                 0, 1, 7);
+GO
+
+/* ---------- 4c. central_warehouses (BR-134: kho tổng giữ hàng của khách quá hạn — không bán) ---------- */
+CREATE TABLE central_warehouses (
+    id         INT IDENTITY(1,1) PRIMARY KEY,
+    name       NVARCHAR(150) NOT NULL,
+    address    NVARCHAR(300) NOT NULL,
+    hotline    NVARCHAR(20)  NULL,
+    note       NVARCHAR(500) NULL,
+    status     NVARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / INACTIVE
+    created_at DATETIME2 NOT NULL DEFAULT SYSDATETIME()
+);
+GO
+INSERT INTO central_warehouses (name, address, hotline, note) VALUES
+(N'Kho tổng QueenKho', N'Lô C3, KCN Tân Bình, P. Tây Thạnh, Q. Tân Phú, TP.HCM', N'0281234567',
+ N'Giữ hàng của khách quá hạn hợp đồng — không bán, khách đến nhận lại sau khi thanh toán');
 GO
 
 /* ---------- 5. storage_units ---------- */
@@ -190,6 +231,8 @@ CREATE TABLE reservations (
     insurance_plan              NVARCHAR(20) NOT NULL DEFAULT 'BASIC', -- BR-125: BASIC / ADVANCED / PREMIUM
     insurance_premium_monthly   DECIMAL(15,2) NOT NULL DEFAULT 0,       -- phí bảo hiểm / tháng chốt lúc đặt
     declared_goods_value        DECIMAL(15,2) NULL,                     -- giá trị hàng khách khai báo (trần bồi thường)
+    goods_category_codes        NVARCHAR(300) NULL,                     -- BR-131: mã loại hàng khai báo, ngăn bởi dấu phẩy
+    goods_description           NVARCHAR(500) NULL,                     -- mô tả hàng (bắt buộc khi chọn \"Khác\")
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),
@@ -273,6 +316,7 @@ CREATE TABLE handover_records (
     is_clean                        BIT NOT NULL DEFAULT 1,
     is_lock_intact                  BIT NOT NULL DEFAULT 1,
     customer_signature_confirmed    BIT NOT NULL DEFAULT 0,
+    is_prohibited_goods_committed   BIT NOT NULL DEFAULT 0,  -- PR-C7 / BR-132: đã kiểm tra hàng khớp khai báo, không có hàng cấm
     notes                           NVARCHAR(MAX) NULL,
     evidence_image_urls             NVARCHAR(MAX) NULL,     -- BR-121: ảnh hiện trạng ô lúc bàn giao, ngăn bởi |||
     check_in_method                 NVARCHAR(10) NOT NULL DEFAULT 'COUNTER', -- BR-124: COUNTER (Staff) / ONLINE (khách)
@@ -471,6 +515,7 @@ BEGIN
         evidence_image_urls NVARCHAR(MAX) NULL,                       -- Ảnh kiểm kê (link, phân tách bằng |||)
         witness_note        NVARCHAR(500) NOT NULL,                   -- Người mở kho / chứng kiến
         storage_location    NVARCHAR(100) NOT NULL,                   -- Khu lưu giữ (VD: Kho K2 - kệ 3)
+        central_warehouse_id INT NULL,                             -- BR-134: kho tổng đang giữ hàng
         status              NVARCHAR(30) NOT NULL DEFAULT 'HOLDING',
         hold_until          DATE NOT NULL,                            -- Hết hạn lưu giữ (ngày thanh lý + 60)
         proceeds_amount     DECIMAL(12,2) NULL,                       -- Tiền bán thanh lý (SOLD)
@@ -485,6 +530,7 @@ BEGIN
         CONSTRAINT FK_heldgoods_contract FOREIGN KEY (contract_id) REFERENCES rental_contracts(id),
         CONSTRAINT FK_heldgoods_facility FOREIGN KEY (facility_id) REFERENCES facilities(id),
         CONSTRAINT FK_heldgoods_task     FOREIGN KEY (task_id)     REFERENCES facility_tasks(id),
+        CONSTRAINT FK_heldgoods_warehouse FOREIGN KEY (central_warehouse_id) REFERENCES central_warehouses(id),
         CONSTRAINT FK_heldgoods_resolver FOREIGN KEY (resolved_by) REFERENCES users(id),
         CONSTRAINT FK_heldgoods_creator  FOREIGN KEY (created_by)  REFERENCES users(id),
         CONSTRAINT CK_heldgoods_status   CHECK (status IN ('HOLDING', 'RETURNED', 'SOLD', 'DESTROYED', 'HANDED_TO_AUTHORITY'))

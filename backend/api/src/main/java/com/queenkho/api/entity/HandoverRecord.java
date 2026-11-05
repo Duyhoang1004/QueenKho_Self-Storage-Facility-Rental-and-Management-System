@@ -42,6 +42,10 @@ public class HandoverRecord {
     @Column(name = "customer_signature_confirmed")
     private Boolean customerSignatureConfirmed;
 
+    // PR-C7 / BR-132 (05/11/2026): đã kiểm tra hàng mang vào khớp loại hàng khai báo, không có hàng cấm
+    @Column(name = "is_prohibited_goods_committed", nullable = false)
+    private Boolean prohibitedGoodsCommitted = false;
+
     @Column
     private String notes;
 

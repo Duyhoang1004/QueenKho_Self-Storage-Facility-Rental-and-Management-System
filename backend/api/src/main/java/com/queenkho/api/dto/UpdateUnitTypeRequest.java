@@ -39,6 +39,7 @@ public class UpdateUnitTypeRequest {
 
     @Size(max = 500, message = "Đặc điểm mô tả tối đa 500 ký tự")
     private String features;
+    private String temperatureClass;     // BR-131: NORMAL / COLD (kho lạnh) / FROZEN (kho đông)
 
     @Pattern(regexp = "^(ACTIVE|INACTIVE)$", message = "Trạng thái chỉ nhận giá trị ACTIVE hoặc INACTIVE")
     private String status;

@@ -983,3 +983,48 @@ Lỗi: `404 CLAIM_NOT_FOUND`, `403 FORBIDDEN_ROLE` / `FORBIDDEN_FACILITY`, `409 
 |---|---|---|
 | `POST /api/v1/dev/simulation/contracts/{id}/sensor-alert` | khách chủ HĐ, FM | Ghi 12 giờ số đo (tăng dần tới 36°C, 88%) → cảnh báo khách + FM, sinh task bảo trì `SENSOR` |
 | `POST /api/v1/dev/simulation/claims/{id}/insurance-payout` | FM | Bên bảo hiểm (mô phỏng) duyệt & chi trả hồ sơ `SUBMITTED` → `insuranceStatus = PAID` |
+
+---
+
+## Họp nhóm 05/11/2026 — loại hàng, kiểm tra hàng, voucher theo loại kho, bỏ ân hạn, kho tổng (D-15)
+
+> Chạy `sql_script/Update_hop_nhom_05_11.sql` trên DB local trước khi chạy backend. E2E: `docs/test-e2e/e2e-hop-nhom-05-11.sh`.
+
+### BR-131 — Loại hàng gửi kho
+| API | Quyền | Mô tả |
+|---|---|---|
+| `GET /api/v1/goods-categories` | công khai | Loại hàng đang nhận (`ACTIVE`), theo `sortOrder` → `[{ id, code, name, description, requiresColdStorage, requiresNote, sortOrder, status }]` |
+| `GET /api/v1/bom/goods-categories` | BOM (`BOM_CATALOG`) | Mọi loại hàng (cả đã ngừng) |
+| `POST /api/v1/bom/goods-categories` | BOM | Body `{ code, name, description, requiresColdStorage, requiresNote, sortOrder }`; `code` 2–30 ký tự A-Z / 0-9 / `_`, bắt đầu bằng chữ; trùng → `409 DUPLICATE_CODE` |
+| `PUT /api/v1/bom/goods-categories/{id}` | BOM | Như POST (không đổi được `code`) |
+| `PATCH /api/v1/bom/goods-categories/{id}/status` | BOM | `{ status: ACTIVE / INACTIVE }` |
+
+- `POST /api/v1/reservations`: thêm **bắt buộc** `goodsCategoryCodes` (mảng mã, ≥ 1, tối đa 7) và `goodsDescription` (bắt buộc khi chọn loại `requiresNote`, ≤ 500 ký tự). Lỗi: `400 GOODS_CATEGORY_REQUIRED`, `400 INVALID_GOODS_CATEGORY`, `400 GOODS_REQUIRES_COLD_STORAGE`, `400 GOODS_DESCRIPTION_REQUIRED`. Đơn mới lưu `terms_version = 'v4'`.
+- Loại kho có `temperatureClass` (`NORMAL` / `COLD` / `FROZEN`): `GET /unit-types`, `/unit-types/bom`, `POST/PUT /unit-types/bom` (sai giá trị → `400 INVALID_INPUT`), `GET /facilities/{id}/availability` (`unitTypeAvailability[].temperatureClass`).
+- `CustomerContractResponse` thêm `goodsCategories` (tên hiển thị) và `goodsDescription`; `GET /staff-tasks/{id}` thêm `goodsCategories`, `goodsDescription`.
+
+### BR-132 — Kiểm tra hàng lúc check-in
+- `POST /api/v1/staff-tasks/{id}/check-in`: thêm **bắt buộc** `"goodsChecked": true` (mục 6) — thiếu → `400 GOODS_CHECK_REQUIRED`. Biên bản (`GET /contracts/{id}/handover-records`) thêm `prohibitedGoodsCommitted`.
+
+### BR-133 — Voucher theo loại kho
+- `POST/PUT /api/v1/bom/vouchers`: thêm `unitTypeId` (bỏ trống = mọi loại kho). Response thêm `unitTypeId`, `unitTypeName`.
+- `GET /api/v1/vouchers/validate` + đặt kho: voucher gắn loại kho khác → `400 VOUCHER_INVALID` "Mã voucher không áp dụng cho loại kho này".
+
+### D-15 — Bỏ ân hạn, hết hạn chuyển kho tổng
+- `POST /api/v1/contracts/{id}/request-checkout`: hợp đồng `ACTIVE` chỉ hẹn được **từ ngày mai đến hết `end_date`** (trước đây + 5 ngày) → quá → `400`.
+- Job 00:05: sau khi đánh dấu `OVERDUE`, tự thanh lý hợp đồng điều khoản v4 + sinh task `MAINTENANCE` (`maintenanceReason = LIQUIDATION`). Nhắc gia hạn 08:00 ở các mốc 15 / 10 / 7 / 3 / 1 ngày.
+- `POST /api/v1/dev/simulation/contracts/{id}/expire-soon?days=` nhận `days` 1–15. `make-overdue` với hợp đồng v4 chạy luôn bước thanh lý + chuyển kho tổng (message có chữ "kho tổng").
+
+### BR-134 — Kho tổng
+| API | Quyền | Mô tả |
+|---|---|---|
+| `GET /api/v1/central-warehouses` | mọi tài khoản đăng nhập | Kho tổng đang hoạt động → `[{ id, name, address, hotline, note, status }]` |
+| `GET /api/v1/bom/central-warehouses` | BOM (`BOM_CATALOG`) | Mọi kho tổng |
+| `POST /api/v1/bom/central-warehouses` | BOM | Body `{ name, address, hotline, note }`; hotline phải bắt đầu bằng 0 (9–11 số) |
+| `PUT /api/v1/bom/central-warehouses/{id}` | BOM | Như POST |
+| `PATCH /api/v1/bom/central-warehouses/{id}/status` | BOM | `{ status: ACTIVE / INACTIVE }` |
+
+- `POST /api/v1/staff-tasks/{id}/complete-maintenance` (task thanh lý, có hàng): thêm **bắt buộc** `centralWarehouseId` (kho tổng `ACTIVE`) — thiếu → `400 INVENTORY_REQUIRED`; `storageLocation` = vị trí kệ trong kho tổng.
+- `GET /api/v1/held-goods`: thêm `centralWarehouseId`, `centralWarehouseName`, `centralWarehouseAddress`, `centralWarehouseHotline`; `canSell` luôn `false`; v4 `heldDays` / phí lưu giữ tính tới hôm nay (không chặn 60 ngày).
+- `POST /api/v1/held-goods/{id}/resolve`: chỉ còn `RETURNED` / `HANDED_TO_AUTHORITY`; `SOLD` / `DESTROYED` → `409 GOODS_SALE_NOT_ALLOWED`.
+- `CustomerContractResponse` thêm `relocationPending` (đã thanh lý, chưa chuyển xong) và `centralStorage` (hồ sơ hàng ở kho tổng, dạng như `GET /held-goods`: kho tổng, vị trí, `heldDays`, `storageFeePerDay`, `estimatedStorageFee`, `customerDebt`, `depositHeld`).

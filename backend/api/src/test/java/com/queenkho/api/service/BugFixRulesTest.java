@@ -59,9 +59,13 @@ class BugFixRulesTest {
     }
 
     @Test
-    @DisplayName("PR-R9: mốc nhắc gia hạn — còn 5 ngày gửi mốc 7, còn 2 ngày gửi mốc 3, hôm nay hết hạn gửi mốc 1")
+    @DisplayName("PR-R9 (sửa 05/11/2026): mốc nhắc 15/10/7/3/1 ngày — còn 12 ngày gửi mốc 15, còn 8 gửi mốc 10, hôm nay hết hạn gửi mốc 1")
     void renewalMilestones() {
-        assertNull(RenewalReminderService.milestoneFor(8));
+        assertNull(RenewalReminderService.milestoneFor(16));
+        assertEquals(15, RenewalReminderService.milestoneFor(15));
+        assertEquals(15, RenewalReminderService.milestoneFor(12));
+        assertEquals(10, RenewalReminderService.milestoneFor(10));
+        assertEquals(10, RenewalReminderService.milestoneFor(8));
         assertEquals(7, RenewalReminderService.milestoneFor(7));
         assertEquals(7, RenewalReminderService.milestoneFor(5));
         assertEquals(3, RenewalReminderService.milestoneFor(3));

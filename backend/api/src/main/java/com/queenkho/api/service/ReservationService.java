@@ -37,7 +37,9 @@ public class ReservationService {
     // Đổi nội dung điều khoản → tăng version để biết khách nào đồng ý bản nào.
     // v2 (27/10/2026): thêm phí chiếm dụng khi quá hạn (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15)
     // v3 (04/11/2026): thêm phí dọn & di dời hàng khi thanh lý (PR-Q16), cơ sở được chuyển ô cùng loại (BR-122)
-    public static final String ASSET_TERMS_VERSION = "v3";
+    // v4 (05/11/2026, D-15): bỏ ân hạn 5 ngày; hết hạn không gia hạn / trả kho → chuyển hàng vào kho tổng ngay, giữ không thời hạn,
+    // không bán; khai báo loại hàng, thực phẩm chỉ gửi kho lạnh / đông
+    public static final String ASSET_TERMS_VERSION = "v4";
 
     @Autowired
     private ReservationRepository reservationRepository;
@@ -83,6 +85,10 @@ public class ReservationService {
 
     @Autowired(required = false)
     private VoucherService voucherService;
+
+    // BR-131: loại hàng khách khai báo khi đặt kho
+    @Autowired(required = false)
+    private OperationsCatalogService operationsCatalogService;
 
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
@@ -384,6 +390,10 @@ public class ReservationService {
         if ("INACTIVE".equalsIgnoreCase(unitType.getStatus())) {
             throw new IllegalArgumentException("Loại kho này hiện đang tạm ngưng nhận đặt chỗ mới");
         }
+        // BR-131 (05/11/2026): bắt buộc khai báo loại hàng; thực phẩm chỉ gửi kho lạnh / kho đông
+        String goodsCodes = operationsCatalogService != null
+                ? operationsCatalogService.validateBookingGoods(request.getGoodsCategoryCodes(), request.getGoodsDescription(), unitType)
+                : null;
         // UC-04: BOM ngừng cơ sở → không nhận đơn mới
         if (facility.getStatus() != null && !"ACTIVE".equalsIgnoreCase(facility.getStatus())) {
             throw new IllegalArgumentException("Cơ sở này đang tạm ngưng nhận đặt chỗ mới");
@@ -423,7 +433,7 @@ public class ReservationService {
         if (voucherService != null) {
             BigDecimal rentAmount = PricingService.discountedRent(unitType.getBasePriceMonthly(),
                     request.getDurationMonths(), rentDiscountPercent);
-            voucher = voucherService.quote(request.getVoucherCode(), customer.getId(), facility.getId(),
+            voucher = voucherService.quote(request.getVoucherCode(), customer.getId(), facility.getId(), unitType.getId(),
                     request.getDurationMonths(), rentAmount);
         }
 
@@ -448,6 +458,9 @@ public class ReservationService {
         reservation.setInsurancePlan(insurancePlan.name());
         reservation.setInsurancePremiumMonthly(insurancePlan.monthlyPremium());
         reservation.setDeclaredGoodsValue(declaredValue != null && declaredValue.signum() > 0 ? declaredValue : null);
+        reservation.setGoodsCategoryCodes(goodsCodes);
+        reservation.setGoodsDescription(request.getGoodsDescription() != null && !request.getGoodsDescription().isBlank()
+                ? request.getGoodsDescription().trim() : null);
         // Gán mặc định số tiền đã thanh toán là 0 khi vừa mới tạo đơn
         reservation.setTotalDepositPaid(java.math.BigDecimal.ZERO);
         reservation.setStartDate(request.getStartDate());

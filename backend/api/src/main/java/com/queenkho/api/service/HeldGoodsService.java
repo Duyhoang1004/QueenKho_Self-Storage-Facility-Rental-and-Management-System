@@ -2,6 +2,7 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.HeldGoodsResponse;
 import com.queenkho.api.dto.ResolveHeldGoodsRequest;
+import com.queenkho.api.entity.CentralWarehouse;
 import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StaffTask;
@@ -28,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * PR-Q10 — Điều khoản xử lý tài sản khi không trả kho: hàng của khách sau thanh lý.
@@ -40,7 +42,9 @@ import java.util.Map;
 public class HeldGoodsService {
 
     public static final int HOLD_DAYS = 60;
-    private static final List<String> OUTCOMES = List.of("RETURNED", "SOLD", "DESTROYED", "HANDED_TO_AUTHORITY");
+    // D-15 (05/11/2026): không bán / tiêu huỷ hàng của khách — chỉ trả khách hoặc giao cơ quan chức năng (hàng cấm)
+    private static final List<String> OUTCOMES = List.of("RETURNED", "HANDED_TO_AUTHORITY");
+    private static final List<String> LEGACY_OUTCOMES = List.of("SOLD", "DESTROYED");
     private static final String IMG_DELIMITER = "\n|||\n";
 
     @Autowired
@@ -58,12 +62,17 @@ public class HeldGoodsService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    // BR-134: thông tin kho tổng
+    @Autowired(required = false)
+    private OperationsCatalogService operationsCatalogService;
+
     // ================== LẬP HỒ SƠ (gọi từ StaffTaskService khi "Dọn xong") ==================
 
     // Dữ liệu đã được StaffTaskService kiểm tra. Hạn lưu giữ tính từ ngày thanh lý (= ngày sinh task dọn kho).
     @Transactional
     public HeldGoods createFromCleanup(StaffTask task, RentalContract contract, User actor, String inventoryNote,
-                                       List<String> images, String witnessNote, String storageLocation) {
+                                       List<String> images, String witnessNote, String storageLocation,
+                                       Integer centralWarehouseId) {
         LocalDate liquidatedOn = task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now();
         HeldGoods goods = new HeldGoods();
         goods.setContract(contract);
@@ -73,6 +82,7 @@ public class HeldGoodsService {
         goods.setEvidenceImageUrls(String.join(IMG_DELIMITER, images));
         goods.setWitnessNote(witnessNote);
         goods.setStorageLocation(storageLocation);
+        goods.setCentralWarehouseId(centralWarehouseId);
         goods.setStatus("HOLDING");
         goods.setHoldUntil(liquidatedOn.plusDays(HOLD_DAYS));
         goods.setCreatedBy(actor);
@@ -111,9 +121,13 @@ public class HeldGoodsService {
         }
 
         String outcome = request != null && request.getOutcome() != null ? request.getOutcome().trim().toUpperCase() : "";
+        if (LEGACY_OUTCOMES.contains(outcome)) {
+            throw new HeldGoodsException(HttpStatus.CONFLICT, "GOODS_SALE_NOT_ALLOWED",
+                    "QueenKho không bán / tiêu huỷ hàng của khách — hàng được giữ ở kho tổng cho tới khi khách nhận lại (D-15)");
+        }
         if (!OUTCOMES.contains(outcome)) {
             throw new HeldGoodsException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Cách xử lý phải là RETURNED, SOLD, DESTROYED hoặc HANDED_TO_AUTHORITY");
+                    "Cách xử lý phải là RETURNED (khách nhận lại) hoặc HANDED_TO_AUTHORITY (giao cơ quan chức năng)");
         }
         String note = request.getNote() != null ? request.getNote().trim() : "";
         if (note.length() < 10 || note.length() > 1000) {
@@ -229,7 +243,10 @@ public class HeldGoodsService {
     /** Số ngày đã lưu giữ tính đến asOf (tối đa đến hết hạn lưu giữ) */
     static long heldDays(HeldGoods goods, LocalDate asOf) {
         LocalDate start = goods.getHoldUntil().minusDays(HOLD_DAYS);
-        LocalDate end = asOf.isAfter(goods.getHoldUntil()) ? goods.getHoldUntil() : asOf;
+        // D-15: điều khoản v4 giữ hàng không thời hạn → phí tính tới ngày khách nhận lại; điều khoản cũ tối đa 60 ngày
+        boolean uncapped = goods.getContract() != null
+                && LateFeeService.acceptsCentralStorageTerms(termsVersion(goods.getContract()));
+        LocalDate end = !uncapped && asOf.isAfter(goods.getHoldUntil()) ? goods.getHoldUntil() : asOf;
         return Math.max(0, ChronoUnit.DAYS.between(start, end));
     }
 
@@ -378,6 +395,19 @@ public class HeldGoodsService {
         return contract.getReservation() != null ? contract.getReservation().getTermsVersion() : null;
     }
 
+    private Optional<CentralWarehouse> warehouse(HeldGoods g) {
+        return operationsCatalogService != null ? operationsCatalogService.findWarehouse(g.getCentralWarehouseId())
+                : Optional.empty();
+    }
+
+    /** BR-134: khách xem hồ sơ hàng ở kho tổng của hợp đồng mình (quyền đã kiểm tra ở controller) */
+    @Transactional(readOnly = true)
+    public Optional<HeldGoodsResponse> latestForContract(Integer contractId) {
+        return heldGoodsRepository.findFirstByContract_IdOrderByIdDesc(contractId)
+                .flatMap(g -> heldGoodsRepository.findDetailById(g.getId()))
+                .map(this::toResponse);
+    }
+
     private HeldGoodsResponse toResponse(HeldGoods g) {
         RentalContract c = g.getContract();
         LocalDate today = LocalDate.now();
@@ -396,12 +426,16 @@ public class HeldGoodsService {
                 .evidenceImages(parseImages(g.getEvidenceImageUrls()))
                 .witnessNote(g.getWitnessNote())
                 .storageLocation(g.getStorageLocation())
+                .centralWarehouseId(g.getCentralWarehouseId())
+                .centralWarehouseName(warehouse(g).map(w -> w.getName()).orElse(null))
+                .centralWarehouseAddress(warehouse(g).map(w -> w.getAddress()).orElse(null))
+                .centralWarehouseHotline(warehouse(g).map(w -> w.getHotline()).orElse(null))
                 .status(g.getStatus())
                 .holdUntil(g.getHoldUntil())
                 .daysLeft(ChronoUnit.DAYS.between(today, g.getHoldUntil()))
                 .holdExpired(expired)
                 .termsVersion(terms)
-                .canSell("HOLDING".equals(g.getStatus()) && expired && terms != null)
+                .canSell(false) // D-15: không bán hàng của khách
                 .customerDebt(customerDebt(customerId))
                 .depositHeld(c.getDepositHeldAmount() != null ? c.getDepositHeldAmount() : BigDecimal.ZERO)
                 .proceedsAmount(g.getProceedsAmount())

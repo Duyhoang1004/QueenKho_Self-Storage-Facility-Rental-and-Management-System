@@ -1,37 +1,45 @@
 services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
     user: root
     environment:
       ACCEPT_EULA: "Y"
+      TZ: Asia/Ho_Chi_Minh
       MSSQL_SA_PASSWORD: "12345678@Password"
     ports:
       - "1434:1433"
     volumes:
       - sql_data:/var/opt/mssql/data
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '12345678@Password' -C -Q 'SELECT 1' || exit 1"]
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -b -Q 'SELECT 1' || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 15
-      start_period: 10s
+      retries: 30
+      start_period: 30s
 
   db-init:
     image: mcr.microsoft.com/mssql/server:2022-latest
     user: root
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      MSSQL_SA_PASSWORD: "12345678@Password"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./sql_script:/scripts
-    entrypoint: ["/bin/bash", "-c", "tr -d '\\r' < /scripts/init_db.sh | /bin/bash"]
+      - ./sql_script:/scripts:ro
+    entrypoint: ["/bin/bash", "-o", "pipefail", "-c", "tr -d '\\r' < /scripts/init_db.sh | /bin/bash"]
     restart: "no"
 
   backend:
     build: ./backend/api
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - JAVA_TOOL_OPTIONS=-Duser.timezone=Asia/Ho_Chi_Minh
       - DB_USERNAME=sa
       - DB_PASSWORD=12345678@Password
       - DB_NAME=QueenKhoDB
@@ -50,15 +58,12 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
-      - "5173:5173"
-    environment:
-      - VITE_API_URL=http://localhost:8080
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   sql_data:

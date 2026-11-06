@@ -3,11 +3,18 @@ package com.queenkho.api.repository;
 import com.queenkho.api.entity.Reservation;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Integer> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM Reservation r WHERE r.id = :id")
+    java.util.Optional<Reservation> findByIdForUpdate(@Param("id") Integer id);
 
     // UC-12: Lấy danh sách đơn đặt của 1 customer, mới nhất xếp trước
     List<Reservation> findByCustomer_IdOrderByCreatedAtDesc(Integer customerId);

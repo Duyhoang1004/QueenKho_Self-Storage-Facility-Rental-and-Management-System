@@ -123,8 +123,11 @@ public class ReservationController {
     public ResponseEntity<?> cancelReservation(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.CancelReservationRequest request) {
         ownershipGuard.checkReservation(reservationId);
         try {
-            reservationService.cancelReservation(reservationId, request);
-            return ResponseEntity.ok(java.util.Map.of("message", "Hủy đơn đặt chỗ thành công"));
+            com.queenkho.api.dto.CancelPreviewResponse cancellation =
+                    reservationService.cancelReservation(reservationId, request);
+            return ResponseEntity.ok(java.util.Map.of(
+                    "message", "Hủy đơn đặt chỗ thành công",
+                    "cancellation", cancellation));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }

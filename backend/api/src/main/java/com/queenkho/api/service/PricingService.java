@@ -103,10 +103,14 @@ public class PricingService {
                 .map(m -> new FacilityPricingResponse.PackageOption(m, renewalDiscountPercent(policy, m))).toList();
         if (policy == null) {
             return new FacilityPricingResponse(facilityId, null, 1, booking, renewal, WELCOME_VOUCHER,
-                    24, 50, 10, 50, 30, true);
+                    CancellationPolicyService.FULL_REFUND_HOURS,
+                    CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT,
+                    10, 50, 30, true);
         }
         return new FacilityPricingResponse(facilityId, policy.getVersion(), policy.getDepositMonthMultiplier(),
-                booking, renewal, WELCOME_VOUCHER, policy.getCancelFreeHours(), policy.getCancelFeePercent(),
+                booking, renewal, WELCOME_VOUCHER,
+                CancellationPolicyService.FULL_REFUND_HOURS,
+                CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT,
                 policy.getLateFeePercentPerDay(), policy.getLateFeeMaxPercent(), policy.getLiquidationDays(),
                 policy.isAllowLateFeeWaiver());
     }

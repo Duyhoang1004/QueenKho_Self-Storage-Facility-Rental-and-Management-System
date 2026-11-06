@@ -6,6 +6,7 @@ import lombok.Data;
 public class CancelReservationRequest {
     private String reason;
     private String otherReason;
+    private String refundMethod; // BANK_TRANSFER | CASH
     private String bankName;
     private String bankAccountNumber;
     private String bankAccountName;

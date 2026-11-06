@@ -83,6 +83,9 @@ public class ReservationService {
     @Autowired
     private RefundStatusService refundStatusService;
 
+    @Autowired
+    private CancellationPolicyService cancellationPolicyService;
+
     @Autowired(required = false)
     private VoucherService voucherService;
 
@@ -634,115 +637,120 @@ public class ReservationService {
         }
     }
 
+    @Transactional(readOnly = true)
     public CancelPreviewResponse previewCancel(Integer reservationId) {
         Reservation reservation = reservationRepository.findById(reservationId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
 
-        // 🌟 1. LẤY MỐC GIỜ HẸN: NẾU NULL THÌ BẮT BUỘC LẤY 09:00 SÁNG NGÀY BẮT ĐẦU
+        return calculateCancelPreview(reservation, LocalDateTime.now());
+    }
+
+    private CancelPreviewResponse calculateCancelPreview(Reservation reservation, LocalDateTime calculatedAt) {
+        validateCancellableReservation(reservation);
+
         LocalDateTime appointmentTime = reservation.getExpectedAppointmentTime();
         if (appointmentTime == null && reservation.getStartDate() != null) {
             appointmentTime = reservation.getStartDate().atTime(9, 0);
         }
 
-        // 1. LẤY TỔNG TIỀN THỰC TẾ KHÁCH ĐÃ ĐÓNG TỪ PAYMENT_TRANSACTIONS
-        BigDecimal totalPaid;
+        BigDecimal totalPaid = BigDecimal.ZERO;
         try {
             totalPaid = jdbcTemplate.queryForObject(
                     "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
                             "WHERE reservation_id = ? AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
                     BigDecimal.class,
-                    reservationId);
+                    reservation.getId());
         } catch (Exception e) {
             totalPaid = BigDecimal.ZERO;
         }
 
-        // Tiền cọc gốc (dùng để tính phạt nếu hủy trễ)
         BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
 
-        // Chỉ fallback cho dữ liệu cũ đã ở trạng thái ĐÃ CỌC nhưng chưa có
-        // payment_transactions. Đơn PENDING chưa thanh toán tuyệt đối không được
-        // lấy tiền cọc dự kiến làm tiền đã đóng.
         if (totalPaid.compareTo(BigDecimal.ZERO) == 0
-                && "DEPOSIT_PAID".equals(reservation.getStatus())) {
+                && List.of("DEPOSIT_PAID", "UNIT_ASSIGNED").contains(reservation.getStatus())) {
             totalPaid = reservation.getTotalDepositPaid() != null
                     && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
                             ? reservation.getTotalDepositPaid()
                             : deposit;
         }
 
-        int[] cancelRules = jdbcTemplate.query(
-                "SELECT cancel_free_hours, cancel_fee_percent FROM rental_policy WHERE facility_id = ? AND is_active = 1",
-                rs -> rs.next() ? new int[]{rs.getInt("cancel_free_hours"), rs.getInt("cancel_fee_percent")} : new int[]{24, 50},
-                reservation.getFacility().getId());
-        BigDecimal penalty;
-        BigDecimal refund;
-
-        // PR-R11: đã tới ngày nhận kho mà cơ sở vẫn chưa gán được ô (ô "sắp trống" khách cũ chưa trả) → lỗi cơ sở,
-        // khách huỷ được hoàn 100%.
-        boolean facilityNoUnit = "DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
-                && reservation.getStartDate() != null && !LocalDate.now().isBefore(reservation.getStartDate());
-
-        // Chưa thu tiền thì không phạt và không phát sinh hoàn tiền.
-        if (totalPaid.compareTo(BigDecimal.ZERO) <= 0) {
-            penalty = BigDecimal.ZERO;
-            refund = BigDecimal.ZERO;
-        } else if (facilityNoUnit) {
-            penalty = BigDecimal.ZERO;
-            refund = totalPaid;
-        // PR-M5: đơn chưa gắn hợp đồng nên đọc chính sách hiện hành lúc hủy.
-        } else if (appointmentTime != null
-                && LocalDateTime.now().plusHours(cancelRules[0]).isBefore(appointmentTime)) {
-            // Hủy trước mốc miễn phí: hoàn toàn bộ tiền đã đóng.
-            penalty = BigDecimal.ZERO;
-            refund = totalPaid;
-        } else {
-            // Phí hủy áp dụng trên cọc và không vượt tiền đã đóng.
-            penalty = deposit.multiply(BigDecimal.valueOf(cancelRules[1]))
-                    .divide(BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP).min(totalPaid);
-            refund = totalPaid.compareTo(penalty) >= 0 ? totalPaid.subtract(penalty) : BigDecimal.ZERO;
-        }
-
-        return new CancelPreviewResponse(totalPaid, penalty, refund, appointmentTime, cancelRules[0], cancelRules[1]);
-    }
-
-    @org.springframework.transaction.annotation.Transactional
-    public void cancelReservation(Integer reservationId, CancelReservationRequest request) {
-
-        // 1. Tìm đơn trong DB
-        Reservation reservation = reservationRepository.findById(reservationId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
-
-        // 2. Kiểm tra trạng thái hợp lệ
-        if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"PENDING".equals(reservation.getStatus())) {
-            throw new IllegalStateException("Trạng thái đơn không hợp lệ để hủy");
-        }
-
-        BigDecimal actualDepositOrTotalPaid = BigDecimal.ZERO;
+        LocalDateTime paymentSuccessAt = null;
         try {
-            actualDepositOrTotalPaid = jdbcTemplate.queryForObject(
-                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
-                            "WHERE reservation_id = ? AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
-                    BigDecimal.class,
-                    reservationId);
+            java.sql.Timestamp paidAt = jdbcTemplate.queryForObject(
+                    "SELECT MIN(paid_at) FROM payment_transactions " +
+                            "WHERE reservation_id = ? AND payment_type = 'DEPOSIT' AND status = 'SUCCESS'",
+                    java.sql.Timestamp.class,
+                    reservation.getId());
+            if (paidAt != null) paymentSuccessAt = paidAt.toLocalDateTime();
         } catch (Exception ignored) {
         }
 
-        boolean wasDepositPaid = "DEPOSIT_PAID".equals(reservation.getStatus())
-                || (actualDepositOrTotalPaid != null && actualDepositOrTotalPaid.compareTo(BigDecimal.ZERO) > 0);
+        boolean facilityNoUnit = "DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
+                && appointmentTime != null && !calculatedAt.isBefore(appointmentTime);
 
-        // Tính trước khi đổi trạng thái để dữ liệu cũ DEPOSIT_PAID vẫn được nhận diện đúng.
-        CancelPreviewResponse preview = wasDepositPaid ? previewCancel(reservationId) : null;
+        CancellationPolicyService.Decision decision = cancellationPolicyService.calculate(
+                totalPaid, deposit, appointmentTime, paymentSuccessAt, calculatedAt, facilityNoUnit);
 
-        // 3. Cập nhật trạng thái đơn: nếu đã cọc -> REFUND_PENDING (Chờ hoàn tiền), nếu chưa cọc -> CANCELLED (Đã hủy)
-        reservation.setStatus(wasDepositPaid ? "REFUND_PENDING" : "CANCELLED");
+        return CancelPreviewResponse.builder()
+                .totalPaid(decision.totalPaid())
+                .depositAmount(decision.depositAmount())
+                .penaltyAmount(decision.penaltyAmount())
+                .refundAmount(decision.refundAmount())
+                .appointmentTime(appointmentTime)
+                .paymentSuccessAt(paymentSuccessAt)
+                .calculatedAt(calculatedAt)
+                .graceExpiresAt(decision.graceExpiresAt())
+                .minutesUntilCheckIn(decision.minutesUntilCheckIn())
+                .policyTier(decision.tier())
+                .policyDescription(decision.description())
+                .graceApplied(decision.graceApplied())
+                .fullRefundHours(CancellationPolicyService.FULL_REFUND_HOURS)
+                .partialRefundHours(CancellationPolicyService.PARTIAL_REFUND_HOURS)
+                .partialFeePercent(CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT)
+                .lateFeePercent(CancellationPolicyService.LATE_DEPOSIT_PENALTY_PERCENT)
+                .graceMinutes(CancellationPolicyService.LAST_MINUTE_GRACE_MINUTES)
+                .graceBookingWindowHours(CancellationPolicyService.LAST_MINUTE_BOOKING_HOURS)
+                .cancelFreeHours(CancellationPolicyService.FULL_REFUND_HOURS)
+                .cancelFeePercent(CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT)
+                .build();
+    }
+
+    private void validateCancellableReservation(Reservation reservation) {
+        String status = reservation.getStatus();
+        if ("PENDING".equals(status) || "DEPOSIT_PAID".equals(status)) return;
+        if ("UNIT_ASSIGNED".equals(status)) {
+            com.queenkho.api.entity.RentalContract contract = rentalContractRepository
+                    .findByReservationId(reservation.getId())
+                    .orElseThrow(() -> new IllegalStateException("Đơn đã gán ô nhưng không tìm thấy hợp đồng"));
+            if ("PENDING_CHECK_IN".equals(contract.getStatus())) return;
+        }
+        throw new IllegalStateException("Chỉ được hủy đơn trước khi hoàn tất check-in");
+    }
+
+    @Transactional
+    public CancelPreviewResponse cancelReservation(Integer reservationId, CancelReservationRequest request) {
+        Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+        LocalDateTime cancelledAt = LocalDateTime.now();
+        CancelPreviewResponse preview = calculateCancelPreview(reservation, cancelledAt);
+        boolean wasAssigned = "UNIT_ASSIGNED".equals(reservation.getStatus());
+        boolean hasPaid = preview.getTotalPaid().compareTo(BigDecimal.ZERO) > 0;
+        boolean needsRefund = preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0;
+
+        if (wasAssigned) {
+            terminatePendingCheckIn(reservation);
+        }
+
+        reservation.setCancelledAt(cancelledAt);
+        reservation.setCancellationTier(preview.getPolicyTier());
+        reservation.setCancellationPenaltyAmount(preview.getPenaltyAmount());
+        reservation.setCancellationRefundAmount(preview.getRefundAmount());
+        reservation.setStatus(needsRefund ? "REFUND_PENDING" : "CANCELLED");
         reservationRepository.save(reservation);
 
-        // 4. Nếu khách đã đóng cọc -> Tạo giao dịch REFUND & Đẩy Task hoàn cọc sang
-        // staff_tasks
-        if (wasDepositPaid) {
-            java.math.BigDecimal refundAmount = preview.getRefundAmount();
-
-            // 4.1. Tạo bản ghi giao dịch trong payment_transactions
+        if (needsRefund) {
+            String refundMethod = validateRefundMethod(request);
+            BigDecimal refundAmount = preview.getRefundAmount();
             String txnCode = "REF-" + reservation.getReservationCode()
                     + "-" + (System.currentTimeMillis() % 100000);
 
@@ -750,31 +758,24 @@ public class ReservationService {
                     "INSERT INTO payment_transactions " +
                             "(transaction_code, reservation_id, user_id, amount, payment_type, payment_method, status, paid_at) "
                             +
-                            "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', 'PENDING', SYSDATETIME())",
+                            "VALUES (?, ?, ?, ?, 'REFUND', ?, 'PENDING', NULL)",
                     txnCode,
                     reservation.getId(),
                     reservation.getCustomer().getId(),
-                    refundAmount);
+                    refundAmount,
+                    refundMethod);
 
-            // 4.2. Tính deadline 24h (không tính Chủ Nhật)
-            LocalDateTime now = LocalDateTime.now();
-            LocalDateTime deadline = calculateRefundDeadline(now);
+            LocalDateTime deadline = calculateRefundDeadline(cancelledAt);
 
-            // 4.3. Soạn nội dung ghi chú chuyển khoản chi tiết cho Staff
             String refundTaskNote;
-            boolean hasBankInfo = request.getBankName() != null && !request.getBankName().trim().isEmpty();
-            String reasonText = request.getReason() +
-                    (request.getOtherReason() != null && !request.getOtherReason().trim().isEmpty()
-                            ? " (" + request.getOtherReason().trim() + ")"
-                            : "");
+            String reasonText = cancellationReason(request);
 
-            String penaltyNote = preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
-                    ? " (Đã trừ phí hủy: " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND)"
-                    : " (Hoàn toàn bộ theo chính sách)";
+            String penaltyNote = " | Chính sách: " + preview.getPolicyDescription()
+                    + " | Cọc giữ lại: " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND";
 
-            if (hasBankInfo) {
+            if ("BANK_TRANSFER".equals(refundMethod)) {
                 refundTaskNote = String.format(
-                        "[HOÀN CỌC CK] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Ngân hàng: %s | STK: %s | Chủ TK: %s | Lý do: %s",
+                        "[HOÀN CỌC CK] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn đã chốt: %s VND%s | Ngân hàng: %s | STK: %s | Chủ TK: %s | Lý do: %s",
                         reservation.getReservationCode(),
                         reservation.getCustomer().getFullName(),
                         reservation.getCustomer().getPhone(),
@@ -786,7 +787,7 @@ public class ReservationService {
                         reasonText);
             } else {
                 refundTaskNote = String.format(
-                        "[HOÀN CỌC TIỀN MẶT] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Khách nhận tiền mặt trực tiếp tại quầy | Lý do: %s",
+                        "[HOÀN CỌC TIỀN MẶT] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn đã chốt: %s VND%s | Khách nhận tiền mặt trực tiếp tại quầy | Lý do: %s",
                         reservation.getReservationCode(),
                         reservation.getCustomer().getFullName(),
                         reservation.getCustomer().getPhone(),
@@ -799,7 +800,6 @@ public class ReservationService {
                 refundTaskNote = refundTaskNote.substring(0, 997) + "...";
             }
 
-            // 4.4. Tìm ID của Facility Manager phụ trách cơ sở này
             Integer managerId = null;
             try {
                 managerId = jdbcTemplate.queryForObject(
@@ -811,7 +811,6 @@ public class ReservationService {
             } catch (Exception ignored) {
             }
 
-            // 4.5. ĐẨY DATA VÀO BẢNG facility_tasks (Gán trực tiếp cho Manager của cơ sở)
             jdbcTemplate.update(
                     "INSERT INTO facility_tasks (facility_id, task_type, contract_id, staff_id, status, due_at, note, created_at) " +
                             "VALUES (?, 'REFUND', NULL, ?, 'OPEN', ?, ?, SYSDATETIME())",
@@ -829,18 +828,17 @@ public class ReservationService {
             );
         }
 
-        // BR-117: xác nhận huỷ đơn cho khách (chuông + email), kèm số tiền hoàn nếu đã cọc
         if (notificationService != null && reservation.getCustomer() != null) {
             String cancelMessage;
-            if (wasDepositPaid) {
+            if (hasPaid) {
                 BigDecimal refundAmount = preview.getRefundAmount();
                 cancelMessage = refundAmount.compareTo(BigDecimal.ZERO) > 0
                         ? "Số tiền hoàn dự kiến " + refundAmount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ"
                             + (preview.getPenaltyAmount().compareTo(BigDecimal.ZERO) > 0
                                 ? " (đã trừ phí huỷ " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "đ)"
                                 : "")
-                            + ". Quản lý cơ sở sẽ hoàn tiền trong 24 giờ làm việc; bạn sẽ nhận email khi hoàn xong."
-                        : "Theo chính sách huỷ, khoản đã đóng không được hoàn lại.";
+                            + ". Mức hoàn đã được chốt tại thời điểm huỷ; quản lý cơ sở sẽ hoàn trong 24 giờ làm việc."
+                        : "Theo chính sách huỷ, số tiền hoàn là 0đ.";
             } else {
                 cancelMessage = "Đơn chưa thanh toán cọc nên không phát sinh phí huỷ.";
             }
@@ -852,14 +850,12 @@ public class ReservationService {
                     "/kho-cua-toi");
         }
 
-        // 5. Ghi nhật ký RÚT GỌN vào activity_logs (chỉ lưu vết cơ bản)
         String actionLog = "Người dùng ID " + reservation.getCustomer().getId()
-                + " yêu cầu hủy đơn " + reservation.getReservationCode();
-        if (wasDepositPaid && preview != null) {
-            actionLog += " (Có hoàn cọc: " + preview.getRefundAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND)";
-        } else {
-            actionLog += " (Không hoàn cọc)";
-        }
+                + " yêu cầu hủy đơn " + reservation.getReservationCode()
+                + " [" + preview.getPolicyTier() + "]"
+                + " (đã trả: " + preview.getTotalPaid().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString()
+                + " VND, giữ cọc: " + preview.getPenaltyAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString()
+                + " VND, hoàn: " + preview.getRefundAmount().setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + " VND)";
 
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -867,6 +863,57 @@ public class ReservationService {
                 reservation.getCustomer().getId(),
                 actionLog,
                 reservation.getId());
+        return preview;
+    }
+
+    private void terminatePendingCheckIn(Reservation reservation) {
+        com.queenkho.api.entity.RentalContract contract = rentalContractRepository
+                .findByReservationId(reservation.getId())
+                .orElseThrow(() -> new IllegalStateException("Đơn đã gán ô nhưng không tìm thấy hợp đồng"));
+        if (!"PENDING_CHECK_IN".equals(contract.getStatus())) {
+            throw new IllegalStateException("Hợp đồng đã check-in nên không thể hủy đơn đặt chỗ");
+        }
+
+        contract.setStatus("TERMINATED");
+        contract.setDepositHeldAmount(BigDecimal.ZERO);
+        contract.setAccessPinCode(null);
+        contract.setRfidCardCode(null);
+        rentalContractRepository.save(contract);
+        staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
+
+        if (reservation.getStorageUnitId() != null) {
+            storageUnitRepository.findById(reservation.getStorageUnitId()).ifPresent(unit -> {
+                unit.setStatus("AVAILABLE");
+                storageUnitRepository.save(unit);
+            });
+        }
+    }
+
+    private String validateRefundMethod(CancelReservationRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Thiếu thông tin nhận tiền hoàn");
+        }
+        String method = request.getRefundMethod() == null || request.getRefundMethod().isBlank()
+                ? "BANK_TRANSFER"
+                : request.getRefundMethod().trim().toUpperCase();
+        if (!List.of("BANK_TRANSFER", "CASH").contains(method)) {
+            throw new IllegalArgumentException("Phương thức hoàn tiền không hợp lệ");
+        }
+        if ("BANK_TRANSFER".equals(method)) {
+            if (request.getBankName() == null || request.getBankName().isBlank()
+                    || request.getBankAccountNumber() == null || !request.getBankAccountNumber().trim().matches("\\d{6,20}")
+                    || request.getBankAccountName() == null || request.getBankAccountName().isBlank()) {
+                throw new IllegalArgumentException("Vui lòng nhập đủ ngân hàng, số tài khoản 6–20 chữ số và tên chủ tài khoản");
+            }
+        }
+        return method;
+    }
+
+    private String cancellationReason(CancelReservationRequest request) {
+        if (request == null || request.getReason() == null || request.getReason().isBlank()) {
+            return "Khách chủ động hủy đơn";
+        }
+        return request.getReason().trim();
     }
 
     // PR-X3: Đánh giá điều kiện đủ để xử lý No-Show

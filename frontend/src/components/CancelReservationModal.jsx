@@ -68,18 +68,15 @@ export default function CancelReservationModal({
 
   if (!isOpen || !reservation) return null;
 
-  const isDepositPaid = reservation.status === "DEPOSIT_PAID";
-
   // 1. Tổng tiền đã đóng thực tế
   const totalPaid =
-    preview?.depositAmount ?? preview?.totalPaid ?? reservation?.totalPaid ?? 0;
+    preview?.totalPaid ?? reservation?.totalPaid ?? 0;
   // 2. Tiền cọc gốc của loại kho
-  const depositAmount = reservation?.depositAmount ?? 0;
+  const depositAmount = preview?.depositAmount ?? reservation?.depositAmount ?? 0;
   // 3. Phí phạt (lấy trực tiếp từ preview)
   const penalty = preview?.penaltyAmount ?? 0;
   // 4. Tiền hoàn thực tế
   const refundAmount = preview?.refundAmount ?? totalPaid - penalty;
-  const isLate = Number(penalty) > 0;
   const hasPaid = Number(totalPaid) > 0;
 
   const handleSubmit = async () => {
@@ -87,14 +84,14 @@ export default function CancelReservationModal({
       alert("Vui lòng nhập lý do cụ thể.");
       return;
     }
-    if (isDepositPaid && refundAmount > 0) {
+    if (hasPaid && refundAmount > 0) {
       if (
         !bankName.trim() ||
-        !bankAccountNumber.trim() ||
+        !/^\d{6,20}$/.test(bankAccountNumber.trim()) ||
         !bankAccountName.trim()
       ) {
         alert(
-          "Vui lòng điền đầy đủ thông tin tài khoản ngân hàng để nhận hoàn tiền.",
+          "Vui lòng nhập đủ ngân hàng, số tài khoản gồm 6–20 chữ số và tên chủ tài khoản.",
         );
         return;
       }
@@ -104,6 +101,7 @@ export default function CancelReservationModal({
     setError("");
     try {
       await cancelReservation(reservation.id, {
+        refundMethod: "BANK_TRANSFER",
         reason: reason === "Lý do khác" ? otherReason.trim() : reason,
         otherReason: reason === "Lý do khác" ? otherReason.trim() : "",
         bankName: bankName.trim(),
@@ -234,14 +232,7 @@ export default function CancelReservationModal({
 
                 {/* 3. Khấu trừ phí phạt cọc */}
                 <div className="flex justify-between items-center text-[#FF4B4B]">
-                  <span className="flex items-center gap-1">
-                    <span>Khấu trừ tiền cọc:</span>
-                    <span className="text-[10px] font-bold text-[#AFAFAF]">
-                      {isLate
-                        ? `(${preview?.cancelFeePercent}% tiền cọc do hủy trong ${preview?.cancelFreeHours} giờ)`
-                        : `(0% - Hủy trước ${preview?.cancelFreeHours} giờ)`}
-                    </span>
-                  </span>
+                  <span>Tiền cọc bị giữ:</span>
                   <span className="font-black">
                     {penalty > 0 ? `- ${formatVND(penalty)}` : "0₫"}
                   </span>
@@ -260,10 +251,14 @@ export default function CancelReservationModal({
                 </div>
               </div>
 
-              <p className="text-[10px] text-[#AFAFAF] italic leading-tight">
-                {isLate
-                  ? `* Hủy trong ${preview?.cancelFreeHours} giờ trước giờ hẹn nhận kho sẽ khấu trừ ${preview?.cancelFeePercent}% tiền cọc. Tiền thuê đã trả được hoàn theo chính sách.`
-                  : `* Hủy trước ${preview?.cancelFreeHours} giờ: hoàn toàn bộ số tiền đã thanh toán.`}
+              <p className="text-[11px] font-bold text-[#777777] leading-relaxed">
+                {preview?.policyDescription}
+                {preview?.graceApplied && preview?.graceExpiresAt
+                  ? ` (Ân hạn đến ${formatDateTime(preview.graceExpiresAt)}).`
+                  : "."}
+              </p>
+              <p className="text-[10px] text-[#AFAFAF] leading-relaxed">
+                Số tiền trên được hệ thống chốt tại thời điểm xác nhận hủy. Quản lý cơ sở chỉ thực hiện đúng khoản hoàn này, không tự điều chỉnh tiền cọc.
               </p>
             </div>
           )}
@@ -313,7 +308,7 @@ export default function CancelReservationModal({
           </div>
 
           {/* Form thông tin ngân hàng nhận hoàn tiền */}
-          {isDepositPaid && refundAmount > 0 && (
+          {hasPaid && refundAmount > 0 && (
             <div className="bg-[#DDF4FF] border-2 border-[#84D8FF] rounded-2xl p-4 flex flex-col gap-3">
               <div className="flex items-center gap-2 text-[#1899D6]">
                 <span className="material-symbols-outlined text-[20px]">
@@ -380,7 +375,7 @@ export default function CancelReservationModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || loadingPreview}
+            disabled={submitting || loadingPreview || Boolean(error) || !preview}
             className="duo-btn-red px-5 py-2.5 text-xs tracking-wider flex items-center gap-1.5 shadow-sm"
           >
             {submitting ? (

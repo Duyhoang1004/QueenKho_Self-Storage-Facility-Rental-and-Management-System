@@ -282,7 +282,7 @@ public class FacilityService {
         String defaultPolicyName = "Chính sách " + facility.getName();
         jdbcTemplate.update(
             "INSERT INTO rental_policy (facility_id, policy_name, deposit_month_multiplier, cancel_fee_percent, cancel_free_hours, late_fee_percent_per_day, late_fee_max_percent, liquidation_days, version, is_active, created_by_user_id) " +
-            "VALUES (?, ?, 1, 50, 24, 10, 50, 30, 1, 1, ?)",
+            "VALUES (?, ?, 1, 50, 48, 10, 50, 30, 1, 1, ?)",
             facility.getId(), defaultPolicyName.substring(0, Math.min(150, defaultPolicyName.length())), actorUserId
         );
 

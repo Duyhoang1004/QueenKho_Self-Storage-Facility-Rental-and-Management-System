@@ -10,7 +10,6 @@ import com.queenkho.api.service.InsurancePlan;
 import com.queenkho.api.service.HeldGoodsService;
 import com.queenkho.api.service.OperationsCatalogService;
 import com.queenkho.api.dto.CustomerContractResponse;
-import com.queenkho.api.dto.OnlineCheckInRequest;
 import com.queenkho.api.dto.TransferUnitRequest;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.entity.HeldGoods;
@@ -89,7 +88,7 @@ public class ContractController {
                 .body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
     }
 
-    // BR-124: check-in online dùng chung nghiệp vụ check-in của StaffTaskService
+    // Lỗi nghiệp vụ từ StaffTaskService (chuyển ô, biên bản bàn giao...)
     @ExceptionHandler(StaffTaskException.class)
     public ResponseEntity<?> handleStaffTaskException(StaffTaskException ex) {
         return ResponseEntity.status(ex.getStatus())
@@ -492,13 +491,6 @@ public class ContractController {
     public ResponseEntity<?> getHandoverRecords(@PathVariable Integer id) {
         ownershipGuard.checkContract(id);
         return ResponseEntity.ok(staffTaskService.getHandoverRecords(id));
-    }
-
-    // BR-124: khách tự check-in online đúng ngày hẹn (khách lấy từ token)
-    @PostMapping("/{id}/online-check-in")
-    public ResponseEntity<?> onlineCheckIn(@PathVariable Integer id, @RequestBody OnlineCheckInRequest request) {
-        ownershipGuard.checkContract(id);
-        return ResponseEntity.ok(staffTaskService.onlineCheckIn(id, currentUser.require().id(), request));
     }
 
     // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang

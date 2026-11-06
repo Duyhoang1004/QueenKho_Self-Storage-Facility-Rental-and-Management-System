@@ -16,7 +16,7 @@ function formatDateTime(value) {
 }
 
 // BR-121 + BR-122: biên bản nhận / trả kho kèm ảnh và lịch sử chuyển ô của 1 hợp đồng.
-// reloadKey đổi → tải lại (vd sau khi check-in online / chuyển ô)
+// reloadKey đổi → tải lại (vd sau khi chuyển ô)
 export default function ContractHandoverSection({ contractId, reloadKey }) {
   const [records, setRecords] = useState([])
   const [transfers, setTransfers] = useState([])

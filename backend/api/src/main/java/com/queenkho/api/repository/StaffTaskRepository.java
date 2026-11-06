@@ -100,16 +100,6 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
                         @Param("staffId") Integer staffId,
                         @Param("now") LocalDateTime now);
 
-    // BR-124: khách tự check-in online → đóng task CHECK_IN còn mở (chưa ai nhận hoặc Staff đang giữ), chưa quá hạn.
-    // Ghi chú lại để Staff đang giữ task biết khách đã tự nhận kho
-    @Modifying(clearAutomatically = true)
-    @Query("UPDATE StaffTask t SET t.status = 'COMPLETED', t.completedAt = :now, t.note = :note " +
-            "WHERE t.id = :taskId AND t.taskType = 'CHECK_IN' AND t.status IN ('OPEN', 'IN_PROGRESS') " +
-            "AND t.dueAt > :now")
-    int completeCheckInOnline(@Param("taskId") Integer taskId,
-                              @Param("now") LocalDateTime now,
-                              @Param("note") String note);
-
     // UC-23: đóng task check-out — 1 câu UPDATE có điều kiện (giống completeCheckIn).
     // Chỉ ăn dòng khi task còn IN_PROGRESS, đúng người nhận, chưa quá hạn
     @Modifying(clearAutomatically = true)

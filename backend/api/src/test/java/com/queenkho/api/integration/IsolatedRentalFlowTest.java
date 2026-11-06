@@ -167,25 +167,29 @@ class IsolatedRentalFlowTest {
         return new Rental(id, contract, unit);
     }
 
-    void onlineCheckIn(Rental rental) throws Exception {
-        post("/api/v1/contracts/" + rental.contract + "/online-check-in", """
-                {"cccd":"079000000001","unitEmpty":true,"unitClean":true,"lockIntact":true,
-                 "prohibitedGoodsCommitted":true,"evidenceImages":["%s"]}
-                """.formatted(EVIDENCE), "customer", 200);
+    // UC-18: Staff nhận task CHECK_IN rồi lập biên bản tại quầy (check-in online đã bỏ 06/11/2026 — D-16)
+    void counterCheckIn(Rental rental) throws Exception {
+        String task = scalar("SELECT id FROM facility_tasks WHERE contract_id=" + rental.contract + " AND task_type='CHECK_IN'");
+        post("/api/v1/staff-tasks/" + task + "/claim", "{}", "staff", 200);
+        post("/api/v1/staff-tasks/" + task + "/check-in", """
+                {"identityVerified":true,"unitEmpty":true,"unitClean":true,"lockIntact":true,
+                 "customerSignatureConfirmed":true,"goodsChecked":true,
+                 "accessPinCode":"%06d","rfidCardCode":"RFID-IT-%d","evidenceImages":["%s"]}
+                """.formatted(rental.contract % 1_000_000, rental.contract, EVIDENCE), "staff", 200);
         assertEquals("ACTIVE", scalar("SELECT status FROM rental_contracts WHERE id=" + rental.contract));
         assertNotNull(scalar("SELECT access_pin_code FROM rental_contracts WHERE id=" + rental.contract));
     }
 
-    @Test void bookingPaymentAssignmentAndOnlineCheckIn() throws Exception {
+    @Test void bookingPaymentAssignmentAndCounterCheckIn() throws Exception {
         Rental r = bookPayAssign("ADVANCED");
         assertEquals("50000.00", scalar("SELECT insurance_premium_monthly FROM reservations WHERE id=" + r.reservation));
-        onlineCheckIn(r);
-        assertEquals("ONLINE", scalar("SELECT check_in_method FROM handover_records WHERE contract_id=" + r.contract));
+        counterCheckIn(r);
+        assertEquals("COUNTER", scalar("SELECT check_in_method FROM handover_records WHERE contract_id=" + r.contract));
         assertEquals("OCCUPIED", scalar("SELECT status FROM storage_units WHERE id='" + r.unit + "'"));
     }
 
     @Test void renewalExtendsExistingPeriodAndKeepsUnit() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         LocalDate oldEnd = LocalDate.parse(scalar("SELECT end_date FROM rental_contracts WHERE id=" + r.contract));
         String payment = post("/api/payments/vnpay/create-renewal",
                 "{\"contractId\":" + r.contract + ",\"months\":3}", "customer", 200);
@@ -196,7 +200,7 @@ class IsolatedRentalFlowTest {
 
     @Test @Tag("regression")
     void B02_reissuingDebtLinkMustNotLoseSuccessfulOldAttempt() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         execute("INSERT INTO payment_transactions(transaction_code,user_id,reservation_id,contract_id,payment_type,payment_method,status,amount) "
                 + "SELECT 'TEST-DEBT-" + r.contract + "',customer_id,reservation_id,id,'DAMAGE_FEE','VNPAY','PENDING',250000 "
                 + "FROM rental_contracts WHERE id=" + r.contract);
@@ -210,7 +214,7 @@ class IsolatedRentalFlowTest {
 
     @Test @Tag("regression")
     void B05_lateRenewalAfterTerminationMustBeRefundedNotApplied() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         String oldEnd = scalar("SELECT end_date FROM rental_contracts WHERE id=" + r.contract);
         String payment = post("/api/payments/vnpay/create-renewal",
                 "{\"contractId\":" + r.contract + ",\"months\":3}", "customer", 200);
@@ -223,7 +227,7 @@ class IsolatedRentalFlowTest {
     }
 
     @Test void checkoutInspectionAndRefundReleaseUnit() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         post("/api/v1/contracts/" + r.contract + "/request-checkout", """
                 {"checkoutDate":"%s","refundMethod":"CASH"}
                 """.formatted(LocalDate.now().plusDays(1)), "customer", 200);
@@ -243,7 +247,7 @@ class IsolatedRentalFlowTest {
     }
 
     @Test void supportCreatesStaffWorkAndResolvesForCustomer() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         String ticket = post("/api/v1/support-requests", """
                 {"contractId":%d,"issueType":"LOCK_ISSUE","description":"The lock cannot open with the current PIN"}
                 """.formatted(r.contract), "customer", 201);
@@ -256,7 +260,7 @@ class IsolatedRentalFlowTest {
     }
 
     @Test void damageInspectionDecisionAndPayoutRemainSeparateSteps() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         String ticket = post("/api/v1/support-requests", """
                 {"contractId":%d,"issueType":"GOODS_DAMAGE","description":"Water damaged the stored boxes",
                  "incidentDate":"%s","itemsDescription":"Two boxes with original invoices","claimedAmount":2000000,
@@ -281,7 +285,7 @@ class IsolatedRentalFlowTest {
     }
 
     @Test void overdueLiquidationRequiresContactAndGoodsInventoryBeforeRelease() throws Exception {
-        Rental r = bookPayAssign("BASIC"); onlineCheckIn(r);
+        Rental r = bookPayAssign("BASIC"); counterCheckIn(r);
         execute("UPDATE rental_contracts SET status='OVERDUE',start_date=DATEADD(month,-4,CAST(GETDATE() AS date)),"
                 + "end_date=DATEADD(day,-16,CAST(GETDATE() AS date)) WHERE id=" + r.contract);
         post("/api/v1/contracts/" + r.contract + "/liquidate",

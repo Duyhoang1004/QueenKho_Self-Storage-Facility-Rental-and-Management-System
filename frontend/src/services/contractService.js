@@ -96,17 +96,10 @@ export async function refundRemainingDeposit(contractId, data) {
 
 
 // BR-121: biên bản nhận kho / trả kho của hợp đồng (kèm ảnh hiện trạng ô)
-// trả [{ id, recordType: CHECK_IN | CHECK_OUT, checkInMethod: COUNTER | ONLINE, staffName, createdAt, notes,
+// trả [{ id, recordType: CHECK_IN | CHECK_OUT, checkInMethod: COUNTER (ONLINE = biên bản cũ), staffName, createdAt, notes,
 //        identityVerified, unitEmpty, unitClean, lockIntact, customerSignatureConfirmed, evidenceImages: [url] }]
 export async function getHandoverRecords(contractId) {
   const res = await api.get(`/contracts/${contractId}/handover-records`)
-  return res.data
-}
-
-// BR-124: khách tự check-in online đúng ngày hẹn
-// data = { cccd, unitEmpty, unitClean, lockIntact, prohibitedGoodsCommitted, evidenceImages: [url], notes }
-export async function onlineCheckIn(contractId, data) {
-  const res = await api.post(`/contracts/${contractId}/online-check-in`, data)
   return res.data
 }
 

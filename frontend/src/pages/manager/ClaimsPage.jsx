@@ -6,6 +6,7 @@ import { simulateInsurancePayout } from '../../services/simulationService'
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos'
 import ContractHandoverSection from '../../components/ContractHandoverSection'
 import { SensorSparkline } from '../../components/ContractProtectionPanel'
+import { sensorRange } from '../../utils/sensor'
 import SimulationButton from '../../components/SimulationButton'
 
 // BR-126 → BR-128: hồ sơ bồi thường hàng hư / mất. FM thẩm định, chốt, chi trả; BOM chỉ xem (chi phí bồi thường toàn chuỗi).
@@ -217,10 +218,10 @@ function ClaimDetail({ claimId }) {
             </span>
             {sensor?.readings?.length ? (
               <>
-                <SensorSparkline readings={sensor.readings} />
+                <SensorSparkline readings={sensor.readings} tempMax={sensor.tempMax} />
                 <span className={`text-[11px] font-bold ${sensor.alertCount > 0 ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
                   {sensor.alertCount > 0
-                    ? `${sensor.alertCount} lần vượt ngưỡng — căn cứ xác định lỗi cơ sở`
+                    ? `${sensor.alertCount} lần vượt ngưỡng ${sensorRange(sensor)} — căn cứ xác định lỗi cơ sở`
                     : 'Không có lần vượt ngưỡng nào'}
                 </span>
               </>

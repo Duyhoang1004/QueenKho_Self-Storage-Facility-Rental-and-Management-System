@@ -78,6 +78,26 @@ class EmailDeliveryTest {
         verify(sender).send(mime);
     }
 
+    // 06/11/2026: MAIL_REDIRECT_TO — dồn mọi email dev về 1 hộp thư, tiêu đề giữ người nhận gốc
+    @Test void redirectSendsToConfiguredInboxAndKeepsOriginalRecipientInSubject() throws Exception {
+        var mime = new MimeMessage(Session.getInstance(new Properties()));
+        when(provider.getIfAvailable()).thenReturn(sender);
+        when(sender.createMimeMessage()).thenReturn(mime);
+        new EmailService(provider, true, "smtp@example.test", "QueenKho <no-reply@queenkho.local>",
+                "https://web.example.test", " dev-inbox@example.test ").send(event("/kho-cua-toi"));
+        mime.saveChanges();
+        assertEquals("dev-inbox@example.test", mime.getAllRecipients()[0].toString());
+        assertEquals("[QueenKho] [→ customer@example.test] Đã nhận cọc", mime.getSubject());
+        verify(sender).send(mime);
+    }
+
+    @ParameterizedTest @NullAndEmptySource @ValueSource(strings = {" "})
+    void blankRedirectSendsStraightToCustomer(String redirect) {
+        EmailService service = new EmailService(provider, true, "smtp@example.test", "x", "https://web.example.test", redirect);
+        assertEquals("customer@example.test", service.recipientFor(event(null)));
+        assertEquals("[QueenKho] Đã nhận cọc", service.subjectFor(event(null)));
+    }
+
     @ParameterizedTest
     @org.junit.jupiter.params.provider.CsvSource({"/kho-cua-toi,https://web.example.test/kho-cua-toi", "kho-cua-toi,https://web.example.test/kho-cua-toi"})
     void detailLinkPointsAtConfiguredFrontend(String target, String expected) {

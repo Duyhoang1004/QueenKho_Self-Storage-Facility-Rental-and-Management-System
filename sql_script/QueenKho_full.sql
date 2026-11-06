@@ -677,7 +677,7 @@ INSERT INTO facilities (id, code, name, city, district, address, hotline, status
 SET IDENTITY_INSERT facilities OFF;
 GO
 
-/* ---------- unit_types (id cố định 1..6) ---------- */
+/* ---------- unit_types (id cố định 1..8; 7 kho lạnh, 8 kho đông — BR-131, Update_kho_lanh.sql) ---------- */
 SET IDENTITY_INSERT unit_types ON;
 INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, suggested_capacity, dimensions, features) VALUES
     (1, N'Kho Mini M',      3.5,  8.4,   750000, N'10–20 thùng carton',          N'1.5m × 2.3m × 2.4m', N'Cá nhân, đồ theo mùa'),
@@ -686,6 +686,9 @@ INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, sugg
     (4, N'Kho Lớn',         16.0, 43.2, 4500000, N'Đồ 2 phòng ngủ hoặc hàng hóa', N'4.0m × 4.0m × 2.7m', N'Doanh nghiệp, kho hàng'),
     (5, N'Kho Đặc Biệt XL', 25.0, 67.5, 6500000, N'Hàng hóa lớn, máy móc',       N'5.0m × 5.0m × 2.7m', N'Doanh nghiệp, sản xuất'),
     (6, N'Kho nhỏ 2m²',     2.0,  4.8,   500000, N'5–10 thùng carton',           N'1.0m × 2.0m × 2.4m', N'Cá nhân, sinh viên, giấy tờ');
+INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, suggested_capacity, dimensions, features, temperature_class) VALUES
+    (7, N'Kho Lạnh 6m²',    6.0,  15.0, 2900000, N'Thực phẩm, đồ uống, nông sản đóng thùng', N'2.0m × 3.0m × 2.5m', N'Giữ 0–8°C, độ ẩm ≤ 90%, cảm biến nhiệt độ 24/7 — gửi được thực phẩm', 'COLD'),
+    (8, N'Kho Đông 4m²',    4.0,  9.6,  2600000, N'Thực phẩm đông lạnh, thịt cá, hải sản',   N'2.0m × 2.0m × 2.4m', N'Giữ -25 → -15°C, cảm biến nhiệt độ 24/7 — gửi được thực phẩm đông lạnh', 'FROZEN');
 SET IDENTITY_INSERT unit_types OFF;
 GO
 
@@ -703,7 +706,7 @@ GO
 
 /* ---------- storage_units ----------
    Mã ô: KV-<cơ sở>-<zone><phòng>. Một số ô OCCUPIED / MAINTENANCE sẵn để demo tìm kiếm (UC-09).
-   unit_type_id: 1 Mini M · 2 Tiêu Chuẩn · 3 Gia Đình · 4 Lớn · 5 XL · 6 Nhỏ 2m² */
+   unit_type_id: 1 Mini M · 2 Tiêu Chuẩn · 3 Gia Đình · 4 Lớn · 5 XL · 6 Nhỏ 2m² · 7 Kho Lạnh · 8 Kho Đông */
 INSERT INTO storage_units (id, facility_id, unit_type_id, floor, zone, room_number, status)
 SELECT code, facility_id, unit_type_id, N'Tầng 1', SUBSTRING(code, 7, 1), RIGHT(code, 3), status
 FROM (VALUES
@@ -729,7 +732,14 @@ FROM (VALUES
     -- Quận 7 (6)
     ('KV-Q7-A101', 6, 2, 'AVAILABLE'), ('KV-Q7-A102', 6, 2, 'AVAILABLE'), ('KV-Q7-A103', 6, 3, 'AVAILABLE'),
     ('KV-Q7-B201', 6, 6, 'AVAILABLE'), ('KV-Q7-B202', 6, 1, 'OCCUPIED'),  ('KV-Q7-B203', 6, 4, 'AVAILABLE'),
-    ('KV-Q7-B204', 6, 5, 'AVAILABLE')
+    ('KV-Q7-B204', 6, 5, 'AVAILABLE'),
+    -- Kho lạnh (7) / kho đông (8), zone L: mỗi cơ sở 1 + 1, Tân Bình thêm 1 ô lạnh
+    ('KV-TB-L101', 1, 7, 'AVAILABLE'), ('KV-TB-L102', 1, 7, 'AVAILABLE'), ('KV-TB-L103', 1, 8, 'AVAILABLE'),
+    ('KV-BT-L101', 2, 7, 'AVAILABLE'), ('KV-BT-L102', 2, 8, 'AVAILABLE'),
+    ('KV-TD-L101', 3, 7, 'AVAILABLE'), ('KV-TD-L102', 3, 8, 'AVAILABLE'),
+    ('KV-GV-L101', 4, 7, 'AVAILABLE'), ('KV-GV-L102', 4, 8, 'AVAILABLE'),
+    ('KV-CG-L101', 5, 7, 'AVAILABLE'), ('KV-CG-L102', 5, 8, 'AVAILABLE'),
+    ('KV-Q7-L101', 6, 7, 'AVAILABLE'), ('KV-Q7-L102', 6, 8, 'AVAILABLE')
 ) AS s(code, facility_id, unit_type_id, status);
 GO
 
@@ -791,7 +801,15 @@ JOIN (VALUES
     ('KV-Q7-A101', 12,  5, 5,  5, 'BOTTOM'), ('KV-Q7-A102', 17,  5, 5,  5, 'BOTTOM'),
     ('KV-Q7-A103', 22,  4, 8,  6, 'BOTTOM'),
     ('KV-Q7-B201', 12, 14, 2,  4, 'TOP'),    ('KV-Q7-B202', 14, 14, 3,  5, 'TOP'),
-    ('KV-Q7-B203', 17, 14, 8,  8, 'TOP'),    ('KV-Q7-B204', 25, 14, 10, 10, 'TOP')
+    ('KV-Q7-B203', 17, 14, 8,  8, 'TOP'),    ('KV-Q7-B204', 25, 14, 10, 10, 'TOP'),
+    -- Dãy kho lạnh / kho đông (zone L) dưới lối đi C: Kho Lạnh 4×6, Kho Đông 4×4, cửa quay lên
+    ('KV-TB-L101', 12, 34, 4,  6, 'TOP'),    ('KV-TB-L102', 16, 34, 4,  6, 'TOP'),
+    ('KV-TB-L103', 20, 34, 4,  4, 'TOP'),
+    ('KV-BT-L101', 12, 34, 4,  6, 'TOP'),    ('KV-BT-L102', 16, 34, 4,  4, 'TOP'),
+    ('KV-TD-L101', 12, 34, 4,  6, 'TOP'),    ('KV-TD-L102', 16, 34, 4,  4, 'TOP'),
+    ('KV-GV-L101', 12, 34, 4,  6, 'TOP'),    ('KV-GV-L102', 16, 34, 4,  4, 'TOP'),
+    ('KV-CG-L101', 12, 34, 4,  6, 'TOP'),    ('KV-CG-L102', 16, 34, 4,  4, 'TOP'),
+    ('KV-Q7-L101', 12, 34, 4,  6, 'TOP'),    ('KV-Q7-L102', 16, 34, 4,  4, 'TOP')
 ) AS p(id, x, y, w, h, door) ON p.id = su.id;
 GO
 

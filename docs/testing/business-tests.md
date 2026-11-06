@@ -28,7 +28,7 @@ Chi tiết toàn bộ file dự kiến đưa vào commit nằm ở [step-1-files
 | Phân quyền từng bản ghi | `OwnershipBoundaryBusinessTest` | Chủ hợp đồng/đơn, phạm vi cơ sở, phạm vi toàn chuỗi; kết hợp ma trận endpoint và filter có sẵn. |
 | Đặt kho | `BookingBusinessTest` | Ngày/kỳ thuê, đồng ý điều khoản, cơ sở/loại kho ngừng hoạt động, nợ, snapshot bảo hiểm và điều khoản. |
 | Voucher | `VoucherBusinessTest` | Ngày hiệu lực, cơ sở, gói tối thiểu, lượt đang giữ, giới hạn mỗi khách, trần tiền và không giảm vào cọc. |
-| Nhận kho | `OnlineCheckInBusinessTest` | Sai chủ, sai CCCD, sai trạng thái, nhận trước hẹn, checklist, hàng cấm và ảnh. |
+| Nhận kho | ~~`OnlineCheckInBusinessTest`~~ | Đã xoá 06/11/2026 cùng check-in online (D-16); `IsolatedRentalFlowTest` chuyển sang check-in tại quầy. |
 | Trả kho | `CheckoutBusinessTest` | Báo trước, ân hạn, hợp đồng quá hạn, cách nhận tiền, tài khoản ngân hàng, huỷ lịch và đồng bộ đơn/hợp đồng. |
 | Chuyển ô | `UnitTransferBusinessTest` | Cùng cơ sở/loại, lý do, bảo trì ô cũ, mất ô do thao tác khác, giữ PIN/giá/thời hạn và lịch sử. |
 | Hỗ trợ | `SupportBusinessTest` | Hợp đồng đủ điều kiện, chủ sở hữu, mô tả, loại sự cố, trùng ticket và giới hạn đang mở. |

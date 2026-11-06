@@ -47,3 +47,6 @@ queenkho:
   mail:
     enabled: ${MAIL_ENABLED:true}
     from: ${MAIL_FROM:QueenKho <no-reply@queenkho.local>}
+    # Dev / demo: dồn mọi email về 1 hộp thư (tiêu đề ghi người nhận gốc). Để trống = gửi thẳng cho khách.
+    # Tài khoản seed khachhang1..5@gmail.com là Gmail thật của người khác — test thì nên đặt MAIL_REDIRECT_TO.
+    redirect-to: ${MAIL_REDIRECT_TO:}

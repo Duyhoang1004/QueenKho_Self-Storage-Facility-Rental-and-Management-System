@@ -41,6 +41,7 @@ for script in \
     Update_bang_chung_chuyen_o.sql \
     Update_bao_hiem_boi_thuong.sql \
     Update_hop_nhom_05_11.sql \
+    Update_kho_lanh.sql \
     UC28_setup.sql \
     Update_admin_accounts.sql; do
     APPLIED=$("${SQLCMD[@]}" -d QueenKhoDB -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.docker_schema_history WHERE script_name = '$script'")

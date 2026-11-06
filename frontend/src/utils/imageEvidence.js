@@ -1,4 +1,4 @@
-// Ảnh bằng chứng (sự cố, biên bản bàn giao BR-121, check-in online BR-124) — dùng chung giữa các màn
+// Ảnh bằng chứng (sự cố, biên bản bàn giao BR-121) — dùng chung giữa các màn
 
 // Nén file ảnh sang base64 JPEG nhẹ (tối đa 800px) để lưu DB nhanh và xem trực tiếp không cần server ngoài
 export function compressImageToDataUrl(file) {

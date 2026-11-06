@@ -648,7 +648,7 @@ DB đang có dữ liệu: chạy `sql_script/Update_hoan_thien_flow.sql` (thêm 
   `{ "summary": { "totalPaid", "totalRefunded", "pendingRefund", "outstandingDebt", "depositOffset" }, "debts": [PaymentItem], "overdueContracts": [{ "contractId", "contractCode", "reservationId", "facilityName", "overdueDays", "lateFeeAmount", "lateFeeWaived" }], "transactions": [PaymentItem] }`
   `PaymentItem = { id, transactionCode, paymentType, paymentMethod, amount, status, paidAt, renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName }`
 - `POST /api/payments/vnpay/create-debt` body `{ "paymentId": 70 }` → `{ "orderId": "QKF...", "payUrl", "amount" }`. Chỉ khoản `DAMAGE_FEE / VNPAY / PENDING` của chính khách (`403` / `409`).
-  IPN thành công → khoản nợ `SUCCESS`, log `[DEBT_PAID]`, khách hết bị chặn `CUSTOMER_HAS_DEBT`. Khách huỷ trên VNPAY → khoản nợ **vẫn PENDING**. VNPAY trả về `/thanh-toan?orderId=...&vnpResponse=..`.
+  IPN thành công → khoản nợ `SUCCESS`, log `[DEBT_PAID]`, khách hết bị chặn `CUSTOMER_HAS_DEBT`, thông báo + email biên nhận cho khách (06/11/2026, 1 lần / giao dịch). Khách huỷ trên VNPAY → khoản nợ **vẫn PENDING**. VNPAY trả về `/thanh-toan?orderId=...&vnpResponse=..`.
 - Lỗi VNPAY (create / create-renewal / create-debt / status) nay trả `{ "error": "PAYMENT_ERROR", "message": "..." }`.
 
 ### Admin — Lịch sử đăng nhập
@@ -888,6 +888,7 @@ Thay đổi API cũ:
 ### Thông báo & email
 - `GET /api/v1/notifications` không còn trả thông báo mẫu cho tài khoản mới. Loại thông báo mới: `SUPPORT`, `CHECKOUT` (ngoài `BOOKING`, `REFUND`, `DAMAGE`, `LIQUIDATION`, `ASSIGNED`, `RENEWAL`, `OVERDUE`, `TASK`, `ADMIN_SUMMARY`, `STAFF_CREATED`).
 - Email cho khách: biến môi trường `MAIL_ENABLED=true`, `MAIL_USERNAME`, `MAIL_PASSWORD` (Gmail: mật khẩu ứng dụng), tuỳ chọn `MAIL_FROM`, `MAIL_HOST`, `MAIL_PORT`. Mặc định tắt → nội dung email in ra console BE.
+- *(06/11/2026)* `MAIL_REDIRECT_TO` (tuỳ chọn, dev / demo): mọi email gửi tới địa chỉ này, tiêu đề `[QueenKho] [→ <email khách>] ...`. Để trống = gửi thẳng cho khách.
 
 ### Demo — Giả lập mới
 | API | Quyền | Mô tả |
@@ -908,14 +909,8 @@ Thay đổi API cũ:
 |---|---|---|
 | `GET /api/v1/contracts/{id}/handover-records` | Khách chủ HĐ, Staff / FM cùng cơ sở (`CONTRACT_VIEW`) | Mọi biên bản của HĐ, cũ trước: `[{ id, recordType: CHECK_IN/CHECK_OUT, checkInMethod: COUNTER/ONLINE, identityVerified, unitEmpty, unitClean, lockIntact, customerSignatureConfirmed, notes, staffId, staffName, createdAt, evidenceImages: [] }]` |
 
-### BR-124 — Check-in online
-`POST /api/v1/contracts/{id}/online-check-in` (khách chủ HĐ, `CUSTOMER_RENTAL`)
-```json
-{ "cccd": "<12 số CCCD đã lưu khi đặt kho>", "unitEmpty": true, "unitClean": true, "lockIntact": true,
-  "prohibitedGoodsCommitted": true, "evidenceImages": ["http://localhost:8080/uploads/..."], "notes": "tuỳ chọn ≤ 500" }
-```
-→ `200` biên bản vừa lập (dạng như `handover-records`). Hợp đồng `ACTIVE` + PIN (xem ở `GET /contracts?reservationId=`), không cấp RFID.
-Lỗi: `400 INVALID_INPUT`, `400 CHECKLIST_INCOMPLETE` (ô không đạt / chưa cam kết), `400 HANDOVER_PHOTO_REQUIRED`, `400 IDENTITY_MISMATCH`, `409 IDENTITY_MISSING`, `403 FORBIDDEN_OWNER`, `409 CONTRACT_STATUS_INVALID`, `409 CHECK_IN_TOO_EARLY`, `409 TASK_NOT_FOUND`, `409 TASK_OVERDUE`.
+### ~~BR-124 — Check-in online~~ (đã bỏ 06/11/2026, D-16)
+~~`POST /api/v1/contracts/{id}/online-check-in`~~ — **đã gỡ**; khách nhận kho tại quầy qua `POST /api/v1/staff-tasks/{id}/check-in` (UC-18). Biên bản `checkInMethod: ONLINE` lập trước 06/11 vẫn trả về trong `handover-records`.
 
 ### BR-122 — Chuyển ô cho hợp đồng (FM, nhóm quyền `RESERVATION_MANAGE`)
 | API | Mô tả |
@@ -972,7 +967,8 @@ Lỗi: `404 CLAIM_NOT_FOUND`, `403 FORBIDDEN_ROLE` / `FORBIDDEN_FACILITY`, `409 
 
 ### BR-129 — Cảm biến
 `GET /api/v1/contracts/{id}/sensor-readings?days=3&around=yyyy-MM-dd` (khách chủ HĐ, Staff, FM — `CONTRACT_VIEW`) →
-`{ storageUnitId, from, to, readings: [{ temperature, humidity, alert, recordedAt }], alertCount, latest, tempMin: 15, tempMax: 30, humidityMax: 75 }`. `days` 1–14; có `around` thì lấy ± `days` quanh ngày đó.
+`{ storageUnitId, from, to, readings: [{ temperature, humidity, alert, recordedAt }], alertCount, latest, temperatureClass, tempMin, tempMax, humidityMax }`. `days` 1–14; có `around` thì lấy ± `days` quanh ngày đó.
+*(06/11/2026)* Ngưỡng theo loại kho của ô: `NORMAL` 15 / 30 / 75 · `COLD` 0 / 8 / 90 · `FROZEN` -25 / -15 / 95 (`tempMin` / `tempMax` / `humidityMax`).
 
 ### BR-130 — BOM miễn phí trễ
 - `POST /api/v1/contracts/{id}/waive-late-fee`: nhóm quyền mới `LATE_FEE_WAIVE` (FM cơ sở mình khi chính sách cho phép, BOM mọi cơ sở). BOM không bị chặn bởi `allow_late_fee_waiver`.

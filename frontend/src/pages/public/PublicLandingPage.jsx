@@ -77,7 +77,7 @@ export default function PublicLandingPage() {
           {/* Subtitle */}
           <p className="mt-5 text-sm sm:text-base text-[#777777] font-bold max-w-2xl leading-relaxed">
             Giải pháp thuê kho tự quản mini cá nhân & doanh nghiệp với khóa SmartLock,
-            cảm biến nhiệt độ / độ ẩm cảnh báo khi vượt ngưỡng và check-in online. Nhận kho ngay trong 5 phút.
+            kho lạnh / kho đông cho thực phẩm và cảm biến nhiệt độ / độ ẩm cảnh báo khi vượt ngưỡng. Nhận kho ngay trong 5 phút.
           </p>
 
           {/* HERO CALL-TO-ACTION BUTTONS DUOLINGO FLAT 2.5D */}
@@ -412,7 +412,7 @@ export default function PublicLandingPage() {
               </div>
               <h3 className="font-black text-base text-[#4B4B4B]">Kiểm Soát Nhiệt Độ</h3>
               <p className="text-xs font-bold text-[#AFAFAF] mt-2 leading-relaxed">
-                Ngưỡng an toàn 15°C – 30°C, độ ẩm ≤ 75%. Cảm biến vượt ngưỡng tự báo bạn và nhân viên kiểm tra ngay; hàng hư do kho được xét bồi thường.
+                Kho thường 15–30°C, độ ẩm ≤ 75% · kho lạnh 0–8°C · kho đông -25 → -15°C cho thực phẩm. Cảm biến vượt ngưỡng tự báo bạn và nhân viên kiểm tra ngay; hàng hư do kho được xét bồi thường.
               </p>
             </div>
 

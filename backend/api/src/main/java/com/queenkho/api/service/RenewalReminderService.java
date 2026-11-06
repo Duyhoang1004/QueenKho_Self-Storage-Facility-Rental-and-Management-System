@@ -173,7 +173,7 @@ public class RenewalReminderService {
                 reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi") != null;
     }
 
-    /** Mốc nhắc nhỏ nhất ≥ số ngày còn lại (còn 5 ngày → mốc 7). Còn > 7 ngày hoặc đã hết hạn → null. */
+    /** Mốc nhắc nhỏ nhất ≥ số ngày còn lại (còn 5 ngày → mốc 7). Còn > 15 ngày hoặc đã hết hạn → null. */
     static Integer milestoneFor(long daysLeft) {
         if (daysLeft < 0) return null;
         for (Integer d : REMIND_DAYS) {

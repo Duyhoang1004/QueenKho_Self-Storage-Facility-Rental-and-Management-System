@@ -6,18 +6,9 @@ import ContractOptionsModal from "../../components/ContractOptionsModal";
 import AssetTermsModal from "../../components/AssetTermsModal";
 import UnitLocationMap from "../../components/UnitLocationMap";
 import SimulationButton from "../../components/SimulationButton";
-import OnlineCheckInModal from "../../components/OnlineCheckInModal";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
 import { simulateExpireSoon } from "../../services/simulationService";
-
-// BR-124: check-in online mở từ ngày nhận kho (BE kiểm tra lại ngày hẹn + hạn 21:00)
-function isCheckInDayReached(startDate) {
-  if (!startDate) return false;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return String(startDate) <= today;
-}
 
 // UC-06: hợp đồng còn giữ ô thì khách xem được vị trí ô trên mặt bằng
 const MAP_VISIBLE_STATUSES = ["PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING"];
@@ -116,8 +107,6 @@ export default function CustomerContractPage() {
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
   const [optionsModalTab, setOptionsModalTab] = useState('renew');
-  const [onlineCheckInOpen, setOnlineCheckInOpen] = useState(false);
-  const [handoverReload, setHandoverReload] = useState(0);
 
   const fetchContract = () => {
     setLoading(true);
@@ -665,7 +654,7 @@ export default function CustomerContractPage() {
 
           {/* BR-121 / BR-122: biên bản nhận / trả kho kèm ảnh + lịch sử chuyển ô */}
           <div className="mt-6 pt-5 border-t-2 border-[#E5E5E5]">
-            <ContractHandoverSection contractId={contract.contractId || contract.id} reloadKey={handoverReload} />
+            <ContractHandoverSection contractId={contract.contractId || contract.id} />
           </div>
         </div>
 
@@ -903,22 +892,11 @@ export default function CustomerContractPage() {
                       info
                     </span>
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      Đến ngày nhận kho, bạn có thể <strong>tự check-in online</strong> ngay tại ô (xác minh CCCD,
-                      kiểm tra ô, chụp ảnh hiện trạng) hoặc nhận kho tại quầy cùng nhân viên. Mã PIN được cấp
-                      ngay khi check-in xong.
+                      Đến <strong>ngày hẹn nhận kho</strong> (trước 21:00), vui lòng mang CCCD tới
+                      quầy lễ tân để nhân viên kiểm tra ô, kiểm tra hàng và lập biên bản bàn giao. Mã PIN và thẻ
+                      RFID được cấp ngay khi nhận kho xong.
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOnlineCheckInOpen(true)}
-                    disabled={!isCheckInDayReached(contract.startDate)}
-                    className="duo-btn-blue px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">qr_code_scanner</span>
-                    {isCheckInDayReached(contract.startDate)
-                      ? "Check-in online"
-                      : `Check-in online từ ngày ${formatDate(contract.startDate)}`}
-                  </button>
                 </div>
               ) : contract.status === "LIQUIDATED" ? (
                 <div className="bg-[#FFF2F2] border-2 border-[#FFDFDF] rounded-2xl p-4 flex items-start gap-3 mt-1 text-left">
@@ -1174,17 +1152,6 @@ export default function CustomerContractPage() {
       )}
 
       <AssetTermsModal open={termsOpen} onClose={() => setTermsOpen(false)} />
-      <OnlineCheckInModal
-        open={onlineCheckInOpen}
-        contract={contract}
-        onClose={() => setOnlineCheckInOpen(false)}
-        onDone={() => {
-          setOnlineCheckInOpen(false);
-          setToastMessage("Check-in online thành công! Hợp đồng đã kích hoạt, mã PIN hiện ở trang này.");
-          setHandoverReload((k) => k + 1);
-          fetchContract();
-        }}
-      />
     </div>
   );
 }

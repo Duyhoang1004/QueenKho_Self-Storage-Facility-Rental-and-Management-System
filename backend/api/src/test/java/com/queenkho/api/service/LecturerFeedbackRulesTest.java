@@ -1,6 +1,5 @@
 package com.queenkho.api.service;
 
-import com.queenkho.api.dto.OnlineCheckInRequest;
 import com.queenkho.api.dto.TransferUnitRequest;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.RentalContract;
@@ -10,10 +9,8 @@ import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.entity.UnitType;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.ContractException;
-import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.ReservationRepository;
-import com.queenkho.api.repository.StaffTaskRepository;
 import com.queenkho.api.repository.StorageUnitRepository;
 import com.queenkho.api.repository.UnitTransferRepository;
 import com.queenkho.api.repository.UserRepository;
@@ -24,7 +21,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,7 +28,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 // Góp ý giảng viên 04/11/2026: BR-121 ảnh biên bản, BR-122 chuyển ô, BR-123 ưu tiên khách cũ / gói dài,
-// BR-124 check-in online, PR-Q16 phí dọn & di dời hàng
+// PR-Q16 phí dọn & di dời hàng (BR-124 check-in online đã bỏ 06/11/2026 — D-16)
 class LecturerFeedbackRulesTest {
 
     // ---------- helpers ----------
@@ -181,71 +177,5 @@ class LecturerFeedbackRulesTest {
 
         ContractException ex = assertThrows(ContractException.class, () -> service.transferUnit(9, 6, req));
         assertEquals("CONTRACT_NOT_TRANSFERABLE", ex.getCode());
-    }
-
-    // ---------- BR-124 ----------
-
-    private StaffTaskService staffTaskService(RentalContract c, StaffTaskRepository tasks) {
-        StaffTaskService service = new StaffTaskService();
-        RentalContractRepository contracts = mock(RentalContractRepository.class);
-        when(contracts.findDetailById(9)).thenReturn(Optional.of(c));
-        ReflectionTestUtils.setField(service, "rentalContractRepository", contracts);
-        ReflectionTestUtils.setField(service, "staffTaskRepository", tasks);
-        return service;
-    }
-
-    private static OnlineCheckInRequest okOnlineRequest(String cccd) {
-        OnlineCheckInRequest req = new OnlineCheckInRequest();
-        req.setCccd(cccd);
-        req.setUnitEmpty(true);
-        req.setUnitClean(true);
-        req.setLockIntact(true);
-        req.setProhibitedGoodsCommitted(true);
-        req.setEvidenceImages(List.of("http://x/o-luc-nhan.png"));
-        return req;
-    }
-
-    @Test
-    @DisplayName("BR-124: CCCD không khớp CCCD đã đăng ký → 400 IDENTITY_MISMATCH, chưa đóng task")
-    void onlineCheckInRequiresMatchingCccd() {
-        User customer = user(5, "CUSTOMER", null);
-        customer.setCccd("079123456789");
-        StaffTaskRepository tasks = mock(StaffTaskRepository.class);
-        StaffTaskService service = staffTaskService(
-                contract("PENDING_CHECK_IN", unit("KV-TB-A101", 1, 2, "OCCUPIED"), customer, "v3"), tasks);
-
-        StaffTaskException ex = assertThrows(StaffTaskException.class,
-                () -> service.onlineCheckIn(9, 5, okOnlineRequest("079000000000")));
-        assertEquals("IDENTITY_MISMATCH", ex.getCode());
-        verify(tasks, never()).completeCheckInOnline(any(), any(), any());
-    }
-
-    @Test
-    @DisplayName("BR-124: ô không đạt (chưa sạch) thì không tự nhận kho → 400 CHECKLIST_INCOMPLETE")
-    void onlineCheckInRejectsBadUnit() {
-        User customer = user(5, "CUSTOMER", null);
-        customer.setCccd("079123456789");
-        StaffTaskService service = staffTaskService(
-                contract("PENDING_CHECK_IN", unit("KV-TB-A101", 1, 2, "OCCUPIED"), customer, "v3"),
-                mock(StaffTaskRepository.class));
-        OnlineCheckInRequest req = okOnlineRequest("079123456789");
-        req.setUnitClean(false);
-
-        StaffTaskException ex = assertThrows(StaffTaskException.class, () -> service.onlineCheckIn(9, 5, req));
-        assertEquals("CHECKLIST_INCOMPLETE", ex.getCode());
-    }
-
-    @Test
-    @DisplayName("BR-124: khách khác chủ hợp đồng → 403 FORBIDDEN_OWNER")
-    void onlineCheckInOnlyOwner() {
-        User customer = user(5, "CUSTOMER", null);
-        customer.setCccd("079123456789");
-        StaffTaskService service = staffTaskService(
-                contract("PENDING_CHECK_IN", unit("KV-TB-A101", 1, 2, "OCCUPIED"), customer, "v3"),
-                mock(StaffTaskRepository.class));
-
-        StaffTaskException ex = assertThrows(StaffTaskException.class,
-                () -> service.onlineCheckIn(9, 77, okOnlineRequest("079123456789")));
-        assertEquals("FORBIDDEN_OWNER", ex.getCode());
     }
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getSensorReadings } from '../services/contractService'
 import { simulateSensorAlert } from '../services/simulationService'
 import SimulationButton from './SimulationButton'
+import { sensorRange } from '../utils/sensor'
 
 const LIVE_STATUSES = ['ACTIVE', 'OVERDUE', 'TERMINATION_PENDING']
 
@@ -17,20 +18,23 @@ function formatTime(value) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`
 }
 
-// Biểu đồ nhỏ nhiệt độ (đường cam) và độ ẩm (đường xanh) — điểm đỏ là lúc vượt ngưỡng
-export function SensorSparkline({ readings }) {
+// Biểu đồ nhỏ nhiệt độ (đường cam) và độ ẩm (đường xanh) — điểm đỏ là lúc vượt ngưỡng.
+// Trục nhiệt độ tự co giãn theo số đo + ngưỡng của ô (kho lạnh / kho đông có nhiệt độ âm hoặc gần 0°C).
+export function SensorSparkline({ readings, tempMax = 30 }) {
   if (!readings || readings.length < 2) return null
   const W = 320
   const H = 70
   const temps = readings.map((r) => Number(r.temperature))
   const hums = readings.map((r) => Number(r.humidity))
+  const lo = Math.min(...temps, Number(tempMax)) - 2
+  const hi = Math.max(...temps, Number(tempMax)) + 2
   const x = (i) => (i / (readings.length - 1)) * (W - 8) + 4
-  const yT = (t) => H - 4 - ((Math.min(Math.max(t, 10), 40) - 10) / 30) * (H - 8)
+  const yT = (t) => H - 4 - ((t - lo) / (hi - lo)) * (H - 8)
   const yH = (h) => H - 4 - (Math.min(Math.max(h, 30), 100) - 30) / 70 * (H - 8)
   const path = (vals, y) => vals.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[70px]" role="img" aria-label="Biểu đồ nhiệt độ và độ ẩm">
-      <line x1="0" x2={W} y1={yT(30)} y2={yT(30)} stroke="#FFB020" strokeDasharray="4 4" strokeWidth="1" />
+      <line x1="0" x2={W} y1={yT(Number(tempMax))} y2={yT(Number(tempMax))} stroke="#FFB020" strokeDasharray="4 4" strokeWidth="1" />
       <path d={path(hums, yH)} fill="none" stroke="#1CB0F6" strokeWidth="2" />
       <path d={path(temps, yT)} fill="none" stroke="#FF9600" strokeWidth="2" />
       {readings.map((r, i) => r.alert && <circle key={i} cx={x(i)} cy={yT(temps[i])} r="3" fill="#FF4B4B" />)}
@@ -102,11 +106,11 @@ export default function ContractProtectionPanel({ contract, viewer = 'customer',
               {Number(latest.temperature).toFixed(1)}°C · {Number(latest.humidity).toFixed(0)}%
               <span className="text-[11px] font-bold text-[#AFAFAF]"> lúc {formatTime(latest.recordedAt)}</span>
             </span>
-            <SensorSparkline readings={sensor.readings} />
+            <SensorSparkline readings={sensor.readings} tempMax={sensor.tempMax} />
             <span className={`text-[11px] font-bold ${sensor.alertCount > 0 ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
               {sensor.alertCount > 0
-                ? `${sensor.alertCount} lần vượt ngưỡng (an toàn ${sensor.tempMin}–${sensor.tempMax}°C, độ ẩm ≤ ${sensor.humidityMax}%)`
-                : 'Trong ngưỡng an toàn'}
+                ? `${sensor.alertCount} lần vượt ngưỡng (an toàn ${sensorRange(sensor)})`
+                : `Trong ngưỡng an toàn ${sensorRange(sensor)}`}
             </span>
           </>
         ) : (
@@ -115,7 +119,7 @@ export default function ContractProtectionPanel({ contract, viewer = 'customer',
         {live && (
           <SimulationButton
             label="Cảm biến vượt ngưỡng"
-            description="Ghi 12 giờ số đo: 6 giờ bình thường rồi nóng / ẩm dần tới 36°C, 88%. Hệ thống báo khách, FM và sinh việc kiểm tra cho nhân viên."
+            description="Ghi 12 giờ số đo: 6 giờ bình thường rồi vượt ngưỡng (kho thường nóng / ẩm dần tới 36°C; kho lạnh hỏng máy nén, ấm lên 14°C; kho đông rã đông lên -8°C). Hệ thống báo khách, FM và sinh việc kiểm tra cho nhân viên."
             onRun={() => simulateSensorAlert(contractId)}
             onDone={() => { setReloadKey((k) => k + 1); onChanged?.() }}
           />

@@ -19,7 +19,7 @@ public class HandoverRecord {
     @JoinColumn(name = "contract_id", nullable = false)
     private RentalContract contract;
 
-    // NULL khi khách tự check-in online (BR-124)
+    // NULL chỉ ở biên bản check-in online cũ (BR-124, đã bỏ 06/11/2026 — D-16)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "staff_id")
     private User staff;
@@ -53,7 +53,7 @@ public class HandoverRecord {
     @Column(name = "evidence_image_urls")
     private String evidenceImageUrls;
 
-    // BR-124: COUNTER (Staff lập tại quầy) / ONLINE (khách tự check-in trên app)
+    // COUNTER (Staff lập tại quầy). ONLINE chỉ còn ở dữ liệu cũ — check-in online đã bỏ 06/11/2026 (D-16)
     @Column(name = "check_in_method", nullable = false)
     private String checkInMethod = "COUNTER";
 

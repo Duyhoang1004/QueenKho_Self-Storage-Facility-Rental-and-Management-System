@@ -111,6 +111,26 @@ Nếu hiện ra password bạn vừa đặt -> Thành công.
 
 ## 3. Cấu Hình Database
 
+> ### ⭐ Khuyên dùng (06/11/2026): `sql_script/QueenKho_setup_data.sql`
+> Một file duy nhất: **schema mới nhất + dữ liệu nền của nhóm**, các bảng giao dịch để trống → test / demo từ đầu.
+> ```bash
+> sqlcmd -S localhost -U sa -P 12345 -C -I -f 65001 -i sql_script/QueenKho_setup_data.sql
+> ```
+> (hoặc mở file trên SSMS rồi F5). ⚠️ **Xoá và tạo lại `QueenKhoDB`** — mất hết dữ liệu local. Chạy xong **đăng xuất / đăng nhập lại** trên FE.
+>
+> | Có sẵn | Chi tiết |
+> |---|---|
+> | 6 cơ sở | TB · BT · TD · GV · CG · Q7, mỗi cơ sở 1 chính sách thuê đang áp dụng |
+> | 8 loại kho | 6 kho thường + **Kho Lạnh 6m²** (0–8°C) + **Kho Đông 4m²** (-25 → -15°C) — thực phẩm chỉ gửi được 2 loại này |
+> | 122 ô kho | Mỗi cơ sở ~20 ô (Tân Bình 22), đủ 8 loại, đều `AVAILABLE`, đã đặt trên mặt bằng |
+> | 31 tài khoản | 6 FM, 18 Staff, 1 BOM, 2 Admin, `system`, 3 khách — danh sách ở đầu file SQL (tài khoản seed mật khẩu `123456`) |
+> | Danh mục | 10 loại hàng, 4 kho tổng, 6 voucher (`NEWKHO`…) |
+> | **Trống** | Đơn, hợp đồng, thanh toán, task, biên bản, ticket, bồi thường, cảm biến, hàng kho tổng, thông báo, nhật ký, lịch sử đăng nhập |
+>
+> **Test email thật** (BR-117): đặt biến môi trường `MAIL_USERNAME`, `MAIL_PASSWORD` (Gmail: mật khẩu ứng dụng) và nên đặt thêm `MAIL_REDIRECT_TO=<mail của bạn>` để mọi email dồn về hộp thư của bạn — các tài khoản seed `khachhang…@gmail.com` là Gmail thật của người khác.
+>
+> Cách bên dưới (`QueenKho_full.sql`, `QueenKho_TongHop.sql`) vẫn dùng được nhưng chỉ có 55 ô kho.
+
 ### Bước 1: Tạo database đầy đủ (1 file duy nhất)
 Mở SQL Server Management Studio (SSMS), mở file **`sql_script/QueenKho_full.sql`** và **chạy toàn bộ** (F5).
 

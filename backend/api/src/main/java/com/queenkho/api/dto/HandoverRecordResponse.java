@@ -19,10 +19,10 @@ public class HandoverRecordResponse {
     private Boolean customerSignatureConfirmed;
     private Boolean prohibitedGoodsCommitted; // PR-C7 / BR-132
     private String notes;
-    private Integer staffId;     // null khi khách tự check-in online
+    private Integer staffId;     // null ở biên bản check-in online cũ (đã bỏ, D-16)
     private String staffName;
     private LocalDateTime createdAt;
     private List<String> evidenceImages;  // BR-121
-    private String checkInMethod;         // BR-124: COUNTER / ONLINE
+    private String checkInMethod;         // COUNTER; ONLINE = dữ liệu cũ (D-16)
     private String contractCode;
 }

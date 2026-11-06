@@ -74,11 +74,25 @@ class VnpayCallbackBusinessTest {
         verify(payments, times(1)).updatePayment("QKFTEST", "SUCCESS", "test-bank-ref");
     }
 
+    // BR-117 (06/11/2026): trả nợ thành công → chuông + email biên nhận cho khách, gửi 1 lần
+    @Test void successfulDebtPaymentSendsReceiptToCustomerOnce() throws Exception {
+        NotificationService notifications = mock(NotificationService.class);
+        ReflectionTestUtils.setField(service, "notificationService", notifications);
+        var p = callback("25000000", "00");
+        service.receiveIpn(p);
+        row.put("status", "SUCCESS");
+        service.receiveIpn(p);
+        verify(notifications, times(1)).notifyCustomer(eq(10), contains("phí sự cố"), contains("250000đ"), anyString(), eq("/thanh-toan"));
+    }
+
     @ParameterizedTest @ValueSource(strings = {"24", "01", "99"})
     void failedAttemptDoesNotEraseOutstandingDebt(String response) throws Exception {
+        NotificationService notifications = mock(NotificationService.class);
+        ReflectionTestUtils.setField(service, "notificationService", notifications);
         assertEquals("00", service.receiveIpn(callback("25000000", response)).get("RspCode"));
         verify(payments, never()).updatePayment(anyString(), anyString(), anyString());
         verify(payments, never()).updatePayment(anyString(), anyString());
+        verifyNoInteractions(notifications);
     }
 
     @Test void customerCannotReadAnotherCustomersPaymentStatus() {

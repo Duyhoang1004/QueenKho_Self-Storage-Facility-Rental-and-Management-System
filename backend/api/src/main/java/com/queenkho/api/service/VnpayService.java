@@ -358,8 +358,18 @@ public class VnpayService {
         if (isDebt) {
             // UC-20: trả xong khoản nợ → khách hết bị chặn đặt kho mới (PR-Q12 đếm DAMAGE_FEE PENDING)
             updatePaymentGroup(ref, "SUCCESS", bankTranCode);
-            logPayment(db, "[DEBT_PAID] Khách thanh toán phí sự cố " + ((BigDecimal) db.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString()
-                    + "đ qua VNPAY (" + ref + ")");
+            String paid = ((BigDecimal) db.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString();
+            logPayment(db, "[DEBT_PAID] Khách thanh toán phí sự cố " + paid + "đ qua VNPAY (" + ref + ")");
+            // BR-117 (06/11/2026): email biên nhận trả nợ, giống đặt cọc / gia hạn
+            if (notificationService != null && db.get("user_id") != null) {
+                String feeName = "OVERSTAY_FEE".equals(db.get("payment_type")) ? "phí trễ hạn / phí chiếm dụng" : "phí sự cố";
+                notificationService.notifyCustomer(((Number) db.get("user_id")).intValue(),
+                        "Đã thanh toán " + feeName + " — " + paid + "đ",
+                        "QueenKho đã nhận " + paid + "đ thanh toán " + feeName + " qua VNPAY (mã giao dịch " + ref
+                                + (bankTranCode != null ? ", mã ngân hàng " + bankTranCode : "")
+                                + "). Khoản nợ này đã được tất toán, bạn có thể tiếp tục đặt kho mới.",
+                        "BOOKING", "/thanh-toan");
+            }
             return Map.of("RspCode", "00", "Message", "Success");
         }
 

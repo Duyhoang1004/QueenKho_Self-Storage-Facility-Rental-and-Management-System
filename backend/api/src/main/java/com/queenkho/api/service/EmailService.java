@@ -2,6 +2,7 @@ package com.queenkho.api.service;
 
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -25,20 +26,41 @@ public class EmailService {
     private final boolean enabled;
     private final String from;
     private final String frontendUrl;
+    // MAIL_REDIRECT_TO (06/11/2026): môi trường dev / demo — mọi email dồn về 1 hộp thư, tiêu đề ghi người nhận gốc.
+    // Tài khoản seed khachhang1..5@gmail.com là địa chỉ Gmail thật của người khác → không được gửi thẳng khi test.
+    private final String redirectTo;
 
+    public EmailService(ObjectProvider<JavaMailSender> mailSender, boolean enabled, String smtpUsername,
+                        String from, String frontendUrl) {
+        this(mailSender, enabled, smtpUsername, from, frontendUrl, "");
+    }
+
+    @Autowired
     public EmailService(ObjectProvider<JavaMailSender> mailSender,
                         @Value("${queenkho.mail.enabled:true}") boolean enabled,
                         @Value("${spring.mail.username:}") String smtpUsername,
                         @Value("${queenkho.mail.from:no-reply@queenkho.local}") String from,
-                        @Value("${vnpay.frontend-url:http://localhost:5173}") String frontendUrl) {
+                        @Value("${vnpay.frontend-url:http://localhost:5173}") String frontendUrl,
+                        @Value("${queenkho.mail.redirect-to:}") String redirectTo) {
         this.mailSender = mailSender;
         this.enabled = enabled && smtpUsername != null && !smtpUsername.isBlank();
         // Gmail chỉ cho gửi bằng chính tài khoản đăng nhập → dùng MAIL_USERNAME làm From khi chưa đặt MAIL_FROM riêng
         this.from = from.contains("no-reply@queenkho.local") && this.enabled ? "QueenKho <" + smtpUsername + ">" : from;
         this.frontendUrl = frontendUrl;
+        this.redirectTo = redirectTo != null ? redirectTo.trim() : "";
         System.out.println(this.enabled
                 ? "[Email] Gửi email thật qua SMTP, tài khoản " + smtpUsername
+                    + (this.redirectTo.isEmpty() ? "" : " — MAIL_REDIRECT_TO: mọi email chuyển tới " + this.redirectTo)
                 : "[Email] Chưa gửi thật (thiếu MAIL_USERNAME/MAIL_PASSWORD hoặc MAIL_ENABLED=false) — chỉ in nội dung ra console");
+    }
+
+    /** Người nhận thật sự: hộp thư MAIL_REDIRECT_TO nếu có đặt, ngược lại là email của khách */
+    String recipientFor(CustomerEmailEvent event) {
+        return redirectTo.isEmpty() ? event.to() : redirectTo;
+    }
+
+    String subjectFor(CustomerEmailEvent event) {
+        return "[QueenKho] " + (redirectTo.isEmpty() ? "" : "[→ " + event.to() + "] ") + event.subject();
     }
 
     @Async
@@ -49,24 +71,25 @@ public class EmailService {
 
     public void send(CustomerEmailEvent event) {
         if (event == null || event.to() == null || event.to().isBlank()) return;
-        String subject = "[QueenKho] " + event.subject();
+        String subject = subjectFor(event);
+        String to = recipientFor(event);
         JavaMailSender sender = mailSender.getIfAvailable();
         if (!enabled || sender == null) {
-            System.out.println("[Email - chưa bật gửi thật] tới " + event.to() + " | " + subject + " | " + event.message());
+            System.out.println("[Email - chưa bật gửi thật] tới " + to + " | " + subject + " | " + event.message());
             return;
         }
         try {
             MimeMessage mime = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mime, false, "UTF-8");
             helper.setFrom(from);
-            helper.setTo(event.to());
+            helper.setTo(to);
             helper.setSubject(subject);
             helper.setText(buildHtml(event), true);
             sender.send(mime);
-            System.out.println("[Email] Đã gửi tới " + event.to() + ": " + subject);
+            System.out.println("[Email] Đã gửi tới " + to + ": " + subject);
         } catch (Exception e) {
             // Lỗi SMTP không được làm hỏng nghiệp vụ — thông báo trong chuông vẫn còn
-            System.err.println("[Email] ⚠️ Gửi tới " + event.to() + " thất bại: " + e.getMessage());
+            System.err.println("[Email] ⚠️ Gửi tới " + to + " thất bại: " + e.getMessage());
         }
     }
 

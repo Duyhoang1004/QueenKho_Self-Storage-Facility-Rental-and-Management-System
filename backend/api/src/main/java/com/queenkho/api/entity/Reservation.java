@@ -36,7 +36,7 @@ public class Reservation {
     private String storageUnitId;
 
     @Column(nullable = false, length = 30)
-    private String status; // PENDING / DEPOSIT_PAID / UNIT_ASSIGNED / CANCELLED / EXPIRED / COMPLETED
+    private String status; // PENDING / DEPOSIT_PAID / UNIT_ASSIGNED / REFUND_PENDING / REFUNDED / CANCELLED / EXPIRED / COMPLETED
 
     @Column(name = "duration_months", nullable = false)
     private Integer durationMonths;
@@ -49,6 +49,19 @@ public class Reservation {
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
+
+    // BR-CANCEL-V2: kết quả hủy được đóng băng khi khách xác nhận, FM không tính lại lúc hoàn tiền.
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
+
+    @Column(name = "cancellation_tier", length = 30)
+    private String cancellationTier;
+
+    @Column(name = "cancellation_penalty_amount", precision = 12, scale = 2)
+    private BigDecimal cancellationPenaltyAmount;
+
+    @Column(name = "cancellation_refund_amount", precision = 12, scale = 2)
+    private BigDecimal cancellationRefundAmount;
 
     @Column(name = "total_deposit_paid")
     private java.math.BigDecimal totalDepositPaid;

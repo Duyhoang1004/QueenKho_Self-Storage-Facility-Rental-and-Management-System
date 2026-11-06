@@ -18,6 +18,8 @@ import java.util.List;
 
 @Service
 public class RentalPolicyService {
+    private static final int CANCEL_FEE_PERCENT = CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT;
+    private static final int CANCEL_FREE_HOURS = CancellationPolicyService.FULL_REFUND_HOURS;
     private static final int LATE_FEE_CAP_PERCENT = 50;
     private static final int LIQUIDATION_DAYS = 15; // PR-Q8 (27/10/2026): bản cũ 30 ngày
     private final RentalPolicyRepository policies;
@@ -59,7 +61,7 @@ public class RentalPolicyService {
 
     private RentalPolicyResponse response(RentalPolicy p) {
         return new RentalPolicyResponse(p.getId(), p.getFacility().getId(), p.getVersion(), p.isActive(),
-            p.getDepositMonthMultiplier(), p.getCancelFeePercent(), p.getCancelFreeHours(),
+            p.getDepositMonthMultiplier(), CANCEL_FEE_PERCENT, CANCEL_FREE_HOURS,
             p.getLateFeePercentPerDay(), p.getLateFeeMaxPercent(), p.getLiquidationDays(),
             p.getCreatedAt(), p.getCreatedBy() == null ? "Hệ thống" : p.getCreatedBy().getFullName(),
             p.getBookingDiscount3m(), p.getBookingDiscount6m(), p.getBookingDiscount12m(),
@@ -110,8 +112,9 @@ public class RentalPolicyService {
         policy.setVersion(nextVersion);
         policy.setActive(true);
         policy.setDepositMonthMultiplier(request.depositMonthMultiplier());
-        policy.setCancelFeePercent(request.cancelFeePercent());
-        policy.setCancelFreeHours(request.cancelFreeHours());
+        // Chính sách hủy là quy tắc toàn hệ thống, BOM không được thay đổi theo từng cơ sở.
+        policy.setCancelFeePercent(CANCEL_FEE_PERCENT);
+        policy.setCancelFreeHours(CANCEL_FREE_HOURS);
         policy.setLateFeePercentPerDay(request.lateFeePercentPerDay());
         policy.setLateFeeMaxPercent(LATE_FEE_CAP_PERCENT);
         policy.setLiquidationDays(LIQUIDATION_DAYS);

@@ -10,8 +10,9 @@ import {
 
 const EMPTY_FORM = {
   depositMonthMultiplier: '1',
-  cancelFeePercent: '20',
-  cancelFreeHours: '24',
+  // Hai trường tương thích API; backend luôn ép về chính sách hủy toàn hệ thống 48h/50%.
+  cancelFeePercent: '50',
+  cancelFreeHours: '48',
   lateFeePercentPerDay: '10',
   // Flow 4: % ưu đãi tiền thuê theo gói (0–50%)
   bookingDiscount3m: '5',
@@ -69,12 +70,6 @@ function validatePolicy(form) {
 
   if (!form.depositMonthMultiplier || number('depositMonthMultiplier') < 1 || number('depositMonthMultiplier') > 3) {
     errors.depositMonthMultiplier = 'Tiền cọc phải từ 1 đến 3 tháng.';
-  }
-  if (form.cancelFeePercent === '' || number('cancelFeePercent') < 0 || number('cancelFeePercent') > 100) {
-    errors.cancelFeePercent = 'Phí hủy phải từ 0% đến 100%.';
-  }
-  if (form.cancelFreeHours === '' || number('cancelFreeHours') < 0) {
-    errors.cancelFreeHours = 'Số giờ miễn phí không được âm.';
   }
   if (form.lateFeePercentPerDay === '' || number('lateFeePercentPerDay') < 0 || number('lateFeePercentPerDay') > 50) {
     errors.lateFeePercentPerDay = 'Phí trễ hạn phải từ 0% đến 50% mỗi ngày.';
@@ -259,8 +254,8 @@ function NumberField({ label, name, value, onChange, error, min, max, suffix, st
 function PolicyFormModal({ facility, policy, onClose, onSaved }) {
   const [form, setForm] = useState(() => policy ? {
     depositMonthMultiplier: String(policy.depositMonthMultiplier),
-    cancelFeePercent: String(policy.cancelFeePercent),
-    cancelFreeHours: String(policy.cancelFreeHours),
+    cancelFeePercent: '50',
+    cancelFreeHours: '48',
     lateFeePercentPerDay: String(policy.lateFeePercentPerDay),
     ...Object.fromEntries(DISCOUNT_KEYS.map((key) => [key, String(policy[key] ?? EMPTY_FORM[key])])),
     overstayPercent: String(policy.overstayPercent ?? EMPTY_FORM.overstayPercent),
@@ -320,12 +315,14 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
 
         <div className="grid grid-cols-1 gap-x-5 gap-y-3 md:grid-cols-2">
           <NumberField label="Tiền cọc" name="depositMonthMultiplier" value={form.depositMonthMultiplier} onChange={handleChange} error={errors.depositMonthMultiplier} min="1" max="3" suffix="tháng" hint="Từ 1 đến 3 tháng tiền thuê" />
-          <NumberField label="Phí hủy đặt chỗ" name="cancelFeePercent" value={form.cancelFeePercent} onChange={handleChange} error={errors.cancelFeePercent} min="0" max="100" suffix="%" hint="Tỷ lệ khấu trừ khi hủy" />
-          <NumberField label="Thời gian hủy miễn phí" name="cancelFreeHours" value={form.cancelFreeHours} onChange={handleChange} error={errors.cancelFreeHours} min="0" suffix="giờ" hint="Tính trước giờ hẹn nhận kho" />
           <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="50" suffix="%/ngày" hint="Tính trên cọc đang giữ; tối đa 50% cọc" />
           <NumberField label="Phí chiếm dụng khi quá hạn" name="overstayPercent" value={form.overstayPercent} onChange={handleChange} error={errors.overstayPercent} min="100" max="300" suffix="% giá ngày" hint="Mỗi ngày quá hạn, không trần — quá hạn luôn đắt hơn gia hạn" />
           <NumberField label="Phí lưu giữ hàng sau thanh lý" name="heldGoodsFeePercent" value={form.heldGoodsFeePercent} onChange={handleChange} error={errors.heldGoodsFeePercent} min="0" max="100" suffix="% giá ngày" hint="Mỗi ngày lưu giữ (tối đa 60 ngày)" />
           <NumberField label="Phí dọn & di dời hàng khi thanh lý" name="goodsMovingFeePercent" value={form.goodsMovingFeePercent} onChange={handleChange} error={errors.goodsMovingFeePercent} min="0" max="100" suffix="% giá tháng" hint="Thu 1 lần khi mở ô, kiểm kê, chuyển hàng sang khu lưu giữ" />
+        </div>
+        <div className="mt-3 rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-4 text-xs font-medium leading-relaxed text-[#4B4B4B]">
+          <p className="font-black text-[#1899D6]">Chính sách khách hủy đơn được cố định toàn hệ thống</p>
+          <p className="mt-1">Từ 48 giờ: hoàn 100%; từ 24 đến dưới 48 giờ: giữ 50% cọc; dưới 24 giờ hoặc đã qua giờ hẹn: giữ 100% cọc. Đơn đặt trong vòng 48 giờ trước check-in được hoàn 100% nếu hủy trong 30 phút sau thanh toán và vẫn trước check-in.</p>
         </div>
         <p className="mt-2 text-xs font-medium text-[#777777]">Mốc thanh lý của phiên bản mới cố định 15 ngày quá hạn. Phí chiếm dụng, lưu giữ áp dụng khách đồng ý điều khoản từ v2; phí dọn & di dời hàng áp dụng từ v3.</p>
 
@@ -394,8 +391,8 @@ function HistoryModal({ facility, history, currentPolicyId, onClose, onActivate,
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-medium text-[#777777] md:grid-cols-3">
                 <span>Cọc: <strong className="text-[#4B4B4B]">{item.depositMonthMultiplier} tháng</strong></span>
-                <span>Phí hủy: <strong className="text-[#4B4B4B]">{item.cancelFeePercent}%</strong></span>
-                <span>Miễn hủy: <strong className="text-[#4B4B4B]">{item.cancelFreeHours} giờ</strong></span>
+                <span>Hủy đơn: <strong className="text-[#4B4B4B]">Quy tắc hệ thống</strong></span>
+                <span>Mốc hoàn đủ: <strong className="text-[#4B4B4B]">Từ 48 giờ</strong></span>
                 <span>Trễ hạn: <strong className="text-[#4B4B4B]">{item.lateFeePercentPerDay}%/ngày</strong></span>
                 <span>Trần phí: <strong className="text-[#4B4B4B]">{item.lateFeeMaxPercent}%</strong></span>
                 <span>Thanh lý: <strong className="text-[#4B4B4B]">{item.liquidationDays} ngày</strong></span>
@@ -597,8 +594,10 @@ export default function BomRentalPoliciesPage() {
                 <div className="space-y-3 rounded-2xl border-2 border-[#E5E5E5] bg-[#F7F7F7] p-3">
                   <PolicySection icon="currency_exchange" title="Chính sách đặt cọc & hủy đặt chỗ" tone="orange" expanded={expandedSections.cancellation} onToggle={() => toggleSection('cancellation')}>
                     <RuleLine icon="account_balance_wallet" title={`Cọc khi đặt kho: ${selectedPolicy.depositMonthMultiplier} tháng tiền thuê`} description="Cọc được tính từ giá niêm yết theo chính sách hiện hành và lưu cố định vào đơn đặt kho." tone="green" />
-                    <RuleLine icon="timer" title={`Hủy trước giờ nhận kho trên ${selectedPolicy.cancelFreeHours} giờ: Hoàn 100%`} description="Mốc tính là giờ hẹn nhận kho; khách hàng được hoàn lại toàn bộ số tiền đã thanh toán." tone="blue" />
-                    <RuleLine icon="percent" title={`Hủy trong ${selectedPolicy.cancelFreeHours} giờ trước khi nhận: Phí ${selectedPolicy.cancelFeePercent}% cọc`} description="Phí hủy được khấu trừ trên tiền cọc; phần tiền còn lại được tạo yêu cầu hoàn." tone="orange" />
+                    <RuleLine icon="timer" title="Còn từ 48 giờ trở lên: Hoàn 100%" description="Hoàn toàn bộ số tiền khách đã thanh toán, gồm tiền thuê trả trước và tiền cọc." tone="blue" />
+                    <RuleLine icon="percent" title="Còn từ 24 đến dưới 48 giờ: Giữ 50% cọc" description="Hoàn toàn bộ tiền thuê trả trước và 50% tiền cọc; số hoàn được chốt khi khách xác nhận hủy." tone="orange" />
+                    <RuleLine icon="money_off" title="Còn dưới 24 giờ hoặc đã qua giờ hẹn: Giữ 100% cọc" description="Tiền thuê trả trước vẫn được hoàn; không áp dụng sau khi khách đã check-in." tone="red" />
+                    <RuleLine icon="update" title="Ân hạn 30 phút cho đơn đặt sát giờ" description="Chỉ đơn thanh toán thành công trong vòng 48 giờ trước check-in: hủy trong 30 phút sau thanh toán và vẫn trước check-in thì hoàn 100%." tone="green" />
                   </PolicySection>
 
                   <PolicySection icon="sell" title="Ưu đãi theo gói & miễn phí" tone="green" expanded={expandedSections.discount} onToggle={() => toggleSection('discount')}>

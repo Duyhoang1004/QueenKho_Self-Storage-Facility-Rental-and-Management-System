@@ -177,7 +177,7 @@ CREATE TABLE rental_policy (
     policy_name                 NVARCHAR(150) NOT NULL,
     deposit_month_multiplier    INT NOT NULL DEFAULT 1,
     cancel_fee_percent          INT NOT NULL DEFAULT 50,
-    cancel_free_hours           INT NOT NULL DEFAULT 24,
+    cancel_free_hours           INT NOT NULL DEFAULT 48,
     late_fee_percent_per_day    INT NOT NULL DEFAULT 10,
     late_fee_max_percent        INT NOT NULL DEFAULT 50,
     liquidation_days            INT NOT NULL DEFAULT 15,   -- PR-Q8 (27/10/2026): quá hạn quá 15 ngày thì FM được thanh lý (bản cũ 30)
@@ -219,7 +219,7 @@ CREATE TABLE reservations (
     unit_type_id                INT NOT NULL,
     storage_unit_id             NVARCHAR(20) NULL,   -- nullable: FM chỉ gán ô sau khi duyệt (UC-14)
     status                      NVARCHAR(30) NOT NULL DEFAULT 'PENDING',
-                                -- PENDING / DEPOSIT_PAID / UNIT_ASSIGNED / CANCELLED / EXPIRED / COMPLETED
+                                -- PENDING / DEPOSIT_PAID / UNIT_ASSIGNED / REFUND_PENDING / REFUNDED / CANCELLED / EXPIRED / COMPLETED
     duration_months             INT NOT NULL,
     deposit_amount              DECIMAL(12,2) NOT NULL,
     total_deposit_paid          DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -233,6 +233,10 @@ CREATE TABLE reservations (
     declared_goods_value        DECIMAL(15,2) NULL,                     -- giá trị hàng khách khai báo (trần bồi thường)
     goods_category_codes        NVARCHAR(300) NULL,                     -- BR-131: mã loại hàng khai báo, ngăn bởi dấu phẩy
     goods_description           NVARCHAR(500) NULL,                     -- mô tả hàng (bắt buộc khi chọn \"Khác\")
+    cancelled_at                DATETIME2 NULL,                          -- thời điểm chốt chính sách hủy
+    cancellation_tier           NVARCHAR(30) NULL,                       -- nhánh chính sách đã áp dụng
+    cancellation_penalty_amount DECIMAL(12,2) NULL,                      -- tiền cọc bị giữ, đóng băng khi hủy
+    cancellation_refund_amount  DECIMAL(12,2) NULL,                      -- số tiền FM phải hoàn, đóng băng khi hủy
     created_at                  DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_reservations_customer    FOREIGN KEY (customer_id)     REFERENCES users(id),
     CONSTRAINT FK_reservations_facility    FOREIGN KEY (facility_id)     REFERENCES facilities(id),

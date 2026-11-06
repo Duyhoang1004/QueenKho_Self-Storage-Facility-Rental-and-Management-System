@@ -177,15 +177,15 @@ Dùng `khachhang1`, Tân Bình, Kho Mini M, **3 tháng**, ngày bắt đầu = *
 | ID | Loại | Bước | Mong đợi | KQ |
 |---|---|---|---|---|
 | C01 | HP | Huỷ đơn **PENDING** | Đơn **CANCELLED**, không sinh REFUND | |
-| C02 | $ | Đơn DEPOSIT_PAID (3 tháng, 2.787.500), giờ hẹn còn **> 24h** (ngày bắt đầu ≥ ngày kia) → preview | `penalty 0`, `refund 2.787.500` | |
-| C03 | $ BD | Tua giờ hẹn còn **23h** → preview | `penalty 375.000` (50% cọc), `refund 2.412.500` | |
-| C04 | BD | Tua giờ hẹn còn **25h** → preview | Hoàn 100% | |
+| C02 | $ BD | Giờ hẹn còn đúng **48h** → preview | `policyTier FULL_REFUND`, `penalty 0`, hoàn 100% | |
+| C03 | $ BD | Giờ hẹn còn đúng **24h** → preview | `policyTier HALF_DEPOSIT`, giữ 50% cọc, hoàn tổng đã trả − 50% cọc | |
+| C04 | $ BD | Giờ hẹn còn **23h59** hoặc đã qua giờ hẹn nhưng chưa check-in → preview | `policyTier FULL_DEPOSIT`, giữ 100% cọc, hoàn tổng đã trả − cọc | |
 | C05 | HP | Huỷ C02 kèm thông tin ngân hàng | Đơn **REFUND_PENDING**; `REFUND / BANK_TRANSFER / PENDING`; task REFUND note `[HOÀN CỌC CK] …STK…`, hạn 24h (bỏ Chủ Nhật) | |
-| C06 | HP | Huỷ không nhập ngân hàng | Note `[HOÀN CỌC TIỀN MẶT]` | |
-| C07 | NG | Huỷ đơn UNIT_ASSIGNED / CANCELLED / EXPIRED | 400 "Trạng thái đơn không hợp lệ để hủy" | |
+| C06 | BD | Thanh toán khi còn <48h, hủy đúng phút thứ 30 và vẫn trước check-in | `LAST_MINUTE_GRACE`, hoàn 100%; phút 31 áp dụng tier theo thời gian còn lại | |
+| C07 | HP/NG | Huỷ `UNIT_ASSIGNED` khi HĐ `PENDING_CHECK_IN`; thử lại sau khi HĐ `ACTIVE` | Trước check-in: hủy HĐ/task check-in, nhả ô, hoàn theo rule. Sau check-in: 400, dùng luồng trả kho | |
 | C08 | CC | Bấm huỷ 2 lần | Lần 2 lỗi trạng thái, chỉ 1 REFUND | |
-| C09 | 🐞 PM | KH2 gọi `POST /reservations/{id KH1}/cancel` | Mong đợi 403; code không kiểm tra chủ đơn | |
-| C10 | Log | | Log: "Người dùng ID … yêu cầu hủy đơn …" (**không có mã** `[...]`) | |
+| C09 | SEC | KH2 gọi `POST /reservations/{id KH1}/cancel` | 403 do `OwnershipGuard` | |
+| C10 | Log/DB | Huỷ đơn có tiền hoàn | Snapshot hủy lưu đủ; REFUND `paid_at NULL`; log có tier, tổng trả, cọc giữ, tiền hoàn. FM hoàn xong mới có `paid_at` và đơn `REFUNDED` | |
 
 ### D. Gán ô (UC-13, UC-14) — `/manager/pending`
 | ID | Loại | Bước | Mong đợi | KQ |

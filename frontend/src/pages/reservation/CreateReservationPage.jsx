@@ -879,7 +879,13 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              
+              <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[10px] font-bold leading-relaxed text-[#4B4B4B]">
+                <p className="mb-1 text-[11px] font-black uppercase text-[#1899D6]">Chính sách hủy trước check-in</p>
+                <p>• Còn từ 48 giờ: hoàn 100%.</p>
+                <p>• Còn từ 24 đến dưới 48 giờ: giữ 50% cọc.</p>
+                <p>• Còn dưới 24 giờ hoặc đã qua giờ hẹn: giữ 100% cọc.</p>
+                <p className="mt-1 text-[#777777]">Đơn thanh toán trong vòng 48 giờ trước check-in được hoàn 100% nếu hủy trong 30 phút sau thanh toán và vẫn trước giờ hẹn.</p>
+              </div>
 
               {/* Giant CTA Button */}
               {!isAuthenticated ? (

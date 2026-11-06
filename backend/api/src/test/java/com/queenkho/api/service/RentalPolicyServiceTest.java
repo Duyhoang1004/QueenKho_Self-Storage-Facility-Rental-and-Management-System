@@ -75,6 +75,8 @@ class RentalPolicyServiceTest {
         assertEquals(2, result.version());
         assertEquals(12, result.id());
         assertEquals(2, result.depositMonthMultiplier());
+        assertEquals(50, result.cancelFeePercent());
+        assertEquals(48, result.cancelFreeHours());
         assertEquals(50, result.lateFeeMaxPercent());
         assertEquals(15, result.liquidationDays()); // PR-Q8 (27/10/2026): phiên bản mới thanh lý sau 15 ngày
         assertTrue(result.active());
@@ -161,9 +163,11 @@ class RentalPolicyServiceTest {
         });
 
         // BOM chỉ đổi ưu đãi đặt mới 12 tháng và tắt quyền miễn phí trễ
-        var request = new RentalPolicyRequest(1, 50, 24, 10, null, null, 25, null, null, null, false);
+        var request = new RentalPolicyRequest(1, 20, 24, 10, null, null, 25, null, null, null, false);
         var result = service.createVersion(3, request, "Bearer valid");
 
+        assertEquals(50, result.cancelFeePercent());     // rule hủy cố định, bỏ qua 50/24 từ request
+        assertEquals(48, result.cancelFreeHours());
         assertEquals(8, result.bookingDiscount3m());    // kế thừa bản đang hiệu lực
         assertEquals(25, result.bookingDiscount12m());  // giá trị mới
         assertEquals(12, result.renewalDiscount12m());  // kế thừa

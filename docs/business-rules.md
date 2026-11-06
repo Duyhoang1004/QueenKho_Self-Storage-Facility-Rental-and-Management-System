@@ -270,24 +270,25 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | Mã | Rule |
 |---|---|
 | BR-12 | Khách xem đơn của mình, mới nhất trước; mỗi đơn hiện "đã thanh toán thực tế" = Σ giao dịch `SUCCESS` (`DEPOSIT` + `MONTHLY_RENT`) và ngày kết thúc hợp đồng (nếu có). |
-| — | Đơn `PENDING` hiện nút "Thanh toán lại" (PR-B8) và "Huỷ"; đơn `DEPOSIT_PAID` hiện "Huỷ". |
+| — | Đơn `PENDING`, `DEPOSIT_PAID` hiện "Huỷ"; đơn `UNIT_ASSIGNED` chỉ hiện "Huỷ" khi hợp đồng còn `PENDING_CHECK_IN`. |
 
 ### UC-15 Huỷ đơn đặt chỗ ✅
 **Đang chạy** (`ReservationService.previewCancel / cancelReservation`, `CancelReservationModal.jsx`)
 | Mã | Rule |
 |---|---|
-| BR-30 | Chỉ huỷ đơn `PENDING` hoặc `DEPOSIT_PAID` (đã gán ô thì không). |
+| BR-30 | Khách được huỷ trước khi check-in: `PENDING`, `DEPOSIT_PAID`, hoặc `UNIT_ASSIGNED` khi hợp đồng còn `PENDING_CHECK_IN`. Nếu đã gán ô: hợp đồng → `TERMINATED`, task `CHECK_IN` → `CANCELLED`, ô → `AVAILABLE`. Sau check-in phải dùng luồng trả kho. |
 | BR-31 | Mốc tính phí = `expected_appointment_time`, trống → 09:00 ngày bắt đầu (PR-B10 làm cho luôn có giá trị). |
-| BR-32 | Trước mốc > `cancel_free_hours` → hoàn 100% số đã trả; trong khoảng đó → phạt `cancel_fee_percent` × cọc, hoàn phần còn lại. Hai tham số đọc từ chính sách **đang hiệu lực của cơ sở** (PR-15, PR-M5); chưa có chính sách thì mặc định 24h / 50%. |
-| BR-33 | Lý do: 4 lý do có sẵn hoặc "Lý do khác" (bắt buộc nhập). Có thông tin ngân hàng → hoàn chuyển khoản; không có → tiền mặt tại quầy. |
-| BR-34 | Đơn đã thanh toán khi huỷ: đơn → **`REFUND_PENDING`**; tạo giao dịch `REFUND` `PENDING` + task `REFUND` trong `facility_tasks` (hạn PR-93) để FM hoàn — theo PR-O12; thông báo cho FM cơ sở (BR-111). FM hoàn xong → đơn `REFUNDED`. Đơn chưa thanh toán → `CANCELLED`. |
+| BR-32 | Quy tắc cố định toàn hệ thống: còn **≥48h** → hoàn 100%; còn **≥24h và <48h** → giữ 50% cọc; còn **<24h hoặc đã qua giờ hẹn nhưng chưa check-in** → giữ 100% cọc. Tiền hoàn = tổng `SUCCESS` (`DEPOSIT` + `MONTHLY_RENT`) − phần cọc bị giữ, không âm. Đúng 48h thuộc hoàn đủ; đúng 24h thuộc giữ 50% cọc. |
+| BR-32a | Ân hạn đơn đặt sát giờ: nếu thanh toán thành công khi còn **<48h** tới check-in, khách hủy trong **≤30 phút** sau thanh toán và vẫn trước giờ check-in → hoàn 100%. Thanh toán đúng 48h không thuộc ân hạn này. |
+| BR-33 | Lý do: 4 lý do có sẵn hoặc "Lý do khác" (bắt buộc nhập). Khoản hoàn > 0 bắt buộc có cách nhận tiền hợp lệ; UI khách hiện dùng chuyển khoản và yêu cầu đủ ngân hàng, STK 6–20 chữ số, tên chủ tài khoản. |
+| BR-34 | Khi xác nhận huỷ, backend tính một lần và lưu `cancelled_at`, `cancellation_tier`, `cancellation_penalty_amount`, `cancellation_refund_amount`; tạo đúng 1 giao dịch `REFUND/PENDING` (`paid_at = NULL`) và task `REFUND` chỉ khi số hoàn > 0. FM **không tính/chỉnh lại tiền cọc**, chỉ hoàn đúng số đã chốt, tải bằng chứng và xác nhận; khi đó giao dịch → `SUCCESS`, đơn → `REFUNDED`. Không có tiền cần hoàn → `CANCELLED`, không sinh task/giao dịch REFUND. |
 | BR-35 | Mọi lần huỷ ghi `activity_logs`. |
 
 **Đã chốt**
 | Mã | Rule |
 |---|---|
-| PR-15 | Đọc `cancel_free_hours`, `cancel_fee_percent` từ chính sách thay vì viết cứng. |
-| PR-M5 | Dùng chính sách **hiện hành của cơ sở lúc huỷ** (đơn chưa có hợp đồng nên chưa gắn chính sách). |
+| PR-15 | Mốc hủy 48h / 24h / 30 phút và tỷ lệ giữ cọc 50% / 100% là **quy tắc cố định toàn hệ thống**; BOM và FM không chỉnh theo cơ sở. Hai cột cũ `cancel_free_hours`, `cancel_fee_percent` chỉ giữ để tương thích. |
+| PR-M5 | Chính sách hủy dùng bộ tính tập trung `CancellationPolicyService` và đóng băng kết quả tại thời điểm khách xác nhận; không đọc lại chính sách khi FM hoàn tiền. |
 | PR-O12 | Đơn đã thanh toán khi huỷ → task `REFUND` cho FM (BR-34), FM hoàn theo PR-O12 (có bằng chứng). |
 | PR-R12 | (27/10/2026) Đơn `DEPOSIT_PAID` **đã tới ngày nhận kho mà cơ sở chưa gán được ô** (ô sắp trống khách cũ chưa trả — PR-R11) → lỗi cơ sở: khách huỷ được **hoàn 100%**, không tính `cancel_fee_percent`. FM vẫn có thể gán ô khác cùng loại nếu có ô `AVAILABLE`. |
 
@@ -477,8 +478,8 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 |---|---|
 | PR-13 | Mỗi cơ sở có đúng 1 chính sách **đang hiệu lực**. Tạo/sửa sẽ phát hành phiên bản mới và áp dụng bản đó; BOM có thể chọn lại chính phiên bản cũ làm bản hiệu lực mà không tạo bản sao. Không ghi đè nội dung; hợp đồng giữ `rental_policy_id` lúc ký. Màn hình xem được lịch sử phiên bản. |
 | PR-14 | Trường & miền giá trị BOM chỉnh: hệ số cọc 1–3; % phí huỷ 0–100; giờ huỷ miễn phí ≥ 0; % phí trễ/ngày 0–50; *(27/10/2026)* **% phí chiếm dụng 100–300** (mặc định 150, PR-Q14); **% phí lưu giữ hàng 0–100** (mặc định 20, PR-Q15); *(04/11/2026)* **% phí dọn & di dời hàng 0–100 giá tháng** (mặc định 30, PR-Q16). Phiên bản mới dùng **trần phí trễ cố định 50% cọc** và **mốc xét thanh lý cố định 15 ngày** *(trước 27/10/2026 là 30)*; BOM không chỉnh hai mức này. Phiên bản cũ giữ thông số đã phát hành cho hợp đồng đã ký — script `Update_gia_han_doanh_thu.sql` tạo **phiên bản mới** cho mỗi cơ sở thay vì sửa bản cũ. |
-| PR-15 | Code đọc chính sách thay cho số viết cứng (cọc, phí huỷ, phí trễ, thanh lý). (sửa L-03) |
-| PR-M5 | Huỷ đơn → chính sách hiện hành lúc huỷ; phí trễ / thanh lý → chính sách gắn hợp đồng. Chỉ BOM sửa, FM chỉ xem. |
+| PR-15 | Cọc, phí trễ, thanh lý đọc từ chính sách; riêng chính sách khách hủy trước check-in cố định toàn hệ thống theo BR-32/BR-32a. |
+| PR-M5 | Hủy đơn đóng băng kết quả lúc khách xác nhận; phí trễ / thanh lý vẫn theo chính sách gắn hợp đồng. |
 | PR-M6 | BOM được chỉnh `deposit_month_multiplier` (xem UC-10). |
 | PR-Q13 | Entity `RentalPolicy`; `late_fee_percent_per_day` (mặc định 10), `late_fee_max_percent` (mặc định 50); đã bỏ `lock_account_days` (D-05). |
 | — | *(26/10/2026)* Thêm vào chính sách: % ưu đãi đặt mới / gia hạn 3·6·12 tháng (0–50%, D-08) và cờ `allow_late_fee_waiver` — BOM bật/tắt quyền FM miễn phí trễ (tắt → 403 `WAIVER_NOT_ALLOWED`). Phiên bản mới **kế thừa** ưu đãi của bản trước nếu BOM không sửa. |
@@ -630,7 +631,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 |---|---|---|
 | L-01 | Bảng task không cho loại `REFUND` | #55 nới ràng buộc |
 | L-02 | `POST /contracts/{id}/renew` ghi tiền mà không thu | Đã xoá API (PR-R6) |
-| L-03 | Phí huỷ, cọc viết cứng | Đọc từ chính sách (PR-15, PR-M6) |
+| L-03 | Logic phí huỷ rải rác, dễ đổi sai | Tập trung trong `CancellationPolicyService`, cố định toàn hệ thống và có test biên; cọc khi đặt vẫn theo PR-M6 |
 | L-05 | Hai bảng ưu đãi khác nhau | Cố ý — D-08 |
 | L-06 | No-Show không hoàn tiền thuê, không có miễn phạt | PR-X1 |
 | L-07 | Login không chặn `LOCKED` / `DISABLED` | UC-08 (PR-L1, PR-L2) |
@@ -919,4 +920,4 @@ Tầng 2–4 chỉ áp dụng cho đơn đặt từ **điều khoản v2** (`res
 | `TeamMeetingRulesTest` 🆕 | 5 | BR-131 (bắt buộc loại hàng, thực phẩm cần kho lạnh, "Khác" phải mô tả, loại kho NORMAL / COLD / FROZEN), BR-133 (voucher theo loại kho) |
 | `ApiApplicationTests` | 1 | Khởi động ứng dụng + đối chiếu Entity với schema (`ddl-auto: validate`) |
 
-**Rule quan trọng chưa có test tự động** (nên bổ sung nếu còn thời gian): PR-B6 / PR-B7 (giữ chỗ 15 phút, IPN về muộn), BR-27 (chữ ký IPN), BR-32 / PR-15 (phí huỷ), PR-C1 + BR-73 (check-in đúng ngày, PIN không trùng), PR-O11 / PR-O14 (quyết toán cọc khi trả kho), PR-Q1 (job quá hạn), BR-25 (điều kiện voucher), PR-Q9 (thanh lý), PR-S2 / PR-S5 / PR-52 (ticket), PR-R12.
+**Rule quan trọng chưa có test tự động** (nên bổ sung nếu còn thời gian): PR-B6 / PR-B7 (giữ chỗ 15 phút, IPN về muộn), BR-27 (chữ ký IPN), PR-C1 + BR-73 (check-in đúng ngày, PIN không trùng), PR-O11 / PR-O14 (quyết toán cọc khi trả kho), PR-Q1 (job quá hạn), BR-25 (điều kiện voucher), PR-Q9 (thanh lý), PR-S2 / PR-S5 / PR-52 (ticket), PR-R12. BR-32 / BR-32a đã có `CancellationPolicyServiceTest`.

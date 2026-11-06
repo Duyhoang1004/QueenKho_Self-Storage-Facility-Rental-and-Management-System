@@ -170,6 +170,7 @@ export default function MyReservationsPage() {
               endDate: c.endDate,
               contractId: c.contractId,
               contractCode: c.contractCode,
+              contractStatus: c.status,
               storageUnitId: c.storageUnitId || r.storageUnitId,
               storageUnitFloor: c.floor || r.storageUnitFloor,
               storageUnitZone: c.zone || r.storageUnitZone,
@@ -689,7 +690,8 @@ export default function MyReservationsPage() {
                               XEM HĐ
                             </button>
                           )}
-                          {["PENDING", "DEPOSIT_PAID"].includes(r.status) && (
+                          {(["PENDING", "DEPOSIT_PAID"].includes(r.status) ||
+                            (r.status === "UNIT_ASSIGNED" && r.contractStatus === "PENDING_CHECK_IN")) && (
                             <>
                             {r.status === "PENDING" && (
                               <button

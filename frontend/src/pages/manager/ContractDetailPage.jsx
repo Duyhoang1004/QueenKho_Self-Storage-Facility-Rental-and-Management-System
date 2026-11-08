@@ -141,22 +141,15 @@ export default function ContractDetailPage() {
           quá hạn 31 ngày (điều khoản cũ: nút thanh lý) — ẩn khi backend tắt giả lập */}
       {['ACTIVE', 'OVERDUE'].includes(contract.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
-          {contract.status === 'ACTIVE' && (
+          {contract.status === 'ACTIVE' && [15, 10, 7, 3, 1].map((days) => (
             <SimulationButton
-              label="Còn 15 ngày hết hạn"
-              description="Dời ngày hết hạn về 15 ngày nữa và chạy ngay job nhắc gia hạn (mốc 15 ngày): khách nhận thông báo trong chuông và email."
-              onRun={() => simulateExpireSoon(contract.contractId, 15)}
+              key={days}
+              label={`Còn ${days} ngày hết hạn`}
+              description={`Dời ngày hết hạn về ${days} ngày nữa và chạy ngay job nhắc gia hạn (mốc ${days} ngày): khách nhận thông báo trong chuông và email, FM nhận nhắc nếu khách chưa gia hạn.`}
+              onRun={() => simulateExpireSoon(contract.contractId, days)}
               onDone={() => setReloadTick((t) => t + 1)}
             />
-          )}
-          {contract.status === 'ACTIVE' && (
-            <SimulationButton
-              label="Còn 3 ngày hết hạn"
-              description="Dời ngày hết hạn về 3 ngày nữa và chạy ngay job nhắc gia hạn: khách nhận thông báo trong chuông và email."
-              onRun={() => simulateExpireSoon(contract.contractId, 3)}
-              onDone={() => setReloadTick((t) => t + 1)}
-            />
-          )}
+          ))}
           <SimulationButton
             label="Quá hạn 1 ngày"
             description="Cho hợp đồng hết hạn hôm qua. Khách đồng ý điều khoản v4: thanh lý ngay và sinh việc chuyển hàng vào kho tổng (như job 00:05). Điều khoản cũ: chuyển QUÁ HẠN, khoá PIN, tính phí trễ."

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -54,6 +55,9 @@ class NoShowServiceTest {
 
     @Mock
     private JdbcTemplate jdbcTemplate;
+
+    @Spy
+    private CancellationPolicyService cancellationPolicyService = new CancellationPolicyService();
 
     @InjectMocks
     private ReservationService reservationService;
@@ -143,7 +147,7 @@ class NoShowServiceTest {
     }
 
     @Test
-    @DisplayName("EX-03.5: Xu ly No-Show hop le tich thu 100% coc va chuyen trang thai CANCELLED")
+    @DisplayName("EX-03.5: Xu ly No-Show hop le (2 lan lien he that bai, qua 48h) chuyen trang thai CANCELLED")
     void testHandleNoShow_Success_ForfeitsDeposit() {
         NoShowRequest request = new NoShowRequest();
         request.setStaffId(5);
@@ -204,6 +208,66 @@ class NoShowServiceTest {
 
         assertEquals("CANCELLED", testReservation.getStatus());
         verify(reservationRepository, times(1)).save(testReservation);
+    }
+
+    @Test
+    @DisplayName("PR-X3 (08/11): khach tu choi toi nhan kho thi FM xu ly No-Show duoc ngay, khong cho 48h")
+    void testEvaluateNoShowEligibility_Refused_EligibleImmediately() {
+        testReservation.setExpectedAppointmentTime(LocalDateTime.now().minusHours(2));
+
+        Map<String, Object> log = new HashMap<>();
+        log.put("action", "[CONTACT][REFUSED] Nhân viên A báo cáo liên hệ task #9: [Khách từ chối tới nhận kho]");
+        log.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(1)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt())).thenReturn(List.of(log));
+
+        NoShowEligibility eligibility = reservationService.evaluateNoShowEligibility(testReservation);
+
+        assertTrue(eligibility.eligible());
+        assertNull(eligibility.reason());
+    }
+
+    @Test
+    @DisplayName("PR-X3 (08/11): du 2 lan lien he that bai nhung chua qua 48h thi chua duoc xu ly")
+    void testEvaluateNoShowEligibility_TwoFailedWithin48h_NotEligible() {
+        testReservation.setExpectedAppointmentTime(LocalDateTime.now().minusHours(30));
+
+        Map<String, Object> log1 = new HashMap<>();
+        log1.put("action", "[CONTACT][FAILED] Khách không nghe máy");
+        log1.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(20)));
+        Map<String, Object> log2 = new HashMap<>();
+        log2.put("action", "[CONTACT][FAILED] Khách cúp máy");
+        log2.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(2)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt())).thenReturn(List.of(log1, log2));
+
+        NoShowEligibility eligibility = reservationService.evaluateNoShowEligibility(testReservation);
+
+        assertFalse(eligibility.eligible());
+        assertEquals(2, eligibility.failedCount());
+        assertTrue(eligibility.reason().contains("48 giờ"));
+    }
+
+    @Test
+    @DisplayName("PR-X1 (08/11): No-Show goi 3 thang giu coc + 1 thang thue, hoan 2 thang con lai")
+    void testHandleNoShow_KeepsDepositAndOneMonthRent() {
+        testReservation.setDurationMonths(3);
+        NoShowRequest request = new NoShowRequest();
+        request.setStaffId(5);
+        request.setWaivePenalty(false);
+
+        when(reservationRepository.findById(200)).thenReturn(Optional.of(testReservation));
+        Map<String, Object> log = new HashMap<>();
+        log.put("action", "[CONTACT][REFUSED] Khách từ chối tới nhận kho");
+        log.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(40)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt())).thenReturn(List.of(log));
+        // Cọc 2.000.000 + thuê 3 tháng 3.000.000
+        when(jdbcTemplate.queryForObject(contains("SUM(amount)"), eq(BigDecimal.class), eq(200), eq(200)))
+                .thenReturn(new BigDecimal("5000000"));
+        when(rentalContractRepository.findByReservationId(200)).thenReturn(Optional.empty());
+
+        reservationService.handleNoShow(200, request);
+
+        verify(jdbcTemplate).update(contains("INSERT INTO payment_transactions"), anyString(), eq(200), eq(10),
+                argThat((BigDecimal amount) -> amount.compareTo(new BigDecimal("2000000")) == 0));
     }
 
     @Test

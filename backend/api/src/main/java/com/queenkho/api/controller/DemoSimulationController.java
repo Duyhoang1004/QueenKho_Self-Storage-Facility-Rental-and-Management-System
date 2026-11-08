@@ -38,6 +38,13 @@ public class DemoSimulationController {
         return ResponseEntity.ok(simulationService.arriveToday(id, currentUser.require()));
     }
 
+    // PR-T1: lịch hẹn nhận kho còn N ngày → demo khung 30 ngày giao / nhận task (Staff / FM, task CHECK_IN)
+    @PostMapping("/tasks/{id}/appointment-in")
+    public ResponseEntity<Map<String, Object>> appointmentIn(@PathVariable Integer id,
+                                                             @RequestParam(defaultValue = "30") int days) {
+        return ResponseEntity.ok(simulationService.appointmentIn(id, days, currentUser.require()));
+    }
+
     // Flow 3: khách tới trả kho hôm nay (Staff / FM, task CHECK_OUT)
     @PostMapping("/tasks/{id}/checkout-today")
     public ResponseEntity<Map<String, Object>> checkoutToday(@PathVariable Integer id) {

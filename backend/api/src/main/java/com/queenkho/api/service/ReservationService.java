@@ -40,6 +40,9 @@ public class ReservationService {
     // v4 (05/11/2026, D-15): bỏ ân hạn 5 ngày; hết hạn không gia hạn / trả kho → chuyển hàng vào kho tổng ngay, giữ không thời hạn,
     // không bán; khai báo loại hàng, thực phẩm chỉ gửi kho lạnh / đông
     public static final String ASSET_TERMS_VERSION = "v4";
+    // PR-X3 (08/11/2026): Staff liên hệ khách trong 48h sau giờ hẹn; ≥ 2 lần thất bại thì FM được xử lý No-Show
+    public static final int NO_SHOW_WAIT_HOURS = 48;
+    public static final int NO_SHOW_MIN_FAILED_CONTACTS = 2;
 
     @Autowired
     private ReservationRepository reservationRepository;
@@ -295,7 +298,8 @@ public class ReservationService {
                     } catch (Exception ignored) {
                     }
                     NoShowEligibility eligibility = evaluateNoShowEligibility(r);
-                    return new PendingReservationResponse(
+                    CancellationPolicyService.Decision money = calculateNoShow(r, false);
+                    PendingReservationResponse response = new PendingReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
                             r.getCustomer().getFullName(),
@@ -310,6 +314,11 @@ public class ReservationService {
                             eligibility.eligible(),
                             eligibility.failedCount(),
                             eligibility.reason());
+                    // PR-X1: FE hiện số tiền giữ / hoàn trước khi FM xác nhận
+                    response.setTotalPaid(money.totalPaid());
+                    response.setNoShowPenaltyAmount(money.penaltyAmount());
+                    response.setNoShowRefundAmount(money.refundAmount());
+                    return response;
                 })
                 .toList();
     }
@@ -688,8 +697,9 @@ public class ReservationService {
         boolean facilityNoUnit = "DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
                 && appointmentTime != null && !calculatedAt.isBefore(appointmentTime);
 
+        int durationMonths = reservation.getDurationMonths() != null ? reservation.getDurationMonths() : 1;
         CancellationPolicyService.Decision decision = cancellationPolicyService.calculate(
-                totalPaid, deposit, appointmentTime, paymentSuccessAt, calculatedAt, facilityNoUnit);
+                totalPaid, deposit, durationMonths, appointmentTime, paymentSuccessAt, calculatedAt, facilityNoUnit);
 
         return CancelPreviewResponse.builder()
                 .totalPaid(decision.totalPaid())
@@ -708,8 +718,7 @@ public class ReservationService {
                 .partialRefundHours(CancellationPolicyService.PARTIAL_REFUND_HOURS)
                 .partialFeePercent(CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT)
                 .lateFeePercent(CancellationPolicyService.LATE_DEPOSIT_PENALTY_PERCENT)
-                .graceMinutes(CancellationPolicyService.LAST_MINUTE_GRACE_MINUTES)
-                .graceBookingWindowHours(CancellationPolicyService.LAST_MINUTE_BOOKING_HOURS)
+                .graceMinutes(CancellationPolicyService.BOOKING_GRACE_MINUTES)
                 .cancelFreeHours(CancellationPolicyService.FULL_REFUND_HOURS)
                 .cancelFeePercent(CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT)
                 .build();
@@ -916,7 +925,9 @@ public class ReservationService {
         return request.getReason().trim();
     }
 
-    // PR-X3: Đánh giá điều kiện đủ để xử lý No-Show
+    // PR-X3 (08/11/2026): điều kiện FM được xử lý No-Show
+    //  - Staff ghi "Khách từ chối tới nhận kho" ([CONTACT][REFUSED]) → xử lý được ngay;
+    //  - còn lại: đã qua 48h kể từ giờ hẹn VÀ có ≥ 2 lần liên hệ thất bại (không nghe máy / thuê bao / cúp máy).
     public NoShowEligibility evaluateNoShowEligibility(Reservation reservation) {
         if (reservation == null) {
             return new NoShowEligibility(false, 0, "Đơn đặt chỗ không tồn tại");
@@ -932,10 +943,12 @@ public class ReservationService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        boolean past48Hours = appointmentTime != null && !now.isBefore(appointmentTime.plusHours(48));
+        boolean pastWaitWindow = appointmentTime != null
+                && !now.isBefore(appointmentTime.plusHours(NO_SHOW_WAIT_HOURS));
 
-        // 2. Tìm tất cả các lần liên hệ thất bại từ activity_logs
+        // 2. Đọc các báo cáo liên hệ ([CONTACT]...) từ activity_logs của đơn và task check-in
         List<LocalDateTime> failedAttemptTimes = new java.util.ArrayList<>();
+        boolean refused = false;
         try {
             List<Map<String, Object>> logs = jdbcTemplate.queryForList(
                     "SELECT created_at, action FROM activity_logs " +
@@ -950,18 +963,14 @@ public class ReservationService {
 
             for (Map<String, Object> log : logs) {
                 String action = log.get("action") != null ? log.get("action").toString() : "";
+                if (!action.contains("[CONTACT]")) continue;
                 String actionLower = action.toLowerCase();
-                boolean isFailed = action.contains("[CONTACT][FAILED]")
-                        || actionLower.contains("không nghe máy")
-                        || actionLower.contains("khong nghe may")
-                        || actionLower.contains("thuê bao")
-                        || actionLower.contains("thue bao")
-                        || actionLower.contains("từ chối")
-                        || actionLower.contains("tu choi")
-                        || actionLower.contains("thất bại")
-                        || actionLower.contains("that bai");
-
-                if (isFailed) {
+                // Log cũ ghi "từ chối" dưới mã [CONTACT][FAILED] — vẫn tính là khách từ chối
+                if (action.contains("[CONTACT][REFUSED]") || actionLower.contains("từ chối")) {
+                    refused = true;
+                    continue;
+                }
+                if (action.contains("[CONTACT][FAILED]")) {
                     Object ca = log.get("created_at");
                     if (ca instanceof java.sql.Timestamp ts) {
                         failedAttemptTimes.add(ts.toLocalDateTime());
@@ -973,7 +982,7 @@ public class ReservationService {
         } catch (Exception ignored) {
         }
 
-        // Khử trùng lặp các lần gọi ghi nhận đồng thời (trong vòng 10 phút tính là 1 lần liên hệ)
+        // Khử trùng lặp: 1 báo cáo ghi 2 dòng log (đơn + task) → trong vòng 10 phút tính là 1 lần liên hệ
         List<LocalDateTime> distinctAttempts = new java.util.ArrayList<>();
         for (LocalDateTime t : failedAttemptTimes) {
             if (distinctAttempts.isEmpty() || java.time.Duration.between(distinctAttempts.get(distinctAttempts.size() - 1), t).abs().toMinutes() >= 10) {
@@ -982,31 +991,47 @@ public class ReservationService {
         }
 
         int failedCount = distinctAttempts.size();
-        boolean enoughAttempts = failedCount >= 2;
-
-        boolean has24hGap = false;
-        if (enoughAttempts) {
-            // Danh sách đã được sắp xếp tăng dần theo thời gian, kiểm tra khoảng cách giữa lần đầu và lần cuối
-            long hoursGap = java.time.Duration.between(distinctAttempts.get(0), distinctAttempts.get(distinctAttempts.size() - 1)).abs().toHours();
-            if (hoursGap >= 24) {
-                has24hGap = true;
-            }
+        if (refused) {
+            return new NoShowEligibility(true, failedCount, null);
         }
 
-        boolean eligible = past48Hours && enoughAttempts && has24hGap;
+        boolean enoughAttempts = failedCount >= NO_SHOW_MIN_FAILED_CONTACTS;
+        boolean eligible = pastWaitWindow && enoughAttempts;
         String reason = null;
-        if (!past48Hours) {
+        if (!pastWaitWindow) {
             String deadlineStr = appointmentTime != null
-                    ? appointmentTime.plusHours(48).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
-                    : "48h";
-            reason = "Chưa đủ 48 giờ kể từ giờ hẹn nhận kho (cần đến " + deadlineStr + ").";
+                    ? appointmentTime.plusHours(NO_SHOW_WAIT_HOURS).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
+                    : NO_SHOW_WAIT_HOURS + "h";
+            reason = "Đang trong " + NO_SHOW_WAIT_HOURS + " giờ chờ liên hệ khách (tới " + deadlineStr + "), hiện có "
+                    + failedCount + "/" + NO_SHOW_MIN_FAILED_CONTACTS + " lần liên hệ thất bại. Khách từ chối tới nhận kho thì xử lý được ngay.";
         } else if (!enoughAttempts) {
-            reason = "Cần tối thiểu 2 lần liên hệ thất bại với khách hàng (hiện có " + failedCount + "/2 lần).";
-        } else if (!has24hGap) {
-            reason = "Hai lần liên hệ thất bại phải cách nhau tối thiểu 24 giờ để đảm bảo khách có đủ thời gian phản hồi.";
+            reason = "Cần tối thiểu " + NO_SHOW_MIN_FAILED_CONTACTS + " lần liên hệ thất bại với khách (hiện có "
+                    + failedCount + "/" + NO_SHOW_MIN_FAILED_CONTACTS + " lần), hoặc Staff ghi nhận khách từ chối tới nhận kho.";
         }
 
         return new NoShowEligibility(eligible, failedCount, reason);
+    }
+
+    // PR-X1: số tiền No-Show — dùng chung cho màn danh sách (xem trước) và lúc FM xác nhận
+    private CancellationPolicyService.Decision calculateNoShow(Reservation reservation, boolean waivePenalty) {
+        BigDecimal totalPaid = BigDecimal.ZERO;
+        try {
+            totalPaid = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
+                            "WHERE (reservation_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE reservation_id = ?)) " +
+                            "  AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
+                    BigDecimal.class,
+                    reservation.getId(), reservation.getId());
+        } catch (Exception ignored) {
+        }
+        BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
+        if (totalPaid == null || totalPaid.compareTo(BigDecimal.ZERO) == 0) {
+            totalPaid = reservation.getTotalDepositPaid() != null && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
+                    ? reservation.getTotalDepositPaid()
+                    : deposit;
+        }
+        int durationMonths = reservation.getDurationMonths() != null ? reservation.getDurationMonths() : 1;
+        return cancellationPolicyService.noShow(totalPaid, deposit, durationMonths, waivePenalty);
     }
 
     // [EXCEPTION]: Xử lý khách không đến nhận kho (No-Show Handling)
@@ -1032,37 +1057,11 @@ public class ReservationService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "NO_SHOW_NOT_ALLOWED_YET", eligibility.reason());
         }
 
-        // PR-X1: Tính toán tài chính No-Show
-        BigDecimal totalPaid = BigDecimal.ZERO;
-        try {
-            totalPaid = jdbcTemplate.queryForObject(
-                    "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
-                            "WHERE (reservation_id = ? OR contract_id IN (SELECT id FROM rental_contracts WHERE reservation_id = ?)) " +
-                            "  AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
-                    BigDecimal.class,
-                    reservationId, reservationId);
-        } catch (Exception ignored) {
-        }
-        BigDecimal deposit = reservation.getDepositAmount() != null ? reservation.getDepositAmount() : BigDecimal.ZERO;
-        if (totalPaid == null || totalPaid.compareTo(BigDecimal.ZERO) == 0) {
-            totalPaid = reservation.getTotalDepositPaid() != null && reservation.getTotalDepositPaid().compareTo(BigDecimal.ZERO) > 0
-                    ? reservation.getTotalDepositPaid()
-                    : deposit;
-        }
-
-        boolean waivePenalty = Boolean.TRUE.equals(request != null ? request.getWaivePenalty() : null);
-        BigDecimal refundAmount;
-        BigDecimal penaltyAmount;
-
-        if (waivePenalty) {
-            // FM phê duyệt miễn phạt: hoàn 100% toàn bộ tiền khách đã thanh toán (cọc + tiền thuê)
-            penaltyAmount = BigDecimal.ZERO;
-            refundAmount = totalPaid;
-        } else {
-            // Mặc định No-Show: Tịch thu 100% tiền cọc; hoàn lại tiền thuê trả trước (nếu có)
-            penaltyAmount = deposit;
-            refundAmount = totalPaid.compareTo(deposit) > 0 ? totalPaid.subtract(deposit) : BigDecimal.ZERO;
-        }
+        // PR-X1 (08/11/2026): giữ 100% cọc + 1 tháng tiền thuê, hoàn tiền thuê các tháng còn lại; miễn phạt → hoàn toàn bộ
+        boolean waivePenalty = Boolean.TRUE.equals(request.getWaivePenalty());
+        CancellationPolicyService.Decision noShow = calculateNoShow(reservation, waivePenalty);
+        BigDecimal refundAmount = noShow.refundAmount();
+        BigDecimal penaltyAmount = noShow.penaltyAmount();
 
         // Sinh task REFUND trong facility_tasks nếu có tiền cần hoàn cho khách
         if (refundAmount.compareTo(BigDecimal.ZERO) > 0) {
@@ -1080,7 +1079,7 @@ public class ReservationService {
 
             String waiveNote = waivePenalty
                     ? " (FM phê duyệt miễn phạt No-Show: hoàn 100% cọc + tiền thuê. Lý do: " + (request.getWaiveReason() != null ? request.getWaiveReason() : "Miễn phạt") + ")"
-                    : " (Tịch thu 100% cọc: " + penaltyAmount.toPlainString() + " VND, hoàn tiền thuê trả trước)";
+                    : " (Giữ cọc + 1 tháng tiền thuê: " + penaltyAmount.toPlainString() + " VND, hoàn tiền thuê các tháng còn lại)";
 
             String refundTaskNote = String.format(
                     "[HOÀN TIỀN NO-SHOW] Đơn: %s | Khách: %s (SĐT: %s) | Số tiền hoàn: %s VND%s | Lý do No-Show: %s",
@@ -1145,7 +1144,7 @@ public class ReservationService {
 
         String penaltyLogStr = waivePenalty
                 ? "FM phê duyệt miễn phạt (Hoàn 100% tiền đã đóng: " + refundAmount.toPlainString() + "đ)"
-                : "Tịch thu cọc: " + penaltyAmount.toPlainString() + "đ" + (refundAmount.compareTo(BigDecimal.ZERO) > 0 ? ", hoàn tiền thuê trả trước: " + refundAmount.toPlainString() + "đ" : "");
+                : "Giữ cọc + 1 tháng thuê: " + penaltyAmount.toPlainString() + "đ" + (refundAmount.compareTo(BigDecimal.ZERO) > 0 ? ", hoàn tiền thuê các tháng còn lại: " + refundAmount.toPlainString() + "đ" : "");
 
         String logAction = "[NO-SHOW] Hủy đơn " + reservation.getReservationCode()
                 + ". Lý do: " + reasonStr + staffNote
@@ -1171,7 +1170,7 @@ public class ReservationService {
         if (notificationService != null && reservation.getCustomer() != null) notificationService.notifyCustomer(
                 reservation.getCustomer().getId(),
                 "Đơn " + reservation.getReservationCode() + " đã bị huỷ (không đến nhận kho)",
-                "Bạn không đến nhận kho theo lịch hẹn và cơ sở không liên hệ được. " + penaltyLogStr
+                "Đơn bị huỷ vì bạn không đến nhận kho theo lịch hẹn (cơ sở không liên hệ được hoặc bạn đã báo không tới). " + penaltyLogStr
                         + (refundAmount.compareTo(BigDecimal.ZERO) > 0 ? ". Quản lý cơ sở sẽ hoàn tiền trong 24 giờ làm việc." : "."),
                 "BOOKING",
                 "/kho-cua-toi");

@@ -27,6 +27,9 @@ public class StorageUnitDetailResponse {
     private String roomNumber;
     private String status; // AVAILABLE, OCCUPIED, MAINTENANCE
     private boolean overdue; // true if current contract is OVERDUE
+    // (08/11/2026) Ô "sắp trống" (PR-R11): hợp đồng đã hẹn trả / quá hạn / qua hạn chót gia hạn → ngày ô giao được cho khách mới
+    private boolean releasing;
+    private LocalDate releaseDate;
     private CurrentContractInfo currentContract;
     private boolean canDelete; // true only if never had any rental contract in history
     // PR-O10: ô MAINTENANCE có task bảo trì đang mở → FE hiện "Chờ sửa (task #id)" thay vì ô FM tự khoá

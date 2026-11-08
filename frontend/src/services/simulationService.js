@@ -23,6 +23,11 @@ export async function simulateArriveToday(taskId) {
   return (await api.post(`/dev/simulation/tasks/${taskId}/arrive-today`)).data
 }
 
+// PR-T1: lịch hẹn nhận kho còn N ngày (task CHECK_IN) → demo khung 30 ngày giao / nhận việc
+export async function simulateAppointmentIn(taskId, days) {
+  return (await api.post(`/dev/simulation/tasks/${taskId}/appointment-in`, null, { params: { days } })).data
+}
+
 // Flow 3: khách tới trả kho hôm nay (task CHECK_OUT)
 export async function simulateCheckoutToday(taskId) {
   return (await api.post(`/dev/simulation/tasks/${taskId}/checkout-today`)).data

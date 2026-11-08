@@ -91,11 +91,21 @@ export default function ContactReportModal({ isOpen, task, onClose, onSuccess })
           >
             <option value="Khách xin dời ngày nhận kho">Khách xin dời ngày nhận kho</option>
             <option value="Khách không nghe máy / Thuê bao">Khách không nghe máy / Thuê bao</option>
-            <option value="Khách từ chối nhận kho / Xin hủy đơn">Khách từ chối nhận kho / Xin hủy đơn</option>
+            <option value="Khách cúp máy">Khách cúp máy</option>
+            <option value="Khách từ chối tới nhận kho">Khách từ chối tới nhận kho</option>
             <option value="Khách hẹn sẽ đến trong ngày hôm nay">Khách hẹn sẽ đến trong ngày hôm nay</option>
             <option value="Khác">Khác</option>
           </select>
         </div>
+
+        {/* PR-X3: gợi ý hệ quả của từng kết quả */}
+        <p className="text-[11px] font-bold text-[#777777] bg-[#F7F7F7] rounded-xl px-3 py-2 leading-relaxed -mt-2">
+          {callOutcome === 'Khách từ chối tới nhận kho'
+            ? 'Quản lý được huỷ đơn ngay (giữ cọc + 1 tháng tiền thuê).'
+            : ['Khách không nghe máy / Thuê bao', 'Khách cúp máy'].includes(callOutcome)
+              ? 'Tính 1 lần liên hệ thất bại. Đủ 2 lần và qua 48 giờ từ giờ hẹn thì quản lý được huỷ đơn.'
+              : 'Liên hệ được khách — quản lý dời lịch nhận kho nếu khách hẹn ngày khác.'}
+        </p>
 
         {/* Chi tiết trao đổi */}
         <div className="flex flex-col gap-1.5">

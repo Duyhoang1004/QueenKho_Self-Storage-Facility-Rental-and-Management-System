@@ -883,8 +883,9 @@ export default function CreateReservationPage() {
                 <p className="mb-1 text-[11px] font-black uppercase text-[#1899D6]">Chính sách hủy trước check-in</p>
                 <p>• Còn từ 48 giờ: hoàn 100%.</p>
                 <p>• Còn từ 24 đến dưới 48 giờ: giữ 50% cọc.</p>
-                <p>• Còn dưới 24 giờ hoặc đã qua giờ hẹn: giữ 100% cọc.</p>
-                <p className="mt-1 text-[#777777]">Đơn thanh toán trong vòng 48 giờ trước check-in được hoàn 100% nếu hủy trong 30 phút sau thanh toán và vẫn trước giờ hẹn.</p>
+                <p>• Còn dưới 24 giờ: giữ 100% cọc.</p>
+                <p>• Đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê.</p>
+                <p className="mt-1 text-[#777777]">Hủy trong 30 phút sau khi thanh toán (và vẫn trước giờ hẹn) luôn được hoàn 100%.</p>
               </div>
 
               {/* Giant CTA Button */}

@@ -231,6 +231,7 @@ public class AccessPolicy {
         // Demo giả lập
         rule("GET", "/api/v1/dev/simulation/status", AUTHENTICATED);
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/arrive-today", "DEV_SIM_CHECKIN");
+        rule("POST", "/api/v1/dev/simulation/tasks/{id}/appointment-in", "DEV_SIM_CHECKIN"); // PR-T1
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/checkout-today", "DEV_SIM_CHECKIN");
         rule("POST", "/api/v1/dev/simulation/contracts/{id}/add-failed-contacts", "DEV_SIM_MANAGER");
         rule("POST", "/api/v1/dev/simulation/held-goods/{id}/expire-hold", "DEV_SIM_MANAGER");

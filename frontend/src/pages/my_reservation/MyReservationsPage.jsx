@@ -59,7 +59,7 @@ const FILTERS = [
     label: "Đã gán ô",
     statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"],
   },
-  // HĐ còn hiệu lực hết hạn trong 7 ngày tới hoặc đã quá hạn (khớp ô "HĐ sắp hết hạn" ở trang chủ)
+  // HĐ còn hiệu lực hết hạn trong 15 ngày tới hoặc đã quá hạn (khớp ô "HĐ sắp hết hạn" ở trang chủ)
   { key: "EXPIRING", label: "Sắp hết hạn", statuses: ["UNIT_ASSIGNED"], expiringOnly: true },
   {
     key: "CLOSED",
@@ -107,6 +107,51 @@ function getStorageLocation(r) {
   return parts.join(" • ");
 }
 
+// Đơn chưa có hợp đồng (chờ thanh toán / đã cọc chờ gán ô / đã huỷ trước khi gán ô): bấm mã đơn → tóm tắt đơn
+function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
+  const meta = STATUS_META[r.status] || { label: r.status, className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" };
+  const waitingUnit = ["PENDING", "DEPOSIT_PAID"].includes(r.status);
+  const rows = [
+    ["Cơ sở", r.facilityName],
+    ["Địa chỉ", r.facilityAddress],
+    ["Loại kho", [r.unitTypeName, r.dimensions].filter(Boolean).join(" · ")],
+    ["Ngày nhận kho", formatDate(r.startDate)],
+    ["Thời hạn", `${r.durationMonths || 1} tháng`],
+    ["Tiền cọc", formatVND(r.depositAmount)],
+    ["Đã thanh toán", formatVND(r.totalPaid)],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl border-2 border-[#E5E5E5] w-full max-w-md p-6 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-[#AFAFAF] uppercase tracking-wider">Đơn đặt chỗ</p>
+            <h3 className="font-mono font-black text-lg text-[#1CB0F6]">{r.reservationCode}</h3>
+          </div>
+          <span className={`px-2.5 py-1 rounded-xl text-[11px] font-black ${meta.className}`}>{meta.label}</span>
+        </div>
+        <div className="flex flex-col divide-y-2 divide-[#F0F0F0] text-sm">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4 py-2">
+              <span className="font-bold text-[#777777] shrink-0">{label}</span>
+              <span className="font-black text-[#4B4B4B] text-right">{value || "—"}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs font-bold text-[#777777] bg-[#F7F7F7] rounded-2xl px-3 py-2.5 leading-relaxed">
+          {waitingUnit
+            ? "Đơn chưa có hợp đồng. Hợp đồng được tạo khi cơ sở gán ô kho cho bạn — lúc đó bấm mã đơn sẽ mở trang hợp đồng."
+            : "Đơn đã đóng trước khi cơ sở gán ô kho nên không phát sinh hợp đồng."}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onOpenTerms} className="duo-btn-white px-4 py-2 text-xs">Điều khoản thuê kho</button>
+          <button type="button" onClick={onClose} className="duo-btn-blue px-4 py-2 text-xs">Đóng</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function readUserId() {
   const user = JSON.parse(sessionStorage.getItem("user") || "{}");
   return user.userId ?? null;
@@ -133,6 +178,7 @@ export default function MyReservationsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [retryingId, setRetryingId] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
+  const [summaryRes, setSummaryRes] = useState(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -317,7 +363,7 @@ export default function MyReservationsPage() {
     if (active?.expiringOnly) {
       list = list.filter((r) => {
         const days = getDaysUntilExpiry(r);
-        return days !== null && days <= 7;
+        return days !== null && days <= 15;
       });
     }
     return [...list].sort((a, b) => {
@@ -551,9 +597,19 @@ export default function MyReservationsPage() {
                     >
                       {/* Cột 1: Mã đơn */}
                       <td className="px-3 py-3 whitespace-nowrap">
-                        <span className="font-mono font-black text-[#1CB0F6] bg-[#DDF4FF] px-1.5 py-0.5 rounded border border-[#84D8FF]">
+                        {/* Bấm mã đơn: đã có hợp đồng → trang hợp đồng; chưa có → tóm tắt đơn */}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            r.contractId
+                              ? navigate(`/kho-cua-toi/hop-dong/${r.id}`)
+                              : setSummaryRes(r)
+                          }
+                          title={r.contractId ? "Xem hợp đồng" : "Xem chi tiết đơn"}
+                          className="font-mono font-black text-[#1CB0F6] bg-[#DDF4FF] px-1.5 py-0.5 rounded border border-[#84D8FF] hover:bg-[#C4EBFF] hover:underline cursor-pointer"
+                        >
                           {r.reservationCode}
-                        </span>
+                        </button>
                       </td>
 
                       {/* Cột 2: Cơ sở */}
@@ -761,6 +817,14 @@ export default function MyReservationsPage() {
         open={termsOpen}
         onClose={() => setTermsOpen(false)}
       />
+
+      {summaryRes && (
+        <ReservationSummaryModal
+          reservation={summaryRes}
+          onClose={() => setSummaryRes(null)}
+          onOpenTerms={() => setTermsOpen(true)}
+        />
+      )}
     </div>
   );
 }

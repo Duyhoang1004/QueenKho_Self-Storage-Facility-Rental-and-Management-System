@@ -77,7 +77,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
             <span className="material-symbols-outlined text-[22px] shrink-0 text-[#E58800]">lock_clock</span>
             <div className="flex flex-col gap-1">
               <span className="font-black uppercase text-[#E58800]">Chưa đủ điều kiện xử lý khách vắng mặt</span>
-              <p className="leading-relaxed text-[#4B4B4B]">{reservation.noShowIneligibleReason || 'Phải quá 48h từ giờ hẹn và có tối thiểu 2 lần liên hệ thất bại cách nhau 24h.'}</p>
+              <p className="leading-relaxed text-[#4B4B4B]">{reservation.noShowIneligibleReason || 'Cần khách từ chối tới nhận kho, hoặc tối thiểu 2 lần liên hệ thất bại và đã qua 48 giờ từ giờ hẹn.'}</p>
               <div className="flex items-center gap-2 mt-1 text-[11px]">
                 <span className="px-2 py-0.5 rounded-md bg-white border border-[#FFD591] font-black text-[#B26B00]">
                   Số lần liên hệ: {reservation.failedContactCount || 0}/2 lần
@@ -91,9 +91,9 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
             <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
             <span>
               {waivePenalty ? (
-                <>Thao tác này sẽ <strong>hủy đơn</strong>, kích hoạt <strong>miễn phạt vắng mặt (hoàn 100% tiền đã đóng)</strong> và giải phóng ô kho về trạng thái sẵn sàng.</>
+                <>Thao tác này sẽ <strong>hủy đơn</strong>, kích hoạt <strong>miễn phạt vắng mặt (hoàn 100% tiền đã đóng{reservation.totalPaid != null ? `: ${Number(reservation.totalPaid).toLocaleString('vi-VN')}₫` : ''})</strong> và giải phóng ô kho về trạng thái sẵn sàng.</>
               ) : (
-                <>Thao tác này sẽ <strong>hủy đơn</strong>, <strong>tịch thu tiền cọc {reservation.depositAmount?.toLocaleString('vi-VN')}₫</strong> (hoàn lại tiền thuê trả trước nếu có) và giải phóng ô kho về trạng thái sẵn sàng.</>
+                <>Thao tác này sẽ <strong>hủy đơn</strong>, <strong>giữ cọc + 1 tháng tiền thuê{reservation.noShowPenaltyAmount != null ? ` (${Number(reservation.noShowPenaltyAmount).toLocaleString('vi-VN')}₫)` : ''}</strong>, hoàn tiền thuê các tháng còn lại{reservation.noShowRefundAmount != null ? ` (${Number(reservation.noShowRefundAmount).toLocaleString('vi-VN')}₫)` : ''} và giải phóng ô kho về trạng thái sẵn sàng.</>
               )}
             </span>
           </div>
@@ -137,7 +137,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
           >
             <option value="">Khách không đến nhận kho (mặc định)</option>
             <option value="Khách không liên lạc được">Khách không liên lạc được</option>
-            <option value="Khách từ chối nhận kho">Khách từ chối nhận kho</option>
+            <option value="Khách từ chối tới nhận kho">Khách từ chối tới nhận kho</option>
             <option value="Khách hẹn lại nhưng không đến">Khách hẹn lại nhưng không đến</option>
           </select>
         </div>

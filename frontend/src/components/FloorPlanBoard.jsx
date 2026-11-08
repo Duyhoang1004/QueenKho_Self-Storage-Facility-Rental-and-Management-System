@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import FloorPlanCanvas from './FloorPlanCanvas';
 import useElementWidth from '../utils/useElementWidth';
 import { createFloor, updateFloor, deleteFloor, saveFloorPlan } from '../services/storageUnitService';
-import { DISPLAY_STATES, DISPLAY_STATE_ORDER, getDisplayState } from '../utils/unitDisplayState';
+import { DISPLAY_STATES, DISPLAY_STATE_ORDER, formatReleaseDate, getDisplayState } from '../utils/unitDisplayState';
 import {
   FIXTURE_TYPES,
   DOOR_SIDES,
@@ -35,6 +35,8 @@ function unitTitle(unit) {
     lines.push(`Khách: ${unit.currentContract.customerName || '---'}`);
     if (unit.currentContract.endDate) lines.push(`Hết hạn: ${unit.currentContract.endDate}`);
   }
+  // PR-R11: ô sắp trống → ngày giao được cho khách mới (bấm ô để mở hợp đồng ở panel bên phải)
+  if (unit.releasing && unit.releaseDate) lines.push(`Sắp trống: giao được từ ${formatReleaseDate(unit.releaseDate)}`);
   // PR-M9: lý do FM khoá bảo trì
   if (unit.status === 'MAINTENANCE' && unit.maintenanceNote) lines.push(`Bảo trì: ${unit.maintenanceNote}`);
   return lines.join('\n');

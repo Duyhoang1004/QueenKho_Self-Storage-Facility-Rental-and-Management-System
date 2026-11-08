@@ -334,7 +334,13 @@ export default function CustomerPaymentsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-bold text-[#4B4B4B]">{t.contractCode || t.reservationCode || '—'}</div>
+                        {t.contractId && t.reservationId ? (
+                          <Link to={`/kho-cua-toi/hop-dong/${t.reservationId}`} title="Xem hợp đồng" className="font-bold text-[#1CB0F6] hover:underline">
+                            {t.contractCode || t.reservationCode}
+                          </Link>
+                        ) : (
+                          <div className="font-bold text-[#4B4B4B]">{t.contractCode || t.reservationCode || '—'}</div>
+                        )}
                         <div className="text-[11px] font-bold text-[#AFAFAF]">{t.facilityName || ''}</div>
                       </td>
                       <td className="px-4 py-3 font-bold text-[#777777]">{METHOD_LABELS[t.paymentMethod] || t.paymentMethod}</td>

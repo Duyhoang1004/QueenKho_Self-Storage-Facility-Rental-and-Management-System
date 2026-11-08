@@ -1,7 +1,7 @@
 # QueenKho — Business Rules
 
-> Cập nhật: **06/11/2026** (D-16: kho lạnh / kho đông, bỏ check-in online, email) · Trước đó: đối chiếu với code trên `main` `9d7dd5c` + thay đổi chưa commit ngày 05/11 — 212 unit test + E2E `docs/test-e2e/e2e-hop-nhom-05-11.sh` (44 bước), `e2e-bao-hiem-boi-thuong.sh` (36), `e2e-sua-bug-sau-test.sh` (48) chạy pass cùng ngày.
-> Các lần cập nhật: 16–17/10 tổng hợp + góp ý thành viên · 26/10 hoàn thiện 5 flow Must-have · 27/10 góp ý giảng viên — gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (D-12) · 01/11 đồng bộ toàn bộ tài liệu với code · 02/11 sửa lỗi sau đợt test · 04/11 góp ý giảng viên — bằng chứng bàn giao, chuyển ô, ưu tiên khách cũ, check-in online, phí di dời hàng (D-13), bảo hiểm & bồi thường (D-14) · 05/11 họp nhóm — loại hàng khi đặt kho, kiểm tra hàng lúc check-in, voucher theo loại kho, bỏ ân hạn 5 ngày, kho tổng thay bán thanh lý (D-15, mục 7) · 06/11 có kho lạnh / kho đông thật + ngưỡng cảm biến theo loại kho, bỏ check-in online, `MAIL_REDIRECT_TO` + email trả nợ (D-16, mục 7).
+> Cập nhật: **08/11/2026** (D-17: góp ý sau buổi nhóm test — No-Show, huỷ trong 30 phút, khung 30 ngày giao việc, ô sắp trống cho FM, mục 7) · 06/11/2026 (D-16: kho lạnh / kho đông, bỏ check-in online, email) · Trước đó: đối chiếu với code trên `main` `9d7dd5c` + thay đổi chưa commit ngày 05/11 — 212 unit test + E2E `docs/test-e2e/e2e-hop-nhom-05-11.sh` (44 bước), `e2e-bao-hiem-boi-thuong.sh` (36), `e2e-sua-bug-sau-test.sh` (48) chạy pass cùng ngày.
+> Các lần cập nhật: 16–17/10 tổng hợp + góp ý thành viên · 26/10 hoàn thiện 5 flow Must-have · 27/10 góp ý giảng viên — gia hạn báo trước 3 ngày & tối ưu doanh thu ô kho (D-12) · 01/11 đồng bộ toàn bộ tài liệu với code · 02/11 sửa lỗi sau đợt test · 04/11 góp ý giảng viên — bằng chứng bàn giao, chuyển ô, ưu tiên khách cũ, check-in online, phí di dời hàng (D-13), bảo hiểm & bồi thường (D-14) · 05/11 họp nhóm — loại hàng khi đặt kho, kiểm tra hàng lúc check-in, voucher theo loại kho, bỏ ân hạn 5 ngày, kho tổng thay bán thanh lý (D-15, mục 7) · 06/11 có kho lạnh / kho đông thật + ngưỡng cảm biến theo loại kho, bỏ check-in online, `MAIL_REDIRECT_TO` + email trả nợ (D-16, mục 7) · 08/11 góp ý sau buổi nhóm test sản phẩm (D-17, mục 7).
 >
 > **Ký hiệu**
 > - **BR-xx** — rule mô tả hành vi **code đang chạy**. BR-01 → BR-100 có từ đợt tổng hợp đầu; **BR-101 trở đi** bổ sung 01/11/2026 cho các tính năng làm sau 27/10 (mặt bằng, thông báo, mô phỏng demo…).
@@ -67,7 +67,7 @@ Rule còn chưa code hoặc code đang lệch: xem **mục 4**.
 | D-04 | **FM** thực hiện hoàn tiền, qua task `REFUND` trong `facility_tasks` (đã code ở #55, #57). | PR-O12; L-01 đã sửa. |
 | D-05 | **Bỏ cột** `rental_policy.lock_account_days`. | ✅ Đã bỏ (UC-07). |
 | D-06 | *(chốt lại 01/11/2026)* **Giữ voucher**: mỗi đơn đặt kho trực tuyến được **giảm cố định 100.000đ** (mã `NEWKHO`, tự áp). Dùng làm ưu đãi thu hút khách đặt online. *(Bản 16/10 quyết định bỏ voucher nhưng code và trang chủ vẫn giữ, nên nhóm chốt giữ theo sản phẩm.)* | BR-24, BR-25 (PR-B9 bỏ); câu chữ quảng cáo cần sửa — L-04. |
-| D-07 | **No-Show**: mặc định tịch thu 100% cọc, **hoàn toàn bộ tiền thuê**. FM được **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. Chỉ được bấm No-Show sau **≥ 2 lần liên hệ thất bại cách nhau ≥ 24h** và đã qua **48h** từ giờ hẹn. | PR-X1, PR-X3 (L-06, L-25 đã sửa). |
+| D-07 | **No-Show** *(sửa 08/11/2026, D-17 — mã nghiệp vụ F2-E06)*: Staff liên hệ khách trong **48h** sau giờ hẹn. Khách **từ chối tới** → FM huỷ được ngay; **không nghe máy / thuê bao / cúp máy** → đủ **≥ 2 lần** và qua **48h** mới huỷ. Huỷ thì **giữ 100% cọc + 1 tháng tiền thuê**, hoàn tiền thuê các tháng còn lại. FM được **"Miễn phạt"** (bắt buộc lý do) → hoàn toàn bộ. ~~Bản cũ: giữ cọc, hoàn toàn bộ tiền thuê; 2 lần liên hệ cách nhau ≥ 24h.~~ | PR-X1, PR-X3, BR-32 (L-06, L-25 đã sửa). |
 | D-08 | **Giữ 2 bảng ưu đãi**: đặt mới 1/3/6/12T mặc định giảm **0/5/10/15%**; gia hạn mặc định **0/0/5/10%**. *(26/10/2026)* BOM chỉnh được theo từng cơ sở trong chính sách thuê (0–50%, gói 1 tháng luôn 0%); đơn mới **chốt %** vào `reservations.rent_discount_percent`; gia hạn dùng bản chính sách đang hiệu lực. | Mọi chỗ tính tiền dùng chung `PricingService`; FE lấy % từ API `/facilities/{id}/pricing`. |
 | D-09 | **Thanh lý**: trừ phí trễ (trần 50% cọc) **+ phí chiếm dụng** (PR-Q14) vào cọc; phần cọc còn lại **tạm giữ**, chỉ hoàn khi khách đến cơ sở làm việc với FM; phí vượt cọc thành **khoản nợ** của khách. *(sửa 27/10/2026 — trước đây chỉ trừ 50% cọc)* | PR-Q9. |
 | D-10 | **Trả kho sớm được hoàn tiền thuê** theo nguyên tắc *thu hồi ưu đãi + phí phá hợp đồng* (thay quy định "trả sớm không hoàn"). | PR-O2. |
@@ -76,6 +76,7 @@ Rule còn chưa code hoặc code đang lệch: xem **mục 4**.
 | D-13 | (04/11/2026, góp ý giảng viên cho nhóm cùng đề tài) **Không gắn chết khách với 1 ô, có bằng chứng khi bàn giao, ưu tiên khách gắn bó**: **(1)** biên bản nhận / trả kho bắt buộc **ảnh hiện trạng ô** — so hai bộ ảnh để biết hư hỏng do ai; **(2)** FM được **chuyển hợp đồng sang ô khác cùng loại** (sự cố cơ sở / khách xin / sắp xếp lại, kể cả lúc gia hạn); **(3)** đơn chờ gán ô xếp **khách cũ + gói dài** lên trước; **(4)** khách **tự check-in online** đúng ngày hẹn; **(5)** thanh lý thu thêm **phí dọn & di dời hàng** một lần. Điều khoản tài sản lên **v3**. | BR-121 → BR-124, PR-Q16. |
 | D-14 | (04/11/2026, góp ý giảng viên: hàng hư / mất do kho, nhiệt độ, bảo hiểm, IoT) **Bảo hiểm hàng hoá + bồi thường qua yêu cầu hỗ trợ**: khách chọn gói bảo hiểm khi đặt kho (Cơ bản miễn phí / Nâng cao / Cao cấp) và khai báo giá trị hàng; hàng hư / mất gửi ticket hỗ trợ loại mới → Staff kiểm tra hiện trường → FM đối chiếu ảnh bàn giao + cảm biến, chốt lỗi và số tiền → chi trả có bằng chứng → gói có bảo hiểm thì cơ sở đòi lại bên bảo hiểm. Lỗi cơ sở **không đền gấp đôi giá trị hàng** (dễ trục lợi) mà đền tiền hàng tới trần + **phạt vi phạm 1 tháng tiền thuê** + hoàn tiền thuê ngày ô không dùng được, khách được chấm dứt hợp đồng không phí phá HĐ. Giữ quyền FM miễn phí trễ và **thêm quyền này cho BOM**. | BR-125 → BR-130. |
 | D-15 | (05/11/2026, họp nhóm) **Rõ ràng từ lúc đặt tới lúc hết hạn, không bán hàng của khách**: **(1)** khách **khai báo loại hàng** khi đặt kho (danh mục do BOM quản lý; thực phẩm chỉ gửi kho lạnh / kho đông), ngày nhận kho chọn đầu tiên trên trang đặt; **(2)** Staff **kiểm tra hàng** lúc check-in (mục 6 checklist); **(3)** voucher gắn được **từng loại kho**; **(4)** nhắc gia hạn **15 / 10 / 7 / 3 / 1 ngày**, **bỏ ân hạn 5 ngày**; **(5)** hết hạn không gia hạn / không trả kho → hôm sau (job 00:05) hợp đồng **thanh lý ngay**, hàng được kiểm kê và **chuyển vào kho tổng**, ô mở cho thuê lại; **(6)** kho tổng giữ hàng **tới khi khách nhận lại**, tính phí lưu giữ theo ngày, **không bán / không tiêu huỷ**; khách quá hạn xem được kho tổng, hotline và số tiền cần trả. Giữ nguyên PR-O2 (trả sớm). Điều khoản tài sản lên **v4**; hợp đồng điều khoản cũ vẫn đi luồng thanh lý cũ nhưng cũng **không bị bán hàng**. | BR-131 → BR-134, PR-R9, PR-O1, PR-Q1, PR-Q8, PR-Q10, PR-Q15, PR-R11. |
+| D-17 | (08/11/2026, góp ý sau buổi nhóm test sản phẩm) **(1)** No-Show theo F2-E06: giữ cọc + 1 tháng thuê, khách từ chối tới thì huỷ ngay (D-07); khách tự huỷ **sau giờ hẹn** tính như No-Show để không rẻ hơn bị huỷ; **(2)** huỷ trong **30 phút sau thanh toán** luôn hoàn 100% (mọi đơn, không chỉ đơn đặt sát giờ); **(3)** task `CHECK_IN` / `CHECK_OUT` chỉ giao / nhận trong **30 ngày trước ngày hẹn**; **(4)** FM thấy **ô sắp trống** trên sơ đồ / danh sách ô / modal gán ô và mở được hợp đồng đang giữ ô; khách chỉ chọn **loại kho** và thấy số ô còn trống; **(5)** bấm mã đơn / mã hợp đồng để mở hợp đồng; **(6)** nút giả lập nhắc gia hạn đủ 15 / 10 / 7 / 3 / 1 ngày. Giữ nguyên: trả kho trong tháng cuối chỉ hoàn cọc (PR-O2a); Staff chỉ thấy / nhận task cơ sở mình (BR-63, BR-64). | BR-32, BR-32a, PR-X1, PR-X3, PR-T1, BR-135, BR-115. |
 | D-16 | (06/11/2026) **(1) Có kho lạnh thật**: thêm loại kho **Kho Lạnh 6m²** (`COLD`, 0–8°C) và **Kho Đông 4m²** (`FROZEN`, -25 → -15°C), mỗi cơ sở có ô kho lạnh + kho đông — trước đó dữ liệu chỉ có kho thường nên khách không đặt được thực phẩm; cảm biến dùng **ngưỡng theo loại kho** thay cho một ngưỡng 15–30°C chung. **(2) Bỏ check-in online** (BR-124): khách luôn nhận kho tại quầy cùng Staff (UC-18) để Staff xác minh CCCD, kiểm tra hàng (BR-132) và cấp thẻ RFID; biên bản `ONLINE` cũ vẫn giữ và xem được. **(3) Email**: thêm email biên nhận khi trả khoản nợ qua VNPAY; biến `MAIL_REDIRECT_TO` dồn mọi email về 1 hộp thư khi dev / demo (tài khoản seed `khachhang1..5@gmail.com` là Gmail thật của người khác). | BR-117, BR-124, BR-129, BR-131. |
 
 ### 1.3 Ma trận vai trò → màn hình
@@ -279,8 +280,8 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 |---|---|
 | BR-30 | Khách được huỷ trước khi check-in: `PENDING`, `DEPOSIT_PAID`, hoặc `UNIT_ASSIGNED` khi hợp đồng còn `PENDING_CHECK_IN`. Nếu đã gán ô: hợp đồng → `TERMINATED`, task `CHECK_IN` → `CANCELLED`, ô → `AVAILABLE`. Sau check-in phải dùng luồng trả kho. |
 | BR-31 | Mốc tính phí = `expected_appointment_time`, trống → 09:00 ngày bắt đầu (PR-B10 làm cho luôn có giá trị). |
-| BR-32 | Quy tắc cố định toàn hệ thống: còn **≥48h** → hoàn 100%; còn **≥24h và <48h** → giữ 50% cọc; còn **<24h hoặc đã qua giờ hẹn nhưng chưa check-in** → giữ 100% cọc. Tiền hoàn = tổng `SUCCESS` (`DEPOSIT` + `MONTHLY_RENT`) − phần cọc bị giữ, không âm. Đúng 48h thuộc hoàn đủ; đúng 24h thuộc giữ 50% cọc. |
-| BR-32a | Ân hạn đơn đặt sát giờ: nếu thanh toán thành công khi còn **<48h** tới check-in, khách hủy trong **≤30 phút** sau thanh toán và vẫn trước giờ check-in → hoàn 100%. Thanh toán đúng 48h không thuộc ân hạn này. |
+| BR-32 | Quy tắc cố định toàn hệ thống: còn **≥48h** → hoàn 100%; còn **≥24h và <48h** → giữ 50% cọc; còn **<24h** (trước giờ hẹn) → giữ 100% cọc; *(08/11/2026, D-17)* **đã qua giờ hẹn mà chưa check-in** → giữ **cọc + 1 tháng tiền thuê** như No-Show (PR-X1, tier `AFTER_APPOINTMENT`) để khách tự huỷ không rẻ hơn bị huỷ. Tiền hoàn = tổng `SUCCESS` (`DEPOSIT` + `MONTHLY_RENT`) − phần bị giữ, không âm. 1 tháng tiền thuê = (đã trả − cọc) / số tháng của gói. Đúng 48h thuộc hoàn đủ; đúng 24h thuộc giữ 50% cọc. |
+| BR-32a | *(sửa 08/11/2026, D-17)* **Ân hạn 30 phút cho mọi đơn**: khách hủy trong **≤30 phút** sau khi thanh toán thành công và vẫn trước giờ hẹn → hoàn 100% (tier `BOOKING_GRACE`). ~~Bản 06/11 chỉ áp cho đơn thanh toán khi còn <48h tới check-in.~~ |
 | BR-33 | Lý do: 4 lý do có sẵn hoặc "Lý do khác" (bắt buộc nhập). Khoản hoàn > 0 bắt buộc có cách nhận tiền hợp lệ; UI khách hiện dùng chuyển khoản và yêu cầu đủ ngân hàng, STK 6–20 chữ số, tên chủ tài khoản. |
 | BR-34 | Khi xác nhận huỷ, backend tính một lần và lưu `cancelled_at`, `cancellation_tier`, `cancellation_penalty_amount`, `cancellation_refund_amount`; tạo đúng 1 giao dịch `REFUND/PENDING` (`paid_at = NULL`) và task `REFUND` chỉ khi số hoàn > 0. FM **không tính/chỉnh lại tiền cọc**, chỉ hoàn đúng số đã chốt, tải bằng chứng và xác nhận; khi đó giao dịch → `SUCCESS`, đơn → `REFUNDED`. Không có tiền cần hoàn → `CANCELLED`, không sinh task/giao dịch REFUND. |
 | BR-35 | Mọi lần huỷ ghi `activity_logs`. |
@@ -288,7 +289,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 **Đã chốt**
 | Mã | Rule |
 |---|---|
-| PR-15 | Mốc hủy 48h / 24h / 30 phút và tỷ lệ giữ cọc 50% / 100% là **quy tắc cố định toàn hệ thống**; BOM và FM không chỉnh theo cơ sở. Hai cột cũ `cancel_free_hours`, `cancel_fee_percent` chỉ giữ để tương thích. |
+| PR-15 | Mốc hủy 48h / 24h / 30 phút, tỷ lệ giữ cọc 50% / 100% và mức giữ sau giờ hẹn (cọc + 1 tháng thuê) là **quy tắc cố định toàn hệ thống**; BOM và FM không chỉnh theo cơ sở. Hai cột cũ `cancel_free_hours`, `cancel_fee_percent` chỉ giữ để tương thích. |
 | PR-M5 | Chính sách hủy dùng bộ tính tập trung `CancellationPolicyService` và đóng băng kết quả tại thời điểm khách xác nhận; không đọc lại chính sách khi FM hoàn tiền. |
 | PR-O12 | Đơn đã thanh toán khi huỷ → task `REFUND` cho FM (BR-34), FM hoàn theo PR-O12 (có bằng chứng). |
 | PR-R12 | (27/10/2026) Đơn `DEPOSIT_PAID` **đã tới ngày nhận kho mà cơ sở chưa gán được ô** (ô sắp trống khách cũ chưa trả — PR-R11) → lỗi cơ sở: khách huỷ được **hoàn 100%**, không tính `cancel_fee_percent`. FM vẫn có thể gán ô khác cùng loại nếu có ô `AVAILABLE`. |
@@ -312,14 +313,14 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | BR-50 | Danh sách No-Show: đơn đã gán ô của cơ sở mà **ngày bắt đầu đã qua** (task check-in đã `OVERDUE`). |
 | BR-51 | No-Show (đơn `DEPOSIT_PAID`/`UNIT_ASSIGNED`): đơn `CANCELLED`; ô `AVAILABLE`; hợp đồng `TERMINATED`; huỷ task `CHECK_IN`; ghi log kèm lý do. Tiền xử lý theo PR-X1; còn tiền phải hoàn → task `REFUND`, hoàn xong đơn `REFUNDED`. |
 | BR-52 | Dời lịch (gọi được khách): ngày mới không ở quá khứ; đơn `DEPOSIT_PAID`/`UNIT_ASSIGNED`; cập nhật start/end hợp đồng (giữ số tháng); dời hạn task `CHECK_IN`, task `OVERDUE` được mở lại. |
-| BR-53 | (#52) **Báo cáo liên hệ**: Staff cùng cơ sở ghi kết quả cuộc gọi + ghi chú trên task `CHECK_IN` quá hạn → lưu vào `note` của task (ghi đè lần trước) và `activity_logs` (`target_entity = 'facility_tasks'`); task chưa ai nhận thì gán cho Staff báo cáo. FM xem báo cáo để quyết định dời lịch / No-Show. |
+| BR-53 | (#52) **Báo cáo liên hệ**: Staff cùng cơ sở ghi kết quả cuộc gọi + ghi chú trên task `CHECK_IN` quá hạn → lưu vào `note` của task (ghi đè lần trước) và `activity_logs` (`target_entity = 'facility_tasks'`); task chưa ai nhận thì gán cho Staff báo cáo. FM xem báo cáo để quyết định dời lịch / No-Show. *(08/11/2026)* Kết quả cuộc gọi: **Khách xin dời ngày** / **hẹn đến trong ngày** / **Khác** → `[CONTACT][SUCCESS]`; **Không nghe máy / thuê bao** / **Khách cúp máy** → `[CONTACT][FAILED]`; **Khách từ chối tới nhận kho** → `[CONTACT][REFUSED]`. Modal ghi rõ hệ quả của từng lựa chọn. |
 
 **Đã chốt**
 | Mã | Rule |
 |---|---|
-| PR-X1 | (D-07) No-Show: **tịch thu 100% cọc, hoàn toàn bộ tiền thuê** (tạo `REFUND` → PR-O12). FM chọn **"Miễn phạt"** (bắt buộc lý do) → hoàn cả cọc. FE hiện số tiền hoàn trước khi xác nhận. |
+| PR-X1 | (D-07, *sửa 08/11/2026*) No-Show: **giữ 100% cọc + 1 tháng tiền thuê**, hoàn tiền thuê các tháng còn lại (tạo `REFUND` → PR-O12); gói 1 tháng thì không còn gì để hoàn. FM chọn **"Miễn phạt"** (bắt buộc lý do) → hoàn toàn bộ. Tính chung ở `CancellationPolicyService.noShow` (cùng công thức với khách huỷ sau giờ hẹn — BR-32). Danh sách No-Show trả sẵn `totalPaid`, `noShowPenaltyAmount`, `noShowRefundAmount` để modal hiện số tiền giữ / hoàn trước khi FM xác nhận. ~~Bản cũ: tịch thu cọc, hoàn toàn bộ tiền thuê.~~ |
 | PR-X2 | API No-Show tự kiểm tra ngày bắt đầu đã qua (L-10). Log ghi **người thao tác là FM** (PR-A8). |
-| PR-X3 | **Điều kiện bấm No-Show**: có **≥ 2 báo cáo liên hệ thất bại** (BR-53) **cách nhau ≥ 24h**, **và** đã qua **48h** kể từ giờ hẹn (`expected_appointment_time`). Chưa đủ → nút No-Show bị khoá, BE trả 409 `NO_SHOW_NOT_ALLOWED_YET`. Số lần liên hệ đếm từ `activity_logs` của task (mã nghiệp vụ `[CONTACT]` — PR-A10), không dựa vào `note` vì `note` bị ghi đè. Trong thời gian chờ, ô vẫn giữ cho khách; liên hệ được thì dời lịch (BR-52). |
+| PR-X3 | **Điều kiện bấm No-Show** *(sửa 08/11/2026, D-17)*: **(a)** có báo cáo **khách từ chối tới nhận kho** (`[CONTACT][REFUSED]`) → huỷ được ngay; hoặc **(b)** có **≥ 2 báo cáo liên hệ thất bại** (không nghe máy / thuê bao / cúp máy — BR-53; 2 báo cáo trong 10 phút tính 1 lần) **và** đã qua **48h** kể từ giờ hẹn (`expected_appointment_time`). ~~Bản cũ bắt 2 lần thất bại cách nhau ≥ 24h.~~ Chưa đủ → nút No-Show bị khoá, BE trả 409 `NO_SHOW_NOT_ALLOWED_YET`. Số lần liên hệ đếm từ `activity_logs` của task (mã nghiệp vụ `[CONTACT]` — PR-A10), không dựa vào `note` vì `note` bị ghi đè. Trong thời gian chờ, ô vẫn giữ cho khách; liên hệ được thì dời lịch (BR-52). |
 | PR-C3 | Đây là **lối duy nhất** xử lý task `CHECK_IN` quá hạn (không có nút "hoàn thành task quá hạn"). |
 
 ### UC-16 / UC-17 Bảng công việc & nhận việc ✅
@@ -331,7 +332,8 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | BR-63 | Staff + FM **cùng cơ sở** xem bảng; lọc trạng thái, loại, "Việc của tôi", tìm kiếm. |
 | BR-64 | Chỉ **STAFF cùng cơ sở** nhận task `OPEN` chưa quá hạn; ai bấm trước người đó nhận; không tự trả việc. |
 | BR-65 | Chỉ **FM cùng cơ sở** gỡ người nhận của task `IN_PROGRESS` → `OPEN`. |
-| PR-C6 | ⬜ Staff chỉ nhận task có hạn **trong 3 ngày tới** → 409 `TASK_TOO_FAR`. *(chưa code — L-29)* |
+| PR-C6 | ~~⬜ Staff chỉ nhận task có hạn **trong 3 ngày tới** → 409 `TASK_TOO_FAR`.~~ → thay bằng **PR-T1** (08/11/2026). |
+| PR-T1 | *(08/11/2026, D-17)* Task `CHECK_IN` / `CHECK_OUT` chỉ **giao (FM) / nhận (Staff)** được trong vòng **30 ngày trước ngày hẹn**: mở từ 00:00 của (ngày của `due_at` − 30 ngày). Sớm hơn → 409 `TASK_NOT_IN_WINDOW` kèm ngày mở. API task trả `assignableFrom` (null = không giới hạn — `SUPPORT`, `MAINTENANCE`, `REFUND`); bảng việc / chi tiết task khoá nút và ghi "Nhận từ / Giao từ dd/MM". Giả lập "Hẹn còn 45 / 30 ngày" trên chi tiết task check-in (BR-115). |
 | — | *(26/10/2026)* FM **giao việc**: task `CHECK_IN` / `CHECK_OUT` / `SUPPORT` / `MAINTENANCE` chưa quá hạn, chỉ cho Staff `ACTIVE` cùng cơ sở (khác → 400 `INVALID_STAFF` / `STAFF_INACTIVE`); giao lại = đổi người (trùng người → 409 `TASK_ALREADY_ASSIGNED`); task `REFUND` là việc của FM, không giao. Log `[TASK_ASSIGN]`, thông báo cho Staff được giao (BR-111). |
 | PR-34 | Task `SUPPORT` khẩn (PR-S1) nổi lên đầu bảng. |
 
@@ -507,6 +509,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | BR-106 | **Vật cố định** (`floor_fixtures`): lối đi `AISLE`, cửa ra vào `ENTRANCE`, cầu thang `STAIRS`, thang máy `ELEVATOR`, văn phòng `OFFICE` (loại khác → 400 `INVALID_FIXTURE_TYPE`); là hình chữ nhật trên lưới, mỗi chiều tối đa 100 ô; xoá tầng thì xoá theo. |
 | BR-107 | **Đặt ô lên mặt bằng**: kích thước mặc định suy từ `unit_types.dimensions` (0,5 m / ô), không có thì theo diện tích; phía cửa `TOP` / `BOTTOM` / `LEFT` / `RIGHT` (mặc định `BOTTOM`). Bị chặn khi: ô / vật cố định ra ngoài lưới (`MAP_OUT_OF_BOUNDS`); hai ô chồng nhau hoặc ô đè lên vật cố định (400 `MAP_CONFLICT` — chạm cạnh không tính là chồng); ô của cơ sở khác (`UNIT_NOT_IN_FACILITY`); một ô đặt hai lần (`DUPLICATE_PLACEMENT`). Lưu cả tầng trong **1 transaction** — có lỗi thì không lưu gì. Gỡ ô khỏi mặt bằng → ô vẫn thuộc tầng, vẫn cho thuê được. |
 | BR-108 | Thêm ô mới chọn được vị trí trên mặt bằng ngay lúc tạo (#98); mã ô vẫn tự sinh theo PR-M9. |
+| BR-135 | *(08/11/2026, D-17)* **FM thấy ô sắp trống**: ô `OCCUPIED` của hợp đồng đang "sắp trống" theo PR-R11 (đã hẹn trả / quá hạn / `ACTIVE` qua hạn chót gia hạn ưu tiên) được trả thêm `releasing = true` + `releaseDate` (ngày giao được cho khách mới — cùng công thức PR-R11) ở `GET /storage-units` và chi tiết ô; danh sách có KPI `releasingUnits` và bộ lọc `status=RELEASING`. Trên sơ đồ / danh sách ô / panel chi tiết hiện nhãn **"Sắp trống"** (viền cam nét đứt) kèm ngày giao; mã hợp đồng bấm được để mở hợp đồng. Modal **gán ô** liệt kê thêm ô sắp trống **cùng loại** (chỉ xem, chưa gán được tới khi khách cũ trả kho / bị thanh lý) kèm link hợp đồng; trên bản đồ chọn ô các ô này không bị làm mờ. **Khách không thấy ô cụ thể**: chỉ chọn loại kho và thấy số ô còn trống (BR-109, UC-09). |
 | BR-109 | *(29/10/2026, #99)* **Xem vị trí ô**: khách xem vị trí ô của **hợp đồng mình** khi hợp đồng `PENDING_CHECK_IN` / `ACTIVE` / `OVERDUE` / `TERMINATION_PENDING` (đã kết thúc → 409 `CONTRACT_NOT_ACTIVE`). Các ô khác trên tầng chỉ hiện hình khối — **không mã, không trạng thái** — để khách không biết ô nào đang có người thuê. Kèm 1 dòng chỉ dẫn "Tầng · Khu · Phòng · cửa quay ra …". Staff / FM xem vị trí ở mọi trạng thái hợp đồng. |
 
 ### UC-32 Quản lý nhân viên (FM) ✅
@@ -605,7 +608,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | Mã | Rule |
 |---|---|
 | BR-114 | Chỉ chạy khi cấu hình `queenkho.simulation.enabled = true`, tắt → 404 `SIMULATION_DISABLED`. ⚠️ `application.yaml` đang để mặc định **bật** (`SIMULATION_ENABLED:true`) cho buổi demo — **phải tắt khi chạy thật**. |
-| BR-115 | Giả lập **chỉ dời mốc thời gian** rồi để nghiệp vụ thật xử lý tiếp (job, nút No-Show, nút Thanh lý…) — không có lối tắt đổi trạng thái. Các thao tác: khách tới nhận kho / trả kho hôm nay; đơn quá 15 phút giữ chỗ (chạy job huỷ ngay); đủ điều kiện No-Show (lùi giờ hẹn 49h + 2 lần liên hệ thất bại cách nhau ≥ 24h); hợp đồng quá hạn N ngày; thêm lần liên hệ thất bại; hàng lưu giữ hết hạn; ticket đã xử lý quá 3 ngày; *(02/11/2026)* **hợp đồng còn 7 / 3 / 1 ngày hết hạn** (chạy ngay job nhắc gia hạn — khách / FM); **task hỗ trợ / bảo trì quá hạn ngay** (chạy ngay job đánh quá hạn — FM, để demo "Gia hạn xử lý"). Vẫn kiểm tra quyền và phạm vi cơ sở như thao tác thật (đơn của người khác → 403, sai trạng thái → 409 `SIMULATION_NOT_APPLICABLE`). |
+| BR-115 | Giả lập **chỉ dời mốc thời gian** rồi để nghiệp vụ thật xử lý tiếp (job, nút No-Show, nút Thanh lý…) — không có lối tắt đổi trạng thái. Các thao tác: khách tới nhận kho / trả kho hôm nay; đơn quá 15 phút giữ chỗ (chạy job huỷ ngay); đủ điều kiện No-Show (lùi giờ hẹn 49h + 2 lần liên hệ thất bại cách nhau ≥ 24h); hợp đồng quá hạn N ngày; thêm lần liên hệ thất bại; hàng lưu giữ hết hạn; ticket đã xử lý quá 3 ngày; *(02/11/2026, mở rộng 08/11)* **hợp đồng còn 15 / 10 / 7 / 3 / 1 ngày hết hạn** (chạy ngay job nhắc gia hạn — có ở cả trang hợp đồng của khách và của FM; banner nhắc gia hạn, ô "HĐ sắp hết hạn" ở trang chủ và bộ lọc "Sắp hết hạn" của khách tính từ 15 ngày); *(08/11)* **lịch hẹn nhận kho còn N ngày** (1–90, demo PR-T1); **task hỗ trợ / bảo trì quá hạn ngay** (chạy ngay job đánh quá hạn — FM, để demo "Gia hạn xử lý"). Vẫn kiểm tra quyền và phạm vi cơ sở như thao tác thật (đơn của người khác → 403, sai trạng thái → 409 `SIMULATION_NOT_APPLICABLE`). |
 | BR-116 | Mỗi lần giả lập ghi log `[SIMULATION]` kèm người bấm, để hội đồng thấy rõ đây là thao tác tua thời gian. |
 
 ---
@@ -620,7 +623,6 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | L-09 | 🟡 | Ngày bắt đầu: BE nhận cả hôm nay, FE từ ngày mai; cả hai chưa chặn quá 30 ngày. | `ReservationService.createReservation`, `CreateReservationPage.jsx` | PR-B4 |
 | L-12 | 🟡 | Comment trạng thái trong SQL chưa khớp code: `reservations` thiếu `EXPIRED`, `TERMINATION_PENDING`, `REFUND_PENDING`, `REFUNDED`; `storage_units` còn `RESERVED`; `payment_transactions` ghi `REFUNDED` nhưng không dùng. | `sql_script/QueenKho.sql` | Mục 2 |
 | L-28 🆕 | 🟡 | Chưa giới hạn mỗi khách 1 đơn `PENDING`. | `ReservationService.createReservation` | PR-B2 |
-| L-29 🆕 | 🟡 | Staff nhận được task có hạn xa hơn 3 ngày. | `StaffTaskService.claimTask` | PR-C6 |
 | L-30 🆕 | 🟡 | API chi tiết task vẫn trả PIN / RFID cho Staff / FM sau check-in. | `StaffTaskService` (dựng `StaffTaskDetailResponse`) | PR-C5 |
 | L-32 🆕 | 🟡 | Hoàn tiền không nhập mã FT thì code tự ghi `UNC-IMAGE` / `CASH-<id>` vào `bank_transaction_code` → danh sách đối soát lẫn mã giả với mã thật. | `StaffTaskService.completeRefund` | PR-O15 |
 | L-33 🆕 | 🟡 | Màn gia hạn chưa báo khi giá niêm yết đã đổi so với lúc ký. | `ContractOptionsModal.jsx` | PR-R4 |
@@ -651,6 +653,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | L-23 | Nút gia hạn / trả kho hiện cả khi hợp đồng đã kết thúc | PR-R1 |
 | L-24 | Hoàn tất hoàn tiền không bắt buộc bằng chứng | #97 (PR-O15) |
 | L-25 | No-Show bấm được ngay khi task quá hạn | PR-X3 |
+| L-29 | Staff nhận được task có hạn quá xa | PR-T1 (08/11/2026): khung 30 ngày cho cả giao và nhận việc |
 | L-27 | Trả sớm không hoàn tiền thuê; ngày ân hạn chưa tính phí | PR-O2, PR-O14 |
 | L-26 | Checklist check-in 5 mục, chưa có cam kết hàng cấm / kiểm tra hàng | 05/11 — mục 6 bắt buộc + cột `is_prohibited_goods_committed` (BR-132) |
 | L-04 | Trang chủ / đăng ký ghi ưu đãi "cho đơn đầu tiên" | 02/11 — sửa câu chữ "cho mỗi đơn đặt kho trực tuyến" (BR-25) |
@@ -726,13 +729,13 @@ Trả về dạng `{ "error": "CODE", "message": "..." }`.
 | 400 | `TERMS_NOT_ACCEPTED` | Đặt kho chưa đồng ý điều khoản | BR-102 |
 | 409 | `CUSTOMER_HAS_DEBT` | Khách có hợp đồng quá hạn / còn nợ | PR-Q12 |
 | 409 | `CHECK_IN_TOO_EARLY` | Check-in / nghiệm thu trước ngày hẹn | PR-C1, PR-O5 |
-| 409 | `TASK_TOO_FAR` ⬜ | Nhận task có hạn quá 3 ngày *(chưa code — L-29)* | PR-C6 |
+| 409 | `TASK_NOT_IN_WINDOW` | Giao / nhận task `CHECK_IN` / `CHECK_OUT` sớm hơn 30 ngày trước ngày hẹn | PR-T1 |
 | 409 | `CONTRACT_NOT_RENEWABLE` | Gia hạn hợp đồng sai trạng thái | PR-R1 |
 | 409 | `RENEWAL_UNIT_RESERVED` | Gia hạn sau hạn chót ưu tiên (`end_date` − 3) mà ô đã có khách khác đặt trước | PR-R10, PR-R11 |
 | 409 | `NO_AVAILABILITY` | Hết suất khi tạo đơn; message báo ngày nhận kho sớm nhất nếu có ô sắp trống | PR-B1, PR-R11 |
 | 409 | `STORAGE_FEE_UNPAID` | Khách nhận lại hàng lưu giữ mà chưa thu đủ phí lưu giữ tại quầy | PR-Q15 |
 | 409 | `SLOT_IN_USE` | Thao tác ô kho làm âm số suất | PR-M10 |
-| 409 | `NO_SHOW_NOT_ALLOWED_YET` | Chưa đủ 2 lần liên hệ cách 24h / chưa qua 48h | PR-X3 |
+| 409 | `NO_SHOW_NOT_ALLOWED_YET` | Khách chưa từ chối tới, và chưa đủ 2 lần liên hệ thất bại / chưa qua 48h | PR-X3 |
 | 400 | `REFUND_EVIDENCE_REQUIRED` | Hoàn tất hoàn tiền thiếu ảnh / link ủy nhiệm chi (chuyển khoản) hoặc xác nhận ký nhận (tiền mặt) | PR-O15 |
 | 409 | `NOT_ENOUGH_CONTACTS` | Thanh lý khi chưa đủ 3 lần liên hệ khách | PR-Q10 |
 | 409 | `LIQUIDATION_NOT_ALLOWED_YET` | Thanh lý khi chưa quá `liquidation_days` | PR-Q8 |
@@ -896,6 +899,21 @@ Tầng 2–4 chỉ áp dụng cho đơn đặt từ **điều khoản v2** (`res
 
 Chạy `sql_script/Update_kho_lanh.sql` trên DB local (đã gộp vào `QueenKho_full.sql`, `QueenKho_TongHop.sql` và `init_db.sh`). `./mvnw test` 06/11: 679 test, 6 lỗi có sẵn từ #111 (`BusinessRegressionTest` 5, `StorageUnitBusinessTest` 1 — lỗi y hệt trên `main` trước thay đổi này).
 
+### 08/11/2026 — Góp ý sau buổi nhóm test sản phẩm (D-17)
+| # | Góp ý | Hệ thống trước đó | Kết quả | Rule |
+|---|---|---|---|---|
+| 1 | Khách không tới nhận kho (F2-E06): Staff liên hệ trong 48h; không liên lạc được / cúp máy / từ chối tới → huỷ HĐ, giữ cọc + tiền thuê tháng | Giữ cọc, hoàn toàn bộ tiền thuê; phải 2 lần thất bại cách 24h + qua 48h, kể cả khi khách đã từ chối | ✅ Kết quả liên hệ tách *không nghe máy / cúp máy / từ chối tới*; từ chối tới → huỷ ngay; giữ cọc + 1 tháng thuê; khách tự huỷ sau giờ hẹn tính như No-Show | D-07, BR-32, BR-53, PR-X1, PR-X3 |
+| 2 | Trả kho trong tháng cuối không hoàn tiền thuê, chỉ hoàn cọc | Đã có từ 02/11 | Giữ nguyên | PR-O2a |
+| 3 | Staff cơ sở này không nhận được task cơ sở kia | Đã chặn (`FORBIDDEN_FACILITY`, filter ghi đè `facilityId` theo token) | Giữ nguyên | BR-63, BR-64 |
+| 4 | Huỷ trước 48h hoàn 100%, 24–48h mất nửa cọc, dưới 24h mất hết cọc; **thêm**: huỷ trong 30 phút sau khi đặt thì hoàn toàn bộ | 3 mức đã có (#113); ân hạn 30 phút chỉ cho đơn đặt sát giờ | ✅ Ân hạn 30 phút sau thanh toán áp cho mọi đơn | BR-32, BR-32a |
+| 5 | Bấm vào mã đơn để xem hợp đồng | Phải bấm nút "XEM HĐ"; mã đơn / mã HĐ chỉ là chữ | ✅ Khách: mã đơn mở trang hợp đồng (chưa có HĐ → popup tóm tắt đơn), mã HĐ ở lịch sử thanh toán; FM: mã HĐ ở danh sách khách & hợp đồng, HĐ quá hạn, chi tiết task, danh mục ô; mã đơn ở đơn chờ gán / No-Show mở chi tiết đơn | — |
+| 6 | Task check-in / check-out chỉ giao cho nhân viên trong vòng 30 ngày trước ngày hẹn + nút giả lập | Giao / nhận lúc nào cũng được | ✅ Khung 30 ngày, `TASK_NOT_IN_WINDOW`, giả lập "Hẹn còn 45 / 30 ngày" | PR-T1 |
+| 7 | Nút giả lập HĐ còn 15 / 10 ngày chưa hiện | BE nhận tới 15 ngày nhưng trang khách chỉ có 7 / 3 / 1, banner nhắc chỉ hiện khi ≤ 7 ngày; trang FM có 15 / 3 | ✅ Đủ 15 / 10 / 7 / 3 / 1 ở cả hai phía; banner / trang chủ / bộ lọc tính từ 15 ngày | BR-115, PR-R9 |
+| 8 | Chỉ FM mới xem được ô nào trống; khách chỉ chọn loại kho và thấy còn bao nhiêu ô; FM thấy ô trống + ô sắp trống, trỏ vào ô sắp trống thì xem được hợp đồng | Sơ đồ khách đã ẩn ô khác; FM không phân biệt ô sắp trống | ✅ Nhãn "Sắp trống" + ngày giao cho FM, link hợp đồng; modal gán ô hiện ô sắp trống cùng loại; phía khách giữ nguyên số ô còn trống | BR-135, BR-109 |
+| 9 | Dữ liệu mẫu để FM gán ô lúc kho sắp trống | `QueenKho_setup_data.sql` không có đơn / hợp đồng | ⬜ Làm sau (nhóm chốt 08/11) | PR-R11 |
+
+Không đổi schema. Pull 06/11 có `sql_script/Update_cancel_business_rule_06_11.sql` (#113) — chạy trên DB local trước khi chạy backend. E2E `docs/test-e2e/e2e-gop-y-test-08-11.sh` (31 bước: BR-32a, BR-32, PR-X1, PR-X3, PR-T1, BR-135, mốc nhắc 10 ngày) chạy pass 08/11.
+
 ---
 
 ## 8. Truy vết rule ↔ kiểm thử
@@ -907,7 +925,8 @@ Chạy `sql_script/Update_kho_lanh.sql` trên DB local (đã gộp vào `QueenKh
 | `AccessPolicyTest` | 10 | PR-90, ma trận 1.3 (mọi API đều khai báo luật; phạm vi từng vai trò), BR-128 / BR-130 (BOM miễn phí trễ, xem bồi thường; chỉ FM chốt) |
 | `AccessControlFilterTest` | 10 | PR-90, BR-03 (thiếu token, khoá giữa phiên, ghi đè `customerId` / `facilityId` theo token) |
 | `ReservationServiceTest` | 11 | BR-21, PR-B1, PR-B3, PR-M4, PR-M6, PR-Q12 |
-| `NoShowServiceTest` | 8 | BR-51, BR-52, PR-X1, PR-X2, PR-X3 |
+| `NoShowServiceTest` | 11 | BR-51, BR-52, PR-X1 (giữ cọc + 1 tháng thuê), PR-X2, PR-X3 (khách từ chối → huỷ ngay; 2 lần thất bại nhưng chưa qua 48h → chưa huỷ) |
+| `CancellationPolicyServiceTest` | 12 | BR-32 (mốc 48h / 24h, huỷ sau giờ hẹn = No-Show), BR-32a (ân hạn 30 phút mọi đơn), PR-R12, PR-X1 (No-Show, gói 1 tháng, miễn phạt) |
 | `StaffTaskAssignAndRefundTest` | 14 | Giao việc (UC-16/17), PR-O12, PR-C1, BR-121 (check-in thiếu ảnh), BR-132 (mục 6 kiểm tra hàng) |
 | `LecturerFeedbackRulesTest` | 5 | BR-122 (chuyển ô khác loại, hết suất khi đưa ô cũ vào bảo trì, hợp đồng quá hạn), BR-123 (điểm ưu tiên), PR-Q16 (chỉ điều khoản v3) — 3 test BR-124 bỏ cùng check-in online (D-16) |
 | `CompensationRulesTest` | 7 | BR-125 (trần bồi thường), BR-127 (lỗi cơ sở / bất khả kháng / lỗi khách, chấm dứt hoàn theo ngày), BR-129 (ngưỡng cảm biến) |

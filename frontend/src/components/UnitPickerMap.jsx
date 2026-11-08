@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import FloorPlanCanvas from './FloorPlanCanvas';
 import useElementWidth from '../utils/useElementWidth';
-import { getDisplayState } from '../utils/unitDisplayState';
+import { formatReleaseDate, getDisplayState } from '../utils/unitDisplayState';
 import { cellsToMeters, sameFloor } from '../utils/floorPlan';
 
 /**
@@ -9,10 +9,11 @@ import { cellsToMeters, sameFloor } from '../utils/floorPlan';
  * - layout:        { floors: [{ id, name, gridWidth, gridHeight, fixtures }] }
  * - units:         mọi ô của cơ sở (GET /storage-units)
  * - selectableIds: Set mã ô gán được (ô trống đúng loại khách đặt)
+ * - releasingIds:  Set mã ô sắp trống cùng loại (không mờ để FM thấy, nhưng chưa bấm gán được)
  * - selectedId / onSelect(id)
  * Ô gán được tô xanh và bấm được; ô khác giữ màu trạng thái nhưng mờ, không bấm được.
  */
-export default function UnitPickerMap({ layout, units = [], selectableIds, selectedId, onSelect }) {
+export default function UnitPickerMap({ layout, units = [], selectableIds, releasingIds, selectedId, onSelect }) {
   const floors = useMemo(() => layout?.floors || [], [layout]);
   const [boxRef, boxWidth] = useElementWidth();
   // Tầng FM tự bấm chỉ có hiệu lực tới khi đổi ô đang chọn (chọn ô ở tầng khác → tự chuyển tầng)
@@ -41,6 +42,7 @@ export default function UnitPickerMap({ layout, units = [], selectableIds, selec
     .filter(u => isPlaced(u) && sameFloor(u.floor, floor.name))
     .map(u => {
       const selectable = selectableIds.has(u.id);
+      const releasing = !selectable && releasingIds?.has(u.id);
       return {
         id: u.id,
         label: `${u.zone || ''}${u.roomNumber || ''}`,
@@ -50,8 +52,10 @@ export default function UnitPickerMap({ layout, units = [], selectableIds, selec
         h: u.mapH,
         door: u.mapDoor,
         state: getDisplayState(u),
-        title: `${u.id} · ${u.unitTypeName} · bấm để chọn gán`,
-        dimmed: !selectable,
+        title: releasing
+          ? `${u.id} · Sắp trống từ ${formatReleaseDate(u.releaseDate)}${u.currentContract ? ` · HĐ ${u.currentContract.contractCode}` : ''} · chưa gán được`
+          : `${u.id} · ${u.unitTypeName} · bấm để chọn gán`,
+        dimmed: !selectable && !releasing,
         inert: !selectable
       };
     });

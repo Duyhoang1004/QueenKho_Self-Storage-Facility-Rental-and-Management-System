@@ -10,6 +10,8 @@ import java.time.LocalDateTime;
 /**
  * Quy tắc hủy đặt chỗ áp dụng thống nhất toàn hệ thống.
  * Số tiền được tính và đóng băng tại thời điểm khách xác nhận hủy; FM chỉ thực hiện khoản hoàn đã chốt.
+ * (08/11/2026) Ân hạn 30 phút sau thanh toán áp cho MỌI đơn (BR-32a); hủy sau giờ hẹn mà chưa check-in
+ * tính như No-Show: giữ cọc + 1 tháng tiền thuê (BR-32, PR-X1). Tiền No-Show cũng tính ở đây ({@link #noShow}).
  */
 @Service
 public class CancellationPolicyService {
@@ -18,11 +20,13 @@ public class CancellationPolicyService {
     public static final int PARTIAL_REFUND_HOURS = 24;
     public static final int PARTIAL_DEPOSIT_PENALTY_PERCENT = 50;
     public static final int LATE_DEPOSIT_PENALTY_PERCENT = 100;
-    public static final int LAST_MINUTE_BOOKING_HOURS = 48;
-    public static final int LAST_MINUTE_GRACE_MINUTES = 30;
+    public static final int BOOKING_GRACE_MINUTES = 30;
+    // PR-X1: No-Show / hủy sau giờ hẹn giữ thêm số tháng tiền thuê này (ngoài cọc)
+    public static final int NO_SHOW_RENT_MONTHS_KEPT = 1;
 
     public Decision calculate(BigDecimal totalPaid,
                               BigDecimal depositAmount,
+                              int durationMonths,
                               LocalDateTime appointmentTime,
                               LocalDateTime paymentSuccessAt,
                               LocalDateTime cancelledAt,
@@ -43,20 +47,17 @@ public class CancellationPolicyService {
                     BigDecimal.ZERO, paid, minutesUntilCheckIn, false, null);
         }
 
+        // BR-32a: hủy trong 30 phút sau khi thanh toán thành công (và vẫn trước giờ hẹn) → hoàn 100%, mọi đơn
         LocalDateTime graceExpiresAt = paymentSuccessAt == null
                 ? null
-                : paymentSuccessAt.plusMinutes(LAST_MINUTE_GRACE_MINUTES);
-        boolean lastMinuteBooking = paymentSuccessAt != null
-                && appointmentTime != null
-                && paymentSuccessAt.isBefore(appointmentTime)
-                && Duration.between(paymentSuccessAt, appointmentTime).compareTo(Duration.ofHours(LAST_MINUTE_BOOKING_HOURS)) < 0;
-        boolean graceApplied = lastMinuteBooking
+                : paymentSuccessAt.plusMinutes(BOOKING_GRACE_MINUTES);
+        boolean graceApplied = paymentSuccessAt != null
                 && !cancelledAt.isBefore(paymentSuccessAt)
                 && !cancelledAt.isAfter(graceExpiresAt)
-                && cancelledAt.isBefore(appointmentTime);
+                && (appointmentTime == null || cancelledAt.isBefore(appointmentTime));
 
         if (graceApplied) {
-            return decision("LAST_MINUTE_GRACE", "Hủy trong 30 phút sau thanh toán của đơn đặt sát giờ", paid, deposit,
+            return decision("BOOKING_GRACE", "Hủy trong 30 phút sau khi thanh toán, hoàn 100%", paid, deposit,
                     BigDecimal.ZERO, paid, minutesUntilCheckIn, true, graceExpiresAt);
         }
 
@@ -71,9 +72,41 @@ public class CancellationPolicyService {
                     penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
         }
 
-        BigDecimal penalty = percentage(deposit, LATE_DEPOSIT_PENALTY_PERCENT).min(paid);
-        return decision("FULL_DEPOSIT", "Hủy dưới 24 giờ hoặc sau giờ hẹn, giữ 100% cọc", paid, deposit,
-                penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
+        if (appointmentTime != null && cancelledAt.isBefore(appointmentTime)) {
+            BigDecimal penalty = percentage(deposit, LATE_DEPOSIT_PENALTY_PERCENT).min(paid);
+            return decision("FULL_DEPOSIT", "Hủy dưới 24 giờ trước giờ hẹn, giữ 100% cọc", paid, deposit,
+                    penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
+        }
+
+        // Đã qua giờ hẹn mà chưa check-in: khách tự hủy cũng tính như No-Show (không rẻ hơn bị No-Show)
+        BigDecimal penalty = deposit.add(monthlyRent(paid, deposit, durationMonths)).min(paid);
+        return decision("AFTER_APPOINTMENT", "Hủy sau giờ hẹn nhận kho, giữ cọc + 1 tháng tiền thuê như khách không đến nhận kho",
+                paid, deposit, penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
+    }
+
+    /**
+     * PR-X1 (08/11/2026): No-Show giữ 100% cọc + 1 tháng tiền thuê, hoàn tiền thuê các tháng còn lại.
+     * FM "Miễn phạt" → hoàn toàn bộ. Gói 1 tháng thì không còn gì để hoàn.
+     */
+    public Decision noShow(BigDecimal totalPaid, BigDecimal depositAmount, int durationMonths, boolean waivePenalty) {
+        BigDecimal paid = money(totalPaid);
+        BigDecimal deposit = money(depositAmount).min(paid);
+        if (waivePenalty) {
+            return decision("NO_SHOW_WAIVED", "No-Show được miễn phạt, hoàn toàn bộ", paid, deposit,
+                    BigDecimal.ZERO, paid, 0, false, null);
+        }
+        BigDecimal penalty = deposit.add(monthlyRent(paid, deposit, durationMonths)).min(paid);
+        return decision("NO_SHOW", "Khách không đến nhận kho, giữ cọc + 1 tháng tiền thuê", paid, deposit,
+                penalty, paid.subtract(penalty), 0, false, null);
+    }
+
+    /** Tiền thuê 1 tháng khách đã trả = (đã trả − cọc) / số tháng của gói (đã gồm ưu đãi, voucher, bảo hiểm). */
+    BigDecimal monthlyRent(BigDecimal paid, BigDecimal deposit, int durationMonths) {
+        BigDecimal rentPaid = paid.subtract(deposit).max(BigDecimal.ZERO);
+        int months = Math.max(1, durationMonths);
+        return rentPaid.multiply(BigDecimal.valueOf(NO_SHOW_RENT_MONTHS_KEPT))
+                .divide(BigDecimal.valueOf(months), 0, RoundingMode.HALF_UP)
+                .min(rentPaid);
     }
 
     private Decision decision(String tier,

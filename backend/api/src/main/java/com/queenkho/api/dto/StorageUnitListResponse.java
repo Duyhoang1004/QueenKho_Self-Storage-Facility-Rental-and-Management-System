@@ -18,6 +18,7 @@ public class StorageUnitListResponse {
     private int occupiedUnits;
     private int maintenanceUnits;
     private int overdueUnits;
+    private int releasingUnits; // (08/11/2026) ô sắp trống (PR-R11)
     private double occupancyRate;
     private List<String> floors;
     private Integer facilityId;

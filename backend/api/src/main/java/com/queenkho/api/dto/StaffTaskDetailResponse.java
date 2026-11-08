@@ -17,6 +17,7 @@ public class StaffTaskDetailResponse {
     private String taskType;
     private String status;
     private LocalDateTime dueAt;
+    private LocalDateTime assignableFrom; // PR-T1: mốc mở giao / nhận việc (null = không giới hạn)
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;
     private LocalDateTime completedAt;

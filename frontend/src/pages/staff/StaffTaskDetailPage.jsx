@@ -15,7 +15,8 @@ import {
 } from '../../services/staffTaskService';
 import SimulationButton from '../../components/SimulationButton';
 import UnitLocationMap from '../../components/UnitLocationMap';
-import { simulateArriveToday, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
+import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
+import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
 import { getCentralWarehouses } from '../../services/catalogService';
@@ -1185,6 +1186,14 @@ export default function StaffTaskDetailPage() {
         <span className={`duo-badge whitespace-nowrap ${status.cls}`}>{status.label}</span>
       </div>
 
+      {/* PR-T1: ngoài khung 30 ngày trước ngày hẹn → chưa giao / nhận được */}
+      {task.status === 'OPEN' && assignLockedUntil(task) && (
+        <div className="mb-6 flex items-start gap-2 rounded-2xl border-2 border-[#E5E5E5] bg-[#F7F7F7] px-4 py-3 text-xs font-bold text-[#777777]">
+          <span className="material-symbols-outlined text-[20px] text-[#AFAFAF]">lock_clock</span>
+          <span>Việc này chỉ giao / nhận được trong vòng 30 ngày trước ngày hẹn — mở từ <strong className="text-[#4B4B4B]">{assignLockedUntil(task)}</strong>.</span>
+        </div>
+      )}
+
       {/* Demo: tua thời gian cho task bàn giao chưa check-in (ẩn khi backend tắt giả lập) */}
       {task.taskType === 'CHECK_IN' && task.contractStatus === 'PENDING_CHECK_IN'
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
@@ -1193,6 +1202,19 @@ export default function StaffTaskDetailPage() {
             label="Khách tới hôm nay"
             description="Dời lịch hẹn của khách về hôm nay (hạn 21:00) để check-in ngay, không phải chờ đúng ngày hẹn."
             onRun={() => simulateArriveToday(task.id)}
+            onDone={() => loadTask()}
+          />
+          {/* PR-T1: demo khung 30 ngày giao / nhận task */}
+          <SimulationButton
+            label="Hẹn còn 45 ngày (khoá giao việc)"
+            description="Dời lịch hẹn nhận kho về 45 ngày nữa: task nằm ngoài khung 30 ngày nên FM chưa giao, Staff chưa nhận được."
+            onRun={() => simulateAppointmentIn(task.id, 45)}
+            onDone={() => loadTask()}
+          />
+          <SimulationButton
+            label="Hẹn còn 30 ngày (mở giao việc)"
+            description="Dời lịch hẹn nhận kho về đúng 30 ngày nữa: task vừa vào khung, FM giao / Staff nhận được."
+            onRun={() => simulateAppointmentIn(task.id, 30)}
             onDone={() => loadTask()}
           />
           {isManager && task.reservationId && (
@@ -1267,7 +1289,13 @@ export default function StaffTaskDetailPage() {
 
           {task.contractCode ? (
             <InfoCard icon="description" title="Hợp đồng">
-              <InfoRow label="Mã hợp đồng" value={task.contractCode} mono />
+              <InfoRow
+                label="Mã hợp đồng"
+                value={isManager && task.contractId
+                  ? <Link to={`/manager/contracts/${task.contractId}`} className="text-[#1CB0F6] hover:underline">{task.contractCode}</Link>
+                  : task.contractCode}
+                mono
+              />
               <InfoRow label="Trạng thái" value={CONTRACT_STATUS_LABEL[task.contractStatus] || task.contractStatus} />
               <InfoRow label="Ngày bắt đầu" value={formatDate(task.contractStartDate)} />
               <InfoRow label="Ngày kết thúc" value={formatDate(task.contractEndDate)} />

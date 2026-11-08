@@ -83,6 +83,9 @@ public class StaffTaskService {
     private static final List<String> LIABLE_PARTIES = List.of("CUSTOMER", "FACILITY");
     // PR-O10: số ngày cho task bảo trì (sửa chữa thường lâu hơn 1 ngày)
     private static final int MAINTENANCE_DUE_DAYS = 3;
+    // PR-T1 (08/11/2026): task CHECK_IN / CHECK_OUT chỉ giao / nhận được trong vòng 30 ngày trước ngày hẹn
+    public static final int ASSIGN_WINDOW_DAYS = 30;
+    private static final List<String> WINDOWED_TASK_TYPES = List.of("CHECK_IN", "CHECK_OUT");
 
     @Autowired
     private StaffTaskRepository staffTaskRepository;
@@ -375,6 +378,7 @@ public class StaffTaskService {
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
                 .dueAt(task.getDueAt())
+                .assignableFrom(assignableFrom(task))
                 .createdAt(task.getCreatedAt())
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
@@ -422,6 +426,7 @@ public class StaffTaskService {
             }
         }
 
+        requireInAssignWindow(task, "nhận");
         int updated = staffTaskRepository.claim(task.getId(), user, LocalDateTime.now());
         if (updated == 0) {
             // UPDATE không ăn dòng nào → đọc lại để báo đúng lý do
@@ -532,6 +537,7 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_ASSIGNED",
                     "Task đang do " + staff.getFullName() + " phụ trách");
         }
+        requireInAssignWindow(task, "giao");
         String previousStaffName = task.getStaff() != null ? task.getStaff().getFullName() : null;
 
         if (staffTaskRepository.assign(task.getId(), staff, LocalDateTime.now()) == 0) {
@@ -597,6 +603,24 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Task không thuộc cơ sở của bạn");
         }
         return task;
+    }
+
+    // PR-T1: mốc mở giao / nhận việc = 00:00 của (ngày hẹn − 30 ngày); task khác loại không giới hạn → null
+    static LocalDateTime assignableFrom(StaffTask task) {
+        if (task == null || task.getDueAt() == null || !WINDOWED_TASK_TYPES.contains(task.getTaskType())) {
+            return null;
+        }
+        return task.getDueAt().toLocalDate().minusDays(ASSIGN_WINDOW_DAYS).atStartOfDay();
+    }
+
+    private void requireInAssignWindow(StaffTask task, String verb) {
+        LocalDateTime opensAt = assignableFrom(task);
+        if (opensAt != null && LocalDateTime.now().isBefore(opensAt)) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_IN_WINDOW",
+                    "Chỉ " + verb + " việc " + ("CHECK_IN".equals(task.getTaskType()) ? "bàn giao kho" : "nghiệm thu trả kho")
+                            + " trong vòng " + ASSIGN_WINDOW_DAYS + " ngày trước ngày hẹn — mở từ "
+                            + opensAt.toLocalDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        }
     }
 
     private StaffTaskException explainClaimFailure(Integer taskId, Integer staffId) {
@@ -1955,6 +1979,7 @@ public class StaffTaskService {
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
                 .dueAt(task.getDueAt())
+                .assignableFrom(assignableFrom(task))
                 .createdAt(task.getCreatedAt())
                 .claimedAt(task.getClaimedAt())
                 .completedAt(task.getCompletedAt())
@@ -2079,11 +2104,15 @@ public class StaffTaskService {
         }
         staffTaskRepository.save(task);
 
-        // PR-X3, PR-A10: Ghi nhận mã [CONTACT][FAILED] hoặc [CONTACT][SUCCESS] để đếm số lần liên hệ No-Show
+        // PR-X3, PR-A10 (08/11/2026): mã liên hệ để xét No-Show
+        //  [CONTACT][REFUSED] khách từ chối tới nhận kho → FM xử lý No-Show được ngay
+        //  [CONTACT][FAILED]  không nghe máy / thuê bao / cúp máy → đủ 2 lần + qua 48h mới xử lý
+        //  [CONTACT][SUCCESS] liên lạc được (dời lịch, hẹn đến...)
         String outcomeLower = outcome.toLowerCase();
+        boolean isRefused = outcomeLower.contains("từ chối") || outcomeLower.contains("xin hủy") || outcomeLower.contains("xin huỷ");
         boolean isFailed = outcomeLower.contains("không nghe máy") || outcomeLower.contains("thuê bao")
-                || outcomeLower.contains("từ chối") || outcomeLower.contains("hủy") || outcomeLower.contains("thất bại");
-        String contactTag = isFailed ? "[CONTACT][FAILED]" : "[CONTACT][SUCCESS]";
+                || outcomeLower.contains("cúp máy") || outcomeLower.contains("thất bại");
+        String contactTag = isRefused ? "[CONTACT][REFUSED]" : isFailed ? "[CONTACT][FAILED]" : "[CONTACT][SUCCESS]";
 
         String logAction = contactTag + " Nhân viên " + staff.getFullName() + " báo cáo liên hệ task #" + task.getId()
                 + ": " + formattedNote;

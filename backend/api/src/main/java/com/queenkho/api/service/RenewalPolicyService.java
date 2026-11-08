@@ -12,7 +12,9 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * PR-R10 / PR-R11 — Gia hạn phải báo trước 3 ngày; quá mốc thì ô thành "sắp trống" và được bán trước cho khách khác.
@@ -67,27 +69,51 @@ public class RenewalPolicyService {
      */
     public List<LocalDate> releaseDates(Integer facilityId, Integer unitTypeId, Integer excludeContractId) {
         List<LocalDate> dates = jdbcTemplate.query(
-                "SELECT CASE WHEN c.status = 'TERMINATION_PENDING' " +
-                        "            THEN DATEADD(DAY, 1, COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
-                        "                 WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
-                        "                   AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), c.end_date)) " +
-                        "       WHEN r.terms_version >= '" + LateFeeService.CENTRAL_STORAGE_TERMS_VERSION + "' " +
-                        "            THEN DATEADD(DAY, " + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) " +
-                        "       ELSE DATEADD(DAY, COALESCE(rp.liquidation_days, " + LateFeeService.DEFAULT_LIQUIDATION_DAYS + ") + "
-                        + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) END AS release_date " +
-                        "FROM rental_contracts c " +
-                        "JOIN storage_units su ON su.id = c.storage_unit_id " +
-                        "LEFT JOIN reservations r ON r.id = c.reservation_id " +
-                        "LEFT JOIN rental_policy rp ON rp.id = c.rental_policy_id " +
-                        "WHERE su.facility_id = ? AND su.unit_type_id = ? AND su.status = 'OCCUPIED' AND c.end_date IS NOT NULL " +
-                        "  AND (c.status IN ('OVERDUE', 'TERMINATION_PENDING') " +
-                        "       OR (c.status = 'ACTIVE' AND DATEADD(DAY, -" + RENEWAL_NOTICE_DAYS + ", c.end_date) < ?)) " +
-                        "  AND c.id <> ? " +
+                "SELECT " + RELEASE_DATE_SQL + " AS release_date " + RELEASING_FROM_SQL +
+                        "  AND su.unit_type_id = ? AND c.id <> ? " +
                         "ORDER BY release_date",
                 (rs, i) -> rs.getDate("release_date").toLocalDate(),
-                facilityId, unitTypeId, Date.valueOf(today()), excludeContractId != null ? excludeContractId : -1);
+                Date.valueOf(today()), facilityId, unitTypeId, excludeContractId != null ? excludeContractId : -1);
         return dates != null ? dates : List.of();
     }
+
+    /**
+     * (08/11/2026) FM xem ô "sắp trống" trên sơ đồ / danh sách ô: mã ô → ngày ô trống được giao cho khách mới.
+     * Cùng công thức với {@link #releaseDates} (PR-R11); ô không có trong map = không sắp trống.
+     */
+    public Map<String, LocalDate> releaseDatesByUnit(Integer facilityId) {
+        Map<String, LocalDate> result = new HashMap<>();
+        jdbcTemplate.query(
+                "SELECT su.id AS unit_id, " + RELEASE_DATE_SQL + " AS release_date " + RELEASING_FROM_SQL,
+                rs -> {
+                    result.put(rs.getString("unit_id"), rs.getDate("release_date").toLocalDate());
+                },
+                Date.valueOf(today()), facilityId);
+        return result;
+    }
+
+    // Ngày ô sắp trống giao được: đã hẹn trả → ngày hẹn + 1; điều khoản v4 → end_date + dọn ô; cũ → + ngày thanh lý + dọn ô
+    private static final String RELEASE_DATE_SQL =
+            "CASE WHEN c.status = 'TERMINATION_PENDING' " +
+                    "            THEN DATEADD(DAY, 1, COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
+                    "                 WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
+                    "                   AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), c.end_date)) " +
+                    "       WHEN r.terms_version >= '" + LateFeeService.CENTRAL_STORAGE_TERMS_VERSION + "' " +
+                    "            THEN DATEADD(DAY, " + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) " +
+                    "       ELSE DATEADD(DAY, COALESCE(rp.liquidation_days, " + LateFeeService.DEFAULT_LIQUIDATION_DAYS + ") + "
+                    + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) END";
+
+    // Hợp đồng đang giữ ô OCCUPIED và đã "sắp trống": quá hạn / đã hẹn trả / ACTIVE đã qua hạn chót gia hạn ưu tiên.
+    // Tham số: (1) hôm nay, (2) facility_id
+    private static final String RELEASING_FROM_SQL =
+            "FROM rental_contracts c " +
+                    "JOIN storage_units su ON su.id = c.storage_unit_id " +
+                    "LEFT JOIN reservations r ON r.id = c.reservation_id " +
+                    "LEFT JOIN rental_policy rp ON rp.id = c.rental_policy_id " +
+                    "WHERE su.status = 'OCCUPIED' AND c.end_date IS NOT NULL " +
+                    "  AND (c.status IN ('OVERDUE', 'TERMINATION_PENDING') " +
+                    "       OR (c.status = 'ACTIVE' AND DATEADD(DAY, -" + RENEWAL_NOTICE_DAYS + ", c.end_date) < ?)) " +
+                    "  AND su.facility_id = ? ";
 
     /** Số ô "sắp trống" mà đơn có ngày nhận startDate được phép tính vào (PR-R11) */
     public int countReleasingBy(Integer facilityId, Integer unitTypeId, LocalDate startDate) {

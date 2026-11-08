@@ -232,7 +232,7 @@ export default function CancelReservationModal({
 
                 {/* 3. Khấu trừ phí phạt cọc */}
                 <div className="flex justify-between items-center text-[#FF4B4B]">
-                  <span>Tiền cọc bị giữ:</span>
+                  <span>{preview?.policyTier === "AFTER_APPOINTMENT" ? "Bị giữ (cọc + 1 tháng thuê):" : "Tiền cọc bị giữ:"}</span>
                   <span className="font-black">
                     {penalty > 0 ? `- ${formatVND(penalty)}` : "0₫"}
                   </span>

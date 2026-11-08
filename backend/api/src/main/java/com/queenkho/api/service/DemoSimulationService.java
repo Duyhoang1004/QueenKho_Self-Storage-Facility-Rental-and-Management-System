@@ -43,6 +43,7 @@ public class DemoSimulationService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    public static final int MAX_APPOINTMENT_SHIFT_DAYS = 90; // PR-T1: giả lập lịch hẹn nhận kho còn N ngày
     public static final int MAX_EXPIRE_SOON_DAYS = 15; // 05/11/2026: mốc nhắc 15 / 10 / 7 / 3 / 1
 
     // Thêm sau (PR-R9, task quá hạn) — inject qua field để giữ nguyên constructor đang dùng trong test
@@ -83,6 +84,22 @@ public class DemoSimulationService {
     // Dời ngày hẹn của đơn + ngày bắt đầu/kết thúc HĐ về hôm nay (giữ số tháng), task CHECK_IN hạn 21:00.
     @Transactional
     public Map<String, Object> arriveToday(Integer taskId, CurrentUser actor) {
+        return shiftCheckInAppointment(taskId, 0, actor);
+    }
+
+    // ---------- 1a. PR-T1: lịch hẹn nhận kho còn N ngày → demo khung 30 ngày giao / nhận task CHECK_IN ----------
+    // N > 30 → task chưa giao / nhận được (nút khoá); N ≤ 30 → mở giao việc.
+    @Transactional
+    public Map<String, Object> appointmentIn(Integer taskId, int days, CurrentUser actor) {
+        if (days < 1 || days > MAX_APPOINTMENT_SHIFT_DAYS) {
+            throw new AccessException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Số ngày tới lịch hẹn phải từ 1 đến " + MAX_APPOINTMENT_SHIFT_DAYS);
+        }
+        return shiftCheckInAppointment(taskId, days, actor);
+    }
+
+    // Dời lịch hẹn nhận kho của task CHECK_IN về hôm nay + days (đơn, hợp đồng, hạn task)
+    private Map<String, Object> shiftCheckInAppointment(Integer taskId, int days, CurrentUser actor) {
         requireEnabled();
         Map<String, Object> task = row("SELECT id, task_type, status, contract_id, facility_id FROM facility_tasks WHERE id = ?",
                 taskId, "Không tìm thấy task");
@@ -100,10 +117,10 @@ public class DemoSimulationService {
         }
         int months = durationMonths(toInt(contract.get("reservation_id")));
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now().plusDays(days);
         LocalDateTime now = LocalDateTime.now();
-        // Giống StaffTaskService.computeDueAt: sau 21:00 thì hạn sang 21:00 ngày mai
-        LocalDateTime dueAt = now.toLocalTime().isBefore(CLOSING_TIME)
+        // Giống StaffTaskService.computeDueAt: hẹn hôm nay mà đã sau 21:00 thì hạn sang 21:00 ngày mai
+        LocalDateTime dueAt = days > 0 || now.toLocalTime().isBefore(CLOSING_TIME)
                 ? today.atTime(CLOSING_TIME) : today.plusDays(1).atTime(CLOSING_TIME);
 
         jdbcTemplate.update("UPDATE reservations SET start_date = ?, expected_appointment_time = ? WHERE id = ?",
@@ -116,9 +133,17 @@ public class DemoSimulationService {
                         "THEN (CASE WHEN staff_id IS NULL THEN 'OPEN' ELSE 'IN_PROGRESS' END) ELSE status END WHERE id = ?",
                 Timestamp.valueOf(dueAt), taskId);
 
-        log(actor, "Khách tới nhận kho hôm nay — HĐ " + contract.get("contract_code") + ", task #" + taskId,
+        if (days == 0) {
+            log(actor, "Khách tới nhận kho hôm nay — HĐ " + contract.get("contract_code") + ", task #" + taskId,
+                    "facility_tasks", taskId);
+            return result("Đã dời lịch hẹn về hôm nay, có thể check-in ngay", "dueAt", dueAt);
+        }
+        log(actor, "Lịch hẹn nhận kho còn " + days + " ngày — HĐ " + contract.get("contract_code") + ", task #" + taskId,
                 "facility_tasks", taskId);
-        return result("Đã dời lịch hẹn về hôm nay, có thể check-in ngay", "dueAt", dueAt);
+        boolean open = days <= StaffTaskService.ASSIGN_WINDOW_DAYS;
+        return result("Lịch hẹn nhận kho còn " + days + " ngày — "
+                + (open ? "task đã mở giao / nhận việc" : "task chưa giao / nhận được (ngoài khung "
+                + StaffTaskService.ASSIGN_WINDOW_DAYS + " ngày)"), "dueAt", dueAt);
     }
 
     // ---------- 1b. Flow 3: khách tới TRẢ kho hôm nay ----------

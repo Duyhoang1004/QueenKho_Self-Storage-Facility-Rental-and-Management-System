@@ -322,7 +322,7 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
         </div>
         <div className="mt-3 rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-4 text-xs font-medium leading-relaxed text-[#4B4B4B]">
           <p className="font-black text-[#1899D6]">Chính sách khách hủy đơn được cố định toàn hệ thống</p>
-          <p className="mt-1">Từ 48 giờ: hoàn 100%; từ 24 đến dưới 48 giờ: giữ 50% cọc; dưới 24 giờ hoặc đã qua giờ hẹn: giữ 100% cọc. Đơn đặt trong vòng 48 giờ trước check-in được hoàn 100% nếu hủy trong 30 phút sau thanh toán và vẫn trước check-in.</p>
+          <p className="mt-1">Từ 48 giờ: hoàn 100%; từ 24 đến dưới 48 giờ: giữ 50% cọc; dưới 24 giờ: giữ 100% cọc; đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê (như No-Show). Hủy trong 30 phút sau thanh toán và vẫn trước giờ hẹn luôn hoàn 100%.</p>
         </div>
         <p className="mt-2 text-xs font-medium text-[#777777]">Mốc thanh lý của phiên bản mới cố định 15 ngày quá hạn. Phí chiếm dụng, lưu giữ áp dụng khách đồng ý điều khoản từ v2; phí dọn & di dời hàng áp dụng từ v3.</p>
 
@@ -596,8 +596,9 @@ export default function BomRentalPoliciesPage() {
                     <RuleLine icon="account_balance_wallet" title={`Cọc khi đặt kho: ${selectedPolicy.depositMonthMultiplier} tháng tiền thuê`} description="Cọc được tính từ giá niêm yết theo chính sách hiện hành và lưu cố định vào đơn đặt kho." tone="green" />
                     <RuleLine icon="timer" title="Còn từ 48 giờ trở lên: Hoàn 100%" description="Hoàn toàn bộ số tiền khách đã thanh toán, gồm tiền thuê trả trước và tiền cọc." tone="blue" />
                     <RuleLine icon="percent" title="Còn từ 24 đến dưới 48 giờ: Giữ 50% cọc" description="Hoàn toàn bộ tiền thuê trả trước và 50% tiền cọc; số hoàn được chốt khi khách xác nhận hủy." tone="orange" />
-                    <RuleLine icon="money_off" title="Còn dưới 24 giờ hoặc đã qua giờ hẹn: Giữ 100% cọc" description="Tiền thuê trả trước vẫn được hoàn; không áp dụng sau khi khách đã check-in." tone="red" />
-                    <RuleLine icon="update" title="Ân hạn 30 phút cho đơn đặt sát giờ" description="Chỉ đơn thanh toán thành công trong vòng 48 giờ trước check-in: hủy trong 30 phút sau thanh toán và vẫn trước check-in thì hoàn 100%." tone="green" />
+                    <RuleLine icon="money_off" title="Còn dưới 24 giờ: Giữ 100% cọc" description="Tiền thuê trả trước vẫn được hoàn." tone="red" />
+                    <RuleLine icon="event_busy" title="Đã qua giờ hẹn mà chưa nhận kho: Giữ cọc + 1 tháng tiền thuê" description="Tính giống khách không đến nhận kho (No-Show); hoàn tiền thuê các tháng còn lại. Không áp dụng sau khi khách đã check-in." tone="red" />
+                    <RuleLine icon="update" title="Ân hạn 30 phút sau thanh toán" description="Mọi đơn: hủy trong 30 phút sau khi thanh toán thành công và vẫn trước giờ hẹn thì hoàn 100%." tone="green" />
                   </PolicySection>
 
                   <PolicySection icon="sell" title="Ưu đãi theo gói & miễn phí" tone="green" expanded={expandedSections.discount} onToggle={() => toggleSection('discount')}>

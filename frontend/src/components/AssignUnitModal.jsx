@@ -40,6 +40,15 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   }, [isOpen, reservation])
 
   const selectableIds = useMemo(() => new Set(units.map(u => u.id)), [units])
+  // (08/11/2026) Ô sắp trống cùng loại (PR-R11): FM thấy để biết khi nào có ô, chưa gán được tới khi khách cũ trả kho
+  const releasingUnits = useMemo(() => (
+    mapData.forId === reservation?.id
+      ? mapData.units
+        .filter(u => u.releasing && u.unitTypeName === reservation?.unitTypeName)
+        .sort((a, b) => String(a.releaseDate || '').localeCompare(String(b.releaseDate || '')))
+      : []
+  ), [mapData, reservation])
+  const releasingIds = useMemo(() => new Set(releasingUnits.map(u => u.id)), [releasingUnits])
   const showMap = !!reservation && mapData.forId === reservation.id && (mapData.layout?.floors?.length || 0) > 0
 
   // Chọn ô trên bản đồ → cuộn danh sách tới thẻ của ô đó
@@ -237,6 +246,43 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
             )}
           </div>
 
+          {/* (08/11/2026) Ô sắp trống cùng loại — chỉ xem, bấm mã HĐ để mở hợp đồng ở tab mới */}
+          {releasingUnits.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-[#4B4B4B]">Ô sắp trống cùng loại</span>
+                <span className="duo-badge bg-[#FFF0DB] text-[#E58800] border border-[#FF9600] text-[10px]">
+                  {releasingUnits.length} ô · chưa gán được
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto pr-1">
+                {releasingUnits.map(u => (
+                  <div key={u.id} className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-[#FF9600] bg-[#FFF8EE] px-3 py-2 text-xs">
+                    <div className="flex flex-col">
+                      <span className="font-mono font-black text-[#4B4B4B]">{u.id}</span>
+                      <span className="text-[11px] font-bold text-[#E58800]">
+                        Giao được từ {formatDate(u.releaseDate)}
+                        {u.currentContract?.customerName ? ` · khách cũ ${u.currentContract.customerName}` : ''}
+                      </span>
+                    </div>
+                    {u.currentContract && (
+                      <a
+                        href={`/manager/contracts/${u.currentContract.contractId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Mở hợp đồng đang giữ ô ở tab mới"
+                        className="font-black text-[#1CB0F6] hover:underline whitespace-nowrap"
+                      >
+                        HĐ {u.currentContract.contractCode}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] font-bold text-[#AFAFAF]">Ô chỉ gán được sau khi khách cũ trả kho / bị thanh lý xong (PR-R11).</p>
+            </div>
+          )}
+
           {/* Notes */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-black uppercase tracking-wider text-[#777777]" htmlFor="assignNote">
@@ -276,6 +322,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
               layout={mapData.layout}
               units={mapData.units}
               selectableIds={selectableIds}
+              releasingIds={releasingIds}
               selectedId={selectedUnitId}
               onSelect={selectFromMap}
             />

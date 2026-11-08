@@ -31,6 +31,10 @@ public class PendingReservationResponse {
     private Integer priorityScore;
     private Integer pastRentalCount;   // số hợp đồng trước đây khách đã nhận kho
     private String priorityLabel;
+    // PR-X1 (08/11/2026): xem trước tiền No-Show (giữ cọc + 1 tháng thuê, hoàn phần còn lại)
+    private BigDecimal totalPaid;
+    private BigDecimal noShowPenaltyAmount;
+    private BigDecimal noShowRefundAmount;
 
     public PendingReservationResponse(Integer id, String reservationCode, String customerName,
                                       String customerPhone, String unitTypeName, LocalDate startDate,
@@ -38,7 +42,7 @@ public class PendingReservationResponse {
                                       String staffNote, String staffName, Boolean noShowEligible,
                                       Integer failedContactCount, String noShowIneligibleReason) {
         this(id, reservationCode, customerName, customerPhone, unitTypeName, startDate, durationMonths, depositAmount,
-                createdAt, staffNote, staffName, noShowEligible, failedContactCount, noShowIneligibleReason, null, null, null);
+                createdAt, staffNote, staffName, noShowEligible, failedContactCount, noShowIneligibleReason, null, null, null, null, null, null);
     }
 
     public PendingReservationResponse(Integer id, String reservationCode, String customerName,

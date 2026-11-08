@@ -50,8 +50,8 @@ function daysUntil(value) {
   return Math.round((new Date(y, m - 1, d) - startOfToday) / 86400000);
 }
 
-// Khớp mốc nhắc gia hạn xa nhất của RenewalReminderService (1, 3, 7 ngày)
-const EXPIRING_WITHIN_DAYS = 7;
+// Khớp mốc nhắc gia hạn xa nhất của RenewalReminderService (15, 10, 7, 3, 1 ngày)
+const EXPIRING_WITHIN_DAYS = 15;
 
 export default function HomePage() {
   const userStr = sessionStorage.getItem('user');
@@ -89,7 +89,7 @@ export default function HomePage() {
     [reservations],
   );
 
-  // HĐ còn hiệu lực hết hạn trong 7 ngày tới, kể cả HĐ đã quá hạn mà chưa gia hạn / trả kho
+  // HĐ còn hiệu lực hết hạn trong 15 ngày tới, kể cả HĐ đã quá hạn mà chưa gia hạn / trả kho
   const expiringReservations = useMemo(() => {
     return reservations.filter(r => {
       if (r.status !== 'UNIT_ASSIGNED' || !r.endDate) return false;

@@ -369,8 +369,11 @@ export default function OverdueContractsPage() {
                   const daysLeft = (c.liquidationDaysThreshold || 7) - (c.overdueDays || 0)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-[#4B4B4B]">
-                        #{c.contractCode}
+                      <td className="py-3.5 px-4">
+                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                          className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
+                          #{c.contractCode}
+                        </button>
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-[#4B4B4B]">{c.customerName || '—'}</div>
@@ -507,8 +510,11 @@ export default function OverdueContractsPage() {
                   const isRefunding = refundSubmittingId === c.contractId
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-bold text-[#4B4B4B]">
-                        #{c.contractCode}
+                      <td className="py-3.5 px-4">
+                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                          className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
+                          #{c.contractCode}
+                        </button>
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="font-bold text-[#4B4B4B]">{c.customerName || '—'}</div>

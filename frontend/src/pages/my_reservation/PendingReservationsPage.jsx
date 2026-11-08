@@ -318,8 +318,11 @@ export default function PendingReservationsPage() {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FDFDFD] transition-colors">
-                        <td className="py-4 px-5 font-black text-[#1CB0F6]">
-                          {r.reservationCode}
+                        <td className="py-4 px-5">
+                          <button type="button" title="Xem chi tiết đơn" onClick={() => setDetailTarget(r)}
+                            className="font-black text-[#1CB0F6] hover:underline cursor-pointer">
+                            {r.reservationCode}
+                          </button>
                         </td>
                         <td className="py-4 px-5 text-[#AFAFAF]">
                           {formatDateOnly(r.createdAt)}
@@ -446,7 +449,12 @@ export default function PendingReservationsPage() {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FFF8F8] transition-colors">
-                        <td className="py-4 px-5 font-black text-[#FF4B4B]">{r.reservationCode}</td>
+                        <td className="py-4 px-5">
+                          <button type="button" title="Xem chi tiết đơn" onClick={() => setDetailTarget(r)}
+                            className="font-black text-[#FF4B4B] hover:underline cursor-pointer">
+                            {r.reservationCode}
+                          </button>
+                        </td>
                         <td className="py-4 px-5">
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs">
@@ -487,14 +495,22 @@ export default function PendingReservationsPage() {
 
                             {/* PR-X3: Đếm số lần liên hệ thất bại và chỉ báo đủ điều kiện */}
                             <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
-                                (r.failedContactCount || 0) >= 2
-                                  ? 'bg-[#EBFBF0] text-[#188838] border-[#A3E5B5]'
-                                  : 'bg-[#FFF8E6] text-[#B26B00] border-[#FFD591]'
-                              }`}>
-                                <span className="material-symbols-outlined text-[12px]">phone_missed</span>
-                                Liên hệ: {r.failedContactCount || 0}/2 lần
-                              </span>
+                              {/* PR-X3 (08/11/2026): đủ điều kiện mà chưa đủ 2 lần thất bại = khách đã từ chối tới */}
+                              {r.noShowEligible && (r.failedContactCount || 0) < 2 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border bg-[#FFDFDF] text-[#EA2B2B] border-[#FFB8B8]">
+                                  <span className="material-symbols-outlined text-[12px]">block</span>
+                                  Khách từ chối tới
+                                </span>
+                              ) : (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                                  (r.failedContactCount || 0) >= 2
+                                    ? 'bg-[#EBFBF0] text-[#188838] border-[#A3E5B5]'
+                                    : 'bg-[#FFF8E6] text-[#B26B00] border-[#FFD591]'
+                                }`}>
+                                  <span className="material-symbols-outlined text-[12px]">phone_missed</span>
+                                  Liên hệ thất bại: {r.failedContactCount || 0}/2 lần
+                                </span>
+                              )}
 
                               {r.noShowEligible ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#EBFBF0] text-[#188838] border border-[#A3E5B5]">

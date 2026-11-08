@@ -1025,3 +1025,29 @@ Lỗi: `404 CLAIM_NOT_FOUND`, `403 FORBIDDEN_ROLE` / `FORBIDDEN_FACILITY`, `409 
 - `GET /api/v1/held-goods`: thêm `centralWarehouseId`, `centralWarehouseName`, `centralWarehouseAddress`, `centralWarehouseHotline`; `canSell` luôn `false`; v4 `heldDays` / phí lưu giữ tính tới hôm nay (không chặn 60 ngày).
 - `POST /api/v1/held-goods/{id}/resolve`: chỉ còn `RETURNED` / `HANDED_TO_AUTHORITY`; `SOLD` / `DESTROYED` → `409 GOODS_SALE_NOT_ALLOWED`.
 - `CustomerContractResponse` thêm `relocationPending` (đã thanh lý, chưa chuyển xong) và `centralStorage` (hồ sơ hàng ở kho tổng, dạng như `GET /held-goods`: kho tổng, vị trí, `heldDays`, `storageFeePerDay`, `estimatedStorageFee`, `customerDebt`, `depositHeld`).
+
+---
+
+## Góp ý sau buổi nhóm test 08/11/2026 (D-17)
+
+Không đổi schema, không thêm bảng.
+
+### BR-32 / BR-32a — Huỷ đơn trước check-in
+- `GET /api/v1/reservations/{id}/cancel-preview`, `POST /api/v1/reservations/{id}/cancel`: `policyTier` có thêm
+  - `BOOKING_GRACE` — huỷ trong 30 phút sau khi thanh toán thành công và vẫn trước giờ hẹn → hoàn 100% (mọi đơn; thay `LAST_MINUTE_GRACE` chỉ cho đơn đặt sát giờ);
+  - `AFTER_APPOINTMENT` — đã qua giờ hẹn mà chưa check-in → `penaltyAmount` = cọc + 1 tháng tiền thuê (giống No-Show).
+- Bỏ trường `graceBookingWindowHours` khỏi response preview (`graceMinutes` vẫn = 30).
+
+### PR-X1 / PR-X3 — No-Show
+- `GET /api/v1/reservations/overdue-no-show`: mỗi đơn thêm `totalPaid`, `noShowPenaltyAmount` (cọc + 1 tháng thuê), `noShowRefundAmount` (phần thuê còn lại; miễn phạt thì hoàn `totalPaid`).
+- `POST /api/v1/reservations/{id}/no-show`: tiền hoàn = tổng đã trả − (cọc + 1 tháng thuê); `waivePenalty = true` → hoàn toàn bộ. Điều kiện (`409 NO_SHOW_NOT_ALLOWED_YET` nếu chưa đủ): có báo cáo `[CONTACT][REFUSED]` **hoặc** (≥ 2 báo cáo `[CONTACT][FAILED]` và đã qua 48h từ giờ hẹn).
+- `POST /api/v1/staff-tasks/{id}/contact-report`: `callOutcome` chứa "từ chối" / "xin hủy" → log `[CONTACT][REFUSED]`; "không nghe máy" / "thuê bao" / "cúp máy" → `[CONTACT][FAILED]`; còn lại `[CONTACT][SUCCESS]`.
+
+### PR-T1 — Khung 30 ngày giao / nhận task
+- `GET /api/v1/staff-tasks`, `GET /api/v1/staff-tasks/{id}`: thêm `assignableFrom` (`LocalDateTime`) — task `CHECK_IN` / `CHECK_OUT` chỉ giao / nhận từ mốc này (00:00 của ngày hẹn − 30 ngày); `null` = không giới hạn.
+- `POST /api/v1/staff-tasks/{id}/claim`, `POST /api/v1/staff-tasks/{id}/assign`: sớm hơn mốc → `409 TASK_NOT_IN_WINDOW` (message ghi ngày mở).
+- Giả lập: `POST /api/v1/dev/simulation/tasks/{taskId}/appointment-in?days=N` (STAFF, FM cùng cơ sở; `days` 1–90) — task `CHECK_IN` + HĐ `PENDING_CHECK_IN`: ngày hẹn / ngày bắt đầu HĐ = hôm nay + N, hạn task 21:00 ngày đó. Lỗi `400 INVALID_INPUT`, `409 SIMULATION_NOT_APPLICABLE`, `403`.
+
+### BR-135 — Ô sắp trống (FM)
+- `GET /api/v1/storage-units` và `GET /api/v1/storage-units/{id}`: mỗi ô thêm `releasing` (boolean) và `releaseDate` (ngày giao được cho khách mới, công thức PR-R11). Danh sách thêm KPI `releasingUnits`; lọc `status=RELEASING`.
+- Phía khách không đổi: `GET /facilities/{id}/availability` và tìm kiếm vẫn chỉ trả số ô còn trống (`availableCount`) + `availableFrom`, không lộ ô cụ thể.

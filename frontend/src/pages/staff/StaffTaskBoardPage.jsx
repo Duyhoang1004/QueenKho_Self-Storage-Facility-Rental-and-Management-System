@@ -4,6 +4,7 @@ import TaskBoard from '../../components/TaskBoard';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import ContactReportModal from '../../components/ContactReportModal';
 import { claimStaffTask } from '../../services/staffTaskService';
+import { assignLockedUntil } from '../../utils/taskWindow';
 
 const TYPE_LABEL = {
   CHECK_IN: 'check-in',
@@ -61,7 +62,18 @@ export default function StaffTaskBoardPage() {
         </Link>
 
         {/* Nút hành động chính (Dòng dưới) */}
-        {task.status === 'OPEN' && (
+        {task.status === 'OPEN' && (assignLockedUntil(task) ? (
+          // PR-T1: ngoài khung 30 ngày trước ngày hẹn → chưa nhận được
+          <button
+            type="button"
+            disabled
+            title="Chỉ nhận việc bàn giao / nghiệm thu trong vòng 30 ngày trước ngày hẹn"
+            className="w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-[17px]">lock_clock</span>
+            Nhận từ {assignLockedUntil(task)}
+          </button>
+        ) : (
           <button
             type="button"
             onClick={() => setConfirmTask(task)}
@@ -70,7 +82,7 @@ export default function StaffTaskBoardPage() {
             <span className="material-symbols-outlined text-[17px]">front_hand</span>
             Nhận việc
           </button>
-        )}
+        ))}
 
         {task.taskType === 'CHECK_IN' && isOverdue && (
           <button

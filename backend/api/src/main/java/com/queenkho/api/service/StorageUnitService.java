@@ -16,7 +16,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -32,6 +34,7 @@ public class StorageUnitService {
     private final ActivityLogService activityLogService;
     private final StaffTaskService staffTaskService;
     private final FloorPlanService floorPlanService;
+    private final RenewalPolicyService renewalPolicyService;
 
     /**
      * UC-06: Lấy danh sách ô kho có lọc và tính toán thống kê KPI theo cơ sở
@@ -42,6 +45,8 @@ public class StorageUnitService {
                 .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "FACILITY_NOT_FOUND", "Không tìm thấy cơ sở ID: " + facilityId));
 
         List<StorageUnit> allUnits = storageUnitRepository.findByFacility_Id(facilityId);
+        // (08/11/2026) FM thấy ô sắp trống + ngày ô trống được giao (PR-R11)
+        Map<String, LocalDate> releaseDates = renewalPolicyService.releaseDatesByUnit(facilityId);
 
         // Chuyển đổi sang danh sách Detail DTO và tính toán trạng thái động
         List<StorageUnitDetailResponse> allDetails = allUnits.stream().map(unit -> {
@@ -89,6 +94,8 @@ public class StorageUnitService {
                     .roomNumber(unit.getRoomNumber())
                     .status(unit.getStatus())
                     .overdue(isOverdue)
+                    .releasing(releaseDates.containsKey(unit.getId()))
+                    .releaseDate(releaseDates.get(unit.getId()))
                     .currentContract(contractInfo)
                     .canDelete(canDelete)
                     .mapX(unit.getMapX())
@@ -109,6 +116,7 @@ public class StorageUnitService {
         int occupiedUnits = (int) allDetails.stream().filter(u -> "OCCUPIED".equalsIgnoreCase(u.getStatus())).count();
         int maintenanceUnits = (int) allDetails.stream().filter(u -> "MAINTENANCE".equalsIgnoreCase(u.getStatus())).count();
         int overdueUnits = (int) allDetails.stream().filter(StorageUnitDetailResponse::isOverdue).count();
+        int releasingUnits = (int) allDetails.stream().filter(StorageUnitDetailResponse::isReleasing).count();
 
         int operationalUnits = totalUnits - maintenanceUnits;
         double occupancyRate = operationalUnits > 0 ? (occupiedUnits * 100.0 / operationalUnits) : 0.0;
@@ -124,6 +132,8 @@ public class StorageUnitService {
                     if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
                         if ("OVERDUE".equalsIgnoreCase(status)) {
                             if (!u.isOverdue()) return false;
+                        } else if ("RELEASING".equalsIgnoreCase(status)) {
+                            if (!u.isReleasing()) return false;
                         } else {
                             if (!status.equalsIgnoreCase(u.getStatus())) return false;
                         }
@@ -158,6 +168,7 @@ public class StorageUnitService {
                 .occupiedUnits(occupiedUnits)
                 .maintenanceUnits(maintenanceUnits)
                 .overdueUnits(overdueUnits)
+                .releasingUnits(releasingUnits)
                 .occupancyRate(occupancyRate)
                 .floors(distinctFloors)
                 .facilityId(facility.getId())
@@ -202,6 +213,10 @@ public class StorageUnitService {
             }
         }
 
+        LocalDate releaseDate = facility != null
+                ? renewalPolicyService.releaseDatesByUnit(facility.getId()).get(unit.getId())
+                : null;
+
         return withMaintenanceInfo(StorageUnitDetailResponse.builder()
                 .id(unit.getId())
                 .facilityId(facility != null ? facility.getId() : null)
@@ -217,6 +232,8 @@ public class StorageUnitService {
                 .roomNumber(unit.getRoomNumber())
                 .status(unit.getStatus())
                 .overdue(isOverdue)
+                .releasing(releaseDate != null)
+                .releaseDate(releaseDate)
                 .currentContract(contractInfo)
                 .canDelete(canDelete)
                 .mapX(unit.getMapX())

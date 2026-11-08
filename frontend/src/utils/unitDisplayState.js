@@ -22,6 +22,14 @@ export const DISPLAY_STATES = {
     badge: 'bg-[#FFF4CC] text-[#B58900] border-2 border-[#FFC800]',
     dot: 'bg-[#FFC800]'
   },
+  // (08/11/2026) Ô sắp trống (PR-R11): khách cũ đã hẹn trả / qua hạn chót gia hạn — chỉ FM thấy
+  RELEASING: {
+    label: 'Sắp trống',
+    icon: 'event_available',
+    tile: 'bg-[#FFF0DB] border-[#FF9600] border-dashed text-[#E58800]',
+    badge: 'bg-[#FFF0DB] text-[#E58800] border-2 border-dashed border-[#FF9600]',
+    dot: 'bg-[#FF9600]'
+  },
   TERMINATION_PENDING: {
     label: 'Đang trả kho',
     icon: 'logout',
@@ -57,21 +65,29 @@ export const DISPLAY_STATE_ORDER = [
   'AVAILABLE',
   'PENDING_CHECK_IN',
   'OCCUPIED',
-  'TERMINATION_PENDING',
+  'RELEASING',
   'OVERDUE',
   'MAINTENANCE'
 ];
 
-// Ưu tiên: Bảo trì > Quá hạn > Chờ check-in > Đang trả kho > Đang thuê > Còn trống
+// Ưu tiên: Bảo trì > Quá hạn > Chờ check-in > Sắp trống > Đang trả kho > Đang thuê > Còn trống
 export function getDisplayState(unit) {
   const contractStatus = unit.currentContract?.contractStatus;
   if (unit.status === 'MAINTENANCE') return 'MAINTENANCE';
   if (unit.overdue || contractStatus === 'OVERDUE') return 'OVERDUE';
   if (contractStatus === 'PENDING_CHECK_IN') return 'PENDING_CHECK_IN';
+  if (unit.releasing) return 'RELEASING';
   if (contractStatus === 'TERMINATION_PENDING') return 'TERMINATION_PENDING';
   if (unit.status === 'OCCUPIED' || unit.status === 'RESERVED') return 'OCCUPIED';
   if (unit.status === 'AVAILABLE') return 'AVAILABLE';
   return 'UNKNOWN';
+}
+
+// "yyyy-MM-dd" → "dd/MM/yyyy"
+export function formatReleaseDate(value) {
+  if (!value) return '';
+  const [y, m, d] = String(value).split('-');
+  return `${d}/${m}/${y}`;
 }
 
 // So sánh số phòng theo số ("20" trước "110"), không theo chuỗi

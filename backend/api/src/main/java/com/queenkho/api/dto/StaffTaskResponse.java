@@ -18,6 +18,7 @@ public class StaffTaskResponse {
     private String taskType;             // CHECK_IN, CHECK_OUT, SUPPORT, REFUND
     private String status;               // OPEN, IN_PROGRESS, OVERDUE, COMPLETED, CANCELLED
     private LocalDateTime dueAt;         // Hạn chót hoàn thành (Deadline 21:00 / 24h)
+    private LocalDateTime assignableFrom; // PR-T1: CHECK_IN / CHECK_OUT chỉ giao / nhận từ mốc này (ngày hẹn − 30 ngày); null = không giới hạn
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;     // Thời điểm nhân viên nhận việc
     private LocalDateTime completedAt;   // Thời điểm hoàn thành

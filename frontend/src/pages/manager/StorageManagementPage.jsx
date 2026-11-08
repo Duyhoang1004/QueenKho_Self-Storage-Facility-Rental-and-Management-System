@@ -11,7 +11,7 @@ import { getAllUnitTypes } from '../../services/facilityService';
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
 import FloorPlanBoard from '../../components/FloorPlanBoard';
 import UnitPositionPicker from '../../components/UnitPositionPicker';
-import { DISPLAY_STATES, getDisplayState } from '../../utils/unitDisplayState';
+import { DISPLAY_STATES, formatReleaseDate, getDisplayState } from '../../utils/unitDisplayState';
 import { defaultUnitSize, isPlacementValid, sameFloor } from '../../utils/floorPlan';
 
 const PAGE_SIZE = 5;
@@ -50,6 +50,7 @@ export default function StorageManagementPage() {
     occupiedUnits: 0,
     maintenanceUnits: 0,
     overdueUnits: 0,
+    releasingUnits: 0,
     occupancyRate: 0,
     floors: []
   });
@@ -547,6 +548,9 @@ export default function StorageManagementPage() {
                 { id: 'AVAILABLE', label: `Còn trống (${data.availableUnits})` },
                 { id: 'OCCUPIED', label: `Đang thuê (${data.occupiedUnits})` },
                 { id: 'MAINTENANCE', label: `Bảo trì (${data.maintenanceUnits})` },
+                ...(data.releasingUnits > 0
+                  ? [{ id: 'RELEASING', label: `Sắp trống (${data.releasingUnits})` }]
+                  : []),
                 ...(data.overdueUnits > 0
                   ? [{ id: 'OVERDUE', label: `Quá hạn (${data.overdueUnits})` }]
                   : [])
@@ -765,9 +769,19 @@ export default function StorageManagementPage() {
 
                   {selectedUnit.currentContract ? (
                     <div className="rounded-2xl border-2 border-[#E5E5E5] p-3 flex flex-col gap-1 text-xs">
-                      <span className="text-[10px] font-black uppercase text-[#AFAFAF]">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/manager/contracts/${selectedUnit.currentContract.contractId}`)}
+                        title="Xem hợp đồng"
+                        className="text-left text-[10px] font-black uppercase text-[#1CB0F6] hover:underline cursor-pointer"
+                      >
                         Hợp đồng #{selectedUnit.currentContract.contractCode}
-                      </span>
+                      </button>
+                      {selectedUnit.releasing && selectedUnit.releaseDate && (
+                        <span className="font-black text-[#E58800]">
+                          Sắp trống — giao được cho khách mới từ {formatReleaseDate(selectedUnit.releaseDate)}
+                        </span>
+                      )}
                       <span className="font-black text-[#4B4B4B]">{selectedUnit.currentContract.customerName}</span>
                       <span className="text-[11px] font-mono text-[#AFAFAF]">{selectedUnit.currentContract.customerPhone}</span>
                       <span className={`font-bold ${selectedUnit.overdue ? 'text-[#FF4B4B]' : 'text-[#777777]'}`}>
@@ -870,9 +884,19 @@ export default function StorageManagementPage() {
                               <span className={isOverdue ? 'text-[#FF4B4B] font-black' : 'text-[#4B4B4B]'}>
                                 Đến {unit.currentContract.endDate || '---'}
                               </span>
-                              <div className="text-[10px] text-[#AFAFAF]">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/manager/contracts/${unit.currentContract.contractId}`)}
+                                title="Xem hợp đồng"
+                                className="block text-[10px] text-[#1CB0F6] hover:underline cursor-pointer"
+                              >
                                 HĐ #{unit.currentContract.contractCode}
-                              </div>
+                              </button>
+                              {unit.releasing && unit.releaseDate && (
+                                <div className="text-[10px] font-black text-[#E58800]">
+                                  Sắp trống từ {formatReleaseDate(unit.releaseDate)}
+                                </div>
+                              )}
                             </div>
                           ) : isAvailable ? (
                             <span className="text-[#58CC02] font-black">Sẵn sàng giao</span>

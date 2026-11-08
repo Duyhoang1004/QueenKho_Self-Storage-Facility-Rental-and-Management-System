@@ -166,8 +166,11 @@ export default function CustomerContractsPage() {
                   return (
                     <tr key={c.contractId} className="hover:bg-[#FDFDFD] transition-colors">
                       {/* Mã HĐ */}
-                      <td className="px-5 py-4 font-black font-mono text-[#1CB0F6]">
-                        {c.contractCode}
+                      <td className="px-5 py-4">
+                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                          className="font-black font-mono text-[#1CB0F6] hover:underline cursor-pointer">
+                          {c.contractCode}
+                        </button>
                       </td>
 
                       {/* Khách hàng */}

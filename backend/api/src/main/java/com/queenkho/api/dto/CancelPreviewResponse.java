@@ -29,7 +29,6 @@ public class CancelPreviewResponse {
     private Integer partialFeePercent;
     private Integer lateFeePercent;
     private Integer graceMinutes;
-    private Integer graceBookingWindowHours;
     // Tương thích client cũ: nay luôn là 48 giờ / 50% cọc.
     private Integer cancelFreeHours;
     private Integer cancelFeePercent;

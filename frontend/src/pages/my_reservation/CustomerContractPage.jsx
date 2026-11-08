@@ -24,7 +24,10 @@ function formatDate(val) {
   return `${d}/${m}/${y}`;
 }
 
-// PR-R9 / PR-R10: còn ≤ 7 ngày đến end_date → { daysLeft, deadline (end_date − 3), late (đã qua hạn chót ưu tiên) }
+const RENEWAL_REMINDER_MILESTONES = [15, 10, 7, 3, 1];
+const RENEWAL_REMINDER_DAYS = RENEWAL_REMINDER_MILESTONES[0];
+
+// PR-R9 / PR-R10: còn ≤ 15 ngày đến end_date (mốc nhắc 15 / 10 / 7 / 3 / 1) → { daysLeft, deadline (end_date − 3), late (đã qua hạn chót ưu tiên) }
 function getRenewalReminder(endDate) {
   if (!endDate) return null;
   const [y, m, d] = String(endDate).split("-").map(Number);
@@ -32,7 +35,7 @@ function getRenewalReminder(endDate) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const daysLeft = Math.round((end - today) / 86400000);
-  if (daysLeft < 0 || daysLeft > 7) return null;
+  if (daysLeft < 0 || daysLeft > RENEWAL_REMINDER_DAYS) return null;
   const dl = new Date(y, m - 1, d - 3);
   const deadline = `${dl.getFullYear()}-${String(dl.getMonth() + 1).padStart(2, "0")}-${String(dl.getDate()).padStart(2, "0")}`;
   return { daysLeft, deadline, late: daysLeft < 3 };
@@ -483,10 +486,10 @@ export default function CustomerContractPage() {
         </span>
       </div>
 
-      {/* Demo PR-R9: tua hợp đồng về còn 7 / 3 / 1 ngày → job nhắc gia hạn chạy ngay (chuông + email) */}
+      {/* Demo PR-R9: tua hợp đồng về còn 15 / 10 / 7 / 3 / 1 ngày → job nhắc gia hạn chạy ngay (chuông + email) */}
       {contract.status === "ACTIVE" && (
         <div className="flex flex-wrap items-start gap-3">
-          {[7, 3, 1].map((days) => (
+          {RENEWAL_REMINDER_MILESTONES.map((days) => (
             <SimulationButton
               key={days}
               label={`Còn ${days} ngày hết hạn`}
@@ -498,7 +501,7 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* PR-R9 / PR-R10: còn ≤ 7 ngày hết hạn → nhắc hạn chót gia hạn ưu tiên (end_date − 3) */}
+      {/* PR-R9 / PR-R10: còn ≤ 15 ngày hết hạn → nhắc hạn chót gia hạn ưu tiên (end_date − 3) */}
       {contract.status === "ACTIVE" && renewalReminder && (
         <div className={`border-2 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${renewalReminder.late ? "bg-[#FFF8EE] border-[#FFD8A8]" : "bg-[#EEF8FF] border-[#B8E2FF]"}`}>
           <div className="flex items-start gap-3">

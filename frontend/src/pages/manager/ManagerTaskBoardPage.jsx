@@ -4,6 +4,7 @@ import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
 import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile } from '../../services/staffTaskService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
+import { assignLockedUntil } from '../../utils/taskWindow'
 
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
 
@@ -416,14 +417,27 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
           </Link>
-          <button
-            type="button"
-            onClick={() => setAssignTask(task)}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[17px]">assignment_ind</span>
-            Giao việc
-          </button>
+          {assignLockedUntil(task) ? (
+            // PR-T1: ngoài khung 30 ngày trước ngày hẹn → chưa giao được
+            <button
+              type="button"
+              disabled
+              title="Chỉ giao việc bàn giao / nghiệm thu trong vòng 30 ngày trước ngày hẹn"
+              className="w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-[17px]">lock_clock</span>
+              Giao từ {assignLockedUntil(task)}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAssignTask(task)}
+              className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[17px]">assignment_ind</span>
+              Giao việc
+            </button>
+          )}
         </>
       )
     }

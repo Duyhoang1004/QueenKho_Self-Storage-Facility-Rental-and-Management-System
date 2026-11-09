@@ -20,6 +20,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.queenkho.api.dto.UpcomingContractInfo;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -43,18 +46,38 @@ public class UnitTransferService {
     private final ActivityLogService activityLogService;
     private final NotificationService notificationService;
     private final JdbcTemplate jdbcTemplate;
+    private final UnitScheduleService unitScheduleService;
 
-    /** Ô AVAILABLE cùng cơ sở + cùng loại với ô hiện tại của hợp đồng — FM chọn 1 ô để chuyển tới */
+    /**
+     * Ô AVAILABLE cùng cơ sở + cùng loại, rảnh suốt phần còn lại của hợp đồng (D-18) — FM chọn 1 ô để chuyển tới.
+     * Hợp đồng chờ nhận kho: tính từ ngày nhận kho; đang thuê: tính từ hôm nay.
+     */
     @Transactional(readOnly = true)
     public List<StorageUnitResponse> getTransferOptions(Integer contractId) {
         RentalContract contract = findContract(contractId);
         StorageUnit current = contract.getStorageUnit();
-        return storageUnitRepository
-                .findByFacility_IdAndUnitType_IdAndStatus(current.getFacility().getId(), current.getUnitType().getId(), "AVAILABLE")
+        LocalDate[] range = remainingRange(contract);
+        return unitScheduleService.candidates(current.getFacility().getId(), current.getUnitType().getId(),
+                        range[0], range[1], contract.getId(), current.getId())
                 .stream()
-                .map(su -> new StorageUnitResponse(su.getId(), su.getUnitType().getName(), su.getUnitType().getAreaSqm(),
-                        su.getFloor(), su.getZone(), su.getRoomNumber(), su.getStatus()))
+                .map(c -> new StorageUnitResponse(c.unit().getId(), c.unit().getUnitType().getName(), c.unit().getUnitType().getAreaSqm(),
+                        c.unit().getFloor(), c.unit().getZone(), c.unit().getRoomNumber(), c.unit().getStatus(),
+                        c.freeUntil(), c.nextContractCode()))
                 .toList();
+    }
+
+    // D-18: khoảng ô mới phải rảnh = [max(ngày nhận kho, hôm nay), ngày ô cũ giao lại được của hợp đồng này)
+    private LocalDate[] remainingRange(RentalContract contract) {
+        LocalDate today = UnitScheduleService.today();
+        LocalDate from = contract.getStartDate() != null && contract.getStartDate().isAfter(today) ? contract.getStartDate() : today;
+        LocalDate to = unitScheduleService.bookingsOfUnit(contract.getStorageUnit().getId()).stream()
+                .filter(b -> contract.getId().equals(b.contractId()))
+                .map(UnitScheduleService.Booking::freeFrom)
+                .filter(d -> d != null)
+                .findFirst()
+                .orElse(contract.getEndDate() != null ? contract.getEndDate().plusDays(UnitScheduleService.CLEANUP_DAYS) : from.plusMonths(1));
+        if (!to.isAfter(from)) to = from.plusDays(1);
+        return new LocalDate[]{from, to};
     }
 
     @Transactional(readOnly = true)
@@ -109,27 +132,52 @@ public class UnitTransferService {
                     "Chỉ chuyển sang ô cùng loại (" + oldUnit.getUnitType().getName() + ") để giữ nguyên giá thuê");
         }
 
+        // D-18: ô cũ còn khách khác đang ở (hợp đồng này là khách gán trước cho ngày sau) → không khoá bảo trì được,
+        // phải chuyển khách đang ở trước
+        boolean oldAlreadyMaintenance = "MAINTENANCE".equalsIgnoreCase(oldUnit.getStatus());
+        if (oldToMaintenance && !oldAlreadyMaintenance) {
+            unitScheduleService.bookingsOfUnit(oldUnit.getId()).stream()
+                    .filter(b -> !contract.getId().equals(b.contractId()))
+                    .filter(b -> List.of("ACTIVE", "TERMINATION_PENDING", "OVERDUE").contains(b.status())
+                            || ("PENDING_CHECK_IN".equals(b.status()) && !b.startDate().isAfter(UnitScheduleService.today())))
+                    .findFirst()
+                    .ifPresent(b -> {
+                        throw new ContractException(HttpStatus.CONFLICT, "OLD_UNIT_IN_USE",
+                                "Ô " + oldUnit.getId() + " đang có khách HĐ " + b.contractCode() + " sử dụng — hãy chuyển khách đó"
+                                        + " sang ô khác trước rồi mới đưa ô vào bảo trì, hoặc chọn lý do không cần bảo trì");
+                    });
+        }
+
         // PR-M10: ô cũ vào bảo trì làm mất 1 ô trống so với trước → không được làm âm số suất đang giữ chỗ
-        if (oldToMaintenance) {
+        if (oldToMaintenance && !oldAlreadyMaintenance) {
             checkSlotAfterTransfer(facilityId, oldUnit.getUnitType().getId());
         }
 
-        // Chiếm ô mới bằng UPDATE có điều kiện (giống gán ô UC-14) → 2 FM thao tác cùng lúc thì người sau bị từ chối
-        int taken = jdbcTemplate.update(
-                "UPDATE storage_units SET status = 'OCCUPIED' WHERE id = ? AND status = 'AVAILABLE'", newUnit.getId());
-        if (taken == 0) {
+        // D06 / D-18: khoá dòng ô mới → 2 FM thao tác cùng lúc thì người sau chờ, rồi thấy lịch đã bị chiếm.
+        // Ô mới phải AVAILABLE và rảnh suốt phần còn lại của hợp đồng.
+        String lockedStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM storage_units WITH (UPDLOCK, HOLDLOCK) WHERE id = ?", String.class, newUnit.getId());
+        if (!"AVAILABLE".equalsIgnoreCase(lockedStatus)) {
             throw new ContractException(HttpStatus.CONFLICT, "UNIT_NOT_AVAILABLE", "Ô " + newUnit.getId() + " không còn trống");
         }
-        newUnit.setStatus("OCCUPIED");
+        LocalDate[] range = remainingRange(contract);
+        List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(newUnit, range[0], range[1], contract.getId());
+        if (!clashes.isEmpty()) {
+            throw new ContractException(HttpStatus.CONFLICT, "UNIT_NOT_AVAILABLE",
+                    "Ô " + newUnit.getId() + " không trống suốt " + UnitScheduleService.formatDate(range[0]) + " – "
+                            + UnitScheduleService.formatDate(range[1].minusDays(1)) + ": " + UnitScheduleService.describe(clashes.get(0)));
+        }
 
         LocalDateTime now = LocalDateTime.now();
         if (oldToMaintenance) {
+            String note = "Chuyển khách HĐ " + contract.getContractCode() + " sang ô " + newUnit.getId() + ": " + reason;
             oldUnit.setStatus("MAINTENANCE");
-            oldUnit.setMaintenanceNote(truncate("Chuyển khách HĐ " + contract.getContractCode() + " sang ô " + newUnit.getId()
-                    + ": " + reason, 500));
-            oldUnit.setMaintenanceSince(now);
+            oldUnit.setMaintenanceNote(truncate(oldAlreadyMaintenance && oldUnit.getMaintenanceNote() != null
+                    ? oldUnit.getMaintenanceNote() + " | " + note : note, 500));
+            if (!oldAlreadyMaintenance || oldUnit.getMaintenanceSince() == null) oldUnit.setMaintenanceSince(now);
+        } else if (oldAlreadyMaintenance) {
+            // ô cũ đang bảo trì vì lý do khác → giữ nguyên bảo trì
         } else {
-            oldUnit.setStatus("AVAILABLE");
             oldUnit.setMaintenanceNote(null);
             oldUnit.setMaintenanceSince(null);
         }
@@ -137,6 +185,9 @@ public class UnitTransferService {
 
         contract.setStorageUnit(newUnit);
         rentalContractRepository.save(contract);
+        // D-18: trạng thái 2 ô tính lại theo lịch (ô cũ có thể còn khách khác; ô mới chỉ OCCUPIED khi đã tới ngày nhận kho)
+        unitScheduleService.refreshUnitStatus(oldUnit);
+        unitScheduleService.refreshUnitStatus(newUnit);
         Reservation reservation = contract.getReservation();
         if (reservation != null) {
             reservation.setStorageUnitId(newUnit.getId());
@@ -152,6 +203,12 @@ public class UnitTransferService {
         transfer.setOldUnitStatus(oldUnit.getStatus());
         transfer.setMovedBy(manager);
         unitTransferRepository.saveAndFlush(transfer);
+
+        // D-18: ô cũ vào bảo trì mà còn khách khác đã gán trước (nhận kho sau) → trả danh sách để FM đổi ô tiếp cho họ
+        List<UpcomingContractInfo> affected = "MAINTENANCE".equalsIgnoreCase(oldUnit.getStatus())
+                ? unitScheduleService.pendingCheckInsOnUnit(oldUnit.getId(), contract.getId()).stream()
+                    .map(UnitScheduleService::toUpcoming).toList()
+                : List.of();
 
         activityLogService.log(managerId,
                 "[UNIT_TRANSFER] Chuyển HĐ " + contract.getContractCode() + " từ ô " + oldUnit.getId() + " sang ô " + newUnit.getId()
@@ -174,7 +231,7 @@ public class UnitTransferService {
                     reservation != null ? "/kho-cua-toi/hop-dong/" + reservation.getId() : "/kho-cua-toi");
         }
 
-        return toResponse(transfer);
+        return toResponse(transfer, affected);
     }
 
     private RentalContract findContract(Integer contractId) {
@@ -195,7 +252,12 @@ public class UnitTransferService {
     }
 
     private UnitTransferResponse toResponse(UnitTransfer t) {
+        return toResponse(t, null);
+    }
+
+    private UnitTransferResponse toResponse(UnitTransfer t, List<UpcomingContractInfo> affected) {
         return UnitTransferResponse.builder()
+                .affectedContracts(affected)
                 .id(t.getId())
                 .contractId(t.getContract().getId())
                 .contractCode(t.getContract().getContractCode())

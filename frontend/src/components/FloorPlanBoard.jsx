@@ -112,6 +112,9 @@ export default function FloorPlanBoard({
     [effectiveUnits, floor]
   );
   const unplacedUnits = useMemo(() => effectiveUnits.filter(u => !isPlaced(u)), [effectiveUnits]);
+  // D-18: ô đã đặt trên mặt bằng mà đang có hợp đồng (BE trả locked) → không dời / xoay / gỡ
+  const lockedIds = useMemo(() => new Set(units.filter(u => u.locked && isPlaced(u)).map(u => u.id)), [units]);
+  const isLockedOnMap = (unit) => lockedIds.has(unit.id);
   const fixtures = editing ? draftFixtures : fixturesOf(floor);
 
   const conflicts = useMemo(() => {
@@ -189,12 +192,16 @@ export default function FloorPlanBoard({
     ? floorUnits.find(u => u.id === editSelectedKey.slice(2))
     : null;
 
+  const selectedLocked = selectedUnit ? isLockedOnMap(selectedUnit) : false;
+
   const rotateSelected = () => {
+    if (selectedUnit && selectedLocked) return;
     if (selectedUnit) updateItem(editSelectedKey, rotateRect(unitRect(selectedUnit.id)));
     if (selectedFixture) updateItem(editSelectedKey, { w: selectedFixture.h, h: selectedFixture.w });
   };
 
   const removeSelected = () => {
+    if (selectedUnit && selectedLocked) return;
     if (selectedUnit) {
       setDraftUnits(prev => {
         const original = units.find(u => u.id === selectedUnit.id);
@@ -343,7 +350,10 @@ export default function FloorPlanBoard({
     h: u.mapH,
     door: u.mapDoor,
     state: getDisplayState(u),
-    title: unitTitle(u),
+    title: editing && isLockedOnMap(u) ? `${unitTitle(u)}
+Đang có hợp đồng — không dời / gỡ được` : unitTitle(u),
+    // D-18: ô đã đặt mà đang có hợp đồng (kể cả khách gán trước) → khoá vị trí khi sửa mặt bằng
+    locked: editing && isLockedOnMap(u),
     dimmed: !editing && matchedIds != null && !matchedIds.has(u.id)
   }));
 
@@ -570,7 +580,13 @@ export default function FloorPlanBoard({
                       </div>
                     </>
                   )}
-                  <div className="flex flex-wrap gap-1.5">
+                  {selectedLocked && (
+                    <p className="text-[11px] font-black text-[#E58800] flex items-start gap-1">
+                      <span className="material-symbols-outlined text-[14px]">lock</span>
+                      Ô đang có khách thuê / đã gán cho khách sắp nhận kho — không dời, xoay hay gỡ được (khách đã xem vị trí ô).
+                    </p>
+                  )}
+                  <div className={`flex flex-wrap gap-1.5 ${selectedLocked ? 'hidden' : ''}`}>
                     <button type="button" onClick={rotateSelected} className="duo-btn-white px-2.5 py-1 text-[11px]">
                       <span className="material-symbols-outlined text-[16px] mr-0.5">rotate_right</span>Xoay
                     </button>

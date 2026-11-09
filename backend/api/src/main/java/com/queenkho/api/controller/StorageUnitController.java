@@ -5,15 +5,19 @@ package com.queenkho.api.controller;
 
 import com.queenkho.api.dto.*;
 import com.queenkho.api.exception.FacilityException;
+import com.queenkho.api.security.AccessException;
 import com.queenkho.api.service.StorageUnitService;
+import com.queenkho.api.service.UnitScheduleService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,6 +30,26 @@ public class StorageUnitController {
 
     // PR-90: FM chỉ thao tác ô kho thuộc cơ sở của mình (danh sách đã bị AccessControlFilter khoá facilityId)
     private final com.queenkho.api.security.OwnershipGuard ownershipGuard;
+
+    private final UnitScheduleService unitScheduleService;
+
+    /**
+     * D-18: lịch chiếm dụng ô kho (khoảng nào đã có khách đặt, khoảng nào trống) — popup "Lịch ô kho" của FM
+     * GET /api/v1/storage-units/schedule?from=2026-11-08&to=2027-02-08&unitTypeId=1 (facilityId lấy theo token)
+     */
+    @GetMapping("/schedule")
+    public ResponseEntity<UnitScheduleResponse> getSchedule(
+            @RequestParam(required = false) Integer facilityId,
+            @RequestHeader(value = "X-Facility-Id", required = false) Integer headerFacilityId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Integer unitTypeId) {
+        Integer effectiveFacilityId = facilityId != null ? facilityId : headerFacilityId;
+        if (effectiveFacilityId == null) {
+            throw new FacilityException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu cơ sở cần xem lịch");
+        }
+        return ResponseEntity.ok(unitScheduleService.getSchedule(effectiveFacilityId, from, to, unitTypeId));
+    }
 
     /**
      * UC-06: Lấy danh sách ô kho và bộ chỉ số KPI vận hành của cơ sở
@@ -144,6 +168,12 @@ public class StorageUnitController {
                         "error", ex.getCode(),
                         "message", ex.getMessage()
                 ));
+    }
+
+    // OwnershipGuard: ô của cơ sở khác → 403 (nếu không khai báo, handler Exception bên dưới biến thành 500)
+    @ExceptionHandler(AccessException.class)
+    public ResponseEntity<Map<String, String>> handleAccessException(AccessException ex) {
+        return ResponseEntity.status(ex.getStatus()).body(Map.of("error", ex.getCode(), "message", ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

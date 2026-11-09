@@ -121,6 +121,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/unit-types", PUBLIC);
         rule("GET", "/api/v1/insurance-plans", PUBLIC); // BR-125: gói bảo hiểm cho trang đặt kho
         rule("GET", "/api/v1/goods-categories", PUBLIC); // BR-131: loại hàng cho trang đặt kho
+        rule("GET", "/api/v1/reservations/availability", PUBLIC); // D-18: số ô trống theo khoảng ngày thuê
         rule("GET", "/api/payments/vnpay/return", PUBLIC);
         rule("GET", "/api/payments/vnpay/ipn", PUBLIC);
         // Đăng xuất tự đọc token: token đã hết hạn vẫn trả 200 (FE không bị kẹt vòng lặp 401)
@@ -201,6 +202,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/held-goods/{id}/resolve", "HELD_GOODS_MANAGE");
 
         // Cơ sở: ô kho, nhân viên, báo cáo
+        rule("GET", "/api/v1/storage-units/schedule", "RESERVATION_MANAGE"); // D-18: popup lịch ô kho (cả modal gán / chuyển ô)
         rule(null, "/api/v1/storage-units/**", "STORAGE_MANAGE");
         rule(null, "/api/v1/manager/staff/**", "STAFF_MANAGE");
         rule("GET", "/api/v1/facilities/{id:\\d+}/dashboard", "FACILITY_REPORT");
@@ -231,7 +233,7 @@ public class AccessPolicy {
         // Demo giả lập
         rule("GET", "/api/v1/dev/simulation/status", AUTHENTICATED);
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/arrive-today", "DEV_SIM_CHECKIN");
-        rule("POST", "/api/v1/dev/simulation/tasks/{id}/appointment-in", "DEV_SIM_CHECKIN"); // PR-T1
+        rule("POST", "/api/v1/dev/simulation/tasks/{id}/appointment-in", "DEV_SIM_MANAGER"); // PR-T1 (D-18: chỉ FM — khung giao việc)
         rule("POST", "/api/v1/dev/simulation/tasks/{id}/checkout-today", "DEV_SIM_CHECKIN");
         rule("POST", "/api/v1/dev/simulation/contracts/{id}/add-failed-contacts", "DEV_SIM_MANAGER");
         rule("POST", "/api/v1/dev/simulation/held-goods/{id}/expire-hold", "DEV_SIM_MANAGER");

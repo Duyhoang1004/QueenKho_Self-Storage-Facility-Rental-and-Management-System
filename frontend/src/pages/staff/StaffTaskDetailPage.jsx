@@ -1204,19 +1204,23 @@ export default function StaffTaskDetailPage() {
             onRun={() => simulateArriveToday(task.id)}
             onDone={() => loadTask()}
           />
-          {/* PR-T1: demo khung 30 ngày giao / nhận task */}
-          <SimulationButton
-            label="Hẹn còn 45 ngày (khoá giao việc)"
-            description="Dời lịch hẹn nhận kho về 45 ngày nữa: task nằm ngoài khung 30 ngày nên FM chưa giao, Staff chưa nhận được."
-            onRun={() => simulateAppointmentIn(task.id, 45)}
-            onDone={() => loadTask()}
-          />
-          <SimulationButton
-            label="Hẹn còn 30 ngày (mở giao việc)"
-            description="Dời lịch hẹn nhận kho về đúng 30 ngày nữa: task vừa vào khung, FM giao / Staff nhận được."
-            onRun={() => simulateAppointmentIn(task.id, 30)}
-            onDone={() => loadTask()}
-          />
+          {/* PR-T1: demo khung 30 ngày giao / nhận task — D-18: chỉ FM (người giao việc) thấy, Staff không */}
+          {isManager && (
+            <>
+              <SimulationButton
+                label="Hẹn còn 45 ngày (khoá giao việc)"
+                description="Dời lịch hẹn nhận kho về 45 ngày nữa: task nằm ngoài khung 30 ngày nên FM chưa giao, Staff chưa nhận được."
+                onRun={() => simulateAppointmentIn(task.id, 45)}
+                onDone={() => loadTask()}
+              />
+              <SimulationButton
+                label="Hẹn còn 30 ngày (mở giao việc)"
+                description="Dời lịch hẹn nhận kho về đúng 30 ngày nữa: task vừa vào khung, FM giao / Staff nhận được."
+                onRun={() => simulateAppointmentIn(task.id, 30)}
+                onDone={() => loadTask()}
+              />
+            </>
+          )}
           {isManager && task.reservationId && (
             <SimulationButton
               label="Khách bùng hẹn (đủ No-Show)"

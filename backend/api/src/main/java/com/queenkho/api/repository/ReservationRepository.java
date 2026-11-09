@@ -51,6 +51,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, Intege
            "WHERE r.facility.id = :facilityId " +
            "AND r.status = 'UNIT_ASSIGNED' " +
            "AND r.startDate < :today " +
+           // Đã check-in thì đơn vẫn UNIT_ASSIGNED — chỉ lấy đơn có hợp đồng còn chờ nhận kho
+           "AND EXISTS (SELECT c.id FROM RentalContract c WHERE c.reservation.id = r.id AND c.status = 'PENDING_CHECK_IN') " +
            "ORDER BY r.startDate ASC")
     List<Reservation> findOverdueNoShowByFacility(
         @Param("facilityId") Integer facilityId,

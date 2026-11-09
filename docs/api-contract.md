@@ -1051,3 +1051,29 @@ Không đổi schema, không thêm bảng.
 ### BR-135 — Ô sắp trống (FM)
 - `GET /api/v1/storage-units` và `GET /api/v1/storage-units/{id}`: mỗi ô thêm `releasing` (boolean) và `releaseDate` (ngày giao được cho khách mới, công thức PR-R11). Danh sách thêm KPI `releasingUnits`; lọc `status=RELEASING`.
 - Phía khách không đổi: `GET /facilities/{id}/availability` và tìm kiếm vẫn chỉ trả số ô còn trống (`availableCount`) + `availableFrom`, không lộ ô cụ thể.
+
+## Gán ô theo lịch — góp ý buổi test lần 2 + giảng viên 08/11/2026 (D-18)
+
+Không đổi schema.
+
+### Lịch ô kho (FM)
+- `GET /api/v1/storage-units/schedule?from=yyyy-MM-dd&to=yyyy-MM-dd&unitTypeId=` — quyền `RESERVATION_MANAGE` (FM, cơ sở lấy theo token). Mặc định `from` = hôm nay, `to` = `from` + 3 tháng, tối đa 370 ngày (`400 INVALID_INPUT`).
+  - Response: `facilityId`, `facilityName`, `from`, `to`, `today`, `cleanupDays` (2), `conflictCount`, `units[]`, `pendingReservations[]`.
+  - `units[]`: `unitId`, `unitTypeId`, `unitTypeName`, `floor`, `zone`, `roomNumber`, `status`, `maintenanceNote`, `maintenanceSince`, `conflict`, `bookings[]`, `freeRanges[]`.
+  - `bookings[]`: `contractId`, `contractCode`, `reservationId`, `reservationCode`, `customerName`, `status` (`PENDING_CHECK_IN` / `ACTIVE` / `TERMINATION_PENDING` / `OVERDUE`), `startDate`, `endDate`, `freeFrom` (ngày ô giao lại được), `mayRenew`, `conflict`, `note`.
+  - `freeRanges[]`: `from`, `to` (ngày đầu tiên ô bận lại; `null` = trống tới hết khoảng xem và chưa ai đặt sau), `days`.
+  - `pendingReservations[]`: đơn `DEPOSIT_PAID` chưa gán ô — `reservationId`, `reservationCode`, `customerName`, `unitTypeId`, `unitTypeName`, `startDate`, `endDate`, `durationMonths`.
+
+### Số ô trống theo khoảng ngày (công khai)
+- `GET /api/v1/reservations/availability?facilityId=&unitTypeId=&startDate=yyyy-MM-dd&durationMonths=` — không cần đăng nhập. Response `RangeAvailabilityResponse`: `facilityId`, `unitTypeId`, `startDate`, `endDate`, `durationMonths`, `freeSlots`, `available`, `maxStartDate` (hôm nay + 90), `message`. Chỉ trả số lượng, không lộ ô cụ thể.
+
+### Thay đổi API có sẵn
+- `POST /api/v1/reservations`: ngày nhận kho > hôm nay + 90 → `400 START_DATE_TOO_FAR`; số suất tính theo khoảng ngày thuê (`409 NO_AVAILABILITY` như cũ).
+- `PUT /api/v1/reservations/{id}/reschedule`: thêm `400 START_DATE_TOO_FAR`, `409 UNIT_SCHEDULE_CONFLICT` (đơn đã gán ô, lịch mới đè lên khách khác cùng ô).
+- `GET /api/v1/reservations/{id}/available-units`, `GET /api/v1/contracts/{id}/transfer-options`: chỉ trả ô rảnh suốt thời gian (còn lại) của đơn / hợp đồng; mỗi ô thêm `freeUntil`, `nextContractCode`.
+- `POST /api/v1/reservations/{id}/assign`: ô không rảnh suốt thời gian thuê → `400` (message nêu hợp đồng bị đè). Nhận kho ngày sau thì ô vẫn `AVAILABLE`.
+- `POST /api/v1/contracts/{id}/transfer-unit`: thêm `409 OLD_UNIT_IN_USE`; response thêm `affectedContracts[]` (`contractId`, `contractCode`, `reservationId`, `reservationCode`, `customerName`, `status`, `startDate`, `endDate`) khi ô cũ vào bảo trì mà còn khách gán trước.
+- `GET /api/v1/storage-units`, `GET /api/v1/storage-units/{id}`, `PATCH /api/v1/storage-units/{id}/status`: mỗi ô thêm `freeFrom`, `upcomingContracts[]`, `locked`, `scheduleWarning`; `currentContract` = hợp đồng đang giữ ô **hôm nay** (không còn là hợp đồng mới nhất).
+- `PUT /api/v1/storage-units/{id}`, `PUT /api/v1/storage-units/layout/floors/{floorId}/plan`: ô đang có hợp đồng (kể cả khách gán trước) → `409 UNIT_IN_USE` (dời / gỡ vị trí, sửa thông tin).
+- Check-in (`POST /api/v1/staff-tasks/{id}/check-in`): thêm `409 UNIT_IN_MAINTENANCE`, `409 UNIT_STILL_OCCUPIED`.
+- Giả lập `POST /api/v1/dev/simulation/tasks/{taskId}/appointment-in`: chỉ FM (`DEV_SIM_MANAGER`), Staff → `403`.

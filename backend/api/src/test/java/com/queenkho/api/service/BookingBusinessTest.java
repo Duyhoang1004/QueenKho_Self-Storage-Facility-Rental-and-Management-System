@@ -35,8 +35,10 @@ class BookingBusinessTest {
         when(jdbc.queryForMap(anyString(), any(), any(), any()))
                 .thenReturn(Map.of("overdue_count", 0, "damage_count", 0));
         when(jdbc.queryForObject(contains("FROM facilities WITH"), eq(Integer.class), any())).thenReturn(1);
-        when(jdbc.queryForObject(contains("FROM storage_units WHERE"), eq(Integer.class), any(), any(), any(), any()))
-                .thenReturn(1);
+        // D-18: số suất tính theo khoảng ngày thuê
+        UnitScheduleService schedule = mock(UnitScheduleService.class);
+        when(schedule.freeSlots(any(), any(), any(), anyInt())).thenReturn(1);
+        ReflectionTestUtils.setField(service, "unitScheduleService", schedule);
         when(reservations.save(any())).thenAnswer(inv -> {
             Reservation r = inv.getArgument(0); r.setId(20); return r;
         });

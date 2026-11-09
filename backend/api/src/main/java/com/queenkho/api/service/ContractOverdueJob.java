@@ -23,6 +23,10 @@ public class ContractOverdueJob {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    // D-18: tới ngày nhận kho của đơn gán trước → ô OCCUPIED
+    @Autowired(required = false)
+    private UnitScheduleService unitScheduleService;
+
     /**
      * Chạy bù 1 lần ngay khi server khởi động xong (ApplicationReadyEvent)
      */
@@ -54,6 +58,16 @@ public class ContractOverdueJob {
             System.out.println("[QueenKho Overdue Job] ✅ Đã chuyển " + updated + " hợp đồng quá hạn sang OVERDUE.");
         } else {
             System.out.println("[QueenKho Overdue Job] ℹ️ Không có hợp đồng nào cần chuyển sang OVERDUE.");
+        }
+        if (unitScheduleService != null) {
+            try {
+                int synced = unitScheduleService.syncUnitStatuses();
+                if (synced > 0) {
+                    System.out.println("[QueenKho Overdue Job] Đã cập nhật trạng thái " + synced + " ô kho theo lịch nhận kho (D-18).");
+                }
+            } catch (Exception e) {
+                System.err.println("[QueenKho Overdue Job] Lỗi cập nhật trạng thái ô theo lịch: " + e.getMessage());
+            }
         }
         int relocated = relocateToCentralWarehouse(null);
         if (relocated > 0) {

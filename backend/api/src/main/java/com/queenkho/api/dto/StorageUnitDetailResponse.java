@@ -31,6 +31,14 @@ public class StorageUnitDetailResponse {
     private boolean releasing;
     private LocalDate releaseDate;
     private CurrentContractInfo currentContract;
+    // D-18: ngày ô giao lại được cho khách sau khi hợp đồng hiện tại kết thúc (đã cộng ngày dọn ô)
+    private LocalDate freeFrom;
+    // D-18: các hợp đồng đã gán trước, khách nhận kho sau hôm nay (ô vẫn AVAILABLE tới ngày đó)
+    private java.util.List<UpcomingContractInfo> upcomingContracts;
+    // D-18: ô đang gắn hợp đồng còn hiệu lực (kể cả hợp đồng tương lai) → khoá sửa thông tin / vị trí trên mặt bằng
+    private boolean locked;
+    // D-18: cảnh báo lịch — ô bảo trì nhưng có khách sắp nhận, hoặc 2 hợp đồng trùng ngày
+    private String scheduleWarning;
     private boolean canDelete; // true only if never had any rental contract in history
     // PR-O10: ô MAINTENANCE có task bảo trì đang mở → FE hiện "Chờ sửa (task #id)" thay vì ô FM tự khoá
     private Integer maintenanceTaskId;

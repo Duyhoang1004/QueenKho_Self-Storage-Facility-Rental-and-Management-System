@@ -19,4 +19,6 @@ public class UnitTransferResponse {
     private String oldUnitStatus;
     private String movedByName;
     private LocalDateTime createdAt;
+    // D-18: ô cũ vào bảo trì nhưng còn hợp đồng khác đã gán trước (khách nhận kho sau) → FM đổi ô tiếp cho họ
+    private java.util.List<UpcomingContractInfo> affectedContracts;
 }

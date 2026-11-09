@@ -93,7 +93,7 @@ public class RenewalPolicyService {
     }
 
     // Ngày ô sắp trống giao được: đã hẹn trả → ngày hẹn + 1; điều khoản v4 → end_date + dọn ô; cũ → + ngày thanh lý + dọn ô
-    private static final String RELEASE_DATE_SQL =
+    static final String RELEASE_DATE_SQL =
             "CASE WHEN c.status = 'TERMINATION_PENDING' " +
                     "            THEN DATEADD(DAY, 1, COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
                     "                 WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +

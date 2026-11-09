@@ -64,6 +64,10 @@ public class DemoSimulationService {
     @Autowired(required = false)
     private CompensationClaimService compensationClaimService;
 
+    // D-18: dời ngày nhận kho → trạng thái ô tính lại theo lịch (về hôm nay = OCCUPIED, ra sau = AVAILABLE)
+    @Autowired(required = false)
+    private UnitScheduleService unitScheduleService;
+
     public DemoSimulationService(JdbcTemplate jdbcTemplate,
                                  ReservationCleanupService reservationCleanupService,
                                  SupportRequestService supportRequestService,
@@ -127,6 +131,7 @@ public class DemoSimulationService {
                 today, today.atTime(APPOINTMENT_TIME), contract.get("reservation_id"));
         jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
                 today, today.plusMonths(months), contract.get("id"));
+        refreshUnitOf(contract.get("id"));
         // Task đã bị job đánh quá hạn → mở lại: chưa ai nhận = OPEN, đã có người = IN_PROGRESS
         jdbcTemplate.update(
                 "UPDATE facility_tasks SET due_at = ?, status = CASE WHEN status = 'OVERDUE' " +
@@ -144,6 +149,13 @@ public class DemoSimulationService {
         return result("Lịch hẹn nhận kho còn " + days + " ngày — "
                 + (open ? "task đã mở giao / nhận việc" : "task chưa giao / nhận được (ngoài khung "
                 + StaffTaskService.ASSIGN_WINDOW_DAYS + " ngày)"), "dueAt", dueAt);
+    }
+
+    private void refreshUnitOf(Object contractId) {
+        if (unitScheduleService == null) return;
+        List<String> unitIds = jdbcTemplate.queryForList(
+                "SELECT storage_unit_id FROM rental_contracts WHERE id = ?", String.class, contractId);
+        if (unitIds != null && !unitIds.isEmpty()) unitScheduleService.refreshUnitStatus(unitIds.get(0));
     }
 
     // ---------- 1b. Flow 3: khách tới TRẢ kho hôm nay ----------
@@ -247,6 +259,7 @@ public class DemoSimulationService {
                 startDate, Timestamp.valueOf(appointment), reservationId);
         jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
                 startDate, startDate.plusMonths(months), contract.get("id"));
+        refreshUnitOf(contract.get("id"));
         // Task bàn giao đã quá hạn từ ngày hẹn (giống job đánh OVERDUE)
         jdbcTemplate.update(
                 "UPDATE facility_tasks SET due_at = ?, status = 'OVERDUE' " +

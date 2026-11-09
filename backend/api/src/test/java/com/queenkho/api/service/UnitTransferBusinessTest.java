@@ -23,8 +23,10 @@ class UnitTransferBusinessTest {
     final UserRepository users = mock(UserRepository.class);
     final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     final NotificationService notifications = mock(NotificationService.class);
+    // D-18: lịch ô thật (đọc từ mock) — chưa có hợp đồng nào khác trên ô đích
+    final UnitScheduleService schedule = new UnitScheduleService(jdbc, units, contracts);
     final UnitTransferService service = new UnitTransferService(contracts, units, reservations,
-            history, users, mock(ActivityLogService.class), notifications, jdbc);
+            history, users, mock(ActivityLogService.class), notifications, jdbc, schedule);
     RentalContract contract;
     StorageUnit target;
     User manager;
@@ -36,7 +38,12 @@ class UnitTransferBusinessTest {
         when(users.findById(6)).thenReturn(Optional.of(manager));
         when(contracts.findDetailById(30)).thenReturn(Optional.of(contract));
         when(units.findById("TEST-B")).thenReturn(Optional.of(target));
-        when(jdbc.update(anyString(), eq("TEST-B"))).thenReturn(1);
+        // D-18: khoá dòng ô đích rồi đọc trạng thái; trạng thái ô tính lại theo hợp đồng đang giữ ô hôm nay
+        when(jdbc.queryForObject(contains("UPDLOCK"), eq(String.class), eq("TEST-B"))).thenAnswer(i -> target.getStatus());
+        when(contracts.countOccupyingNow(anyString(), any())).thenAnswer(i ->
+                i.getArgument(0).equals(contract.getStorageUnit().getId())
+                        && java.util.List.of("ACTIVE", "TERMINATION_PENDING", "OVERDUE", "PENDING_CHECK_IN").contains(contract.getStatus())
+                        && !contract.getStartDate().isAfter(java.time.LocalDate.now()) ? 1L : 0L);
         when(units.countByFacility_IdAndUnitType_IdAndStatus(1, 1, "AVAILABLE")).thenReturn(2);
     }
 
@@ -88,7 +95,8 @@ class UnitTransferBusinessTest {
     }
 
     @Test void concurrentLossOfTargetDoesNotReleaseOriginalUnit() {
-        when(jdbc.update(anyString(), eq("TEST-B"))).thenReturn(0);
+        // FM khác vừa chiếm ô đích
+        when(jdbc.queryForObject(contains("UPDLOCK"), eq(String.class), eq("TEST-B"))).thenReturn("OCCUPIED");
         assertEquals("UNIT_NOT_AVAILABLE", assertThrows(ContractException.class,
                 () -> service.transferUnit(30, 6, request("REARRANGE"))).getCode());
         assertEquals("TEST-A", contract.getStorageUnit().getId());

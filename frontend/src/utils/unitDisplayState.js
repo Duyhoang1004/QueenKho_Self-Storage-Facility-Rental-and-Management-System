@@ -44,6 +44,14 @@ export const DISPLAY_STATES = {
     badge: 'bg-[#DDF4FF] text-[#1899D6] border-2 border-[#1CB0F6]',
     dot: 'bg-[#1CB0F6]'
   },
+  // D-18: hôm nay trống nhưng đã gán trước cho khách nhận kho ngày sau (vẫn gán thêm được đơn ngắn vào khoảng trống)
+  BOOKED_AHEAD: {
+    label: 'Trống, đã có khách đặt sau',
+    icon: 'event_upcoming',
+    tile: 'bg-[#EFFFE0] border-[#58CC02] border-dashed text-[#58A700]',
+    badge: 'bg-[#EFFFE0] text-[#58A700] border-2 border-dashed border-[#58CC02]',
+    dot: 'bg-[#A5ED6E]'
+  },
   AVAILABLE: {
     label: 'Còn trống',
     icon: 'check',
@@ -63,6 +71,7 @@ export const DISPLAY_STATES = {
 // Thứ tự hiện trên chú thích (legend)
 export const DISPLAY_STATE_ORDER = [
   'AVAILABLE',
+  'BOOKED_AHEAD',
   'PENDING_CHECK_IN',
   'OCCUPIED',
   'RELEASING',
@@ -70,7 +79,7 @@ export const DISPLAY_STATE_ORDER = [
   'MAINTENANCE'
 ];
 
-// Ưu tiên: Bảo trì > Quá hạn > Chờ check-in > Sắp trống > Đang trả kho > Đang thuê > Còn trống
+// Ưu tiên: Bảo trì > Quá hạn > Chờ check-in > Sắp trống > Đang trả kho > Đang thuê > Trống đã đặt trước > Còn trống
 export function getDisplayState(unit) {
   const contractStatus = unit.currentContract?.contractStatus;
   if (unit.status === 'MAINTENANCE') return 'MAINTENANCE';
@@ -79,7 +88,7 @@ export function getDisplayState(unit) {
   if (unit.releasing) return 'RELEASING';
   if (contractStatus === 'TERMINATION_PENDING') return 'TERMINATION_PENDING';
   if (unit.status === 'OCCUPIED' || unit.status === 'RESERVED') return 'OCCUPIED';
-  if (unit.status === 'AVAILABLE') return 'AVAILABLE';
+  if (unit.status === 'AVAILABLE') return unit.upcomingContracts?.length ? 'BOOKED_AHEAD' : 'AVAILABLE';
   return 'UNKNOWN';
 }
 
@@ -93,4 +102,12 @@ export function formatReleaseDate(value) {
 // So sánh số phòng theo số ("20" trước "110"), không theo chuỗi
 export function compareRoomNumber(a, b) {
   return String(a ?? '').localeCompare(String(b ?? ''), 'vi', { numeric: true });
+}
+
+// D-18: số ngày từ hôm nay tới ngày 'yyyy-MM-dd' (âm = đã qua)
+export function daysFromToday(value) {
+  if (!value) return null;
+  const [y, m, d] = String(value).split('-').map(Number);
+  const now = new Date();
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
 }

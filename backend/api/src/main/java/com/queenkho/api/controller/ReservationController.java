@@ -5,13 +5,16 @@ import com.queenkho.api.dto.CreateReservationResponse;
 import com.queenkho.api.dto.MyReservationResponse;
 import com.queenkho.api.dto.NoShowRequest;
 import com.queenkho.api.dto.RescheduleReservationRequest;
+import com.queenkho.api.exception.ReservationException;
 import com.queenkho.api.security.CurrentUserProvider;
 import com.queenkho.api.security.OwnershipGuard;
 import com.queenkho.api.service.ReservationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +44,20 @@ public class ReservationController {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "BAD_REQUEST", "message", e.getMessage()));
+        }
+    }
+
+    // D-18: trang đặt kho hỏi số ô còn trống cho đúng khoảng ngày khách chọn (công khai, chỉ trả số lượng)
+    @GetMapping("/availability")
+    public ResponseEntity<?> checkAvailability(
+            @RequestParam Integer facilityId,
+            @RequestParam Integer unitTypeId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) Integer durationMonths) {
+        try {
+            return ResponseEntity.ok(reservationService.checkRangeAvailability(facilityId, unitTypeId, startDate, durationMonths));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }
     }
 
@@ -168,6 +185,8 @@ public class ReservationController {
         try {
             reservationService.rescheduleReservation(reservationId, request);
             return ResponseEntity.ok(Map.of("message", "Đã cập nhật ngày hẹn nhận kho mới thành công"));
+        } catch (ReservationException e) {
+            return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         } catch (Exception e) {

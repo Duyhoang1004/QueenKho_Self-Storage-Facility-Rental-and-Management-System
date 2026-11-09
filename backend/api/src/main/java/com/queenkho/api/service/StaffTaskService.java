@@ -126,6 +126,10 @@ public class StaffTaskService {
     @Autowired
     private HeldGoodsRepository heldGoodsRepository;
 
+    // D-18: ô kho tính theo lịch — check-in / trả kho / bảo trì xong thì tính lại trạng thái ô theo lịch
+    @Autowired
+    private UnitScheduleService unitScheduleService;
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -714,6 +718,9 @@ public class StaffTaskService {
                     "Khách hẹn nhận kho ngày " + appointmentDate.format(DATE_FMT)
                             + ", chưa được check-in trước ngày hẹn");
         }
+        // D-18: ô có thể đã gán cho khách này từ trước, nhưng tới ngày nhận kho ô đang bảo trì / khách trước chưa trả
+        // → không bàn giao, FM phải đổi ô cho hợp đồng trước
+        assertUnitReadyForCheckIn(task.getContract());
         String pin = request.getAccessPinCode().trim();
         String rfid = request.getRfidCardCode().trim();
         String notes = request.getNotes() == null || request.getNotes().isBlank() ? null : request.getNotes().trim();
@@ -768,6 +775,12 @@ public class StaffTaskService {
         contract.setAccessPinCode(pin);
         contract.setRfidCardCode(rfid);
         rentalContractRepository.save(contract);
+        // D-18: hàng đã vào ô → ô OCCUPIED (đơn gán trước cho ngày sau thì tới lúc này ô mới thật sự có khách)
+        StorageUnit checkedInUnit = contract.getStorageUnit();
+        if (checkedInUnit != null && !"OCCUPIED".equals(checkedInUnit.getStatus())) {
+            checkedInUnit.setStatus("OCCUPIED");
+            storageUnitRepository.save(checkedInUnit);
+        }
 
         // 7. Ghi log. Lỗi log không làm hỏng check-in
         try {
@@ -794,6 +807,26 @@ public class StaffTaskService {
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    // D-18: ô của hợp đồng phải sẵn sàng hôm nay — không bảo trì, không còn khách khác đang ở
+    private void assertUnitReadyForCheckIn(RentalContract contract) {
+        StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
+        if (unit == null) return;
+        if ("MAINTENANCE".equalsIgnoreCase(unit.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô " + unit.getId() + " đang bảo trì" + (unit.getMaintenanceNote() != null ? " (" + unit.getMaintenanceNote() + ")" : "")
+                            + " — báo Quản lý cơ sở đổi ô cho hợp đồng trước khi bàn giao");
+        }
+        unitScheduleService.bookingsOfUnit(unit.getId()).stream()
+                .filter(b -> !b.contractId().equals(contract.getId()))
+                .filter(b -> LIVE_CONTRACT_STATUSES.contains(b.status()))
+                .findFirst()
+                .ifPresent(b -> {
+                    throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_STILL_OCCUPIED",
+                            "Ô " + unit.getId() + " vẫn còn khách HĐ " + b.contractCode() + " chưa trả kho"
+                                    + " — báo Quản lý cơ sở đổi ô cho hợp đồng trước khi bàn giao");
+                });
     }
 
     private void validateCheckInRequest(CheckInRequest request) {
@@ -1295,6 +1328,10 @@ public class StaffTaskService {
             res.setStatus("COMPLETED");
             reservationRepository.save(res);
         }
+        // D-18: ô trống lại — nếu khách sau (gán trước) đã tới ngày nhận kho thì ô vẫn OCCUPIED
+        if (unit != null && !hasDamage) {
+            unitScheduleService.refreshUnitStatus(unit);
+        }
 
         // Đóng các ticket hỗ trợ còn mở của hợp đồng này (PR-S8)
         closeOpenSupportTicketsAndTasks(contract.getId());
@@ -1524,6 +1561,8 @@ public class StaffTaskService {
             unit.setMaintenanceNote(null);
             unit.setMaintenanceSince(null);
             storageUnitRepository.save(unit);
+            // D-18: khách gán trước đã tới ngày nhận kho → OCCUPIED
+            unitScheduleService.refreshUnitStatus(unit);
         }
 
         // PR-Q10: hàng của khách chuyển sang khu lưu giữ → lập hồ sơ lưu giữ 60 ngày

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -35,6 +36,7 @@ public class StorageUnitService {
     private final StaffTaskService staffTaskService;
     private final FloorPlanService floorPlanService;
     private final RenewalPolicyService renewalPolicyService;
+    private final UnitScheduleService unitScheduleService;
 
     /**
      * UC-06: Lấy danh sách ô kho có lọc và tính toán thống kê KPI theo cơ sở
@@ -47,68 +49,16 @@ public class StorageUnitService {
         List<StorageUnit> allUnits = storageUnitRepository.findByFacility_Id(facilityId);
         // (08/11/2026) FM thấy ô sắp trống + ngày ô trống được giao (PR-R11)
         Map<String, LocalDate> releaseDates = renewalPolicyService.releaseDatesByUnit(facilityId);
+        // D-18: hợp đồng + lịch chiếm dụng của cả cơ sở đọc 1 lần
+        Map<String, List<RentalContract>> contractsByUnit = rentalContractRepository.findAllByFacilityId(facilityId).stream()
+                .collect(Collectors.groupingBy(c -> c.getStorageUnit().getId()));
+        Map<String, List<UnitScheduleService.Booking>> bookingsByUnit = unitScheduleService.bookingsByUnit(facilityId);
 
-        // Chuyển đổi sang danh sách Detail DTO và tính toán trạng thái động
-        List<StorageUnitDetailResponse> allDetails = allUnits.stream().map(unit -> {
-            boolean canDelete = !rentalContractRepository.existsByStorageUnit_Id(unit.getId());
-            Optional<RentalContract> latestContractOpt = rentalContractRepository.findFirstByStorageUnit_IdOrderByIdDesc(unit.getId());
-
-            StorageUnitDetailResponse.CurrentContractInfo contractInfo = null;
-            boolean isOverdue = false;
-
-            if (latestContractOpt.isPresent()) {
-                RentalContract c = latestContractOpt.get();
-                // Chỉ hiển thị hợp đồng nếu chưa bị hủy/kết thúc quá khứ hoặc đang trong chu kỳ
-                List<String> activeStatuses = List.of("PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING");
-                if (activeStatuses.contains(c.getStatus())) {
-                    contractInfo = StorageUnitDetailResponse.CurrentContractInfo.builder()
-                            .contractId(c.getId())
-                            .contractCode(c.getContractCode())
-                            .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
-                            .customerName(c.getCustomer() != null ? c.getCustomer().getFullName() : "N/A")
-                            .customerPhone(c.getCustomer() != null ? c.getCustomer().getPhone() : "")
-                            .startDate(c.getStartDate())
-                            .endDate(c.getEndDate())
-                            .contractStatus(c.getStatus())
-                            .build();
-
-                    if ("OVERDUE".equalsIgnoreCase(c.getStatus())) {
-                        isOverdue = true;
-                    }
-                }
-            }
-
-            UnitType ut = unit.getUnitType();
-            return StorageUnitDetailResponse.builder()
-                    .id(unit.getId())
-                    .facilityId(facility.getId())
-                    .facilityName(facility.getName())
-                    .facilityCode(facility.getCode())
-                    .unitTypeId(ut != null ? ut.getId() : null)
-                    .unitTypeName(ut != null ? ut.getName() : "")
-                    .areaSqm(ut != null ? ut.getAreaSqm() : null)
-                    .volumeCbm(ut != null ? ut.getVolumeCbm() : null)
-                    .basePriceMonthly(ut != null ? ut.getBasePriceMonthly() : null)
-                    .floor(unit.getFloor())
-                    .zone(unit.getZone())
-                    .roomNumber(unit.getRoomNumber())
-                    .status(unit.getStatus())
-                    .overdue(isOverdue)
-                    .releasing(releaseDates.containsKey(unit.getId()))
-                    .releaseDate(releaseDates.get(unit.getId()))
-                    .currentContract(contractInfo)
-                    .canDelete(canDelete)
-                    .mapX(unit.getMapX())
-                    .mapY(unit.getMapY())
-                    .mapW(unit.getMapW())
-                    .mapH(unit.getMapH())
-                    .mapDoor(unit.getMapDoor())
-                    .maintenanceNote(unit.getMaintenanceNote())
-                    .maintenanceSince(unit.getMaintenanceSince())
-                    .defaultMapW(FloorPlanService.defaultSize(ut)[0])
-                    .defaultMapH(FloorPlanService.defaultSize(ut)[1])
-                    .build();
-        }).map(this::withMaintenanceInfo).collect(Collectors.toList());
+        List<StorageUnitDetailResponse> allDetails = allUnits.stream()
+                .map(unit -> toDetail(unit, facility, contractsByUnit.getOrDefault(unit.getId(), List.of()),
+                        bookingsByUnit.getOrDefault(unit.getId(), List.of()), releaseDates.get(unit.getId())))
+                .map(this::withMaintenanceInfo)
+                .collect(Collectors.toList());
 
         // Tính toán các chỉ số KPI trước khi lọc
         int totalUnits = allDetails.size();
@@ -185,39 +135,59 @@ public class StorageUnitService {
                 .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "UNIT_NOT_FOUND", "Không tìm thấy ô kho: " + id));
 
         Facility facility = unit.getFacility();
-        UnitType ut = unit.getUnitType();
-        boolean canDelete = !rentalContractRepository.existsByStorageUnit_Id(unit.getId());
-        Optional<RentalContract> latestContractOpt = rentalContractRepository.findFirstByStorageUnit_IdOrderByIdDesc(unit.getId());
-
-        StorageUnitDetailResponse.CurrentContractInfo contractInfo = null;
-        boolean isOverdue = false;
-
-        if (latestContractOpt.isPresent()) {
-            RentalContract c = latestContractOpt.get();
-            List<String> activeStatuses = List.of("PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING");
-            if (activeStatuses.contains(c.getStatus())) {
-                contractInfo = StorageUnitDetailResponse.CurrentContractInfo.builder()
-                        .contractId(c.getId())
-                        .contractCode(c.getContractCode())
-                        .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
-                        .customerName(c.getCustomer() != null ? c.getCustomer().getFullName() : "N/A")
-                        .customerPhone(c.getCustomer() != null ? c.getCustomer().getPhone() : "")
-                        .startDate(c.getStartDate())
-                        .endDate(c.getEndDate())
-                        .contractStatus(c.getStatus())
-                        .build();
-
-                if ("OVERDUE".equalsIgnoreCase(c.getStatus())) {
-                    isOverdue = true;
-                }
-            }
-        }
-
+        List<RentalContract> contracts = facility != null
+                ? rentalContractRepository.findAllByFacilityId(facility.getId()).stream()
+                    .filter(c -> c.getStorageUnit() != null && id.equals(c.getStorageUnit().getId()))
+                    .toList()
+                : List.of();
         LocalDate releaseDate = facility != null
                 ? renewalPolicyService.releaseDatesByUnit(facility.getId()).get(unit.getId())
                 : null;
+        return withMaintenanceInfo(toDetail(unit, facility, contracts, unitScheduleService.bookingsOfUnit(id), releaseDate));
+    }
 
-        return withMaintenanceInfo(StorageUnitDetailResponse.builder()
+    // Hợp đồng giữ ô HÔM NAY: đang thuê / chờ trả / quá hạn, hoặc chờ nhận kho đã tới ngày bắt đầu
+    private static boolean isOccupyingNow(RentalContract c, LocalDate today) {
+        return List.of("ACTIVE", "TERMINATION_PENDING", "OVERDUE").contains(c.getStatus())
+                || ("PENDING_CHECK_IN".equals(c.getStatus()) && c.getStartDate() != null && !c.getStartDate().isAfter(today));
+    }
+
+    private StorageUnitDetailResponse toDetail(StorageUnit unit, Facility facility, List<RentalContract> contracts,
+                                               List<UnitScheduleService.Booking> bookings, LocalDate releaseDate) {
+        LocalDate today = UnitScheduleService.today();
+        RentalContract current = contracts.stream()
+                .filter(c -> isOccupyingNow(c, today))
+                .max(Comparator.comparing(RentalContract::getId))
+                .orElse(null);
+
+        StorageUnitDetailResponse.CurrentContractInfo contractInfo = null;
+        LocalDate freeFrom = null;
+        if (current != null) {
+            contractInfo = StorageUnitDetailResponse.CurrentContractInfo.builder()
+                    .contractId(current.getId())
+                    .contractCode(current.getContractCode())
+                    .customerId(current.getCustomer() != null ? current.getCustomer().getId() : null)
+                    .customerName(current.getCustomer() != null ? current.getCustomer().getFullName() : "N/A")
+                    .customerPhone(current.getCustomer() != null ? current.getCustomer().getPhone() : "")
+                    .startDate(current.getStartDate())
+                    .endDate(current.getEndDate())
+                    .contractStatus(current.getStatus())
+                    .build();
+            freeFrom = bookings.stream()
+                    .filter(b -> current.getId().equals(b.contractId()))
+                    .map(UnitScheduleService.Booking::freeFrom)
+                    .findFirst()
+                    .orElse(null);
+        }
+        // D-18: khách đã gán trước, nhận kho sau hôm nay
+        List<UpcomingContractInfo> upcoming = bookings.stream()
+                .filter(b -> "PENDING_CHECK_IN".equals(b.status()) && b.startDate() != null && b.startDate().isAfter(today))
+                .map(UnitScheduleService::toUpcoming)
+                .toList();
+        boolean locked = contracts.stream().anyMatch(c -> UnitScheduleService.LIVE_CONTRACT_STATUSES.contains(c.getStatus()));
+
+        UnitType ut = unit.getUnitType();
+        return StorageUnitDetailResponse.builder()
                 .id(unit.getId())
                 .facilityId(facility != null ? facility.getId() : null)
                 .facilityName(facility != null ? facility.getName() : "")
@@ -231,21 +201,25 @@ public class StorageUnitService {
                 .zone(unit.getZone())
                 .roomNumber(unit.getRoomNumber())
                 .status(unit.getStatus())
-                .overdue(isOverdue)
+                .overdue(current != null && "OVERDUE".equalsIgnoreCase(current.getStatus()))
                 .releasing(releaseDate != null)
                 .releaseDate(releaseDate)
                 .currentContract(contractInfo)
-                .canDelete(canDelete)
+                .freeFrom(freeFrom)
+                .upcomingContracts(upcoming)
+                .locked(locked)
+                .scheduleWarning(UnitScheduleService.scheduleWarning(unit, bookings))
+                .canDelete(contracts.isEmpty())
                 .mapX(unit.getMapX())
                 .mapY(unit.getMapY())
                 .mapW(unit.getMapW())
                 .mapH(unit.getMapH())
                 .mapDoor(unit.getMapDoor())
-                    .maintenanceNote(unit.getMaintenanceNote())
-                    .maintenanceSince(unit.getMaintenanceSince())
+                .maintenanceNote(unit.getMaintenanceNote())
+                .maintenanceSince(unit.getMaintenanceSince())
                 .defaultMapW(FloorPlanService.defaultSize(ut)[0])
                 .defaultMapH(FloorPlanService.defaultSize(ut)[1])
-                .build());
+                .build();
     }
 
     // PR-O10: gắn task bảo trì đang mở (nếu có) cho ô MAINTENANCE để FM phân biệt "chờ sửa sự cố / chờ dọn
@@ -335,8 +309,11 @@ public class StorageUnitService {
         StorageUnit unit = storageUnitRepository.findById(id)
                 .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "UNIT_NOT_FOUND", "Không tìm thấy ô kho: " + id));
 
-        if ("OCCUPIED".equalsIgnoreCase(unit.getStatus())) {
-            throw new FacilityException(HttpStatus.CONFLICT, "UNIT_IN_USE", "Không thể chỉnh sửa thông tin ô kho đang có khách thuê (OCCUPIED)");
+        // D-18: khoá cả ô đã gán trước cho khách nhận kho ngày sau (ô còn AVAILABLE nhưng đã có hợp đồng)
+        if ("OCCUPIED".equalsIgnoreCase(unit.getStatus())
+                || rentalContractRepository.existsByStorageUnit_IdAndStatusIn(id, UnitScheduleService.LIVE_CONTRACT_STATUSES)) {
+            throw new FacilityException(HttpStatus.CONFLICT, "UNIT_IN_USE",
+                    "Không thể chỉnh sửa thông tin ô kho đang có khách thuê hoặc đã gán cho khách sắp nhận kho");
         }
 
         // Nếu thay đổi loại kho -> kiểm tra số suất khả dụng của loại kho cũ theo PR-M10 & BR-11
@@ -432,6 +409,8 @@ public class StorageUnitService {
         // PR-O10: "Mở lại kho" khi ô còn task bảo trì (sau trả kho có sự cố / thanh lý) → đóng luôn task đó
         if ("AVAILABLE".equals(targetStatus)) {
             staffTaskService.closeOpenMaintenanceForUnit(id, actorUserId);
+            // D-18: khách gán trước đã tới ngày nhận kho → OCCUPIED
+            unitScheduleService.refreshUnitStatus(unit);
         }
 
         String noteStr = request.getNote() != null && !request.getNote().isBlank() ? " (Ghi chú: " + request.getNote().trim() + ")" : "";

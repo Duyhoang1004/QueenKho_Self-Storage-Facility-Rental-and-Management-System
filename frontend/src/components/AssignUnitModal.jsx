@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getAvailableUnits, assignStorageUnit } from '../services/reservationService'
 import { getFacilityLayout, getStorageUnits } from '../services/storageUnitService'
 import UnitPickerMap from './UnitPickerMap'
+import UnitScheduleModal from './UnitScheduleModal'
 
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
@@ -14,6 +15,15 @@ function formatDate(value) {
   return `${d}/${m}/${y}`
 }
 
+// D-18: hết hạn = ngày nhận + số tháng (vùng cần ô trên lịch)
+function addMonthsIso(iso, months) {
+  if (!iso) return null
+  const [y, m, d] = String(iso).split('-').map(Number)
+  const first = new Date(Date.UTC(y, m - 1 + (months || 1), 1))
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10)
+}
+
 export default function AssignUnitModal({ isOpen, onClose, reservation, onSuccess }) {
   const [units, setUnits] = useState([])
   const [loadingUnits, setLoadingUnits] = useState(false)
@@ -24,6 +34,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   const [error, setError] = useState('')
   // UC-14: mặt bằng cơ sở để chọn ô trên bản đồ (không tải được thì chỉ dùng danh sách)
   const [mapData, setMapData] = useState({ forId: null, layout: null, units: [] })
+  // D-18: popup lịch ô kho
+  const [scheduleOpen, setScheduleOpen] = useState(false)
 
   useEffect(() => {
     if (!isOpen || !reservation) return undefined
@@ -81,6 +93,11 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   }, [isOpen, reservation])
 
   if (!isOpen || !reservation) return null
+
+  const endDate = addMonthsIso(reservation.startDate, reservation.durationMonths)
+  const unitTypeId = mapData.units.find(u => u.unitTypeName === reservation.unitTypeName)?.unitTypeId || null
+  // Ô đầu tiên có ngày kết thúc khoảng trống = vừa khít nhất (backend đã xếp)
+  const tightestId = units.find(u => u.freeUntil)?.id
 
   const handleConfirm = async () => {
     if (!selectedUnitId) {
@@ -146,8 +163,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
               <p className="text-sm font-black text-[#58CC02] mt-0.5">{formatVND(reservation.depositAmount)}</p>
             </div>
             <div>
-              <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Hẹn nhận</span>
-              <p className="text-sm font-black text-[#4B4B4B] mt-0.5">{formatDate(reservation.startDate)}</p>
+              <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Thời gian thuê</span>
+              <p className="text-sm font-black text-[#4B4B4B] mt-0.5">{formatDate(reservation.startDate)} → {formatDate(endDate)}</p>
             </div>
           </div>
 
@@ -164,11 +181,16 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
               <label className="text-xs font-black uppercase tracking-wider text-[#4B4B4B]">
                 Chọn ô kho trống để cấp quyền <span className="text-[#FF4B4B]">*</span>
               </label>
-              {!loadingUnits && (
-                <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
-                  {units.length} ô khả dụng
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {!loadingUnits && (
+                  <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
+                    {units.length} ô trống suốt thời gian thuê
+                  </span>
+                )}
+                <button type="button" onClick={() => setScheduleOpen(true)} className="duo-btn-blue px-3 py-1 text-[11px] gap-1">
+                  <span className="material-symbols-outlined text-[15px]">calendar_month</span>Xem lịch ô kho
+                </button>
+              </div>
             </div>
 
             {loadingUnits && (
@@ -180,8 +202,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
 
             {!loadingUnits && units.length === 0 && (
               <div className="py-6 text-center text-xs font-bold text-[#AFAFAF] bg-[#F7F7F7] rounded-2xl border-2 border-[#E5E5E5]">
-                Cơ sở không còn ô Trống đúng loại khách đã đặt (BR-41: không gán ô khác loại).
-                <br />Hãy mở bảo trì xong / thêm ô mới ở "Quản lý danh mục kho" rồi gán lại.
+                Không còn ô đúng loại trống suốt {formatDate(reservation.startDate)} → {formatDate(endDate)} (BR-41: không gán ô khác loại).
+                <br />Bấm "Xem lịch ô kho" để xem khoảng trống, hoặc mở bảo trì xong / thêm ô mới rồi gán lại.
               </div>
             )}
 
@@ -224,6 +246,17 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
                           </div>
                           <div className="text-[11px] font-bold text-[#AFAFAF] mt-0.5">
                             {unit.locationDesc || `Phòng ${unit.roomNumber || unit.id}`}
+                          </div>
+                          {/* D-18: ô đã gán trước cho khách nhận kho sau → chỉ trống tới ngày đó */}
+                          <div className={`text-[11px] font-black mt-0.5 flex items-center gap-1 ${unit.freeUntil ? 'text-[#E58800]' : 'text-[#58A700]'}`}>
+                            {unit.freeUntil
+                              ? `Trống đến ${formatDate(unit.freeUntil)} · HĐ ${unit.nextContractCode} nhận kho sau`
+                              : 'Trống dài hạn, chưa ai đặt sau'}
+                            {unit.id === tightestId && (
+                              <span className="duo-badge bg-[#FFF0DB] text-[#E58800] border border-[#FF9600] text-[9px]" title="Lấp khoảng trống ngắn trước, giữ ô trống dài cho đơn dài">
+                                Vừa khít
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -329,6 +362,19 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
           </div>
         )}
         </div>
+
+        <UnitScheduleModal
+          isOpen={scheduleOpen}
+          onClose={() => setScheduleOpen(false)}
+          unitTypeId={unitTypeId}
+          highlight={{ from: reservation.startDate, to: endDate, label: `Đơn ${reservation.reservationCode} cần ô` }}
+          selectableIds={selectableIds}
+          selectedUnitId={selectedUnitId || null}
+          onSelectUnit={(unitId) => {
+            setScheduleOpen(false)
+            selectFromMap(unitId)
+          }}
+        />
 
         {/* Modal Footer */}
         <div className="px-6 py-4 bg-[#FAFAFA] border-t-2 border-[#E5E5E5] flex items-center justify-between">

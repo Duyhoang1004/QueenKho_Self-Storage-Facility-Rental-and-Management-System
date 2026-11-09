@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { createReservation } from '../../services/reservationService'
+import { checkRangeAvailability, createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 import AssetTermsModal from '../../components/AssetTermsModal'
@@ -54,6 +54,11 @@ function formatVND(amount) {
   return amount.toLocaleString('vi-VN') + 'đ'
 }
 
+// D-18: nhận đặt kho trước tối đa 90 ngày (PR-B4)
+const MAX_LEAD_DAYS = 90
+const isoDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+const formatIso = (iso) => (iso ? iso.split('-').reverse().join('/') : '')
+
 export default function CreateReservationPage() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
@@ -84,6 +89,12 @@ export default function CreateReservationPage() {
   const [termsOpen, setTermsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  // (08/11/2026, góp ý test) lỗi hiện ngay trên nút thanh toán + cuộn tới đúng mục bị thiếu
+  const [errorField, setErrorField] = useState('')
+  // D-18: số ô còn trống cho đúng khoảng ngày khách chọn
+  const [rangeInfo, setRangeInfo] = useState({ key: '', data: null })
+  // Thông tin khách đã có trong tài khoản → thu gọn thành 1 dòng, bấm "Sửa" mới mở form
+  const [editCustomer, setEditCustomer] = useState(false)
   const sessionUserId = (() => {
     try {
       return JSON.parse(sessionStorage.getItem('user') || '{}').userId ?? null
@@ -175,6 +186,18 @@ export default function CreateReservationPage() {
       .then((plans) => { if (Array.isArray(plans) && plans.length) setInsurancePlans(plans) })
       .catch(() => {})
   }, [])
+  // D-18: hỏi BE còn bao nhiêu ô trống suốt [ngày nhận, hết hạn] mỗi khi đổi ngày / gói
+  const rangeKey = `${facilityId}|${unitTypeId}|${startDate}|${selectedMonths}`
+  useEffect(() => {
+    if (!hasParams || !startDate) return undefined
+    let cancelled = false
+    checkRangeAvailability({ facilityId, unitTypeId, startDate, durationMonths: selectedMonths })
+      .then((data) => { if (!cancelled) setRangeInfo({ key: rangeKey, data }) })
+      .catch(() => { if (!cancelled) setRangeInfo({ key: rangeKey, data: null }) })
+    return () => { cancelled = true }
+  }, [hasParams, facilityId, unitTypeId, startDate, selectedMonths, rangeKey])
+  const range = rangeInfo.key === rangeKey ? rangeInfo.data : null
+
   const durationOptions = DURATION_OPTIONS.map((opt) => {
     const fromPolicy = pricing?.bookingPackages?.find((p) => p.months === opt.months)
     return fromPolicy ? { ...opt, discount: fromPolicy.discountPercent } : opt
@@ -250,44 +273,64 @@ export default function CreateReservationPage() {
   const totalPayment = netRent + deposit - voucherApplied.discount + insuranceTotal
   const needsGoodsNote = goodsCategories.some((c) => c.requiresNote && goodsCodes.includes(c.code))
 
+  // Báo lỗi cạnh nút thanh toán, cuộn tới mục cần sửa và viền đỏ mục đó
+  const fail = (message, field = '') => {
+    setError(message)
+    setErrorField(field)
+    if (field) {
+      document.getElementById(field)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
   const handleSubmit = async () => {
     if (!isAuthenticated || !sessionUser?.userId) {
-      setError('Bạn cần đăng nhập tài khoản trước khi thực hiện thanh toán đặt chỗ.')
-      return
-    }
-    if (!agreed) {
-      setError('Bạn cần đồng ý với cam kết lưu trữ trước khi tiếp tục.')
-      return
-    }
-    if (!termsAccepted) {
-      setError('Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi tiếp tục.')
+      fail('Bạn cần đăng nhập tài khoản trước khi thực hiện thanh toán đặt chỗ.')
       return
     }
     if (!startDate) {
-      setError('Vui lòng chọn ngày bắt đầu nhận kho.')
-      return
-    }
-    if (goodsCodes.length === 0) {
-      setError('Vui lòng chọn loại hàng sẽ gửi kho.')
-      return
-    }
-    if (needsGoodsNote && goodsDescription.trim().length < 3) {
-      setError('Bạn chọn "Khác" — vui lòng mô tả rõ loại hàng sẽ gửi.')
+      fail('Vui lòng chọn ngày bắt đầu nhận kho.', 'sec-start')
       return
     }
     // PR-R11: ô "sắp trống" chỉ giao được từ ngày khách cũ hết ân hạn
     if (availableFrom && startDate < availableFrom) {
-      setError(`Loại kho này hiện hết ô trống, chỉ nhận kho được từ ngày ${availableFrom.split('-').reverse().join('/')}.`)
+      fail(`Loại kho này hiện hết ô trống, chỉ nhận kho được từ ngày ${formatIso(availableFrom)}.`, 'sec-start')
+      return
+    }
+    if (startDate > maxStartDate) {
+      fail(`Chỉ nhận đặt kho trước tối đa ${MAX_LEAD_DAYS} ngày — ngày nhận kho xa nhất là ${formatIso(maxStartDate)}.`, 'sec-start')
+      return
+    }
+    // D-18: khoảng ngày đã chọn hết ô
+    if (range && !range.available) {
+      fail(range.message || 'Không còn ô trống cho khoảng ngày này. Vui lòng chọn ngày nhận khác hoặc gói ngắn hơn.', 'sec-start')
+      return
+    }
+    if (goodsCodes.length === 0) {
+      fail('Vui lòng chọn loại hàng sẽ gửi kho.', 'sec-goods')
+      return
+    }
+    if (needsGoodsNote && goodsDescription.trim().length < 3) {
+      fail('Bạn chọn "Khác" — vui lòng mô tả rõ loại hàng sẽ gửi.', 'sec-goods')
       return
     }
     if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email || !customerInfo.address) {
-      setError('Vui lòng điền đầy đủ thông tin khách hàng.')
+      if (!customerInfo.fullName || !customerInfo.phone || !customerInfo.cccd || !customerInfo.email) setEditCustomer(true)
+      fail(customerInfo.address ? 'Vui lòng điền đầy đủ thông tin khách hàng.' : 'Vui lòng nhập địa chỉ thường trú / trụ sở để ghi vào hợp đồng.', 'sec-customer')
+      return
+    }
+    if (!agreed) {
+      fail('Bạn cần tick cam kết không lưu trữ hàng cấm trước khi tiếp tục.', 'sec-commit')
+      return
+    }
+    if (!termsAccepted) {
+      fail('Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi tiếp tục.', 'sec-commit')
       return
     }
 
     try {
       setLoading(true)
       setError('')
+      setErrorField('')
       setHasDebtError(false)
       const response = await createReservation({
         customerId: sessionUser.userId,
@@ -332,10 +375,12 @@ export default function CreateReservationPage() {
       const errData = err.response?.data
       if (err.response?.status === 409 && errData?.error === 'CUSTOMER_HAS_DEBT') {
         setHasDebtError(true)
-        setError(errData.message || 'Quý khách đang có hợp đồng quá hạn chưa thanh toán hoặc chưa bàn giao kho.')
+        fail(errData.message || 'Quý khách đang có hợp đồng quá hạn chưa thanh toán hoặc chưa bàn giao kho.')
       } else {
         setHasDebtError(false)
-        setError(errData?.detail || errData?.message || 'Có lỗi xảy ra. Vui lòng thử lại.')
+        const field = ['NO_AVAILABILITY', 'START_DATE_TOO_FAR'].includes(errData?.error) ? 'sec-start'
+          : String(errData?.error || '').startsWith('GOODS') ? 'sec-goods' : ''
+        fail(errData?.detail || errData?.message || 'Có lỗi xảy ra. Vui lòng thử lại.', field)
       }
       setLoading(false)
     }
@@ -343,6 +388,13 @@ export default function CreateReservationPage() {
 
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
   const minStartDate = availableFrom && availableFrom > tomorrowStr ? availableFrom : tomorrowStr
+  const maxStartDate = (() => {
+    const [y, m, d] = tomorrowStr.split('-').map(Number)
+    return isoDate(new Date(y, m - 1, d + MAX_LEAD_DAYS - 1)) // hôm nay + 90 ngày
+  })()
+  // viền đỏ mục đang lỗi
+  const ring = (field) => (errorField === field ? 'ring-4 ring-[#FF4B4B]/40 border-[#FF4B4B]' : '')
+  const customerSummaryReady = isAuthenticated && customerInfo.fullName && customerInfo.phone && customerInfo.cccd && customerInfo.email
 
   return (
     <div className="max-w-[1100px] mx-auto px-6 py-8">
@@ -385,7 +437,7 @@ export default function CreateReservationPage() {
         <div className="flex flex-col gap-6">
 
           {/* Section 1 (họp nhóm 05/11/2026): chọn ngày nhận kho trước tiên */}
-          <div className="duo-card p-6">
+          <div id="sec-start" className={`duo-card p-6 ${ring('sec-start')}`}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-2xl bg-[#CE82FF] border-b-2 border-[#A568CC] flex items-center justify-center text-white text-xs font-black">
                 1
@@ -400,10 +452,18 @@ export default function CreateReservationPage() {
                 type="date"
                 value={startDate}
                 min={minStartDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                max={maxStartDate}
+                onChange={(e) => { setStartDate(e.target.value); if (errorField === 'sec-start') setErrorField('') }}
                 className="duo-input w-full pl-11"
               />
             </div>
+            {/* D-18: số ô trống suốt thời gian thuê đã chọn (đổi ngày / gói là tính lại) */}
+            {range && (
+              <p className={`text-xs font-black mt-2 flex items-start gap-1.5 ${range.available ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
+                <span className="material-symbols-outlined text-[16px]">{range.available ? 'event_available' : 'event_busy'}</span>
+                <span>{range.message}</span>
+              </p>
+            )}
             {availableFrom && (
               <p className="text-xs font-bold text-[#1899D6] mt-2">
                 Loại kho này đang hết ô trống — quý khách đặt trước ô sắp được trả, nhận kho từ ngày {availableFrom.split('-').reverse().join('/')}.
@@ -411,7 +471,7 @@ export default function CreateReservationPage() {
               </p>
             )}
             <p className="text-xs font-bold text-[#AFAFAF] mt-2">
-              🕐 Hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
+              🕐 Đặt trước tối đa {MAX_LEAD_DAYS} ngày · hỗ trợ dời ngày nhận tối đa 3 ngày trước khi kích hoạt không phụ phí.
             </p>
           </div>
 
@@ -439,7 +499,7 @@ export default function CreateReservationPage() {
                     {unit.name} ({unit.area} m²)
                   </span>
                   <span className="text-[11px] font-black uppercase bg-[#DDF4FF] border border-[#84D8FF] text-[#1CB0F6] px-2 py-0.5 rounded-full">
-                    Còn {unit.availableCount} ô trống
+                    {range ? `Còn ${range.freeSlots} ô cho thời gian đã chọn` : `Còn ${unit.availableCount} ô trống`}
                   </span>
                   <span className="text-[11px] font-black uppercase bg-[#F3E5FF] border border-[#CE82FF] text-[#A568CC] px-2 py-0.5 rounded-full">
                     {TEMPERATURE_LABELS[unit.temperatureClass] || 'Kho thường'}
@@ -567,7 +627,7 @@ export default function CreateReservationPage() {
           </div>
 
           {/* Section 4 — BR-131: loại hàng gửi kho (Staff đối chiếu lúc nhận kho) */}
-          <div className="duo-card p-6">
+          <div id="sec-goods" className={`duo-card p-6 ${ring('sec-goods')}`}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-2xl bg-[#FFC800] border-b-2 border-[#E5A800] flex items-center justify-center text-white text-xs font-black">
                 4
@@ -605,7 +665,7 @@ export default function CreateReservationPage() {
           </div>
 
           {/* Section 5: Thông tin khách hàng */}
-          <div className="duo-card p-6">
+          <div id="sec-customer" className={`duo-card p-6 ${ring('sec-customer')}`}>
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] flex items-center justify-center text-white text-xs font-black">
@@ -629,8 +689,23 @@ export default function CreateReservationPage() {
               </div>
             </div>
 
+            {/* (08/11/2026) Đã có thông tin trong tài khoản → 1 dòng tóm tắt, bấm Sửa mới mở form */}
+            {customerSummaryReady && !editCustomer && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-[#E5E5E5] bg-[#F7F7F7] px-4 py-3 mb-4">
+                <div className="min-w-0 text-xs font-bold text-[#4B4B4B]">
+                  <p className="font-black truncate">{customerInfo.fullName}</p>
+                  <p className="text-[#777777] truncate">
+                    {customerInfo.phone} · {customerInfo.email} · CCCD ••••{String(customerInfo.cccd).slice(-4)}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setEditCustomer(true)} className="duo-btn-white px-3 py-1.5 text-[11px] shrink-0">
+                  <span className="material-symbols-outlined text-[16px] mr-0.5">edit</span>Sửa
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+              <div className={customerSummaryReady && !editCustomer ? 'hidden' : ''}>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
                   Họ và Tên cá nhân / Doanh nghiệp <span className="text-[#FF4B4B]">*</span>
                 </label>
@@ -643,7 +718,7 @@ export default function CreateReservationPage() {
                 />
               </div>
 
-              <div>
+              <div className={customerSummaryReady && !editCustomer ? 'hidden' : ''}>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
                   Số điện thoại / Zalo <span className="text-[#FF4B4B]">*</span>
                 </label>
@@ -656,7 +731,7 @@ export default function CreateReservationPage() {
                 />
               </div>
 
-              <div>
+              <div className={customerSummaryReady && !editCustomer ? 'hidden' : ''}>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
                   Số CCCD / Passport <span className="text-[#FF4B4B]">*</span>
                 </label>
@@ -672,7 +747,7 @@ export default function CreateReservationPage() {
                 </p>
               </div>
 
-              <div>
+              <div className={customerSummaryReady && !editCustomer ? 'hidden' : ''}>
                 <label className="text-xs font-black uppercase tracking-wider text-[#777777] mb-1 block">
                   Email nhận hợp đồng & hóa đơn <span className="text-[#FF4B4B]">*</span>
                 </label>
@@ -700,7 +775,7 @@ export default function CreateReservationPage() {
             </div>
 
             {/* Checkbox cam kết */}
-            <div className="flex items-start gap-3 mt-4 pt-4 border-t-2 border-[#E5E5E5]">
+            <div id="sec-commit" className={`flex items-start gap-3 mt-4 pt-4 border-t-2 border-[#E5E5E5] rounded-xl ${errorField === 'sec-commit' ? 'ring-4 ring-[#FF4B4B]/40' : ''}`}>
               <input
                 type="checkbox"
                 id="agreed"
@@ -735,9 +810,13 @@ export default function CreateReservationPage() {
                 >
                   Điều khoản xử lý tài sản khi không trả kho
                 </button>
-                : hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị thanh lý và hàng được{' '}
-                <span className="font-black text-[#FF4B4B]">chuyển vào kho tổng, tính phí lưu giữ mỗi ngày</span>{' '}
-                (QueenKho không bán hàng của bạn).
+                .
+                <details className="mt-1 text-[11px] text-[#777777]">
+                  <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt</summary>
+                  Hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị thanh lý và hàng được{' '}
+                  <span className="font-black text-[#FF4B4B]">chuyển vào kho tổng, tính phí lưu giữ mỗi ngày</span>{' '}
+                  (QueenKho không bán hàng của bạn).
+                </details>
               </label>
             </div>
             <AssetTermsModal
@@ -747,25 +826,6 @@ export default function CreateReservationPage() {
             />
           </div>
 
-          {error && (
-            <div className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] text-[#FF4B4B] text-xs font-black p-4 flex flex-col gap-2.5">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">error</span>
-                <span>{error}</span>
-              </div>
-              {hasDebtError && (
-                <div className="pt-2 border-t border-red-200 flex justify-end">
-                  <Link
-                    to="/kho-cua-toi"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4B4B] hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors"
-                  >
-                    <span>Xem hợp đồng của tôi</span>
-                    <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Cột phải - Chi tiết thanh toán Duolingo Card */}
@@ -879,14 +939,35 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[10px] font-bold leading-relaxed text-[#4B4B4B]">
-                <p className="mb-1 text-[11px] font-black uppercase text-[#1899D6]">Chính sách hủy trước check-in</p>
+              <details className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[10px] font-bold leading-relaxed text-[#4B4B4B]">
+                <summary className="cursor-pointer text-[11px] font-black uppercase text-[#1899D6]">Chính sách hủy trước check-in</summary>
                 <p>• Còn từ 48 giờ: hoàn 100%.</p>
                 <p>• Còn từ 24 đến dưới 48 giờ: giữ 50% cọc.</p>
                 <p>• Còn dưới 24 giờ: giữ 100% cọc.</p>
                 <p>• Đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê.</p>
                 <p className="mt-1 text-[#777777]">Hủy trong 30 phút sau khi thanh toán (và vẫn trước giờ hẹn) luôn được hoàn 100%.</p>
-              </div>
+              </details>
+
+              {/* (08/11/2026, góp ý test) lỗi hiện ngay trên nút thanh toán, không phải cuộn xuống cuối trang */}
+              {error && (
+                <div className="rounded-2xl border-2 border-b-4 border-[#FFDFDF] bg-[#FFF5F5] text-[#FF4B4B] text-xs font-black p-3 flex flex-col gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">error</span>
+                    <span>{error}</span>
+                  </div>
+                  {hasDebtError && (
+                    <div className="pt-2 border-t border-red-200 flex justify-end">
+                      <Link
+                        to="/kho-cua-toi"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4B4B] hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors"
+                      >
+                        <span>Xem hợp đồng của tôi</span>
+                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Giant CTA Button */}
               {!isAuthenticated ? (

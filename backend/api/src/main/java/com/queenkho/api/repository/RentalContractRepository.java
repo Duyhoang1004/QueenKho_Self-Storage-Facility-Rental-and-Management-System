@@ -48,4 +48,16 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     // UC-06: Lấy hợp đồng mới nhất của ô kho để hiển thị thông tin khách thuê / hạn hợp đồng
     Optional<RentalContract> findFirstByStorageUnit_IdOrderByIdDesc(String storageUnitId);
+
+    // D-18 (08/11/2026): ô có khách "ở thật" hôm nay — đang thuê / chờ trả / quá hạn, hoặc chờ nhận kho đã tới ngày bắt đầu.
+    // Đơn gán trước cho ngày tương lai KHÔNG làm ô thành OCCUPIED (JPQL → Hibernate tự flush thay đổi chưa ghi xuống DB).
+    @Query("SELECT COUNT(c) FROM RentalContract c WHERE c.storageUnit.id = :unitId AND (c.status IN ('ACTIVE', 'TERMINATION_PENDING', 'OVERDUE') " +
+            "OR (c.status = 'PENDING_CHECK_IN' AND c.startDate <= :today))")
+    long countOccupyingNow(@Param("unitId") String unitId, @Param("today") java.time.LocalDate today);
+
+    // D-18: ô đang gắn với hợp đồng còn hiệu lực (kể cả hợp đồng tương lai) → khoá sửa thông tin / vị trí trên mặt bằng
+    @Query("SELECT DISTINCT c.storageUnit.id FROM RentalContract c WHERE c.storageUnit.facility.id = :facilityId AND c.status IN :statuses")
+    List<String> findUnitIdsWithContractStatus(@Param("facilityId") Integer facilityId, @Param("statuses") List<String> statuses);
+
+    boolean existsByStorageUnit_IdAndStatusIn(String storageUnitId, List<String> statuses);
 }

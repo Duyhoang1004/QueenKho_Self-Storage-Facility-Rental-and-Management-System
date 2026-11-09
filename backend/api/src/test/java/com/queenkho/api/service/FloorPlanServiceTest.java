@@ -43,6 +43,7 @@ class FloorPlanServiceTest {
     @Mock private FloorFixtureRepository floorFixtureRepository;
     @Mock private StorageUnitRepository storageUnitRepository;
     @Mock private ActivityLogService activityLogService;
+    @Mock private com.queenkho.api.repository.RentalContractRepository rentalContractRepository;
 
     @InjectMocks
     private FloorPlanService floorPlanService;

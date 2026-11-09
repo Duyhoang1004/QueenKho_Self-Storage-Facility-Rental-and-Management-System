@@ -61,6 +61,7 @@ class MaintenanceTaskTest {
 
     @Mock LateFeeService lateFeeService;
     @Mock OperationsCatalogService operationsCatalogService;
+    @Mock UnitScheduleService unitScheduleService; // D-18
     @InjectMocks StaffTaskService service;
 
     User manager;

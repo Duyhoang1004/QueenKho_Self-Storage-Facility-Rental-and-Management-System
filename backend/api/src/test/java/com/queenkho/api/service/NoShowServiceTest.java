@@ -59,6 +59,10 @@ class NoShowServiceTest {
     @Spy
     private CancellationPolicyService cancellationPolicyService = new CancellationPolicyService();
 
+    // D-18: huỷ đơn đã gán ô → trạng thái ô tính lại theo lịch
+    @Mock
+    private UnitScheduleService unitScheduleService;
+
     @InjectMocks
     private ReservationService reservationService;
 

@@ -71,14 +71,17 @@ class ReservationServiceTest {
     @Mock
     private RenewalPolicyService renewalPolicyService;
 
+    // D-18: ô kho tính theo lịch
+    @Mock
+    private UnitScheduleService unitScheduleService;
+
     @InjectMocks
     private ReservationService reservationService;
 
-    // Còn `free` suất cho cặp cơ sở × loại kho (khoá dòng facilities + đếm ô AVAILABLE − đơn đang giữ suất)
+    // Còn `free` suất cho cặp cơ sở × loại kho trong khoảng ngày thuê (D-18: khoá dòng facilities + đếm theo lịch ô)
     private void mockFreeSlots(int free) {
         when(jdbcTemplate.queryForObject(contains("FROM facilities WITH (UPDLOCK"), eq(Integer.class), any())).thenReturn(1);
-        when(jdbcTemplate.queryForObject(contains("FROM storage_units WHERE facility_id"), eq(Integer.class),
-                any(), any(), any(), any())).thenReturn(free);
+        when(unitScheduleService.freeSlots(any(), any(), any(), anyInt())).thenReturn(free);
     }
 
     private CreateReservationRequest validRequest(int months) {
@@ -320,7 +323,7 @@ class ReservationServiceTest {
     }
 
     @Test
-    @DisplayName("D06: 2 quan ly gan cung 1 o -> nguoi sau bi tu choi (UPDATE co dieu kien = 0 dong)")
+    @DisplayName("D06: 2 quan ly gan cung 1 o -> nguoi sau cho khoa dong o, thay o da bi chiem -> tu choi")
     void testAssignStorageUnit_UnitTakenConcurrently_Rejected() {
         Reservation reservation = new Reservation();
         reservation.setId(6);
@@ -335,7 +338,7 @@ class ReservationServiceTest {
         unit.setUnitType(testUnitType);
         unit.setStatus("AVAILABLE");
         when(storageUnitRepository.findById("KV-TB-A102")).thenReturn(Optional.of(unit));
-        when(jdbcTemplate.update(contains("UPDATE storage_units SET status = 'OCCUPIED'"), eq("KV-TB-A102"))).thenReturn(0);
+        when(jdbcTemplate.queryForObject(contains("UPDLOCK"), eq(String.class), eq("KV-TB-A102"))).thenReturn("OCCUPIED");
 
         com.queenkho.api.dto.AssignUnitRequest request = new com.queenkho.api.dto.AssignUnitRequest();
         request.setStorageUnitId("KV-TB-A102");

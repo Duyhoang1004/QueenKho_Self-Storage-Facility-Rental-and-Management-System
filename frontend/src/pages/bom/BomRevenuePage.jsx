@@ -425,7 +425,7 @@ export default function BomRevenuePage() {
                 onChange={(e) => setSelectedFacility(e.target.value)}
                 className="border-2 border-[#E5E5E5] bg-white rounded-xl px-3 py-2 text-xs font-bold text-[#4B4B4B] focus:outline-none focus:border-[#1CB0F6]"
               >
-                <option value="ALL">🏢 Toàn bộ 5 cơ sở QueenKho</option>
+                <option value="ALL">🏢 Toàn bộ {facilities.length} cơ sở QueenKho</option>
                 {facilities.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.name} ({f.city})
@@ -508,7 +508,7 @@ export default function BomRevenuePage() {
 
           <div className="flex items-center gap-2 text-xs font-bold text-[#777777]">
             <span className="w-2.5 h-2.5 rounded-full bg-[#58CC02] animate-pulse"></span>
-            <span>Chốt số thực thu: <strong className="text-[#4B4B4B]">Hôm nay, 21:00</strong></span>
+            <span>Số liệu theo ngày thực thu, cập nhật khi tải trang</span>
           </div>
         </div>
 
@@ -534,7 +534,7 @@ export default function BomRevenuePage() {
             <div className="mt-4 pt-3 flex items-center justify-between text-xs font-bold border-t-2 border-[#E5E5E5]">
               <div className="flex items-center gap-1 text-[#58A700] font-black">
                 <span className="material-symbols-outlined text-[16px]">trending_up</span>
-                <span>+{overview?.growthRate ?? 0}% so kỳ trước</span>
+                <span>{(overview?.growthRate ?? 0) > 0 ? '+' : ''}{overview?.growthRate ?? 0}% so kỳ trước</span>
               </div>
               <span className="text-[#AFAFAF]">{overview?.rentalCount ?? 0} hợp đồng</span>
             </div>
@@ -642,7 +642,7 @@ export default function BomRevenuePage() {
             <div className="flex flex-col sm:items-end">
               <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Tăng trưởng dòng tiền</span>
               <span className="text-xl font-black text-[#58CC02]">
-                +{overview?.growthRate ?? 0}%
+                {(overview?.growthRate ?? 0) > 0 ? '+' : ''}{overview?.growthRate ?? 0}%
               </span>
             </div>
           </div>
@@ -729,7 +729,6 @@ export default function BomRevenuePage() {
 
                 <div className="mt-4 flex items-center justify-between text-xs font-bold text-[#AFAFAF]">
                   <span>Đơn vị: VNĐ • Thực thu qua VNPAY / Chuyển khoản</span>
-                  <span className="text-[#58A700]">Tỷ suất tăng trưởng bình quân: +12.4%/tháng</span>
                 </div>
               </div>
             </div>

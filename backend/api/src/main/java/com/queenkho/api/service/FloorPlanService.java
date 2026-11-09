@@ -12,6 +12,7 @@ import com.queenkho.api.exception.FacilityException;
 import com.queenkho.api.repository.FacilityFloorRepository;
 import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.FloorFixtureRepository;
+import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.StorageUnitRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -43,6 +44,8 @@ public class FloorPlanService {
     private final FloorFixtureRepository floorFixtureRepository;
     private final StorageUnitRepository storageUnitRepository;
     private final ActivityLogService activityLogService;
+    // D-18: ô đang có khách thuê / đã gán cho khách sắp nhận → khoá vị trí trên mặt bằng (khách đã xem vị trí ô của mình)
+    private final RentalContractRepository rentalContractRepository;
 
     // Hình chữ nhật trên lưới; chạm cạnh không tính là chồng
     record Rect(int x, int y, int w, int h) {
@@ -226,6 +229,10 @@ public class FloorPlanService {
         Map<String, StorageUnit> facilityUnits = storageUnitRepository.findByFacility_Id(facilityId).stream()
                 .collect(Collectors.toMap(StorageUnit::getId, u -> u));
 
+        Set<String> lockedUnits = new HashSet<>(Optional.ofNullable(
+                rentalContractRepository.findUnitIdsWithContractStatus(facilityId, UnitScheduleService.LIVE_CONTRACT_STATUSES))
+                .orElse(List.of()));
+
         List<StorageUnit> changed = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (UnitPlacementDto p : Optional.ofNullable(request.getUnits()).orElse(List.of())) {
@@ -237,6 +244,12 @@ public class FloorPlanService {
             if (!seen.add(unit.getId())) {
                 throw new FacilityException(HttpStatus.BAD_REQUEST, "DUPLICATE_PLACEMENT",
                         "Ô kho " + unit.getId() + " xuất hiện 2 lần trong yêu cầu");
+            }
+            // D-18: ô đã đặt trên mặt bằng mà đang có hợp đồng → không dời / gỡ (ô chưa đặt thì vẫn đặt lần đầu được)
+            if (lockedUnits.contains(unit.getId()) && unit.isPlacedOnMap() && sameFloor(unit.getFloor(), floor.getName())) {
+                if (samePlacement(unit, p)) continue;
+                throw new FacilityException(HttpStatus.CONFLICT, "UNIT_IN_USE",
+                        "Ô " + unit.getId() + " đang có khách thuê hoặc đã gán cho khách sắp nhận kho — không được dời / gỡ vị trí trên mặt bằng");
             }
             if (p.getX() == null) {
                 if (sameFloor(unit.getFloor(), floor.getName())) {
@@ -390,6 +403,16 @@ public class FloorPlanService {
     }
 
     // Đặt vị trí cho ô (kích thước bỏ trống = mặc định theo loại kho, cửa bỏ trống = giữ cũ hoặc BOTTOM)
+    // Vị trí gửi lên trùng vị trí hiện tại của ô (FE gửi lại toàn bộ ô của tầng mỗi lần lưu)
+    static boolean samePlacement(StorageUnit unit, UnitPlacementDto p) {
+        if (p.getX() == null) return false;
+        return p.getX().equals(unit.getMapX())
+                && p.getY() != null && p.getY().equals(unit.getMapY())
+                && (p.getW() == null || p.getW().equals(unit.getMapW()))
+                && (p.getH() == null || p.getH().equals(unit.getMapH()))
+                && (p.getDoor() == null || p.getDoor().trim().equalsIgnoreCase(unit.getMapDoor()));
+    }
+
     void applyPlacement(StorageUnit unit, UnitPlacementDto p, String floorName) {
         int[] size = defaultSize(unit.getUnitType());
         int w = p.getW() != null ? p.getW() : size[0];

@@ -189,11 +189,14 @@ export default function FloorPlanCanvas({
             aria-label={unit.ariaLabel || `${unit.id}: ${style.label}`}
             aria-pressed={selectedKey === key}
             onClick={!editable && !pickMode ? () => onSelect?.(selectedKey === key ? null : key) : undefined}
-            onPointerDown={editable ? (e) => startDrag(e, key, unit, 'move') : undefined}
-            onPointerMove={editable ? moveDrag : undefined}
-            onPointerUp={editable ? endDrag : undefined}
+            onPointerDown={editable
+              // D-18: ô đang có hợp đồng chỉ chọn để xem, không kéo đi được
+              ? (e) => (unit.locked ? (e.stopPropagation(), onSelect?.(key)) : startDrag(e, key, unit, 'move'))
+              : undefined}
+            onPointerMove={editable && !unit.locked ? moveDrag : undefined}
+            onPointerUp={editable && !unit.locked ? endDrag : undefined}
             className={`absolute rounded-sm border-2 flex flex-col items-center justify-center overflow-hidden transition-[box-shadow,opacity] ${tileClass} ${
-              editable ? 'cursor-move' : 'cursor-pointer hover:brightness-95'
+              editable ? (unit.locked ? 'cursor-not-allowed' : 'cursor-move') : 'cursor-pointer hover:brightness-95'
             } ${pickMode || unit.inert ? 'pointer-events-none' : ''} ${unit.dimmed ? 'opacity-25' : ''} ${ringClass(key)}`}
             style={box(unit)}
           >
@@ -209,6 +212,9 @@ export default function FloorPlanCanvas({
             </span>
             {unit.door && (
               <span className={`absolute rounded-full bg-current opacity-60 ${DOOR_CLASS[unit.door] || ''}`} />
+            )}
+            {editable && unit.locked && pixelW >= 20 && (
+              <span className="absolute top-0 right-0 material-symbols-outlined text-[11px] leading-none p-px">lock</span>
             )}
           </button>
         );

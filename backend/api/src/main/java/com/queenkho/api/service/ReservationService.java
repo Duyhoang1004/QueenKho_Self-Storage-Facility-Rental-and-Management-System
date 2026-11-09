@@ -8,6 +8,11 @@ import com.queenkho.api.dto.MyReservationResponse;
 import com.queenkho.api.dto.NoShowEligibility;
 import com.queenkho.api.dto.NoShowRequest;
 import com.queenkho.api.dto.PendingReservationResponse;
+import com.queenkho.api.dto.RangeAvailabilityResponse;
+import com.queenkho.api.dto.StorageUnitResponse;
+import com.queenkho.api.entity.RentalContract;
+import com.queenkho.api.entity.StorageUnit;
+import com.queenkho.api.exception.ReservationException;
 import com.queenkho.api.exception.StaffTaskException;
 import org.springframework.http.HttpStatus;
 import com.queenkho.api.entity.Facility;
@@ -95,6 +100,10 @@ public class ReservationService {
     // BR-131: loại hàng khách khai báo khi đặt kho
     @Autowired(required = false)
     private OperationsCatalogService operationsCatalogService;
+
+    // D-18: ô kho tính theo lịch (khoảng ngày) — gán đơn tương lai không khoá ô ở hiện tại
+    @Autowired
+    private UnitScheduleService unitScheduleService;
 
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
@@ -332,6 +341,7 @@ public class ReservationService {
         if (request.getDurationMonths() == null || request.getDurationMonths() <= 0) {
             throw new IllegalArgumentException("Thời gian thuê phải tối thiểu 1 tháng");
         }
+        assertWithinBookingLead(request.getStartDate());
         // Điều khoản xử lý tài sản khi không trả kho: căn cứ để cơ sở được bán thanh lý hàng sau khi thanh lý HĐ
         if (!Boolean.TRUE.equals(request.getAcceptedTerms())) {
             throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "TERMS_NOT_ACCEPTED",
@@ -415,18 +425,12 @@ public class ReservationService {
         // Khoá dòng cơ sở trong transaction → 2 khách đặt cùng lúc phải xếp hàng, người sau thấy đúng số suất còn lại.
         jdbcTemplate.queryForObject("SELECT id FROM facilities WITH (UPDLOCK, HOLDLOCK) WHERE id = ?",
                 Integer.class, facility.getId());
-        int freeSlots = countFreeSlots(facility.getId(), unitType.getId(), request.getStartDate());
+        // D-18: đếm theo khoảng ngày thuê [ngày nhận kho, hết hạn + ngày dọn ô) thay vì chỉ đếm ô AVAILABLE hôm nay
+        int freeSlots = unitScheduleService.freeSlots(facility.getId(), unitType.getId(),
+                request.getStartDate(), request.getDurationMonths());
         if (freeSlots <= 0) {
-            // PR-R11: hết ô trống nhưng sắp có ô trả về → báo ngày nhận kho sớm nhất có thể chọn
-            LocalDate slotDate = renewalPolicyService.earliestSlotDate(facility.getId(), unitType.getId(),
-                    renewalPolicyService.freeSlotsNow(facility.getId(), unitType.getId()));
-            throw new com.queenkho.api.exception.ReservationException(HttpStatus.CONFLICT, "NO_AVAILABILITY",
-                    "Loại kho \"" + unitType.getName() + "\" tại " + facility.getName()
-                            + (slotDate != null
-                                ? " hiện đã hết chỗ trống. Sớm nhất có thể nhận kho từ ngày "
-                                    + slotDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
-                                    + " — vui lòng chọn ngày bắt đầu từ ngày này."
-                                : " vừa hết chỗ trống. Vui lòng chọn loại kho hoặc cơ sở khác."));
+            throw new ReservationException(HttpStatus.CONFLICT, "NO_AVAILABILITY",
+                    noAvailabilityMessage(facility, unitType, request.getStartDate(), request.getDurationMonths()));
         }
 
         // Sinh ma don ngau nhien
@@ -498,16 +502,64 @@ public class ReservationService {
                 "Tạo đơn đặt chỗ thành công");
     }
 
-    // Số suất còn nhận đơn = ô AVAILABLE đúng loại − đơn đang giữ suất (đơn PENDING còn trong 15 phút + đơn đã cọc chưa gán ô)
-    // PR-R11: + các ô "sắp trống" (khách cũ đã qua hạn chót gia hạn) mà ngày nhận kho của đơn mới ≥ ngày ô trống được nhận
-    int countFreeSlots(Integer facilityId, Integer unitTypeId, LocalDate startDate) {
-        Integer free = jdbcTemplate.queryForObject(
-                "SELECT " +
-                        "(SELECT COUNT(*) FROM storage_units WHERE facility_id = ? AND unit_type_id = ? AND status = 'AVAILABLE') - " +
-                        "(SELECT COUNT(*) FROM reservations WHERE facility_id = ? AND unit_type_id = ? AND storage_unit_id IS NULL " +
-                        "   AND (status = 'DEPOSIT_PAID' OR (status = 'PENDING' AND created_at > DATEADD(MINUTE, -15, SYSDATETIME()))))",
-                Integer.class, facilityId, unitTypeId, facilityId, unitTypeId);
-        return (free != null ? free : 0) + renewalPolicyService.countReleasingBy(facilityId, unitTypeId, startDate);
+    // PR-B4 (sửa D-18): ngày nhận kho từ hôm nay tới tối đa 90 ngày tới
+    static void assertWithinBookingLead(LocalDate startDate) {
+        LocalDate maxStart = UnitScheduleService.today().plusDays(UnitScheduleService.MAX_BOOKING_LEAD_DAYS);
+        if (startDate != null && startDate.isAfter(maxStart)) {
+            throw new ReservationException(HttpStatus.BAD_REQUEST, "START_DATE_TOO_FAR",
+                    "Chỉ nhận đặt kho trước tối đa " + UnitScheduleService.MAX_BOOKING_LEAD_DAYS
+                            + " ngày — ngày nhận kho xa nhất là " + UnitScheduleService.formatDate(maxStart));
+        }
+    }
+
+    private String noAvailabilityMessage(Facility facility, UnitType unitType, LocalDate startDate, int months) {
+        // PR-R11: hết ô trống nhưng sắp có ô trả về → báo ngày nhận kho sớm nhất có thể chọn
+        LocalDate slotDate = renewalPolicyService.earliestSlotDate(facility.getId(), unitType.getId(),
+                renewalPolicyService.freeSlotsNow(facility.getId(), unitType.getId()));
+        String prefix = "Loại kho \"" + unitType.getName() + "\" tại " + facility.getName();
+        if (slotDate != null && slotDate.isAfter(startDate)) {
+            return prefix + " hiện đã hết chỗ trống. Sớm nhất có thể nhận kho từ ngày "
+                    + UnitScheduleService.formatDate(slotDate) + " — vui lòng chọn ngày bắt đầu từ ngày này.";
+        }
+        return prefix + " không còn ô trống suốt thời gian " + UnitScheduleService.formatDate(startDate) + " – "
+                + UnitScheduleService.formatDate(startDate.plusMonths(months))
+                + ". Vui lòng chọn ngày nhận kho khác, gói ngắn hơn hoặc cơ sở khác.";
+    }
+
+    // D-18: trang đặt kho hỏi số ô còn trống cho đúng khoảng ngày khách chọn (chỉ trả số lượng — D-17)
+    @Transactional(readOnly = true)
+    public RangeAvailabilityResponse checkRangeAvailability(Integer facilityId, Integer unitTypeId, LocalDate startDate, Integer months) {
+        if (facilityId == null || unitTypeId == null || startDate == null) {
+            throw new IllegalArgumentException("Vui lòng chọn cơ sở, loại kho và ngày nhận kho");
+        }
+        int duration = months != null && months > 0 ? months : 1;
+        LocalDate maxStart = UnitScheduleService.today().plusDays(UnitScheduleService.MAX_BOOKING_LEAD_DAYS);
+        RangeAvailabilityResponse.RangeAvailabilityResponseBuilder builder = RangeAvailabilityResponse.builder()
+                .facilityId(facilityId)
+                .unitTypeId(unitTypeId)
+                .startDate(startDate)
+                .endDate(startDate.plusMonths(duration))
+                .durationMonths(duration)
+                .maxStartDate(maxStart);
+        if (startDate.isBefore(UnitScheduleService.today())) {
+            return builder.freeSlots(0).available(false).message("Ngày nhận kho không được ở quá khứ").build();
+        }
+        if (startDate.isAfter(maxStart)) {
+            return builder.freeSlots(0).available(false)
+                    .message("Chỉ nhận đặt kho trước tối đa " + UnitScheduleService.MAX_BOOKING_LEAD_DAYS
+                            + " ngày (xa nhất " + UnitScheduleService.formatDate(maxStart) + ")").build();
+        }
+        Facility facility = facilityRepository.findById(facilityId)
+                .orElseThrow(() -> new IllegalArgumentException("Cơ sở không tồn tại"));
+        UnitType unitType = unitTypeRepository.findById(unitTypeId)
+                .orElseThrow(() -> new IllegalArgumentException("Loại kho không tồn tại"));
+        int free = Math.max(unitScheduleService.freeSlots(facilityId, unitTypeId, startDate, duration), 0);
+        return builder.freeSlots(free).available(free > 0)
+                .message(free > 0
+                        ? "Còn " + free + " ô trống cho khoảng " + UnitScheduleService.formatDate(startDate) + " – "
+                            + UnitScheduleService.formatDate(startDate.plusMonths(duration))
+                        : noAvailabilityMessage(facility, unitType, startDate, duration))
+                .build();
     }
 
     // UC-14: Lấy danh sách ô kho trống phù hợp để cấp quyền gán.
@@ -519,20 +571,36 @@ public class ReservationService {
 
         Integer facilityId = reservation.getFacility().getId();
         Integer unitTypeId = reservation.getUnitType().getId();
+        // D-18: chỉ gợi ý ô rảnh suốt thời gian thuê của đơn (kể cả ô đã gán trước cho khách nhận kho muộn hơn)
+        LocalDate from = reservation.getStartDate() != null ? reservation.getStartDate() : UnitScheduleService.today();
+        LocalDate to = UnitScheduleService.rangeEnd(from, durationOf(reservation));
 
-        List<com.queenkho.api.entity.StorageUnit> units = storageUnitRepository
-                .findByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, "AVAILABLE");
-
-        return units.stream()
-                .map(su -> new com.queenkho.api.dto.StorageUnitResponse(
-                        su.getId(),
-                        su.getUnitType().getName(),
-                        su.getUnitType().getAreaSqm(),
-                        su.getFloor(),
-                        su.getZone(),
-                        su.getRoomNumber(),
-                        su.getStatus()))
+        return unitScheduleService.candidates(facilityId, unitTypeId, from, to, null, null).stream()
+                .map(c -> new StorageUnitResponse(
+                        c.unit().getId(),
+                        c.unit().getUnitType().getName(),
+                        c.unit().getUnitType().getAreaSqm(),
+                        c.unit().getFloor(),
+                        c.unit().getZone(),
+                        c.unit().getRoomNumber(),
+                        c.unit().getStatus(),
+                        c.freeUntil(),
+                        c.nextContractCode()))
                 .toList();
+    }
+
+    // Đơn vẫn UNIT_ASSIGNED sau check-in → No-Show / dời lịch nhận kho phải dựa vào trạng thái hợp đồng
+    private void assertNotCheckedIn(Reservation reservation) {
+        rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
+            if (!"PENDING_CHECK_IN".equals(contract.getStatus())) {
+                throw new IllegalStateException("Khách đã nhận kho (hợp đồng " + contract.getContractCode()
+                        + "), không còn áp dụng No-Show hay dời lịch nhận kho");
+            }
+        });
+    }
+
+    private static int durationOf(Reservation reservation) {
+        return reservation.getDurationMonths() != null && reservation.getDurationMonths() > 0 ? reservation.getDurationMonths() : 1;
     }
 
     // UC-14: Quản lý xác nhận gán ô kho thực tế
@@ -567,18 +635,22 @@ public class ReservationService {
             throw new IllegalArgumentException("Ô kho khác loại khách đã đặt (" + reservation.getUnitType().getName() + ")");
         }
 
-        if (!"AVAILABLE".equalsIgnoreCase(storageUnit.getStatus())) {
-            throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
+        // D06 / D-18: khoá dòng ô kho → 2 quản lý gán cùng 1 ô cùng lúc thì người sau phải chờ, rồi thấy lịch đã bị chiếm
+        String lockedStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM storage_units WITH (UPDLOCK, HOLDLOCK) WHERE id = ?", String.class, storageUnit.getId());
+        if (!"AVAILABLE".equalsIgnoreCase(lockedStatus)) {
+            throw new IllegalStateException("Ô kho này hiện không khả dụng (đang có khách sử dụng hoặc đang bảo trì)");
         }
-
-        // Chiếm ô bằng 1 câu UPDATE có điều kiện → 2 quản lý gán cùng 1 ô cùng lúc thì người sau bị từ chối (D06)
-        int taken = jdbcTemplate.update(
-                "UPDATE storage_units SET status = 'OCCUPIED' WHERE id = ? AND status = 'AVAILABLE'",
-                storageUnit.getId());
-        if (taken == 0) {
-            throw new IllegalStateException("Ô kho này hiện không khả dụng (đã có người thuê hoặc đang bảo trì)");
+        // D-18: ô phải rảnh suốt [ngày nhận kho, hết hạn + ngày dọn ô) — ô đã gán cho khách nhận kho muộn hơn vẫn gán được
+        // nếu đơn này trả ô trước ngày khách kia nhận
+        LocalDate rangeFrom = reservation.getStartDate() != null ? reservation.getStartDate() : UnitScheduleService.today();
+        LocalDate rangeTo = UnitScheduleService.rangeEnd(rangeFrom, durationOf(reservation));
+        List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(storageUnit, rangeFrom, rangeTo, null);
+        if (!clashes.isEmpty()) {
+            throw new IllegalStateException("Ô " + storageUnit.getId() + " không trống suốt thời gian thuê "
+                    + UnitScheduleService.formatDate(rangeFrom) + " – " + UnitScheduleService.formatDate(rangeTo.minusDays(1))
+                    + " (gồm " + UnitScheduleService.CLEANUP_DAYS + " ngày dọn ô): " + UnitScheduleService.describe(clashes.get(0)));
         }
-        storageUnit.setStatus("OCCUPIED");
 
         // Cập nhật đơn đặt chỗ
         reservation.setStorageUnitId(storageUnit.getId());
@@ -621,6 +693,8 @@ public class ReservationService {
         // UC-16: hợp đồng chờ nhân viên check-in, check-in xong (UC-18) mới ACTIVE
         contract.setStatus("PENDING_CHECK_IN");
         rentalContractRepository.save(contract);
+        // D-18: nhận kho hôm nay → ô OCCUPIED ngay; nhận kho ngày sau → ô vẫn AVAILABLE tới ngày đó (job 00:05 / check-in)
+        unitScheduleService.refreshUnitStatus(storageUnit);
 
         staffTaskService.createCheckInTask(contract);
 
@@ -890,12 +964,8 @@ public class ReservationService {
         rentalContractRepository.save(contract);
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
 
-        if (reservation.getStorageUnitId() != null) {
-            storageUnitRepository.findById(reservation.getStorageUnitId()).ifPresent(unit -> {
-                unit.setStatus("AVAILABLE");
-                storageUnitRepository.save(unit);
-            });
-        }
+        // D-18: ô có thể còn khách khác đang ở (đơn này gán trước cho ngày sau) → tính lại theo lịch, không ép AVAILABLE
+        unitScheduleService.refreshUnitStatus(reservation.getStorageUnitId());
     }
 
     private String validateRefundMethod(CancelReservationRequest request) {
@@ -1051,6 +1121,8 @@ public class ReservationService {
                     "Trạng thái đơn không hợp lệ để xử lý No-Show (chỉ áp dụng cho đơn đã cọc hoặc đã gán kho)");
         }
 
+        assertNotCheckedIn(reservation);
+
         // PR-X3: Ràng buộc điều kiện No-Show (48h quá hạn & 2 lần liên hệ cách nhau 24h)
         NoShowEligibility eligibility = evaluateNoShowEligibility(reservation);
         if (!eligibility.eligible()) {
@@ -1117,15 +1189,7 @@ public class ReservationService {
         reservation.setStatus("CANCELLED");
         reservationRepository.save(reservation);
 
-        // tra ve available
-        String freedUnitId = null;
-        if (reservation.getStorageUnitId() != null) {
-            freedUnitId = reservation.getStorageUnitId();
-            storageUnitRepository.findById(freedUnitId).ifPresent(unit -> {
-                unit.setStatus("AVAILABLE");
-                storageUnitRepository.save(unit);
-            });
-        }
+        String freedUnitId = reservation.getStorageUnitId();
 
         // da gan kho -> huy hop dong
         rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
@@ -1134,6 +1198,8 @@ public class ReservationService {
             // UC-16: khách không đến → bỏ task check-in khỏi bảng công việc
             staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
         });
+        // D-18: giải phóng ô theo lịch (ô có thể còn khách khác đang ở)
+        unitScheduleService.refreshUnitStatus(freedUnitId);
 
         // ghi log vao activity_logs
         String staffNote = (request != null && request.getNote() != null && !request.getNote().isBlank())
@@ -1151,7 +1217,7 @@ public class ReservationService {
                 + ". " + penaltyLogStr;
 
         if (freedUnitId != null) {
-            logAction += ". Đã giải phóng ô kho " + freedUnitId + " về AVAILABLE";
+            logAction += ". Đã giải phóng lịch ô kho " + freedUnitId;
         }
 
         if (logAction.length() > 500) {
@@ -1195,8 +1261,25 @@ public class ReservationService {
         if (!"DEPOSIT_PAID".equals(reservation.getStatus()) && !"UNIT_ASSIGNED".equals(reservation.getStatus())) {
             throw new IllegalStateException("Đơn ở trạng thái này không thể dời lịch hẹn");
         }
+        assertNotCheckedIn(reservation);
+        assertWithinBookingLead(request.getNewStartDate());
+        // D-18: đơn đã gán ô → lịch mới không được đè lên khách khác đã đặt cùng ô (phải đổi ô trước)
+        RentalContract assignedContract = rentalContractRepository.findByReservationId(reservation.getId()).orElse(null);
+        if (assignedContract != null && assignedContract.getStorageUnit() != null) {
+            LocalDate newFrom = request.getNewStartDate();
+            LocalDate newTo = UnitScheduleService.rangeEnd(newFrom, durationOf(reservation));
+            List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(
+                    assignedContract.getStorageUnit(), newFrom, newTo, assignedContract.getId());
+            if (!clashes.isEmpty()) {
+                throw new ReservationException(HttpStatus.CONFLICT, "UNIT_SCHEDULE_CONFLICT",
+                        "Không dời được: ô " + assignedContract.getStorageUnit().getId() + " " + UnitScheduleService.describe(clashes.get(0))
+                                + ". Hãy đổi ô cho hợp đồng trước (trang hợp đồng → Chuyển ô) rồi dời lịch.");
+            }
+        }
         LocalDate oldDate = reservation.getStartDate();
         reservation.setStartDate(request.getNewStartDate());
+        // Check-in (PR-C1) và No-Show (PR-X3) lấy mốc theo giờ hẹn → phải dời cùng ngày nhận kho (PR-B10: 09:00)
+        reservation.setExpectedAppointmentTime(request.getNewStartDate().atTime(9, 0));
         reservationRepository.save(reservation);
 
         // cap nhat lai hop dong
@@ -1208,6 +1291,8 @@ public class ReservationService {
             rentalContractRepository.save(contract);
             // UC-16: hạn check-in theo ngày nhận kho mới
             staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", request.getNewStartDate());
+            // D-18: dời về hôm nay → ô OCCUPIED; dời ra sau → ô trống lại tới ngày mới
+            unitScheduleService.refreshUnitStatus(contract.getStorageUnit());
         });
         // ghi log
         String logAction = "[RESCHEDULE] Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()

@@ -115,8 +115,10 @@ class LecturerFeedbackRulesTest {
         when(contracts.findDetailById(9)).thenReturn(Optional.of(c));
         when(units.findById(target.getId())).thenReturn(Optional.of(target));
         when(users.findById(manager.getId())).thenReturn(Optional.of(manager));
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
         return new UnitTransferService(contracts, units, reservations, mock(UnitTransferRepository.class), users,
-                mock(ActivityLogService.class), mock(NotificationService.class), mock(JdbcTemplate.class));
+                mock(ActivityLogService.class), mock(NotificationService.class), jdbc,
+                new UnitScheduleService(jdbc, units, contracts));
     }
 
     @Test

@@ -11,7 +11,8 @@ import { getAllUnitTypes } from '../../services/facilityService';
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
 import FloorPlanBoard from '../../components/FloorPlanBoard';
 import UnitPositionPicker from '../../components/UnitPositionPicker';
-import { DISPLAY_STATES, formatReleaseDate, getDisplayState } from '../../utils/unitDisplayState';
+import { DISPLAY_STATES, daysFromToday, formatReleaseDate, getDisplayState } from '../../utils/unitDisplayState';
+import UnitScheduleModal from '../../components/UnitScheduleModal';
 import { defaultUnitSize, isPlacementValid, sameFloor } from '../../utils/floorPlan';
 
 const PAGE_SIZE = 5;
@@ -58,6 +59,9 @@ export default function StorageManagementPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: '' }
+  // D-18: popup lịch ô kho + danh sách khách đã gán trước trên ô vừa khoá bảo trì
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [maintenanceAffected, setMaintenanceAffected] = useState(null); // { unitId, contracts: [] }
 
   // 3. Filter state
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -209,6 +213,40 @@ export default function StorageManagementPage() {
     }
   };
 
+  // D-18: hạn hợp đồng hiện tại (còn n ngày), ngày ô trống lại, khách đã gán trước, cảnh báo trùng lịch
+  const renderScheduleInfo = (unit) => {
+    const upcoming = unit.upcomingContracts || [];
+    const endIn = unit.currentContract ? daysFromToday(unit.currentContract.endDate) : null;
+    const freeIn = unit.freeFrom ? daysFromToday(unit.freeFrom) : null;
+    return (
+      <>
+        {unit.currentContract && endIn !== null && (
+          <div className={`text-[10px] font-black ${endIn < 0 ? 'text-[#FF4B4B]' : endIn <= 15 ? 'text-[#E58800]' : 'text-[#777777]'}`}>
+            {endIn < 0 ? `Đã quá hạn ${-endIn} ngày` : endIn === 0 ? 'Hết hạn hôm nay' : `Còn ${endIn} ngày hết hạn`}
+            {freeIn !== null && freeIn > 0 && ` · trống lại sau ${freeIn} ngày (${formatReleaseDate(unit.freeFrom)})`}
+          </div>
+        )}
+        {upcoming.map(c => (
+          <button
+            key={c.contractId}
+            type="button"
+            onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+            className="block text-left text-[10px] font-black text-[#1899D6] hover:underline cursor-pointer"
+            title="Khách đã gán trước, ô vẫn trống tới ngày nhận kho"
+          >
+            Đã có khách đặt từ {formatReleaseDate(c.startDate)} (HĐ {c.contractCode})
+          </button>
+        ))}
+        {unit.scheduleWarning && (
+          <div className="text-[10px] font-black text-[#FF4B4B] flex items-start gap-1">
+            <span className="material-symbols-outlined text-[13px]">warning</span>
+            <span>{unit.scheduleWarning}</span>
+          </div>
+        )}
+      </>
+    );
+  };
+
   // Nút thao tác của một ô — dùng chung cho dòng bảng và panel chi tiết trên sơ đồ
   const renderUnitActions = (unit) => (
     <>
@@ -245,6 +283,18 @@ export default function StorageManagementPage() {
           title="Xem chi tiết hợp đồng"
         >
           Xem HĐ
+        </button>
+      )}
+
+      {/* D-18: ô bảo trì / trùng lịch mà có khách đã gán trước → đổi ô cho khách */}
+      {unit.scheduleWarning && (unit.upcomingContracts || []).length > 0 && (
+        <button
+          type="button"
+          onClick={() => navigate(`/manager/contracts/${unit.upcomingContracts[0].contractId}?transfer=1`)}
+          className="duo-btn-orange px-3 py-1.5 text-[11px]"
+          title="Chuyển khách đã gán trước sang ô khác cùng loại"
+        >
+          Đổi ô cho khách
         </button>
       )}
 
@@ -369,12 +419,16 @@ export default function StorageManagementPage() {
     setStatusModal(prev => ({ ...prev, isSubmitting: true }));
 
     try {
-      await updateStorageUnitStatus(
+      const updated = await updateStorageUnitStatus(
         statusModal.unit.id,
         statusModal.targetStatus,
         statusModal.note,
         actorUserId
       );
+      // D-18: ô vào bảo trì nhưng đã gán trước cho khách nhận kho sau → nhắc đổi ô cho họ
+      if (statusModal.targetStatus === 'MAINTENANCE' && updated?.upcomingContracts?.length) {
+        setMaintenanceAffected({ unitId: statusModal.unit.id, contracts: updated.upcomingContracts });
+      }
 
       setToast({
         type: 'success',
@@ -538,6 +592,47 @@ export default function StorageManagementPage() {
           </div>
         </div>
 
+        {/* D-18: ô bảo trì / trùng lịch mà có khách đã gán trước */}
+        {(() => {
+          const warned = allUnits.filter(u => u.scheduleWarning);
+          if (warned.length === 0 && !maintenanceAffected) return null;
+          return (
+            <div className="rounded-2xl border-2 border-[#FFDFDF] bg-[#FFF5F5] px-4 py-3 flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-[20px] text-[#FF4B4B]">event_busy</span>
+                <div className="flex-1 text-xs font-bold text-[#4B4B4B]">
+                  {maintenanceAffected && (
+                    <p className="font-black text-[#FF4B4B]">
+                      Ô {maintenanceAffected.unitId} vừa vào bảo trì nhưng đã gán trước cho {maintenanceAffected.contracts.length} khách — đổi ô cho họ:
+                    </p>
+                  )}
+                  {maintenanceAffected?.contracts.map(c => (
+                    <button key={c.contractId} type="button"
+                      onClick={() => navigate(`/manager/contracts/${c.contractId}?transfer=1`)}
+                      className="block text-left text-[#1CB0F6] font-black hover:underline">
+                      HĐ {c.contractCode} · {c.customerName} · nhận kho {formatReleaseDate(c.startDate)} → Đổi ô
+                    </button>
+                  ))}
+                  {warned.length > 0 && (
+                    <p className="mt-1">
+                      <span className="font-black text-[#FF4B4B]">{warned.length} ô có vấn đề lịch:</span>{' '}
+                      {warned.map(u => u.id).join(', ')} — khách đã gán trước trên ô bảo trì / trùng ngày, cần đổi ô trước ngày nhận kho.
+                    </p>
+                  )}
+                </div>
+                <button type="button" onClick={() => setScheduleOpen(true)} className="duo-btn-white px-3 py-1.5 text-[11px] shrink-0">Xem lịch</button>
+                {maintenanceAffected && (
+                  <button type="button" onClick={() => setMaintenanceAffected(null)} className="text-[#AFAFAF] hover:text-[#4B4B4B]">
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        <UnitScheduleModal isOpen={scheduleOpen} onClose={() => setScheduleOpen(false)} />
+
         {/* 2. Filter & Action Bar (Duo-Card Style) */}
         <div className="duo-card p-5 flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -570,8 +665,17 @@ export default function StorageManagementPage() {
               ))}
             </div>
 
-            {/* Action Buttons: Làm mới & Thêm Kho Mới */}
-            <div className="flex items-center gap-2.5">
+            {/* Action Buttons: Lịch ô kho, Làm mới & Thêm Kho Mới */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setScheduleOpen(true)}
+                className="duo-btn-blue px-4 py-2.5 text-xs"
+                title="Xem khoảng nào đã có khách đặt, khoảng nào còn trống (hiện tại và tương lai)"
+              >
+                <span className="material-symbols-outlined text-[18px] mr-1">calendar_month</span>
+                <span>LỊCH Ô KHO</span>
+              </button>
               <button
                 type="button"
                 onClick={reloadAll}
@@ -788,9 +892,12 @@ export default function StorageManagementPage() {
                         {selectedUnit.currentContract.startDate || '---'} → {selectedUnit.currentContract.endDate || '---'}
                       </span>
                     </div>
-                  ) : selectedUnit.status === 'AVAILABLE' ? (
+                  ) : selectedUnit.status === 'AVAILABLE' && !(selectedUnit.upcomingContracts || []).length ? (
                     <p className="text-xs font-black text-[#58CC02]">Sẵn sàng giao cho khách mới</p>
                   ) : null}
+
+                  {/* D-18 */}
+                  <div className="flex flex-col gap-1">{renderScheduleInfo(selectedUnit)}</div>
 
                   {renderMaintenanceTaskLink(selectedUnit)}
 
@@ -897,11 +1004,20 @@ export default function StorageManagementPage() {
                                   Sắp trống từ {formatReleaseDate(unit.releaseDate)}
                                 </div>
                               )}
+                              {renderScheduleInfo(unit)}
                             </div>
                           ) : isAvailable ? (
-                            <span className="text-[#58CC02] font-black">Sẵn sàng giao</span>
+                            <div>
+                              <span className="text-[#58CC02] font-black">
+                                {(unit.upcomingContracts || []).length ? 'Trống tới ngày khách đặt nhận' : 'Sẵn sàng giao'}
+                              </span>
+                              {renderScheduleInfo(unit)}
+                            </div>
                           ) : (
-                            <span className="text-[#AFAFAF]">---</span>
+                            <div>
+                              <span className="text-[#AFAFAF]">---</span>
+                              {renderScheduleInfo(unit)}
+                            </div>
                           )}
                         </td>
 

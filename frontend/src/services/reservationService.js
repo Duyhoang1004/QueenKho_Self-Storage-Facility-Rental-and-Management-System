@@ -59,3 +59,11 @@ export async function rescheduleReservation(reservationId, data) {
   const response = await api.put(`/reservations/${reservationId}/reschedule`, data)
   return response.data
 }
+
+// D-18: số ô còn trống cho đúng khoảng ngày khách chọn (trang đặt kho, không cần đăng nhập)
+export async function checkRangeAvailability({ facilityId, unitTypeId, startDate, durationMonths }) {
+  const response = await api.get('/reservations/availability', {
+    params: { facilityId, unitTypeId, startDate, durationMonths }
+  })
+  return response.data
+}

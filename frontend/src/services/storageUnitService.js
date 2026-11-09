@@ -114,3 +114,12 @@ export const saveFloorPlan = async (floorId, data) => {
   return response.data;
 };
 
+
+/**
+ * D-18: Lịch chiếm dụng ô kho (khoảng nào đã có khách đặt, khoảng nào trống) — popup "Lịch ô kho"
+ * @param {Object} params { from: 'yyyy-MM-dd', to: 'yyyy-MM-dd', unitTypeId } (cơ sở lấy theo tài khoản FM)
+ */
+export const getUnitSchedule = async (params = {}) => {
+  const response = await api.get('/storage-units/schedule', { params });
+  return response.data;
+};

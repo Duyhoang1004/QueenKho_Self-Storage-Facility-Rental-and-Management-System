@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { getContractDetail } from '../../services/contractService'
 import SimulationButton from '../../components/SimulationButton'
 import TransferUnitModal from '../../components/TransferUnitModal'
@@ -61,8 +61,12 @@ export default function ContractDetailPage() {
   const [error, setError] = useState('')
 
   const [reloadTick, setReloadTick] = useState(0)
-  const [transferOpen, setTransferOpen] = useState(false)
+  // D-18: mở từ popup Lịch ô kho bằng ?transfer=1 → bật luôn hộp chuyển ô
+  const [searchParams] = useSearchParams()
+  const [transferOpen, setTransferOpen] = useState(searchParams.get('transfer') === '1')
   const [notice, setNotice] = useState('')
+  // D-18: ô cũ vào bảo trì nhưng còn khách khác đã gán trước → nhắc FM đổi ô tiếp cho họ
+  const [affected, setAffected] = useState([])
 
   useEffect(() => {
     getContractDetail(id)
@@ -323,6 +327,29 @@ export default function ContractDetailPage() {
         </div>
       )}
 
+      {affected.length > 0 && (
+        <div className="fixed bottom-20 right-6 z-50 max-w-[420px] rounded-2xl border-2 border-[#FFC800] bg-[#FFF8DB] px-4 py-3 shadow-lg">
+          <div className="flex items-start gap-2">
+            <span className="material-symbols-outlined text-[20px] text-[#E58800]">warning</span>
+            <div className="flex-1">
+              <p className="text-xs font-black text-[#4B4B4B]">Ô cũ đang bảo trì nhưng còn {affected.length} khách đã gán trước — đổi ô cho họ:</p>
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {affected.map(a => (
+                  <li key={a.contractId} className="text-[11px] font-bold text-[#777777]">
+                    <a href={`/manager/contracts/${a.contractId}?transfer=1`} target="_blank" rel="noreferrer" className="text-[#1CB0F6] font-black hover:underline">
+                      {a.contractCode}
+                    </a>{' '}· {a.customerName} · nhận kho {a.startDate?.split('-').reverse().join('/')}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button type="button" onClick={() => setAffected([])} className="text-[#AFAFAF] hover:text-[#4B4B4B]">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       <TransferUnitModal
         open={transferOpen}
         contract={contract}
@@ -330,6 +357,7 @@ export default function ContractDetailPage() {
         onDone={(result) => {
           setTransferOpen(false)
           setNotice(`Đã chuyển hợp đồng sang ô ${result.toUnitId}, khách đã nhận thông báo + email.`)
+          setAffected(result.affectedContracts || [])
           setReloadTick((t) => t + 1)
         }}
       />

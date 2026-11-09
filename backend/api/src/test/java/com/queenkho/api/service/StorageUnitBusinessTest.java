@@ -18,7 +18,8 @@ class StorageUnitBusinessTest {
     final StaffTaskService tasks = mock(StaffTaskService.class);
     final StorageUnitService service = spy(new StorageUnitService(units, mock(FacilityRepository.class),
             mock(UnitTypeRepository.class), mock(RentalContractRepository.class), reservations,
-            mock(ActivityLogService.class), tasks, mock(FloorPlanService.class), mock(RenewalPolicyService.class)));
+            mock(ActivityLogService.class), tasks, mock(FloorPlanService.class), mock(RenewalPolicyService.class),
+            mock(UnitScheduleService.class)));
     StorageUnit unit;
 
     @BeforeEach void setup() {

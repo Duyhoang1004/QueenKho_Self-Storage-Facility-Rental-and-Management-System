@@ -78,7 +78,7 @@ function TransferUnitForm({ contract, onClose, onDone }) {
             {loadingOptions ? (
               <p className="text-xs font-bold text-[#AFAFAF]">Đang tải ô trống...</p>
             ) : options.length === 0 ? (
-              <p className="text-xs font-bold text-[#FF4B4B]">Không còn ô trống cùng loại tại cơ sở.</p>
+              <p className="text-xs font-bold text-[#FF4B4B]">Không còn ô cùng loại trống suốt thời gian còn lại của hợp đồng (D-18: tính cả ô đã gán trước cho khách nhận kho sau).</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {options.map(u => (
@@ -92,6 +92,10 @@ function TransferUnitForm({ contract, onClose, onDone }) {
                   >
                     <span className="block font-mono text-xs font-black text-[#4B4B4B]">{u.id}</span>
                     <span className="block text-[10px] font-bold text-[#AFAFAF]">Tầng {u.floor} · Khu {u.zone} · P.{u.roomNumber}</span>
+                    {/* D-18: ô rảnh tới ngày khách khác nhận kho */}
+                    <span className={`block text-[10px] font-black ${u.freeUntil ? 'text-[#E58800]' : 'text-[#58A700]'}`}>
+                      {u.freeUntil ? `Trống đến ${u.freeUntil.split('-').reverse().join('/')} (${u.nextContractCode})` : 'Trống dài hạn'}
+                    </span>
                   </button>
                 ))}
               </div>

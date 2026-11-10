@@ -9,7 +9,9 @@ import SimulationButton from "../../components/SimulationButton";
 import { simulateExpireHold } from "../../services/simulationService";
 import PaginationBar, { ListBoxHeader } from "../../components/PaginationBar";
 import TimeFilterBar from "../../components/TimeFilterBar";
+import RefundEvidenceImage from "../../components/RefundEvidenceImage";
 import { applyTimeFilter, makeTimeFilter } from "../../utils/timeFilter";
+import { refundPaymentMethodLabel, shouldShowReservationRefundEvidence } from "../../utils/refundFlow";
 
 // (10/11/2026) Lọc / sắp theo thời gian. Mặc định: đơn sắp hết hạn (≤ 3 ngày) lên đầu như cũ
 const TIME_FIELDS = [
@@ -152,11 +154,11 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
             ? "Đơn chưa có hợp đồng. Hợp đồng được tạo khi cơ sở gán ô kho cho bạn — lúc đó bấm mã đơn sẽ mở trang hợp đồng."
             : "Đơn đã đóng trước khi cơ sở gán ô kho nên không phát sinh hợp đồng."}
         </p>
-        {r.status === "REFUNDED" && r.refundEvidence && (
+        {shouldShowReservationRefundEvidence(r.status, r.refundEvidence) && (
           <div className="border-2 border-[#84D8FF] bg-[#F0FAFF] rounded-2xl p-3 flex flex-col gap-2">
             <p className="text-[11px] font-black uppercase tracking-wider text-[#1899D6]">Minh chứng hoàn tiền</p>
             <div className="text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
-              <span>Hình thức: <strong>{r.refundEvidence.paymentMethod === "CASH" ? "Tiền mặt" : "Chuyển khoản"}</strong></span>
+              <span>Hình thức: <strong>{refundPaymentMethodLabel(r.refundEvidence.paymentMethod)}</strong></span>
               {r.refundEvidence.amount != null && <span>Số tiền: <strong className="text-[#58A700]">{formatVND(r.refundEvidence.amount)}</strong></span>}
               {r.refundEvidence.transactionCode && <span>Mã giao dịch: <strong className="break-all">{r.refundEvidence.transactionCode}</strong></span>}
               {r.refundEvidence.bankTransactionCode && <span>Mã ngân hàng/FT: <strong className="break-all">{r.refundEvidence.bankTransactionCode}</strong></span>}
@@ -169,11 +171,11 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
               </div>
             )}
             {r.refundEvidence.evidenceImageUrl && (
-              <a href={r.refundEvidence.evidenceImageUrl} target="_blank" rel="noreferrer" title="Mở ảnh minh chứng hoàn tiền"
-                className="block overflow-hidden rounded-xl border-2 border-[#84D8FF] bg-white">
-                <img src={r.refundEvidence.evidenceImageUrl} alt="Minh chứng hoàn tiền do quản lý cơ sở cung cấp"
-                  className="w-full max-h-64 object-contain" />
-              </a>
+              <RefundEvidenceImage
+                key={r.refundEvidence.evidenceImageUrl}
+                src={r.refundEvidence.evidenceImageUrl}
+                maxHeightClass="max-h-64"
+              />
             )}
           </div>
         )}

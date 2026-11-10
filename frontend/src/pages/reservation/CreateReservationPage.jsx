@@ -8,6 +8,7 @@ import { validateVoucher } from '../../services/voucherService'
 import { getInsurancePlans } from '../../services/claimService'
 import { getGoodsCategories, TEMPERATURE_LABELS } from '../../services/catalogService'
 import GoodsCategoryDropdown from '../../components/GoodsCategoryDropdown'
+import { DEBT_PAYMENT_PATH } from '../../utils/refundFlow'
 
 // BR-125: dự phòng khi chưa tải được danh sách gói từ backend (GET /insurance-plans)
 const FALLBACK_PLANS = [
@@ -958,7 +959,7 @@ export default function CreateReservationPage() {
                   {hasDebtError && (
                     <div className="pt-2 border-t border-red-200 flex justify-end">
                       <Link
-                        to="/thanh-toan"
+                        to={DEBT_PAYMENT_PATH}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4B4B] hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors"
                       >
                         <span>Thanh toán khoản nợ</span>

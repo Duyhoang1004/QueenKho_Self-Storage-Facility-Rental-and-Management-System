@@ -8,7 +8,9 @@ import UnitLocationMap from "../../components/UnitLocationMap";
 import SimulationButton from "../../components/SimulationButton";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
+import RefundEvidenceImage from "../../components/RefundEvidenceImage";
 import { simulateExpireSoon } from "../../services/simulationService";
+import { refundPaymentMethodLabel, shouldShowContractRefundEvidence } from "../../utils/refundFlow";
 
 // UC-06: hợp đồng còn giữ ô thì khách xem được vị trí ô trên mặt bằng
 const MAP_VISIBLE_STATUSES = ["PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING"];
@@ -886,7 +888,7 @@ export default function CustomerContractPage() {
                   </div>
                 )}
 
-                {hasRefunded && contract.refundEvidence && (
+                {shouldShowContractRefundEvidence(contract.refundStatus, contract.refundEvidence) && (
                   <div className="mt-3 border-2 border-[#84D8FF] bg-[#F0FAFF] rounded-2xl p-4 flex flex-col gap-3">
                     <div className="flex items-center gap-2 text-[#1899D6]">
                       <span className="material-symbols-outlined text-[20px]">receipt_long</span>
@@ -897,7 +899,7 @@ export default function CustomerContractPage() {
                       <div>
                         <span className="font-bold text-[#777777]">Hình thức: </span>
                         <span className="font-black">
-                          {contract.refundEvidence.paymentMethod === "CASH" ? "Tiền mặt" : "Chuyển khoản"}
+                          {refundPaymentMethodLabel(contract.refundEvidence.paymentMethod)}
                         </span>
                       </div>
                       {contract.refundEvidence.amount != null && (
@@ -934,19 +936,10 @@ export default function CustomerContractPage() {
                     )}
 
                     {contract.refundEvidence.evidenceImageUrl && (
-                      <a
-                        href={contract.refundEvidence.evidenceImageUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block overflow-hidden rounded-xl border-2 border-[#84D8FF] bg-white"
-                        title="Mở ảnh minh chứng hoàn tiền"
-                      >
-                        <img
-                          src={contract.refundEvidence.evidenceImageUrl}
-                          alt="Minh chứng hoàn tiền do quản lý cơ sở cung cấp"
-                          className="w-full max-h-80 object-contain"
-                        />
-                      </a>
+                      <RefundEvidenceImage
+                        key={contract.refundEvidence.evidenceImageUrl}
+                        src={contract.refundEvidence.evidenceImageUrl}
+                      />
                     )}
                   </div>
                 )}

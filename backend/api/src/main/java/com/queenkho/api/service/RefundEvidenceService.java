@@ -18,13 +18,21 @@ public class RefundEvidenceService {
     }
 
     public RefundEvidenceResponse findCompleted(Integer reservationId, String reservationCode, Integer contractId) {
+        boolean hasContract = contractId != null && contractId > 0;
+        boolean hasReservation = reservationId != null && reservationId > 0;
+        boolean hasReservationCode = reservationCode != null && !reservationCode.isBlank();
+        if (!hasContract && (!hasReservation || !hasReservationCode)) {
+            return null;
+        }
+
+        String reservationPattern = hasReservationCode ? "%Đơn: " + reservationCode.trim() + "%" : "\u0000";
         try {
             Map<String, Object> task = jdbcTemplate.queryForMap(
                     "SELECT TOP 1 id, evidence_image_url, note, completed_at " +
                             "FROM facility_tasks WHERE task_type = 'REFUND' AND status = 'COMPLETED' " +
                             "AND (contract_id = ? OR (contract_id IS NULL AND note LIKE ?)) " +
                             "ORDER BY completed_at DESC, id DESC",
-                    contractId, "%Đơn: " + reservationCode + "%");
+                    contractId, reservationPattern);
 
             Map<String, Object> payment = Map.of();
             try {

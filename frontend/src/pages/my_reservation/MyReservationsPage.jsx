@@ -8,6 +8,15 @@ import { createVnpayPayment } from "../../services/vnpayService";
 import SimulationButton from "../../components/SimulationButton";
 import { simulateExpireHold } from "../../services/simulationService";
 import PaginationBar, { ListBoxHeader } from "../../components/PaginationBar";
+import TimeFilterBar from "../../components/TimeFilterBar";
+import { applyTimeFilter, makeTimeFilter } from "../../utils/timeFilter";
+
+// (10/11/2026) Lọc / sắp theo thời gian. Mặc định: đơn sắp hết hạn (≤ 3 ngày) lên đầu như cũ
+const TIME_FIELDS = [
+  { key: "createdAt", label: "Ngày đặt", get: (r) => r.createdAt },
+  { key: "startDate", label: "Ngày nhận kho", get: (r) => r.startDate },
+  { key: "endDate", label: "Ngày hết hạn", get: (r) => r.endDate },
+];
 
 const PAGE_SIZE = 5;
 
@@ -175,6 +184,7 @@ export default function MyReservationsPage() {
   const setFilter = (key) =>
     setSearchParams(key === "ALL" ? {} : { loc: key }, { replace: true });
   const [currentPage, setCurrentPage] = useState(1);
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS, "default"));
   const [reloadKey, setReloadKey] = useState(0);
   const [retryingId, setRetryingId] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
@@ -366,6 +376,8 @@ export default function MyReservationsPage() {
         return days !== null && days <= 15;
       });
     }
+    list = applyTimeFilter(list, timeFilter, TIME_FIELDS);
+    if (timeFilter.order !== "default") return list;
     return [...list].sort((a, b) => {
       const diffA = getDaysUntilExpiry(a);
       const diffB = getDaysUntilExpiry(b);
@@ -379,7 +391,7 @@ export default function MyReservationsPage() {
       }
       return 0;
     });
-  }, [reservations, filter]);
+  }, [reservations, filter, timeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(visibleReservations.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -488,6 +500,13 @@ export default function MyReservationsPage() {
               {f.label}
             </button>
           ))}
+          <TimeFilterBar
+            className="w-full pt-1"
+            value={timeFilter}
+            onChange={(v) => { setTimeFilter(v); setCurrentPage(1); }}
+            fields={TIME_FIELDS}
+            defaultLabel="Mặc định"
+          />
         </div>
 
         {loading && (

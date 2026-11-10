@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getStaffTasks } from '../services/staffTaskService'
 import { parseRefundNote } from '../utils/refundParser'
+import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../utils/timeFilter'
+import TimeFilterBar from './TimeFilterBar'
 
 // UC-16: Bảng công việc tại cơ sở — dùng chung cho trang Staff và trang Manager.
 // renderActions(task) (tuỳ chọn): trang cha truyền vào để gắn nút thao tác cho từng thẻ (UC-17, UC-18, UC-27...)
@@ -47,6 +49,13 @@ const REFUND_TABS = [
   { key: 'REFUND_OPEN',        label: 'Chờ xử lý',      statuses: ['OPEN', 'IN_PROGRESS'], isRefundOnly: true },
   { key: 'REFUND_OVERDUE',     label: 'Quá hạn',        statuses: ['OVERDUE'], isRefundOnly: true },
   { key: 'REFUND_COMPLETED',   label: 'Đã hoàn thành',  statuses: ['COMPLETED'], isRefundOnly: true },
+]
+
+// (10/11/2026) Lọc / sắp theo thời gian — mặc định hạn chót sớm nhất lên trên
+const TIME_FIELDS = [
+  { key: 'dueAt', label: 'Hạn chót', get: (t) => t.dueAt },
+  { key: 'createdAt', label: 'Ngày tạo việc', get: (t) => t.createdAt },
+  { key: 'completedAt', label: 'Ngày hoàn thành', get: (t) => t.completedAt },
 ]
 
 function pad(n) {
@@ -124,6 +133,7 @@ export default function TaskBoard({
   const [typeFilter, setTypeFilter] = useState(initialTypeFilter)
   const [search, setSearch] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS))
   const [lastUpdated, setLastUpdated] = useState(null)
   const [viewLayout, setViewLayout] = useState(defaultLayout)
   const [currentPage, setCurrentPage] = useState(1)
@@ -169,7 +179,7 @@ export default function TaskBoard({
   // Reset về trang 1 khi thay đổi bộ lọc
   useEffect(() => {
     setCurrentPage(1)
-  }, [tab, search, typeFilter, mineOnly])
+  }, [tab, search, typeFilter, mineOnly, timeFilter])
 
   const fetchTasks = useCallback(() => {
     if (!facilityId) return Promise.resolve()
@@ -250,18 +260,10 @@ export default function TaskBoard({
         || t.note?.toLowerCase().includes(keyword)
         || t.ticketDescription?.toLowerCase().includes(keyword))
 
-    // PR-34: Task SUPPORT khẩn (LOCK_ISSUE, SECURITY) còn mở nổi lên đầu bảng
-    return [...filtered].sort((a, b) => {
-      const aActiveUrgent = Boolean(a.urgent) && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(a.status)
-      const bActiveUrgent = Boolean(b.urgent) && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(b.status)
-      if (aActiveUrgent !== bActiveUrgent) {
-        return aActiveUrgent ? -1 : 1
-      }
-      const aDue = a.dueAt ? new Date(a.dueAt).getTime() : Number.MAX_SAFE_INTEGER
-      const bDue = b.dueAt ? new Date(b.dueAt).getTime() : Number.MAX_SAFE_INTEGER
-      return aDue - bDue
-    })
-  }, [scopedTasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId])
+    // PR-34: Task SUPPORT khẩn (LOCK_ISSUE, SECURITY) còn mở luôn nổi lên đầu, còn lại theo bộ lọc thời gian
+    return applyTimeFilter(filtered, timeFilter, TIME_FIELDS,
+      (t) => Boolean(t.urgent) && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(t.status))
+  }, [scopedTasks, activeTabs, tab, typeFilter, isRefundMode, search, mineOnly, currentStaffId, timeFilter])
 
   // Tính toán phân trang (5 task/trang)
   const totalTasks = visibleTasks.length
@@ -481,6 +483,7 @@ export default function TaskBoard({
             Làm mới
           </button>
         </div>
+        <TimeFilterBar value={timeFilter} onChange={setTimeFilter} fields={TIME_FIELDS} />
       </div>
 
       {/* Khu vực hiển thị công việc (List hoặc Grid) */}
@@ -499,7 +502,7 @@ export default function TaskBoard({
           <div className="duo-card flex flex-col items-center justify-center py-16 gap-2 text-center">
             <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">inventory</span>
             <p className="text-sm font-black text-[#4B4B4B]">
-              {search || typeFilter !== 'ALL' || mineOnly ? 'Không có công việc phù hợp bộ lọc.' : 'Không có công việc nào trong mục này.'}
+              {search || typeFilter !== 'ALL' || mineOnly || hasDateRange(timeFilter) ? 'Không có công việc phù hợp bộ lọc.' : 'Không có công việc nào trong mục này.'}
             </p>
           </div>
         ) : viewLayout === 'list' ? (

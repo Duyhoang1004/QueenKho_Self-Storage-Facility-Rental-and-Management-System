@@ -3,6 +3,15 @@ import { Link } from 'react-router-dom'
 import { getHeldGoods, resolveHeldGoods } from '../../services/heldGoodsService'
 import AssetTermsModal from '../../components/AssetTermsModal'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
+
+// (10/11/2026) Lọc / sắp theo thời gian — mặc định hạn lưu giữ sớm nhất (sắp tới hạn) lên trên
+const TIME_FIELDS = [
+  { key: 'holdUntil', label: 'Hạn lưu giữ', get: (i) => i.holdUntil },
+  { key: 'createdAt', label: 'Ngày chuyển kho tổng', get: (i) => i.createdAt },
+  { key: 'resolvedAt', label: 'Ngày xử lý', get: (i) => i.resolvedAt },
+]
 
 const PAGE_SIZE = 5
 
@@ -66,6 +75,7 @@ export default function HeldGoodsPage() {
   const [preview, setPreview] = useState(null)
   const [termsOpen, setTermsOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS))
   const [viewMode, setViewMode] = useState('list') // 'list' | 'grid'
 
   // Modal xử lý
@@ -87,9 +97,10 @@ export default function HeldGoodsPage() {
   const reload = () => { setLoading(true); setReloadKey((k) => k + 1) }
   const switchTab = (next) => { if (next !== tab) { setLoading(true); setTab(next); setCurrentPage(1) } }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const viewItems = applyTimeFilter(items, timeFilter, TIME_FIELDS)
+  const totalPages = Math.max(1, Math.ceil(viewItems.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
-  const paginatedItems = items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const paginatedItems = viewItems.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const openModal = (item, outcome) => {
     setModal({ item, outcome })
@@ -169,12 +180,14 @@ export default function HeldGoodsPage() {
         <div className="rounded-2xl bg-[#FFF5F5] border-2 border-[#FFDFDF] px-4 py-3 text-xs font-black text-[#FF4B4B]">{error}</div>
       )}
 
+      <TimeFilterBar value={timeFilter} onChange={(v) => { setTimeFilter(v); setCurrentPage(1) }} fields={TIME_FIELDS} />
+
       <div className="duo-card overflow-hidden">
         <ListBoxHeader
           icon="inventory_2"
           title={tab === 'HOLDING' ? 'Danh sách hàng đang lưu giữ' : 'Hồ sơ hàng đã xử lý'}
           subtitle="Giữ tới khi khách nhận lại — tính phí lưu giữ mỗi ngày"
-          count={items.length}
+          count={viewItems.length}
           countLabel="hồ sơ"
           accentColor="bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]"
           rightSlot={
@@ -205,11 +218,11 @@ export default function HeldGoodsPage() {
 
         {loading ? (
           <div className="p-12 text-center text-xs font-black uppercase text-[#AFAFAF]">Đang tải...</div>
-        ) : items.length === 0 ? (
+        ) : viewItems.length === 0 ? (
           <div className="p-12 flex flex-col items-center gap-2 text-center">
             <span className="material-symbols-outlined text-[48px] text-[#E5E5E5]">inventory_2</span>
             <p className="text-sm font-black text-[#4B4B4B]">
-              {tab === 'HOLDING' ? 'Không có hàng nào đang lưu giữ.' : 'Chưa có hồ sơ nào được xử lý.'}
+              {items.length > 0 ? 'Không có mục nào khớp bộ lọc ngày.' : tab === 'HOLDING' ? 'Không có hàng nào đang lưu giữ.' : 'Chưa có hồ sơ nào được xử lý.'}
             </p>
             <p className="text-xs font-bold text-[#AFAFAF] max-w-[420px]">
               Hồ sơ được lập khi nhân viên bấm "Dọn xong" task dọn kho sau thanh lý, kèm biên bản kiểm kê.
@@ -355,10 +368,10 @@ export default function HeldGoodsPage() {
           </div>
         )}
 
-        {!loading && items.length > 0 && (
+        {!loading && viewItems.length > 0 && (
           <PaginationBar
             currentPage={safePage}
-            totalItems={items.length}
+            totalItems={viewItems.length}
             pageSize={PAGE_SIZE}
             onPageChange={setCurrentPage}
             itemLabel="hồ sơ"

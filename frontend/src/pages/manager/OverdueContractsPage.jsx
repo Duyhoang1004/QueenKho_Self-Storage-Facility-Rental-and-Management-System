@@ -11,8 +11,17 @@ import {
 import SimulationButton from '../../components/SimulationButton'
 import { simulateFailedContacts, simulateOverdue } from '../../services/simulationService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import ContractDetailModal from '../../components/ContractDetailModal'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
 
 const PAGE_SIZE = 5
+
+// (10/11/2026) Lọc / sắp theo thời gian — mặc định hết hạn sớm nhất (quá hạn lâu nhất) lên trên
+const TIME_FIELDS = [
+  { key: 'endDate', label: 'Ngày hết hạn', get: (c) => c.endDate },
+  { key: 'lastContactAt', label: 'Lần liên hệ gần nhất', get: (c) => c.lastContactAt },
+]
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -53,6 +62,9 @@ export default function OverdueContractsPage() {
   const [search, setSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [successToast, setSuccessToast] = useState('')
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS))
+  // (10/11/2026) Xem hợp đồng bằng popup thay vì rời trang
+  const [peekId, setPeekId] = useState(null)
 
   // Modal 1: Ghi chú liên hệ
   const [contactModalOpen, setContactModalOpen] = useState(false)
@@ -121,7 +133,7 @@ export default function OverdueContractsPage() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeTab, search])
+  }, [activeTab, search, timeFilter])
 
   // Xử lý mở Modal Ghi chú liên hệ
   const handleOpenContactModal = async (c) => {
@@ -215,12 +227,12 @@ export default function OverdueContractsPage() {
     }
   }
 
-  const filteredContracts = contracts.filter((c) =>
+  const filteredContracts = applyTimeFilter(contracts.filter((c) =>
     (c.contractCode || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.customerName || '').toLowerCase().includes(search.toLowerCase()) ||
     (c.customerPhone || '').includes(search) ||
     (c.storageUnitId || '').toLowerCase().includes(search.toLowerCase())
-  )
+  ), timeFilter, TIME_FIELDS)
   const totalPages = Math.max(1, Math.ceil(filteredContracts.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
   const paginatedContracts = filteredContracts.slice(
@@ -307,6 +319,7 @@ export default function OverdueContractsPage() {
         <span className="text-xs font-extrabold text-[#AFAFAF] uppercase tracking-wider">
           Tìm thấy: <strong className="text-[#4B4B4B]">{filteredContracts.length}</strong> hợp đồng
         </span>
+        <TimeFilterBar className="w-full" value={timeFilter} onChange={setTimeFilter} fields={TIME_FIELDS} />
       </div>
 
       {/* Error message */}
@@ -370,7 +383,7 @@ export default function OverdueContractsPage() {
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
                       <td className="py-3.5 px-4">
-                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                        <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
                           className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
                           #{c.contractCode}
                         </button>
@@ -408,7 +421,7 @@ export default function OverdueContractsPage() {
                               "{c.lastContactNote}"
                             </p>
                             <span className="text-[10px] text-[#AFAFAF]">
-                              {formatDateTime(c.lastContactedAt)}
+                              {formatDateTime(c.lastContactAt || c.lastContactedAt)}
                             </span>
                           </div>
                         ) : (
@@ -511,7 +524,7 @@ export default function OverdueContractsPage() {
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
                       <td className="py-3.5 px-4">
-                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                        <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
                           className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
                           #{c.contractCode}
                         </button>
@@ -905,6 +918,14 @@ export default function OverdueContractsPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {peekId && (
+        <ContractDetailModal
+          key={peekId}
+          contractId={peekId}
+          onClose={() => { setPeekId(null); fetchContracts() }}
+        />
       )}
     </div>
   )

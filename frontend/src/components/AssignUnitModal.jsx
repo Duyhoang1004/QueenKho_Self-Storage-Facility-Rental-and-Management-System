@@ -3,6 +3,7 @@ import { getAvailableUnits, assignStorageUnit } from '../services/reservationSer
 import { getFacilityLayout, getStorageUnits } from '../services/storageUnitService'
 import UnitPickerMap from './UnitPickerMap'
 import UnitScheduleModal from './UnitScheduleModal'
+import ContractDetailModal from './ContractDetailModal'
 
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
@@ -36,6 +37,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
   const [mapData, setMapData] = useState({ forId: null, layout: null, units: [] })
   // D-18: popup lịch ô kho
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  // (10/11/2026) Xem hợp đồng đang giữ ô sắp trống trong popup (tab mới mất phiên đăng nhập)
+  const [peekContractId, setPeekContractId] = useState(null)
 
   useEffect(() => {
     if (!isOpen || !reservation) return undefined
@@ -279,7 +282,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
             )}
           </div>
 
-          {/* (08/11/2026) Ô sắp trống cùng loại — chỉ xem, bấm mã HĐ để mở hợp đồng ở tab mới */}
+          {/* (08/11/2026) Ô sắp trống cùng loại — chỉ xem, bấm mã HĐ để xem hợp đồng trong popup */}
           {releasingUnits.length > 0 && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
@@ -299,15 +302,14 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
                       </span>
                     </div>
                     {u.currentContract && (
-                      <a
-                        href={`/manager/contracts/${u.currentContract.contractId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Mở hợp đồng đang giữ ô ở tab mới"
+                      <button
+                        type="button"
+                        onClick={() => setPeekContractId(u.currentContract.contractId)}
+                        title="Xem hợp đồng đang giữ ô"
                         className="font-black text-[#1CB0F6] hover:underline whitespace-nowrap"
                       >
                         HĐ {u.currentContract.contractCode}
-                      </a>
+                      </button>
                     )}
                   </div>
                 ))}
@@ -362,6 +364,14 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
           </div>
         )}
         </div>
+
+        {peekContractId && (
+          <ContractDetailModal
+            key={peekContractId}
+            contractId={peekContractId}
+            onClose={() => setPeekContractId(null)}
+          />
+        )}
 
         <UnitScheduleModal
           isOpen={scheduleOpen}

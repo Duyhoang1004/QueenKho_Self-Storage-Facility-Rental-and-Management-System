@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { getContractsByManager } from '../../services/contractService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import ContractDetailModal from '../../components/ContractDetailModal'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../../utils/timeFilter'
 
 const PAGE_SIZE = 5
 
@@ -25,6 +27,12 @@ const STATUS_MAP = {
   LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
 }
 
+// (10/11/2026) Lọc / sắp theo thời gian — mặc định ngày kết thúc sớm nhất (sắp hết hạn) lên trên
+const TIME_FIELDS = [
+  { key: 'endDate', label: 'Ngày kết thúc', get: (c) => c.endDate },
+  { key: 'startDate', label: 'Ngày bắt đầu', get: (c) => c.startDate },
+]
+
 function initials(name) {
   if (!name) return 'KH'
   const p = name.trim().split(/\s+/)
@@ -32,12 +40,15 @@ function initials(name) {
 }
 
 export default function CustomerContractsPage() {
-  const navigate = useNavigate()
   const [contracts, setContracts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS))
+  // (10/11/2026) Xem hợp đồng bằng popup, giữ nguyên bộ lọc / trang đang xem
+  const [peekId, setPeekId] = useState(null)
+  const [reloadTick, setReloadTick] = useState(0)
 
   const user = JSON.parse(sessionStorage.getItem('user') || '{}')
   const managerId = user.userId
@@ -49,13 +60,13 @@ export default function CustomerContractsPage() {
       .then(setContracts)
       .catch(err => setError(err.response?.data?.error || 'Không tải được danh sách hợp đồng.'))
       .finally(() => setLoading(false))
-  }, [managerId])
+  }, [managerId, reloadTick])
 
-  const filtered = contracts.filter(c =>
+  const filtered = applyTimeFilter(contracts.filter(c =>
     c.customerFullName?.toLowerCase().includes(search.toLowerCase()) ||
     c.contractCode?.toLowerCase().includes(search.toLowerCase()) ||
     c.storageUnitId?.toLowerCase().includes(search.toLowerCase())
-  )
+  ), timeFilter, TIME_FIELDS)
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
@@ -114,6 +125,12 @@ export default function CustomerContractsPage() {
             className="duo-input w-full pl-11 text-xs"
           />
         </div>
+        <TimeFilterBar
+          className="mt-3"
+          value={timeFilter}
+          onChange={(v) => { setTimeFilter(v); setCurrentPage(1) }}
+          fields={TIME_FIELDS}
+        />
       </div>
 
       {/* Table Duolingo Card */}
@@ -142,7 +159,7 @@ export default function CustomerContractsPage() {
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
             <span className="material-symbols-outlined text-[#AFAFAF] text-[48px]">description</span>
             <p className="text-sm font-black text-[#4B4B4B]">
-              {search ? 'Không tìm thấy kết quả phù hợp.' : 'Chưa có hợp đồng nào tại cơ sở này.'}
+              {search || hasDateRange(timeFilter) ? 'Không tìm thấy kết quả phù hợp.' : 'Chưa có hợp đồng nào tại cơ sở này.'}
             </p>
           </div>
         ) : (
@@ -167,7 +184,7 @@ export default function CustomerContractsPage() {
                     <tr key={c.contractId} className="hover:bg-[#FDFDFD] transition-colors">
                       {/* Mã HĐ */}
                       <td className="px-5 py-4">
-                        <button type="button" title="Xem hợp đồng" onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                        <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
                           className="font-black font-mono text-[#1CB0F6] hover:underline cursor-pointer">
                           {c.contractCode}
                         </button>
@@ -226,10 +243,10 @@ export default function CustomerContractsPage() {
                       {/* Nút xem HĐ */}
                       <td className="px-5 py-4 text-right whitespace-nowrap">
                         <button
-                          onClick={() => navigate(`/manager/contracts/${c.contractId}`)}
+                          onClick={() => setPeekId(c.contractId)}
                           className="duo-btn-green px-3 py-1.5 text-[11px]"
                         >
-                          <span className="material-symbols-outlined text-[15px] mr-1">open_in_new</span>
+                          <span className="material-symbols-outlined text-[15px] mr-1">description</span>
                           <span>XEM HĐ</span>
                         </button>
                       </td>
@@ -252,6 +269,14 @@ export default function CustomerContractsPage() {
           />
         )}
       </div>
+
+      {peekId && (
+        <ContractDetailModal
+          key={peekId}
+          contractId={peekId}
+          onClose={() => { setPeekId(null); setReloadTick(t => t + 1) }}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,14 @@ import ContractHandoverSection from '../../components/ContractHandoverSection'
 import { SensorSparkline } from '../../components/ContractProtectionPanel'
 import { sensorRange } from '../../utils/sensor'
 import SimulationButton from '../../components/SimulationButton'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
+
+// (10/11/2026) Lọc / sắp hồ sơ theo thời gian — mặc định hồ sơ mới nhất trước
+const CLAIM_TIME_FIELDS = [
+  { key: 'createdAt', label: 'Ngày lập hồ sơ', get: (c) => c.createdAt },
+  { key: 'incidentDate', label: 'Ngày xảy ra sự cố', get: (c) => c.incidentDate },
+]
 
 // BR-126 → BR-128: hồ sơ bồi thường hàng hư / mất. FM thẩm định, chốt, chi trả; BOM chỉ xem (chi phí bồi thường toàn chuỗi).
 
@@ -74,6 +82,7 @@ function ClaimList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('OPEN')
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(CLAIM_TIME_FIELDS, 'desc'))
 
   useEffect(() => {
     let cancelled = false
@@ -84,8 +93,9 @@ function ClaimList() {
     return () => { cancelled = true }
   }, [])
 
-  const visible = claims.filter((c) => filter === 'ALL'
-    || (filter === 'OPEN' ? ['SUBMITTED', 'INSPECTED', 'APPROVED'].includes(c.status) : c.status === filter))
+  const visible = applyTimeFilter(claims.filter((c) => filter === 'ALL'
+    || (filter === 'OPEN' ? ['SUBMITTED', 'INSPECTED', 'APPROVED'].includes(c.status) : c.status === filter)),
+  timeFilter, CLAIM_TIME_FIELDS)
   const paidTotal = claims.filter((c) => c.status === 'PAID').reduce((s, c) => s + Number(c.totalCompensation || 0), 0)
   const recovered = claims.filter((c) => c.insuranceStatus === 'PAID').reduce((s, c) => s + Number(c.insuranceAmount || 0), 0)
 
@@ -110,6 +120,7 @@ function ClaimList() {
           </button>
         ))}
       </div>
+      <TimeFilterBar value={timeFilter} onChange={setTimeFilter} fields={CLAIM_TIME_FIELDS} />
       <div className="duo-card overflow-x-auto">
         {loading ? (
           <p className="p-6 text-xs font-bold text-[#AFAFAF]">Đang tải...</p>

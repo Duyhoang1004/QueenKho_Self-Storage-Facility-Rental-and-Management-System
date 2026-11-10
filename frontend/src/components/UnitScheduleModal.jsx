@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getUnitSchedule } from '../services/storageUnitService'
+import ContractDetailModal from './ContractDetailModal'
 
 // D-18 (08/11/2026): popup "Lịch ô kho" — mỗi ô 1 hàng, thanh màu = khoảng đã có khách đặt, nền xanh = khoảng trống.
 // Ngày dạng 'yyyy-MM-dd', tính theo UTC để không lệch múi giờ.
@@ -56,9 +57,12 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
   const [result, setResult] = useState({ key: null, data: null, error: '' })
   const [types, setTypes] = useState([])
   const [selected, setSelected] = useState(selectedUnitId ? { unitId: selectedUnitId } : null)
+  // (10/11/2026) Xem / đổi ô hợp đồng ngay trong popup thay vì mở tab mới (tab mới mất phiên đăng nhập)
+  const [peek, setPeek] = useState(null)
+  const [reload, setReload] = useState(0)
 
   const to = addMonths(from, months)
-  const requestKey = `${from}|${to}|${typeId}`
+  const requestKey = `${from}|${to}|${typeId}|${reload}`
   // Đang tải = kết quả hiện có chưa khớp khoảng xem / bộ lọc đang chọn (giữ dữ liệu cũ cho tới khi có dữ liệu mới)
   const loading = result.key !== requestKey
   const data = result.data
@@ -83,7 +87,7 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
         }
       })
     return () => { cancelled = true }
-  }, [from, to, typeId, requestKey])
+  }, [from, to, typeId, requestKey, reload])
 
   // Lọc theo loại khi mở từ modal gán ô: lần đầu cần danh sách loại đầy đủ
   useEffect(() => {
@@ -364,17 +368,26 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
               selectable={selectableIds ? selectableIds.has(selectedRow.unitId) : false}
               onSelectUnit={onSelectUnit}
               onPickBooking={(contractId) => setSelected({ unitId: selectedRow.unitId, contractId })}
+              onOpenContract={setPeek}
             />
           ) : (
             <PendingDemand items={data?.pendingReservations || []} />
           )}
         </div>
       </div>
+      {peek && (
+        <ContractDetailModal
+          key={`${peek.id}-${peek.transfer}`}
+          contractId={peek.id}
+          transfer={peek.transfer}
+          onClose={() => { setPeek(null); setReload(r => r + 1) }}
+        />
+      )}
     </div>
   )
 }
 
-function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooking }) {
+function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooking, onOpenContract }) {
   const free = row.freeRanges || []
   return (
     <div className="flex flex-col gap-3">
@@ -441,15 +454,15 @@ function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooki
                 )}
                 {active && b.contractId && (
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <a href={`/manager/contracts/${b.contractId}`} target="_blank" rel="noreferrer"
+                    <button type="button" onClick={() => onOpenContract({ id: b.contractId, transfer: false })}
                       className="duo-btn-white px-3 py-1 text-[11px] gap-1">
-                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>Mở hợp đồng
-                    </a>
+                      <span className="material-symbols-outlined text-[14px]">description</span>Mở hợp đồng
+                    </button>
                     {['PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING'].includes(b.status) && (
-                      <a href={`/manager/contracts/${b.contractId}?transfer=1`} target="_blank" rel="noreferrer"
+                      <button type="button" onClick={() => onOpenContract({ id: b.contractId, transfer: true })}
                         className="duo-btn-orange px-3 py-1 text-[11px] gap-1">
                         <span className="material-symbols-outlined text-[14px]">swap_horiz</span>Đổi ô cho khách
-                      </a>
+                      </button>
                     )}
                   </div>
                 )}

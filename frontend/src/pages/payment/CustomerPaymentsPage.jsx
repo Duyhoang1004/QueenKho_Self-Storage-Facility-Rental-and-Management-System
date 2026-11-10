@@ -3,9 +3,13 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { getMyPayments } from '../../services/paymentService'
 import { createVnpayDebt } from '../../services/vnpayService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
 
 const PAGE_SIZE = 5
 const DEBT_PAGE_SIZE = 3
+// (10/11/2026) Lọc / sắp giao dịch theo thời gian — mặc định mới nhất trước
+const TIME_FIELDS = [{ key: 'paidAt', label: 'Ngày giao dịch', get: (t) => t.paidAt || t.createdAt }]
 
 // UC-20 (PR-50): khách xem MỌI giao dịch của mình và trả các khoản còn nợ.
 //  - Phí sự cố / phí chiếm dụng vượt cọc (DAMAGE_FEE / OVERSTAY_FEE) → trả ngay qua VNPAY tại đây; trả xong được đặt kho mới.
@@ -74,6 +78,7 @@ export default function CustomerPaymentsPage() {
   const [payError, setPayError] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [showFailed, setShowFailed] = useState(false)
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS, 'desc'))
   const [currentPage, setCurrentPage] = useState(1)
   const [debtPage, setDebtPage] = useState(1)
 
@@ -110,10 +115,10 @@ export default function CustomerPaymentsPage() {
 
   const transactions = useMemo(() => {
     const all = state.data?.transactions || []
-    return all
+    return applyTimeFilter(all
       .filter((t) => showFailed || t.status !== 'FAILED')
-      .filter((t) => typeFilter === 'ALL' || t.paymentType === typeFilter)
-  }, [state.data, typeFilter, showFailed])
+      .filter((t) => typeFilter === 'ALL' || t.paymentType === typeFilter), timeFilter, TIME_FIELDS)
+  }, [state.data, typeFilter, showFailed, timeFilter])
 
   const summary = state.data?.summary
   const debts = state.data?.debts || []
@@ -295,6 +300,12 @@ export default function CustomerPaymentsPage() {
                   />
                   Hiện GD thất bại
                 </label>
+                <TimeFilterBar
+                  className="w-full"
+                  value={timeFilter}
+                  onChange={(v) => { setTimeFilter(v); setCurrentPage(1) }}
+                  fields={TIME_FIELDS}
+                />
               </div>
             }
           />

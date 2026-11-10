@@ -6,8 +6,16 @@ import ReservationDetailDrawer from '../../components/ReservationDetailDrawer'
 import NoShowModal from '../../components/NoShowModal'
 import RescheduleModal from '../../components/RescheduleModal'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import TimeFilterBar from '../../components/TimeFilterBar'
+import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../../utils/timeFilter'
 
 const PAGE_SIZE = 5
+
+// (10/11/2026) Lọc / sắp theo thời gian. Mặc định giữ thứ tự ưu tiên BE (khách cũ, gói dài, ngày nhận gần)
+const TIME_FIELDS = [
+  { key: 'startDate', label: 'Ngày hẹn nhận', get: (r) => r.startDate },
+  { key: 'createdAt', label: 'Ngày cọc', get: (r) => r.createdAt },
+]
 
 function formatVND(amount) {
   if (amount === null || amount === undefined) return '—'
@@ -77,6 +85,7 @@ export default function PendingReservationsPage() {
   const [selectedReservation, setSelectedReservation] = useState(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS, 'default'))
 
   const [noShowTarget, setNoShowTarget] = useState(null)
   const [rescheduleTarget, setRescheduleTarget] = useState(null)
@@ -143,16 +152,20 @@ export default function PendingReservationsPage() {
     }, 4500)
   }
 
-  const totalPendingPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const pendingView = applyTimeFilter(items, timeFilter, TIME_FIELDS)
+  const overdueView = applyTimeFilter(overdueItems, timeFilter, TIME_FIELDS)
+  const changeTimeFilter = (v) => { setTimeFilter(v); setPendingPage(1); setOverduePage(1) }
+
+  const totalPendingPages = Math.max(1, Math.ceil(pendingView.length / PAGE_SIZE))
   const safePendingPage = Math.min(pendingPage, totalPendingPages)
-  const paginatedPending = items.slice(
+  const paginatedPending = pendingView.slice(
     (safePendingPage - 1) * PAGE_SIZE,
     safePendingPage * PAGE_SIZE
   )
 
-  const totalOverduePages = Math.max(1, Math.ceil(overdueItems.length / PAGE_SIZE))
+  const totalOverduePages = Math.max(1, Math.ceil(overdueView.length / PAGE_SIZE))
   const safeOverduePage = Math.min(overduePage, totalOverduePages)
-  const paginatedOverdue = overdueItems.slice(
+  const paginatedOverdue = overdueView.slice(
     (safeOverduePage - 1) * PAGE_SIZE,
     safeOverduePage * PAGE_SIZE
   )
@@ -240,6 +253,18 @@ export default function PendingReservationsPage() {
             </button>
           </div>
         </div>
+
+        <TimeFilterBar
+          value={timeFilter}
+          onChange={changeTimeFilter}
+          fields={TIME_FIELDS}
+          defaultLabel="Thứ tự ưu tiên"
+        />
+        {hasDateRange(timeFilter) && (
+          <p className="-mt-3 text-[11px] font-bold text-[#777777]">
+            Đang lọc theo ngày: {activeTab === 'pending' ? pendingView.length : overdueView.length} đơn khớp.
+          </p>
+        )}
 
         {/* Bảng danh sách Duolingo Card */}
         {activeTab === 'pending' && (
@@ -393,7 +418,7 @@ export default function PendingReservationsPage() {
           {!loading && !error && items.length > 0 && (
             <PaginationBar
               currentPage={safePendingPage}
-              totalItems={items.length}
+              totalItems={pendingView.length}
               pageSize={PAGE_SIZE}
               onPageChange={setPendingPage}
               itemLabel="đơn chờ"
@@ -566,7 +591,7 @@ export default function PendingReservationsPage() {
           {!overdueLoading && !overdueError && overdueItems.length > 0 && (
             <PaginationBar
               currentPage={safeOverduePage}
-              totalItems={overdueItems.length}
+              totalItems={overdueView.length}
               pageSize={PAGE_SIZE}
               onPageChange={setOverduePage}
               itemLabel="đơn quá hạn"

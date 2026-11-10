@@ -12,9 +12,16 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import SimulationButton from '../../components/SimulationButton';
 import { simulateTicketAutoClose } from '../../services/simulationService';
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
+import TimeFilterBar from '../../components/TimeFilterBar';
+import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 
 const PAGE_SIZE = 5;
+// (10/11/2026) Lọc / sắp ticket theo thời gian — mặc định gửi gần nhất trước
+const TIME_FIELDS = [
+  { key: 'createdAt', label: 'Ngày gửi', get: (t) => t.createdAt },
+  { key: 'resolvedAt', label: 'Ngày xử lý xong', get: (t) => t.resolvedAt },
+];
 
 export const ISSUE_TYPE_META = {
   LOCK_ISSUE: {
@@ -206,6 +213,7 @@ export default function CustomerSupportPage() {
   const [contractFilter, setContractFilter] = useState(initialContractId || '');
   const [keyword, setKeyword] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS, 'desc'));
 
   // Modal tạo ticket
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -459,7 +467,7 @@ export default function CustomerSupportPage() {
 
   const visibleTickets = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return tickets
+    const list = tickets
       .filter((t) => activeTab === 'ALL' || t.status === activeTab)
       .filter((t) => !contractFilter || t.contractId === Number(contractFilter))
       .filter((t) => {
@@ -475,7 +483,8 @@ export default function CustomerSupportPage() {
           issueLabel.includes(kw)
         );
       });
-  }, [tickets, activeTab, contractFilter, keyword]);
+    return applyTimeFilter(list, timeFilter, TIME_FIELDS);
+  }, [tickets, activeTab, contractFilter, keyword, timeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(visibleTickets.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -668,6 +677,12 @@ export default function CustomerSupportPage() {
             ))}
           </select>
         </div>
+        <TimeFilterBar
+          className="mt-3"
+          value={timeFilter}
+          onChange={(v) => { setTimeFilter(v); setCurrentPage(1); }}
+          fields={TIME_FIELDS}
+        />
       </div>
 
       {/* Danh sách Ticket đặt trong khung có phân trang */}

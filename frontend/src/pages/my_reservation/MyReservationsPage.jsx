@@ -152,6 +152,31 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
             ? "Đơn chưa có hợp đồng. Hợp đồng được tạo khi cơ sở gán ô kho cho bạn — lúc đó bấm mã đơn sẽ mở trang hợp đồng."
             : "Đơn đã đóng trước khi cơ sở gán ô kho nên không phát sinh hợp đồng."}
         </p>
+        {r.status === "REFUNDED" && r.refundEvidence && (
+          <div className="border-2 border-[#84D8FF] bg-[#F0FAFF] rounded-2xl p-3 flex flex-col gap-2">
+            <p className="text-[11px] font-black uppercase tracking-wider text-[#1899D6]">Minh chứng hoàn tiền</p>
+            <div className="text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
+              <span>Hình thức: <strong>{r.refundEvidence.paymentMethod === "CASH" ? "Tiền mặt" : "Chuyển khoản"}</strong></span>
+              {r.refundEvidence.amount != null && <span>Số tiền: <strong className="text-[#58A700]">{formatVND(r.refundEvidence.amount)}</strong></span>}
+              {r.refundEvidence.transactionCode && <span>Mã giao dịch: <strong className="break-all">{r.refundEvidence.transactionCode}</strong></span>}
+              {r.refundEvidence.bankTransactionCode && <span>Mã ngân hàng/FT: <strong className="break-all">{r.refundEvidence.bankTransactionCode}</strong></span>}
+              {r.refundEvidence.completedAt && <span>Hoàn tất lúc: <strong>{new Date(r.refundEvidence.completedAt).toLocaleString("vi-VN")}</strong></span>}
+            </div>
+            {r.refundEvidence.note && (
+              <div className="bg-white border border-[#84D8FF] rounded-xl p-2.5">
+                <span className="block text-[10px] font-black uppercase text-[#1899D6] mb-1">Ghi chú của quản lý cơ sở</span>
+                <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-wrap break-words">{r.refundEvidence.note}</p>
+              </div>
+            )}
+            {r.refundEvidence.evidenceImageUrl && (
+              <a href={r.refundEvidence.evidenceImageUrl} target="_blank" rel="noreferrer" title="Mở ảnh minh chứng hoàn tiền"
+                className="block overflow-hidden rounded-xl border-2 border-[#84D8FF] bg-white">
+                <img src={r.refundEvidence.evidenceImageUrl} alt="Minh chứng hoàn tiền do quản lý cơ sở cung cấp"
+                  className="w-full max-h-64 object-contain" />
+              </a>
+            )}
+          </div>
+        )}
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onOpenTerms} className="duo-btn-white px-4 py-2 text-xs">Điều khoản thuê kho</button>
           <button type="button" onClick={onClose} className="duo-btn-blue px-4 py-2 text-xs">Đóng</button>

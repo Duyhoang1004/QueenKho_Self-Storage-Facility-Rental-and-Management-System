@@ -92,6 +92,9 @@ public class ReservationService {
     private RefundStatusService refundStatusService;
 
     @Autowired
+    private RefundEvidenceService refundEvidenceService;
+
+    @Autowired
     private CancellationPolicyService cancellationPolicyService;
 
     @Autowired(required = false)
@@ -193,7 +196,10 @@ public class ReservationService {
                             r.getFacility().getHotline(),
                             assignedUnit != null ? assignedUnit.getFloor() : null,
                             assignedUnit != null ? assignedUnit.getZone() : null,
-                            assignedUnit != null ? assignedUnit.getRoomNumber() : null);
+                            assignedUnit != null ? assignedUnit.getRoomNumber() : null,
+                            RefundStatusService.COMPLETED.equals(refundStatus)
+                                    ? refundEvidenceService.findCompleted(r.getId(), r.getReservationCode(), contractId)
+                                    : null);
                 })
                 .toList();
     }

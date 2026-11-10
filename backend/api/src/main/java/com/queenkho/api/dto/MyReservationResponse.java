@@ -33,4 +33,5 @@ public class MyReservationResponse {
     private String storageUnitFloor;
     private String storageUnitZone;
     private String storageUnitRoomNumber;
+    private RefundEvidenceResponse refundEvidence;
 }

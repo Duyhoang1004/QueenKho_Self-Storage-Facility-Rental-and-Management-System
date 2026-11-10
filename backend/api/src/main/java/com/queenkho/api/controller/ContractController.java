@@ -71,6 +71,9 @@ public class ContractController {
     private RefundStatusService refundStatusService;
 
     @Autowired
+    private com.queenkho.api.service.RefundEvidenceService refundEvidenceService;
+
+    @Autowired
     private UnitTransferService unitTransferService;
 
     @Autowired
@@ -338,6 +341,8 @@ public class ContractController {
         // BR-134: thanh lý rồi mà chưa có hồ sơ kho tổng → đang chờ nhân viên chuyển hàng
         dto.setCentralStorage(heldGoodsService.latestForContract(rc.getId()).orElse(null));
         dto.setRelocationPending("LIQUIDATED".equals(rc.getStatus()) && dto.getCentralStorage() == null);
+        dto.setRefundEvidence(refundEvidenceService.findCompleted(
+                rc.getReservation().getId(), rc.getReservation().getReservationCode(), rc.getId()));
         return dto;
     }
 

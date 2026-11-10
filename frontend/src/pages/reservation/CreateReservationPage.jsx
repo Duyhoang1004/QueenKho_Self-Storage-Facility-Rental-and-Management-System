@@ -958,10 +958,10 @@ export default function CreateReservationPage() {
                   {hasDebtError && (
                     <div className="pt-2 border-t border-red-200 flex justify-end">
                       <Link
-                        to="/kho-cua-toi"
+                        to="/thanh-toan"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FF4B4B] hover:bg-red-600 text-white rounded-xl text-xs font-black transition-colors"
                       >
-                        <span>Xem hợp đồng của tôi</span>
+                        <span>Thanh toán khoản nợ</span>
                         <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                       </Link>
                     </div>

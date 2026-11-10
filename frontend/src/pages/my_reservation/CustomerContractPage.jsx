@@ -885,6 +885,71 @@ export default function CustomerContractPage() {
                     </div>
                   </div>
                 )}
+
+                {hasRefunded && contract.refundEvidence && (
+                  <div className="mt-3 border-2 border-[#84D8FF] bg-[#F0FAFF] rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2 text-[#1899D6]">
+                      <span className="material-symbols-outlined text-[20px]">receipt_long</span>
+                      <span className="text-xs font-black uppercase tracking-wider">Minh chứng hoàn tiền</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#4B4B4B]">
+                      <div>
+                        <span className="font-bold text-[#777777]">Hình thức: </span>
+                        <span className="font-black">
+                          {contract.refundEvidence.paymentMethod === "CASH" ? "Tiền mặt" : "Chuyển khoản"}
+                        </span>
+                      </div>
+                      {contract.refundEvidence.amount != null && (
+                        <div>
+                          <span className="font-bold text-[#777777]">Số tiền: </span>
+                          <span className="font-black text-[#58A700]">{formatVND(contract.refundEvidence.amount)}</span>
+                        </div>
+                      )}
+                      {contract.refundEvidence.transactionCode && (
+                        <div>
+                          <span className="font-bold text-[#777777]">Mã giao dịch: </span>
+                          <span className="font-black break-all">{contract.refundEvidence.transactionCode}</span>
+                        </div>
+                      )}
+                      {contract.refundEvidence.bankTransactionCode && (
+                        <div>
+                          <span className="font-bold text-[#777777]">Mã ngân hàng/FT: </span>
+                          <span className="font-black break-all">{contract.refundEvidence.bankTransactionCode}</span>
+                        </div>
+                      )}
+                      {contract.refundEvidence.completedAt && (
+                        <div className="sm:col-span-2">
+                          <span className="font-bold text-[#777777]">Hoàn tất lúc: </span>
+                          <span className="font-black">{new Date(contract.refundEvidence.completedAt).toLocaleString("vi-VN")}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {contract.refundEvidence.note && (
+                      <div className="bg-white border border-[#84D8FF] rounded-xl p-3">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-[#1899D6] mb-1">Ghi chú của quản lý cơ sở</span>
+                        <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-wrap break-words">{contract.refundEvidence.note}</p>
+                      </div>
+                    )}
+
+                    {contract.refundEvidence.evidenceImageUrl && (
+                      <a
+                        href={contract.refundEvidence.evidenceImageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block overflow-hidden rounded-xl border-2 border-[#84D8FF] bg-white"
+                        title="Mở ảnh minh chứng hoàn tiền"
+                      >
+                        <img
+                          src={contract.refundEvidence.evidenceImageUrl}
+                          alt="Minh chứng hoàn tiền do quản lý cơ sở cung cấp"
+                          className="w-full max-h-80 object-contain"
+                        />
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* UC-16: chưa check-in thì chưa gia hạn / trả kho được */}

@@ -103,6 +103,9 @@ public class CustomerContractResponse {
     private Boolean relocationPending;
     private HeldGoodsResponse centralStorage;
 
+    // Minh chứng FM đính kèm sau khi đã hoàn tiền thành công cho khách.
+    private RefundEvidenceResponse refundEvidence;
+
     public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
                                     String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
                                     String floor, String zone, String roomNumber, String status, LocalDate startDate,
@@ -131,6 +134,6 @@ public class CustomerContractResponse {
                 facilityId, lateFeeWaived, lateFeeWaiverNote, facilityDamageFee, termsVersion, termsAcceptedAt,
                 heldGoodsStatus, heldGoodsHoldUntil, heldGoodsStorageLocation, facilityName, facilityAddress,
                 facilityHotline, customerEmail, customerCccd, overstayDailyAmount, overstayFeeAmount, totalOverdueCharge,
-                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null);
+                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

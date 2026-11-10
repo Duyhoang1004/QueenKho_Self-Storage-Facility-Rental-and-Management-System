@@ -34,6 +34,7 @@ wait_for_database QueenKhoDB
 # Never rerun the destructive full seed against an existing database.
 for script in \
     Migration_Consolidated_Update.sql \
+    Update_cancel_business_rule_06_11.sql \
     Update_payment_bank_transaction_code.sql \
     Update_mat_bang.sql \
     Update_gia_han_doanh_thu.sql \

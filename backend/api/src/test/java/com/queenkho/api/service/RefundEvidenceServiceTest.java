@@ -127,4 +127,75 @@ class RefundEvidenceServiceTest {
         assertNull(new RefundEvidenceService(jdbc).findCompleted(null, null, 77));
         verify(jdbc).queryForMap(contains("status = 'COMPLETED'"), eq(77), eq("\u0000"));
     }
+
+    @Test
+    void taskDateWinsOverLaterPaymentDateBecauseItIsTheFacilityManagerCompletionMoment() {
+        LocalDateTime completedAt = LocalDateTime.of(2026, 11, 11, 14, 15);
+        when(jdbc.queryForMap(contains("FROM facility_tasks"), eq(77), eq("%Đơn: RES-77%")))
+                .thenReturn(Map.of("id", 601, "evidence_image_url", "https://files.example/refund.jpg",
+                        "note", "FM xác nhận đã chuyển", "completed_at", Timestamp.valueOf(completedAt)));
+        when(jdbc.queryForMap(contains("FROM payment_transactions"), eq(77), eq(7)))
+                .thenReturn(Map.of("transaction_code", "REF-601", "bank_transaction_code", "FT-601",
+                        "payment_method", "BANK_TRANSFER", "amount", new BigDecimal("100000"),
+                        "paid_at", Timestamp.valueOf(completedAt.plusHours(5))));
+
+        RefundEvidenceResponse result = new RefundEvidenceService(jdbc).findCompleted(7, "RES-77", 77);
+
+        assertEquals(completedAt, result.getCompletedAt());
+    }
+
+    @Test
+    void paymentDateIsUsedWhenLegacyCompletedTaskHasNoCompletionTimestamp() {
+        LocalDateTime paidAt = LocalDateTime.of(2026, 11, 11, 15, 20);
+        Map<String, Object> task = new HashMap<>();
+        task.put("id", 602);
+        task.put("evidence_image_url", "https://files.example/refund.jpg");
+        task.put("note", "Đơn: RES-77");
+        task.put("completed_at", null);
+        when(jdbc.queryForMap(contains("FROM facility_tasks"), eq(77), eq("%Đơn: RES-77%"))).thenReturn(task);
+        when(jdbc.queryForMap(contains("FROM payment_transactions"), eq(77), eq(7)))
+                .thenReturn(Map.of("transaction_code", "REF-602", "bank_transaction_code", "FT-602",
+                        "payment_method", "BANK_TRANSFER", "amount", new BigDecimal("100000"), "paid_at", paidAt));
+
+        RefundEvidenceResponse result = new RefundEvidenceService(jdbc).findCompleted(7, "RES-77", 77);
+
+        assertEquals(paidAt, result.getCompletedAt());
+    }
+
+    @Test
+    void localDateTimeFromJdbcIsAcceptedForCompletedTask() {
+        LocalDateTime completedAt = LocalDateTime.of(2026, 11, 11, 16, 0);
+        when(jdbc.queryForMap(contains("FROM facility_tasks"), eq(77), eq("%Đơn: RES-77%")))
+                .thenReturn(Map.of("id", 603L, "evidence_image_url", "/uploads/603.jpg",
+                        "note", "FM hoàn tiền", "completed_at", completedAt));
+        when(jdbc.queryForMap(contains("FROM payment_transactions"), eq(77), eq(7)))
+                .thenThrow(new EmptyResultDataAccessException(1));
+
+        RefundEvidenceResponse result = new RefundEvidenceService(jdbc).findCompleted(7, "RES-77", 77);
+
+        assertAll(() -> assertEquals(603, result.getTaskId()), () -> assertEquals(completedAt, result.getCompletedAt()));
+    }
+
+    @Test
+    void nonPositiveContractIdStillUsesReservationCodeFallbackSafely() {
+        when(jdbc.queryForMap(contains("FROM facility_tasks"), eq(0), eq("%Đơn: RES-7%")))
+                .thenReturn(Map.of("id", 604, "evidence_image_url", "/uploads/604.jpg",
+                        "note", "Đơn: RES-7", "completed_at", LocalDateTime.of(2026, 11, 11, 16, 30)));
+        when(jdbc.queryForMap(contains("FROM payment_transactions"), eq(0), eq(7)))
+                .thenThrow(new EmptyResultDataAccessException(1));
+
+        RefundEvidenceResponse result = new RefundEvidenceService(jdbc).findCompleted(7, "RES-7", 0);
+
+        assertNotNull(result);
+        verify(jdbc).queryForMap(contains("FROM facility_tasks"), eq(0), eq("%Đơn: RES-7%"));
+    }
+
+    @Test
+    void taskLookupFailureNeverLeaksPartialOrUnrelatedEvidence() {
+        when(jdbc.queryForMap(contains("FROM facility_tasks"), eq(77), eq("%Đơn: RES-77%")))
+                .thenThrow(new RuntimeException("database unavailable"));
+
+        assertNull(new RefundEvidenceService(jdbc).findCompleted(7, "RES-77", 77));
+        verify(jdbc, never()).queryForMap(contains("FROM payment_transactions"), any(), any());
+    }
 }

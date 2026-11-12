@@ -148,7 +148,7 @@ export default function HeldGoodsPage() {
           <div>
             <h1 className="text-2xl font-black text-[#4B4B4B] tracking-tight">Hàng ở kho tổng</h1>
             <p className="text-xs font-bold text-[#AFAFAF]">
-              Hàng của khách sau thanh lý hợp đồng — giữ ở kho tổng tới khi khách nhận lại, không bán, theo{' '}
+              Hàng của khách sau cưỡng chế dọn kho — giữ ở kho tổng tới khi khách nhận lại, không bán, theo{' '}
               <button type="button" onClick={() => setTermsOpen(true)} className="text-[#1CB0F6] hover:underline cursor-pointer font-black">
                 Điều khoản xử lý tài sản
               </button>
@@ -225,7 +225,7 @@ export default function HeldGoodsPage() {
               {items.length > 0 ? 'Không có mục nào khớp bộ lọc ngày.' : tab === 'HOLDING' ? 'Không có hàng nào đang lưu giữ.' : 'Chưa có hồ sơ nào được xử lý.'}
             </p>
             <p className="text-xs font-bold text-[#AFAFAF] max-w-[420px]">
-              Hồ sơ được lập khi nhân viên bấm "Dọn xong" task dọn kho sau thanh lý, kèm biên bản kiểm kê.
+              Hồ sơ được lập khi nhân viên bấm "Dọn xong" task cưỡng chế dọn kho, kèm biên bản kiểm kê.
             </p>
           </div>
         ) : (

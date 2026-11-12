@@ -275,7 +275,7 @@ export default function BomRevenuePage() {
             bankTxnCode: 'CASH_VOUCHER_106',
             amount: 1200000,
             status: 'SUCCESS',
-            note: 'Khách nhận lại cọc tiền mặt tại quầy sau thanh lý (PR-O15)'
+            note: 'Khách nhận lại cọc tiền mặt tại quầy sau cưỡng chế dọn kho (PR-O15)'
           }
         ]);
       }
@@ -743,7 +743,7 @@ export default function BomRevenuePage() {
               <div className="duo-card p-4 bg-white flex flex-col justify-between">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Hợp đồng kết thúc</span>
                 <span className="text-2xl font-black text-[#FF4B4B] mt-1">-{occupancy?.terminatedContracts ?? 0} <span className="text-xs text-[#AFAFAF]">HĐ</span></span>
-                <span className="text-[10px] font-bold text-[#AFAFAF] mt-1">Đã thanh lý & trả kho</span>
+                <span className="text-[10px] font-bold text-[#AFAFAF] mt-1">Đã cưỡng chế dọn kho & trả kho</span>
               </div>
               <div className="duo-card p-4 bg-white flex flex-col justify-between">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Tỷ lệ gia hạn</span>

@@ -1362,7 +1362,7 @@ export default function BomFacilitiesPage() {
                         Cơ sở hiện còn <strong>{activeFacility.activeContractsCount} hợp đồng có hiệu lực</strong> và <strong>{activeFacility.pendingReservationsCount} đơn đặt chỗ chờ xử lý</strong>.
                       </p>
                       <p className="text-[11px] text-[#A82222]">
-                        Vui lòng đảm bảo tất cả hợp đồng đã kết thúc hoặc thanh lý xong và không còn đơn đặt chỗ nào trước khi tạm ngừng hoạt động cơ sở.
+                        Vui lòng đảm bảo tất cả hợp đồng đã kết thúc hoặc cưỡng chế dọn kho xong và không còn đơn đặt chỗ nào trước khi tạm ngừng hoạt động cơ sở.
                       </p>
                     </div>
 

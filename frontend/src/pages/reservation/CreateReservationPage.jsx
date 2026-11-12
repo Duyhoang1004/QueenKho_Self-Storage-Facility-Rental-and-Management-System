@@ -833,7 +833,7 @@ export default function CreateReservationPage() {
                 .
                 <details className="mt-1 text-[11px] text-[#777777]">
                   <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt</summary>
-                  Hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị thanh lý và hàng được{' '}
+                  Hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị cưỡng chế dọn kho và hàng được{' '}
                   <span className="font-black text-[#FF4B4B]">chuyển vào kho tổng, tính phí lưu giữ mỗi ngày</span>{' '}
                   (QueenKho không bán hàng của bạn).
                 </details>

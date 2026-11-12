@@ -344,7 +344,7 @@ public class FacilityService {
                     HttpStatus.CONFLICT,
                     "FACILITY_HAS_ACTIVE_RENTALS",
                     "Không thể tạm dừng cơ sở do đang có " + pendingRes + " đơn đặt chỗ và " +
-                    activeContracts + " hợp đồng đang có hiệu lực. Vui lòng hoàn tất hoặc thanh lý trước."
+                    activeContracts + " hợp đồng đang có hiệu lực. Vui lòng hoàn tất hoặc cưỡng chế dọn kho trước."
                 );
             }
         }
@@ -648,7 +648,7 @@ public class FacilityService {
                     .type("CRITICAL")
                     .category("OVERDUE_CONTRACT")
                     .title(String.format("%02d Hợp đồng quá hạn nợ phí", overdueContractsCount))
-                    .message("Hợp đồng quá hạn thanh toán/trả kho. Cần đối soát nợ phạt hoặc kích hoạt quy trình thanh lý.")
+                    .message("Hợp đồng quá hạn thanh toán/trả kho. Cần đối soát nợ phạt hoặc kích hoạt quy trình cưỡng chế dọn kho.")
                     .actionText("ĐỐI SOÁT NỢ")
                     .actionUrl("/manager/overdue")
                     .timeAgo("Khẩn cấp")

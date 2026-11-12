@@ -44,7 +44,7 @@ public class OverdueContractProcessor {
                     "[OVERDUE] Hợp đồng " + contractCode + " chuyển sang QUÁ HẠN (hết hạn ngày " + edStr + ")");
             notifyOverdue(contractId, contractCode,
                     "Hợp đồng đã hết hạn mà chưa gia hạn hoặc hẹn trả kho. Vui lòng gia hạn hoặc hẹn trả kho (trong 3 ngày tới) "
-                            + "để tránh phí trễ hạn, phí chiếm dụng và bị thanh lý theo điều khoản.");
+                            + "để tránh phí trễ hạn, phí chiếm dụng và bị cưỡng chế dọn kho theo điều khoản.");
             return true;
         }
         return false;
@@ -76,7 +76,7 @@ public class OverdueContractProcessor {
                     "[OVERDUE] Hợp đồng " + contractCode + " không tới trả kho theo lịch hẹn, chuyển sang QUÁ HẠN và hủy task check-out");
             notifyOverdue(contractId, contractCode,
                     "Bạn đã không tới trả kho theo lịch hẹn nên hợp đồng chuyển sang quá hạn. Vui lòng hẹn lại ngày trả kho "
-                            + "(trong 3 ngày tới) hoặc gia hạn để tránh phí trễ hạn, phí chiếm dụng và bị thanh lý theo điều khoản.");
+                            + "(trong 3 ngày tới) hoặc gia hạn để tránh phí trễ hạn, phí chiếm dụng và bị cưỡng chế dọn kho theo điều khoản.");
             return true;
         }
         return false;

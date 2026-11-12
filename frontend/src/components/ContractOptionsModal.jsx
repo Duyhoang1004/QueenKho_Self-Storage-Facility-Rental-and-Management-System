@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getRenewalEligibility, getRenewalQuote, requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
 import DateInput from './DateInput'
+import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -150,15 +151,18 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     if (daysPast < 2 || daysPast > 5) return 0
     return Math.round(basePrice / 30) * (daysPast - 1)
   }
+  const baseBreakdown = getOverdueFeeBreakdown(contract)
   const lateFee = currentQuote
     ? Number(currentQuote.lateFeeAmount || 0)
-    : contract?.status === 'OVERDUE'
-      ? Number(contract?.lateFeeAmount || 0)
+    : contract?.status === 'OVERDUE' || isTerminationPending
+      ? baseBreakdown.lateFee || getTerminationGraceFee()
       : getTerminationGraceFee()
-  const lateFeeWaived = Boolean(currentQuote?.lateFeeWaived || contract?.lateFeeWaived)
+  const lateFeeWaived = Boolean(currentQuote?.lateFeeWaived ?? contract?.lateFeeWaived)
+  const overstayFeeWaived = Boolean(currentQuote?.overstayFeeWaived ?? contract?.overstayFeeWaived)
   // PR-Q14: phí chiếm dụng các ngày đã quá hạn (đã nằm trong totalAmount của báo giá)
-  const overstayFee = currentQuote ? Number(currentQuote.overstayFeeAmount || 0) : Number(contract?.overstayFeeAmount || 0)
-  const totalPayment = currentQuote ? Number(currentQuote.totalAmount) : currentPricing.total + lateFee + overstayFee
+  const overstayFee = currentQuote ? Number(currentQuote.overstayFeeAmount || 0) : baseBreakdown.overstayFee
+  const totalPenalty = lateFee + overstayFee
+  const totalPayment = currentQuote ? Number(currentQuote.totalAmount) : currentPricing.total + totalPenalty
   const maxRenewalDiscount = Math.max(0, ...[1, 3, 6, 12].map((m) => getPricing(m).discountPercent))
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
@@ -303,10 +307,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     const deposit = Number(contract.depositHeldAmount || basePrice)
     const rawFee = Math.round(deposit * Math.min(diffDays, 5) * 0.10)
     const cap = Number(contract.maxLateFeeAmount) > 0 ? Number(contract.maxLateFeeAmount) : deposit * 0.5
+    const latePart = contract.lateFeeWaived ? 0 : Math.min(rawFee, cap)
+    const overstayPart = contract.overstayFeeWaived ? 0 : Number(contract.overstayDailyAmount || 0) * diffDays
     graceCalc = {
       days: diffDays,
-      fee: contract.lateFeeWaived ? 0 : Math.min(rawFee, cap),
-      overstay: contract.overstayFeeWaived ? 0 : Number(contract.overstayDailyAmount || 0) * diffDays,
+      fee: latePart,
+      overstay: overstayPart,
+      total: latePart + overstayPart,
       lateFeeWaived: Boolean(contract.lateFeeWaived),
       overstayFeeWaived: Boolean(contract.overstayFeeWaived),
     }
@@ -505,33 +512,42 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span>-{formatVND(currentPricing.discountAmount)} ({currentPricing.discountPercent}%)</span>
                 </div>
               )}
-              {contract?.status === 'OVERDUE' && lateFeeWaived && (
-                <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold bg-emerald-50/90 p-2.5 rounded-lg border border-emerald-200">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-emerald-600">volunteer_activism</span>
-                    Phí trễ hạn ({contract.overdueDays || 0} ngày):
-                  </span>
-                  <span className="font-bold">Đã được quản lý miễn</span>
-                </div>
-              )}
-              {contract?.status === 'OVERDUE' && lateFee > 0 && (
-                <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-amber-600">warning</span>
-                    Phí trễ hạn ({contract.overdueDays || 0} ngày):
-                  </span>
-                  <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
-                </div>
-              )}
-              {contract?.status === 'OVERDUE' && overstayFee > 0 && (
-                <div className="flex items-center justify-between text-xs text-red-700 font-semibold bg-red-50/90 p-2.5 rounded-lg border border-red-200">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-red-600">door_front</span>
-                    Phí chiếm dụng ô ({contract.overdueDays || 0} ngày quá hạn):
-                  </span>
-                  <span className="font-mono font-bold">+{formatVND(overstayFee)}</span>
-                </div>
-              )}
+              {(() => {
+                const isOverdueLike = contract?.status === 'OVERDUE'
+                  || (isTerminationPending && (Number(contract?.overdueDays || 0) > 0 || totalPenalty > 0 || lateFeeWaived || overstayFeeWaived))
+                if (!isOverdueLike) return null
+                return (
+                  <div className="rounded-xl border border-red-200 bg-red-50/60 p-2.5 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-xs font-extrabold text-red-700">
+                      <span className="flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-red-600">payments</span>
+                        Tổng tiền phạt quá hạn ({contract?.overdueDays || 0} ngày):
+                      </span>
+                      <span className="font-mono">
+                        {totalPenalty === 0 && lateFeeWaived && overstayFeeWaived ? '0₫ (Đã miễn)' : `+${formatVND(totalPenalty)}`}
+                      </span>
+                    </div>
+                    <div className="pl-5 space-y-1 text-[11px] font-semibold">
+                      <div className="flex items-center justify-between text-amber-800">
+                        <span>• Phí phạt trễ hạn:</span>
+                        {lateFeeWaived ? (
+                          <span className="text-emerald-700 font-bold">0₫ (Đã được quản lý miễn)</span>
+                        ) : (
+                          <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-red-800">
+                        <span>• Phí chiếm dụng ô:</span>
+                        {overstayFeeWaived ? (
+                          <span className="text-emerald-700 font-bold">0₫ (Đã được quản lý miễn)</span>
+                        ) : (
+                          <span className="font-mono font-bold">+{formatVND(overstayFee)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
               {/* BR-125: gia hạn giữ nguyên gói bảo hiểm đã chọn lúc đặt */}
               {Number(currentQuote?.insuranceAmount || 0) > 0 && (
                 <div className="flex items-center justify-between text-xs text-[#1899D6] font-semibold bg-[#DDF4FF] p-2.5 rounded-lg border border-[#84D8FF]">
@@ -542,22 +558,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="font-mono font-bold">+{formatVND(Number(currentQuote.insuranceAmount))}</span>
                 </div>
               )}
-              {isTerminationPending && lateFee > 0 && (
-                <div className="flex items-center justify-between text-xs text-amber-700 font-semibold bg-amber-50/90 p-2.5 rounded-lg border border-amber-200">
-                  <span className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-amber-600">schedule</span>
-                    Phí trễ hạn:
-                  </span>
-                  <span className="font-mono font-bold">+{formatVND(lateFee)}</span>
-                </div>
-              )}
               <div className="pt-2.5 border-t border-slate-200 flex items-baseline justify-between">
                 <div>
                   <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block">
                     TỔNG THANH TOÁN
                   </span>
                   <span className="text-[11px] text-slate-400">Đã bao gồm VAT & phí bảo hiểm kho</span>
-                  {(contract?.status === 'OVERDUE' || (isTerminationPending && lateFee > 0)) && (
+                  {(contract?.status === 'OVERDUE' || (isTerminationPending && totalPenalty > 0)) && (
                     <span className="text-[11px] text-amber-600 block mt-1 italic">
                       * Khoản phí được chốt khi tạo liên kết thanh toán và không đổi trong lần thanh toán này
                     </span>
@@ -677,13 +684,16 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
             {/* Phí quá hạn dự kiến (HĐ đã quá hạn) — D-15 đã bỏ ân hạn 5 ngày */}
             {isGraceOrOverdue && graceCalc && (
-              <div className="p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1 bg-amber-50 border-amber-200 text-amber-900">
-                <div className="flex items-center gap-1.5 font-bold">
-                  <span className="material-symbols-outlined text-[20px]">warning</span>
-                  <span className="font-black text-sm">Phí quá hạn dự kiến</span>
+              <div className="p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1.5 bg-amber-50 border-amber-200 text-amber-900">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <span className="material-symbols-outlined text-[20px]">warning</span>
+                    <span className="font-black text-sm">Tổng tiền phạt dự kiến ({graceCalc.days} ngày)</span>
+                  </div>
+                  <span className="font-black text-sm text-red-700">{formatVND(graceCalc.total)}</span>
                 </div>
                 <p className="leading-relaxed text-[11px]">
-                  {`Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${graceCalc.lateFeeWaived ? '0₫ (đã được miễn)' : formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}${graceCalc.lateFeeWaived ? ' (chỉ tính tiền thuê theo ngày, không phạt)' : ''}` : graceCalc.overstayFeeWaived ? ' · phí chiếm dụng đã được miễn' : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
+                  {`Phí phạt trễ: ${graceCalc.lateFeeWaived ? '0₫ (đã được miễn)' : formatVND(graceCalc.fee)} · Phí chiếm dụng ô: ${graceCalc.overstayFeeWaived ? '0₫ (đã được miễn)' : `${formatVND(graceCalc.overstay)}${graceCalc.lateFeeWaived && graceCalc.overstay > 0 ? ' (chỉ tính tiền thuê theo ngày, không phạt)' : ''}`} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
                 </p>
               </div>
             )}
@@ -695,7 +705,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 <div>
                   <span className="font-bold text-red-700 block mb-0.5">Hợp đồng đã quá hạn trả kho</span>
                   <p className="leading-relaxed text-[11px]">
-                    Hạn HĐ kết thúc ngày {formatDate(contract.endDate)}. Phí phạt trễ hạn được tính tối đa 50% tiền cọc ({depositAmount}) theo PR-Q3 và khấu trừ khi nghiệm thu.
+                    Hạn HĐ kết thúc ngày {formatDate(contract.endDate)}. Tiền phạt quá hạn gồm <strong>phí phạt trễ</strong> (tối đa 50% tiền cọc {depositAmount} theo PR-Q3) và <strong>phí chiếm dụng ô</strong> (tính theo ngày quá hạn theo chính sách hiện hành), khấu trừ vào cọc khi nghiệm thu.
                   </p>
                 </div>
               </div>

@@ -317,14 +317,14 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
           <NumberField label="Tiền cọc" name="depositMonthMultiplier" value={form.depositMonthMultiplier} onChange={handleChange} error={errors.depositMonthMultiplier} min="1" max="3" suffix="tháng" hint="Từ 1 đến 3 tháng tiền thuê" />
           <NumberField label="Phí trễ hạn mỗi ngày" name="lateFeePercentPerDay" value={form.lateFeePercentPerDay} onChange={handleChange} error={errors.lateFeePercentPerDay} min="0" max="50" suffix="%/ngày" hint="Tính trên cọc đang giữ; tối đa 50% cọc" />
           <NumberField label="Phí chiếm dụng khi quá hạn" name="overstayPercent" value={form.overstayPercent} onChange={handleChange} error={errors.overstayPercent} min="100" max="300" suffix="% giá ngày" hint="Mỗi ngày quá hạn, không trần — quá hạn luôn đắt hơn gia hạn" />
-          <NumberField label="Phí lưu giữ hàng sau thanh lý" name="heldGoodsFeePercent" value={form.heldGoodsFeePercent} onChange={handleChange} error={errors.heldGoodsFeePercent} min="0" max="100" suffix="% giá ngày" hint="Mỗi ngày lưu giữ (tối đa 60 ngày)" />
-          <NumberField label="Phí dọn & di dời hàng khi thanh lý" name="goodsMovingFeePercent" value={form.goodsMovingFeePercent} onChange={handleChange} error={errors.goodsMovingFeePercent} min="0" max="100" suffix="% giá tháng" hint="Thu 1 lần khi mở ô, kiểm kê, chuyển hàng sang khu lưu giữ" />
+          <NumberField label="Phí lưu giữ hàng sau cưỡng chế dọn kho" name="heldGoodsFeePercent" value={form.heldGoodsFeePercent} onChange={handleChange} error={errors.heldGoodsFeePercent} min="0" max="100" suffix="% giá ngày" hint="Mỗi ngày lưu giữ (tối đa 60 ngày)" />
+          <NumberField label="Phí dọn & di dời hàng khi cưỡng chế dọn kho" name="goodsMovingFeePercent" value={form.goodsMovingFeePercent} onChange={handleChange} error={errors.goodsMovingFeePercent} min="0" max="100" suffix="% giá tháng" hint="Thu 1 lần khi mở ô, kiểm kê, chuyển hàng sang khu lưu giữ" />
         </div>
         <div className="mt-3 rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-4 text-xs font-medium leading-relaxed text-[#4B4B4B]">
           <p className="font-black text-[#1899D6]">Chính sách khách hủy đơn được cố định toàn hệ thống</p>
           <p className="mt-1">Từ 48 giờ: hoàn 100%; từ 24 đến dưới 48 giờ: giữ 50% cọc; dưới 24 giờ: giữ 100% cọc; đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê (như No-Show). Hủy trong 30 phút sau thanh toán và vẫn trước giờ hẹn luôn hoàn 100%.</p>
         </div>
-        <p className="mt-2 text-xs font-medium text-[#777777]">Mốc thanh lý của phiên bản mới cố định 15 ngày quá hạn. Phí chiếm dụng, lưu giữ áp dụng khách đồng ý điều khoản từ v2; phí dọn & di dời hàng áp dụng từ v3.</p>
+        <p className="mt-2 text-xs font-medium text-[#777777]">Mốc cưỡng chế dọn kho của phiên bản mới cố định 15 ngày quá hạn. Phí chiếm dụng, lưu giữ áp dụng khách đồng ý điều khoản từ v2; phí dọn & di dời hàng áp dụng từ v3.</p>
 
         {/* Flow 4: ưu đãi theo gói thuê — gói 1 tháng luôn 0% */}
         <div className="mt-4 border-t-2 border-[#F0F0F0] pt-4">
@@ -395,7 +395,7 @@ function HistoryModal({ facility, history, currentPolicyId, onClose, onActivate,
                 <span>Mốc hoàn đủ: <strong className="text-[#4B4B4B]">Từ 48 giờ</strong></span>
                 <span>Trễ hạn: <strong className="text-[#4B4B4B]">{item.lateFeePercentPerDay}%/ngày</strong></span>
                 <span>Trần phí: <strong className="text-[#4B4B4B]">{item.lateFeeMaxPercent}%</strong></span>
-                <span>Thanh lý: <strong className="text-[#4B4B4B]">{item.liquidationDays} ngày</strong></span>
+                <span>Cưỡng chế dọn kho: <strong className="text-[#4B4B4B]">{item.liquidationDays} ngày</strong></span>
                 <span>Ưu đãi đặt: <strong className="text-[#4B4B4B]">{item.bookingDiscount3m ?? 5}/{item.bookingDiscount6m ?? 10}/{item.bookingDiscount12m ?? 15}%</strong></span>
                 <span>Ưu đãi gia hạn: <strong className="text-[#4B4B4B]">{item.renewalDiscount3m ?? 0}/{item.renewalDiscount6m ?? 5}/{item.renewalDiscount12m ?? 10}%</strong></span>
                 <span>Miễn phí trễ: <strong className="text-[#4B4B4B]">{item.allowLateFeeWaiver === false ? 'Không' : 'Cho phép'}</strong></span>
@@ -611,12 +611,12 @@ export default function BomRentalPoliciesPage() {
                     <RuleLine icon="schedule" title={`Mỗi ngày quá hạn: ${selectedPolicy.lateFeePercentPerDay}% cọc đang giữ`} description="Phí được tính động theo số ngày quá hạn và chưa ghi giao dịch cho đến khi khách thanh toán hoặc bị khấu trừ vào cọc." tone="blue" />
                     <RuleLine icon="vertical_align_top" title={`Mức phí tối đa: ${selectedPolicy.lateFeeMaxPercent}% cọc đang giữ`} description="Khi chạm mức trần, hệ thống ngừng tăng phí trễ hạn." tone="orange" />
                     <RuleLine icon="door_front" title={`Phí chiếm dụng: ${selectedPolicy.overstayPercent ?? 150}% giá thuê theo ngày × số ngày quá hạn`} description="Không có trần — quá hạn luôn đắt hơn gia hạn. Trừ vào cọc sau phí trễ; vượt cọc thành khoản nợ của khách (chỉ khách đồng ý điều khoản v2)." tone="red" />
-                    <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Cho phép FM thanh lý`} description="Hệ thống chỉ mở quyền thao tác; FM phải xác nhận thanh lý và nhập ghi chú quá trình liên hệ khách." tone="red" />
+                    <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Cho phép FM cưỡng chế dọn kho`} description="Hệ thống chỉ mở quyền thao tác; FM phải xác nhận cưỡng chế dọn kho và nhập ghi chú quá trình liên hệ khách." tone="red" />
                   </PolicySection>
 
-                  <PolicySection icon="inventory" title="Chính sách thanh lý tài sản" tone="purple" expanded={expandedSections.liquidation} onToggle={() => toggleSection('liquidation')}>
-                    <RuleLine icon="event_upcoming" title={`Điều kiện thanh lý: Quá hạn trên ${selectedPolicy.liquidationDays} ngày`} description="Thời hạn được đọc từ phiên bản chính sách đã gắn với hợp đồng khi ký." tone="blue" />
-                    <RuleLine icon="fact_check" title="FM xác nhận thanh lý và ghi chú liên hệ" description="Thanh lý không chạy tự động; FM tại cơ sở là người thực hiện thao tác khi đã đủ điều kiện." tone="green" />
+                  <PolicySection icon="inventory" title="Chính sách cưỡng chế dọn kho tài sản" tone="purple" expanded={expandedSections.liquidation} onToggle={() => toggleSection('liquidation')}>
+                    <RuleLine icon="event_upcoming" title={`Điều kiện cưỡng chế dọn kho: Quá hạn trên ${selectedPolicy.liquidationDays} ngày`} description="Thời hạn được đọc từ phiên bản chính sách đã gắn với hợp đồng khi ký." tone="blue" />
+                    <RuleLine icon="fact_check" title="FM xác nhận cưỡng chế dọn kho và ghi chú liên hệ" description="Cưỡng chế dọn kho không chạy tự động; FM tại cơ sở là người thực hiện thao tác khi đã đủ điều kiện." tone="green" />
                     <RuleLine icon="savings" title="Khấu trừ phí trễ và tạm giữ phần cọc còn lại" description="Phần cọc còn lại chỉ được hoàn khi khách đến cơ sở làm việc; việc xử lý tài sản diễn ra ngoài hệ thống và được ghi log." tone="orange" />
                   </PolicySection>
                 </div>
@@ -649,7 +649,7 @@ export default function BomRentalPoliciesPage() {
                   <div className="rounded-2xl border-2 border-b-4 border-[#CE82FF] bg-[#F3E3FF] p-4">
                     <p className="text-[10px] font-semibold uppercase text-[#A559D9]">Giai đoạn 3</p>
                     <p className="mt-0.5 text-lg font-black text-[#4B4B4B]">Quá {selectedPolicy.liquidationDays} ngày</p>
-                    <p className="mt-1 text-xs font-medium text-[#777777]">FM được phép xác nhận thanh lý sau khi ghi chú liên hệ</p>
+                    <p className="mt-1 text-xs font-medium text-[#777777]">FM được phép xác nhận cưỡng chế dọn kho sau khi ghi chú liên hệ</p>
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-[#AFAFAF]">

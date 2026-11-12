@@ -7,6 +7,7 @@ import TransferUnitModal from './TransferUnitModal'
 import ContractHandoverSection from './ContractHandoverSection'
 import ContractProtectionPanel from './ContractProtectionPanel'
 import { simulateExpireSoon, simulateOverdue } from '../services/simulationService'
+import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
 // BR-122: hợp đồng còn giữ ô và chưa quá hạn mới chuyển ô được
 const TRANSFERABLE_STATUSES = ['PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING']
@@ -28,7 +29,7 @@ const STATUS_MAP = {
   TERMINATION_PENDING: { label: 'Chờ kiểm tra trả kho', cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'schedule' },
   OVERDUE:             { label: 'Quá hạn thanh toán',    cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]', icon: 'warning' },
   TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]', icon: 'cancel' },
-  LIQUIDATED:          { label: 'Đã thanh lý hợp đồng',  cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]', icon: 'gavel' },
+  LIQUIDATED:          { label: 'Đã cưỡng chế dọn kho',  cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]', icon: 'gavel' },
 }
 
 function InfoRow({ label, value, mono }) {
@@ -166,19 +167,19 @@ export default function ContractDetailView({ contractId, initialTransfer = false
           ))}
           <SimulationButton
             label="Quá hạn 1 ngày"
-            description="Cho hợp đồng hết hạn hôm qua. Khách đồng ý điều khoản v4: thanh lý ngay và sinh việc chuyển hàng vào kho tổng (như job 00:05). Điều khoản cũ: chuyển QUÁ HẠN, khoá PIN, tính phí trễ."
+            description="Cho hợp đồng hết hạn hôm qua. Khách đồng ý điều khoản v4: cưỡng chế dọn kho ngay và sinh việc chuyển hàng vào kho tổng (như job 00:05). Điều khoản cũ: chuyển QUÁ HẠN, khoá PIN, tính phí trễ."
             onRun={() => simulateOverdue(contract.contractId, 1)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
           <SimulationButton
             label="Quá hạn 3 ngày"
-            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách (điều khoản v4 sẽ thanh lý + chuyển kho tổng luôn). Dùng để demo nút Miễn phí trễ với hợp đồng cũ."
+            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách (điều khoản v4 sẽ cưỡng chế dọn kho + chuyển kho tổng luôn). Dùng để demo nút Miễn phí trễ với hợp đồng cũ."
             onRun={() => simulateOverdue(contract.contractId, 3)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
           <SimulationButton
-            label="Quá hạn 31 ngày (thanh lý)"
-            description="Cho hợp đồng hết hạn 31 ngày trước: vượt mốc 30 ngày, nút Thanh lý ở màn Hợp đồng quá hạn được bật."
+            label="Quá hạn 31 ngày (cưỡng chế)"
+            description="Cho hợp đồng hết hạn 31 ngày trước: vượt mốc 30 ngày, nút Cưỡng chế dọn kho ở màn Hợp đồng quá hạn được bật."
             onRun={() => simulateOverdue(contract.contractId, 31)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
@@ -186,38 +187,59 @@ export default function ContractDetailView({ contractId, initialTransfer = false
       )}
 
       {/* Cảnh báo quá hạn cho Quản lý theo Business Rule */}
-      {contract.status === 'OVERDUE' && (
-        <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 mb-6 shadow-xs flex items-start gap-4">
-          <span className="material-symbols-outlined text-[#FF4B4B] text-[36px] shrink-0 mt-0.5">
-            warning
-          </span>
-          <div className="flex-1">
-            <h3 className="text-sm font-black text-[#FF4B4B] uppercase tracking-wide">
-              Hợp đồng này đang quá hạn {contract.overdueDays || 1} ngày
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Phí phạt lũy kế</span>
-                <span className="text-sm font-black text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</span>
-                {contract.isMaxLateFeeReached && (
-                  <span className="text-[10px] text-[#FF4B4B] font-bold block">(Đã chạm trần cọc)</span>
-                )}
-              </div>
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Tiền hoàn cọc ước tính</span>
-                <span className="text-sm font-black text-[#58CC02]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : (contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0))}</span>
-                <span className="text-[10px] text-[#AFAFAF] block">(Cọc - Phí phạt)</span>
-              </div>
-              <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
-                <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Chế tài SmartLock</span>
-                <span className={`text-xs font-black block mt-0.5 ${contract.isPinLocked ? 'text-[#FF4B4B]' : 'text-[#FF9600]'}`}>
-                  {contract.isPinLocked ? 'Đã khóa PIN SmartLock' : 'Đang mở mã PIN'}
-                </span>
+      {(contract.status === 'OVERDUE' || (contract.status === 'TERMINATION_PENDING' && Number(contract.overdueDays) > 0)) && (() => {
+        const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(contract)
+        return (
+          <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 mb-6 shadow-xs flex items-start gap-4">
+            <span className="material-symbols-outlined text-[#FF4B4B] text-[36px] shrink-0 mt-0.5">
+              warning
+            </span>
+            <div className="flex-1">
+              <h3 className="text-sm font-black text-[#FF4B4B] uppercase tracking-wide">
+                Hợp đồng này đang quá hạn {contract.overdueDays || 1} ngày
+                {contract.status === 'TERMINATION_PENDING' ? ' (đã hẹn trả kho)' : ''}
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
+                  <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Tổng tiền phạt lũy kế</span>
+                  <span className="text-sm font-black text-[#FF4B4B]">{formatVND(totalPenalty)}</span>
+                  <div className="mt-1 space-y-0.5 text-[10px] font-bold text-[#777777]">
+                    <div>
+                      Phí phạt trễ:{' '}
+                      <span className={lateFeeWaived ? 'text-[#58A700]' : 'text-[#4B4B4B]'}>
+                        {lateFeeWaived ? '0₫ (Đã miễn)' : formatVND(lateFee)}
+                      </span>
+                      {contract.isMaxLateFeeReached && !lateFeeWaived ? ' (trần cọc)' : ''}
+                    </div>
+                    <div>
+                      Phí chiếm dụng:{' '}
+                      <span className={overstayFeeWaived ? 'text-[#58A700]' : 'text-[#4B4B4B]'}>
+                        {overstayFeeWaived ? '0₫ (Đã miễn)' : formatVND(overstayFee)}
+                      </span>
+                    </div>
+                    {Number(contract.amountBeyondDeposit) > 0 && (
+                      <div className="text-[#FF4B4B]">
+                        Vượt cọc (nợ): {formatVND(contract.amountBeyondDeposit)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
+                  <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Tiền hoàn cọc ước tính</span>
+                  <span className="text-sm font-black text-[#58CC02]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : (contract.estimatedDepositRefund != null ? contract.estimatedDepositRefund : 0))}</span>
+                  <span className="text-[10px] text-[#AFAFAF] block">(Cọc - Tổng tiền phạt)</span>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-[#FFDFDF]">
+                  <span className="text-[10px] font-black uppercase text-[#AFAFAF] block">Chế tài SmartLock</span>
+                  <span className={`text-xs font-black block mt-0.5 ${contract.isPinLocked ? 'text-[#FF4B4B]' : 'text-[#FF9600]'}`}>
+                    {contract.isPinLocked ? 'Đã khóa PIN SmartLock' : 'Đang mở mã PIN'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Info Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -297,7 +319,7 @@ export default function ContractDetailView({ contractId, initialTransfer = false
                 </p>
               ) : (
                 <p className="text-xs font-bold text-[#AFAFAF] py-1">
-                  {contract.status === 'LIQUIDATED' ? 'Đã vô hiệu hóa (Đã thanh lý)' : 'Chưa cấp phát'}
+                  {contract.status === 'LIQUIDATED' ? 'Đã vô hiệu hóa (Đã cưỡng chế dọn kho)' : 'Chưa cấp phát'}
                 </p>
               )}
             </div>

@@ -4,6 +4,7 @@ import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import ContractDetailModal from '../../components/ContractDetailModal'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../../utils/timeFilter'
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
 const PAGE_SIZE = 5
 
@@ -24,7 +25,7 @@ const STATUS_MAP = {
   TERMINATION_PENDING: { label: 'Chờ trả kho',           cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
   OVERDUE:             { label: 'Quá hạn',               cls: 'bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]' },
   TERMINATED:          { label: 'Đã kết thúc',           cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
-  LIQUIDATED:          { label: 'Đã thanh lý',           cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
+  LIQUIDATED:          { label: 'Đã cưỡng chế dọn kho', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
 }
 
 // (10/11/2026) Lọc / sắp theo thời gian — mặc định ngày kết thúc sớm nhất (sắp hết hạn) lên trên
@@ -221,11 +222,17 @@ export default function CustomerContractsPage() {
                       {/* Ngày KT */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         <p className="font-bold text-[#4B4B4B]">{formatDate(c.endDate)}</p>
-                        {c.status === 'OVERDUE' && (c.overdueDays || 0) > 0 && (
-                          <p className="text-[10px] font-black text-[#FF4B4B]">
-                            Trễ {c.overdueDays} ngày (+{formatVND(c.lateFeeAmount)})
-                          </p>
-                        )}
+                        {(c.status === 'OVERDUE' || c.status === 'TERMINATION_PENDING') && (c.overdueDays || 0) > 0 && (() => {
+                          const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
+                          return (
+                            <div className="text-[10px] font-black text-[#FF4B4B] leading-tight mt-0.5">
+                              <div>Trễ {c.overdueDays} ngày · Tổng phạt +{formatVND(totalPenalty)}</div>
+                              <div className="text-[#777777] font-bold">
+                                (Trễ: {lateFeeWaived ? 'Miễn' : formatVND(lateFee)} · Chiếm dụng: {overstayFeeWaived ? 'Miễn' : formatVND(overstayFee)})
+                              </div>
+                            </div>
+                          )
+                        })()}
                       </td>
 
                       {/* Tiền cọc */}

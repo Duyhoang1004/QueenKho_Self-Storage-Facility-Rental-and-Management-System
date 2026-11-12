@@ -1343,7 +1343,7 @@ export default function StorageManagementPage() {
                 <span className="material-symbols-outlined text-[18px] text-[#B78900]">info</span>
                 <span>
                   Ô đang có task bảo trì <b>#{statusModal.unit.maintenanceTaskId}</b>{' '}
-                  ({statusModal.unit.maintenanceReason === 'LIQUIDATION' ? 'dọn kho sau thanh lý' : 'sửa sự cố sau trả kho'}).
+                  ({statusModal.unit.maintenanceReason === 'LIQUIDATION' ? 'cưỡng chế dọn kho' : 'sửa sự cố sau trả kho'}).
                   Mở lại kho sẽ <b>đóng luôn task này</b>. Nên để nhân viên bấm "Sửa xong" trên phiếu bảo trì để lưu ghi chú công việc.
                 </span>
               </div>

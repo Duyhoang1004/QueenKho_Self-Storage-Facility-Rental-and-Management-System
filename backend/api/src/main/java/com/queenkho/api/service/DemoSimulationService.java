@@ -216,7 +216,7 @@ public class DemoSimulationService {
         }
         log(actor, "Ghi " + attempts + " lần liên hệ thất bại cho HĐ " + contract.get("contract_code"),
                 "rental_contracts", contractId);
-        return result("Đã ghi " + attempts + " lần liên hệ thất bại — đủ điều kiện liên hệ để thanh lý", "contacts", attempts);
+        return result("Đã ghi " + attempts + " lần liên hệ thất bại — đủ điều kiện liên hệ để cưỡng chế dọn kho", "contacts", attempts);
     }
 
     // ---------- 2. Flow 1: đơn chưa cọc quá 15 phút giữ chỗ ----------
@@ -321,10 +321,10 @@ public class DemoSimulationService {
         if (renewalReminderService != null) renewalReminderService.warnLiquidationContract(contractId);
         // D-15: điều khoản v4 → chạy ngay bước thanh lý + chuyển kho tổng như job 00:05
         if (contractOverdueJob != null && contractOverdueJob.relocateToCentralWarehouse(contractId) > 0) {
-            return result("Hợp đồng quá hạn " + days + " ngày — điều khoản v4: đã thanh lý, sinh việc chuyển hàng vào kho tổng",
+            return result("Hợp đồng quá hạn " + days + " ngày — điều khoản v4: đã cưỡng chế dọn kho, sinh việc chuyển hàng vào kho tổng",
                     "endDate", endDate);
         }
-        return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày thanh lý (cần thêm "
+        return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày cưỡng chế dọn kho (cần thêm "
                         + ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ)"
                 : "Hợp đồng quá hạn " + days + " ngày — đang tính phí trễ", "endDate", endDate);
     }

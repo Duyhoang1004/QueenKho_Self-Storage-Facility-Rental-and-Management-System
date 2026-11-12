@@ -14,6 +14,7 @@ import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import ContractDetailModal from '../../components/ContractDetailModal'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
 const PAGE_SIZE = 5
 
@@ -195,7 +196,7 @@ export default function OverdueContractsPage() {
   const handleSubmitLiquidate = async (e) => {
     e.preventDefault()
     if (!liquidateNote.trim()) {
-      setLiquidateError('Bắt buộc nhập ghi chú quá trình liên hệ và lý do thanh lý.')
+      setLiquidateError('Bắt buộc nhập ghi chú quá trình liên hệ và lý do cưỡng chế dọn kho.')
       return
     }
     setLiquidateSubmitting(true)
@@ -205,12 +206,12 @@ export default function OverdueContractsPage() {
         managerId,
         note: liquidateNote.trim(),
       })
-      setSuccessToast(`Đã thanh lý thành công hợp đồng #${liquidateContractTarget.contractCode}`)
+      setSuccessToast(`Đã cưỡng chế dọn kho thành công hợp đồng #${liquidateContractTarget.contractCode}`)
       setTimeout(() => setSuccessToast(''), 4000)
       setLiquidateModalOpen(false)
       fetchContracts()
     } catch (err) {
-      setLiquidateError(err.response?.data?.message || err.response?.data?.error || 'Thanh lý hợp đồng thất bại.')
+      setLiquidateError(err.response?.data?.message || err.response?.data?.error || 'Cưỡng chế dọn kho thất bại.')
     } finally {
       setLiquidateSubmitting(false)
     }
@@ -262,14 +263,14 @@ export default function OverdueContractsPage() {
         <div>
           <h1 className="text-2xl font-black text-[#4B4B4B] uppercase tracking-wide flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[#FF4B4B] text-[28px]">event_busy</span>
-            Quản lý Hợp Đồng Quá Hạn & Thanh Lý
+            Quản lý Hợp Đồng Quá Hạn & Cưỡng Chế Dọn Kho
           </h1>
           <p className="text-xs font-bold text-[#AFAFAF] uppercase tracking-wider mt-1">
-            Theo dõi công nợ, lịch sử đôn đốc và quy trình thanh lý hợp đồng tại cơ sở
+            Theo dõi công nợ, lịch sử đôn đốc và quy trình cưỡng chế dọn kho hợp đồng tại cơ sở
           </p>
-          {/* PR-Q8 / PR-Q10: lịch liên hệ đề xuất để kịp thanh lý khi quá 15 ngày */}
+          {/* PR-Q8 / PR-Q10: lịch liên hệ đề xuất để kịp cưỡng chế dọn kho khi quá 15 ngày */}
           <p className="text-[11px] font-bold text-[#777777] mt-1">
-            Lịch liên hệ đề xuất: ngày quá hạn thứ 1 · 3 · 7 (đủ 3 lần). Quá mốc thanh lý theo chính sách (bản mới 15 ngày) là được thanh lý để ô sớm cho thuê lại.
+            Lịch liên hệ đề xuất: ngày quá hạn thứ 1 · 3 · 7 (đủ 3 lần). Quá mốc cưỡng chế dọn kho theo chính sách (bản mới 15 ngày) là được cưỡng chế dọn kho để ô sớm cho thuê lại.
           </p>
         </div>
       </div>
@@ -299,7 +300,7 @@ export default function OverdueContractsPage() {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">gavel</span>
-          <span>Đã Thanh Lý</span>
+          <span>Đã Cưỡng Chế Dọn Kho</span>
         </button>
       </div>
 
@@ -335,8 +336,8 @@ export default function OverdueContractsPage() {
       <div className="duo-card overflow-hidden">
         <ListBoxHeader
           icon={activeTab === 'OVERDUE' ? 'warning' : 'gavel'}
-          title={activeTab === 'OVERDUE' ? 'Hợp đồng đang quá hạn' : 'Hợp đồng đã thanh lý'}
-          subtitle="Theo dõi công nợ, lịch sử đôn đốc và thanh lý"
+          title={activeTab === 'OVERDUE' ? 'Hợp đồng đang quá hạn' : 'Hợp đồng đã cưỡng chế dọn kho'}
+          subtitle="Theo dõi công nợ, lịch sử đôn đốc và cưỡng chế dọn kho"
           count={filteredContracts.length}
           countLabel="hợp đồng"
           accentColor={
@@ -360,7 +361,7 @@ export default function OverdueContractsPage() {
             <p className="text-sm font-black text-[#777777]">
               {activeTab === 'OVERDUE'
                 ? 'Không có hợp đồng nào đang quá hạn tại cơ sở.'
-                : 'Chưa có hợp đồng nào bị thanh lý tại cơ sở.'}
+                : 'Chưa có hợp đồng nào bị cưỡng chế dọn kho tại cơ sở.'}
             </p>
           </div>
         ) : activeTab === 'OVERDUE' ? (
@@ -373,7 +374,7 @@ export default function OverdueContractsPage() {
                   <th className="py-3.5 px-4">Khách Hàng</th>
                   <th className="py-3.5 px-4">Ô Kho</th>
                   <th className="py-3.5 px-4 text-center">Quá Hạn</th>
-                  <th className="py-3.5 px-4 text-right">Phí Trễ + Chiếm Dụng</th>
+                  <th className="py-3.5 px-4 text-right">Tổng Phạt (Trễ + Chiếm Dụng)</th>
                   <th className="py-3.5 px-4">Ghi Chú Đôn Đốc Gần Nhất</th>
                   <th className="py-3.5 px-4 text-center">Thao Tác</th>
                 </tr>
@@ -381,6 +382,7 @@ export default function OverdueContractsPage() {
               <tbody className="divide-y-2 divide-[#F0F0F0]">
                 {paginatedContracts.map((c) => {
                   const daysLeft = (c.liquidationDaysThreshold || 7) - (c.overdueDays || 0)
+                  const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
                       <td className="py-3.5 px-4">
@@ -402,18 +404,26 @@ export default function OverdueContractsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#FF4B4B]">
-                        {c.lateFeeWaived ? (
-                          <span className="text-[#58A700]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
-                        ) : formatVND(c.lateFeeAmount)}
-                        {c.isMaxLateFeeReached && !c.lateFeeWaived && (
-                          <div className="text-[10px] text-[#FF9600] font-bold">Chạm trần cọc</div>
+                        {totalPenalty === 0 && lateFeeWaived && overstayFeeWaived ? (
+                          <span className="text-[#58A700]" title={c.lateFeeWaiverNote || ''}>0₫ (Đã miễn toàn bộ)</span>
+                        ) : (
+                          <span>{formatVND(totalPenalty)}</span>
                         )}
-                        {/* PR-Q14: phí chiếm dụng (không trần) */}
-                        {Number(c.overstayFeeAmount) > 0 && (
-                          <div className="text-[10px] text-[#777777] font-bold" title="Phí chiếm dụng ô: giá ngày × % chính sách × số ngày quá hạn">
-                            + chiếm dụng {formatVND(c.overstayFeeAmount)}
+                        <div className="mt-0.5 space-y-0.5 text-[10px] font-bold text-[#777777]">
+                          <div>
+                            Phí trễ:{' '}
+                            {lateFeeWaived ? (
+                              <span className="text-[#58A700]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
+                            ) : formatVND(lateFee)}
+                            {c.isMaxLateFeeReached && !lateFeeWaived ? <span className="text-[#FF9600]"> (trần cọc)</span> : null}
                           </div>
-                        )}
+                          <div title="Phí chiếm dụng ô: giá ngày × % chính sách × số ngày quá hạn">
+                            Chiếm dụng:{' '}
+                            {overstayFeeWaived ? (
+                              <span className="text-[#58A700]">Đã miễn</span>
+                            ) : formatVND(overstayFee)}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 max-w-xs">
                         {c.lastContactNote ? (
@@ -455,42 +465,42 @@ export default function OverdueContractsPage() {
                             <button
                               type="button"
                               onClick={() => handleOpenLiquidateModal(c)}
-                              className="px-3 py-1.5 rounded-xl border-2 border-[#FF4B4B] bg-[#FFDFDF] text-[#FF4B4B] hover:bg-red-200 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                              className="px-3 py-1.5 rounded-xl border-2 border-[#FF4B4B] bg-[#FFDFDF] text-[#FF4B4B] hover:bg-red-200 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1 shadow-xs whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-[15px]">gavel</span>
-                              <span>Thanh lý</span>
+                              <span>Cưỡng chế dọn kho</span>
                             </button>
                           ) : (
                             <button
                               type="button"
                               disabled
                               title={c.canLiquidate
-                                ? `Cần ghi nhận ít nhất ${c.minContactsRequired || 3} lần liên hệ khách trước khi thanh lý (Điều khoản xử lý tài sản)`
-                                : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện thanh lý`}
-                              className="px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed flex items-center gap-1"
+                                ? `Cần ghi nhận ít nhất ${c.minContactsRequired || 3} lần liên hệ khách trước khi cưỡng chế dọn kho (Điều khoản xử lý tài sản)`
+                                : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện cưỡng chế dọn kho`}
+                              className="px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed flex items-center gap-1 whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-[15px]">gavel</span>
-                              <span>Thanh lý</span>
+                              <span>Cưỡng chế dọn kho</span>
                               <span className="text-[9px] font-normal lowercase">
                                 ({c.canLiquidate ? `${c.contactCount || 0}/${c.minContactsRequired || 3} liên hệ` : `${daysLeft}d`})
                               </span>
                             </button>
                           )}
 
-                          {/* Demo: tua qua mốc thanh lý của chính sách (bản mới 15 ngày) để bật nút Thanh lý */}
+                          {/* Demo: tua qua mốc cưỡng chế dọn kho của chính sách (bản mới 15 ngày) để bật nút */}
                           {!c.canLiquidate && (
                             <SimulationButton
                               label={`${(c.liquidationDaysThreshold || 15) + 1} ngày`}
-                              description={`Cho HĐ #${c.contractCode} quá hạn ${(c.liquidationDaysThreshold || 15) + 1} ngày để vượt mốc thanh lý ${c.liquidationDaysThreshold || 15} ngày.`}
+                              description={`Cho HĐ #${c.contractCode} quá hạn ${(c.liquidationDaysThreshold || 15) + 1} ngày để vượt mốc ${c.liquidationDaysThreshold || 15} ngày và bật nút Cưỡng chế dọn kho.`}
                               onRun={() => simulateOverdue(c.contractId, (c.liquidationDaysThreshold || 15) + 1)}
                               onDone={() => fetchContracts()}
                             />
                           )}
-                          {/* Demo: đã gọi khách 3 lần không được → đủ điều kiện liên hệ để thanh lý */}
+                          {/* Demo: đã gọi khách 3 lần không được → đủ điều kiện liên hệ để cưỡng chế dọn kho */}
                           {c.canLiquidate && (c.contactCount || 0) < (c.minContactsRequired || 3) && (
                             <SimulationButton
                               label="3 lần liên hệ"
-                              description={`Ghi ${c.minContactsRequired || 3} lần gọi khách HĐ #${c.contractCode} không nghe máy (cách nhau 1 tuần) để đủ điều kiện thanh lý theo điều khoản.`}
+                              description={`Ghi ${c.minContactsRequired || 3} lần gọi khách HĐ #${c.contractCode} không nghe máy (cách nhau 1 tuần) để đủ điều kiện cưỡng chế dọn kho theo điều khoản.`}
                               onRun={() => simulateFailedContacts(c.contractId)}
                               onDone={() => fetchContracts()}
                             />
@@ -512,7 +522,7 @@ export default function OverdueContractsPage() {
                   <th className="py-3.5 px-4">Mã Hợp Đồng</th>
                   <th className="py-3.5 px-4">Khách Hàng</th>
                   <th className="py-3.5 px-4">Ô Kho</th>
-                  <th className="py-3.5 px-4 text-right">Phí Trễ Khấu Trừ</th>
+                  <th className="py-3.5 px-4 text-right">Tổng Phạt Khấu Trừ</th>
                   <th className="py-3.5 px-4 text-right">Còn Giữ Cọc</th>
                   <th className="py-3.5 px-4 text-center">Trạng Thái Hoàn</th>
                   <th className="py-3.5 px-4 text-center">Thao Tác</th>
@@ -522,6 +532,7 @@ export default function OverdueContractsPage() {
                 {paginatedContracts.map((c) => {
                   const held = Number(c.depositHeldAmount || 0)
                   const isRefunding = refundSubmittingId === c.contractId
+                  const fee = getOverdueFeeBreakdown(c)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
                       <td className="py-3.5 px-4">
@@ -538,9 +549,11 @@ export default function OverdueContractsPage() {
                         {c.storageUnitId || '—'}
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#FF4B4B]">
-                        {formatVND(c.lateFeeAmount)}
-                        {Number(c.overstayFeeAmount) > 0 && (
-                          <div className="text-[10px] text-[#777777] font-bold">+ chiếm dụng {formatVND(c.overstayFeeAmount)}</div>
+                        <div>{formatVND(fee.totalPenalty)}</div>
+                        {(fee.overstayFee > 0 || fee.lateFeeWaived || fee.overstayFeeWaived) && (
+                          <div className="text-[10px] text-[#777777] font-bold">
+                            Trễ: {fee.lateFeeWaived ? 'Miễn' : formatVND(fee.lateFee)} · Chiếm dụng: {fee.overstayFeeWaived ? 'Miễn' : formatVND(fee.overstayFee)}
+                          </div>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-black text-[#58CC02] text-sm">
@@ -733,7 +746,7 @@ export default function OverdueContractsPage() {
               <div className="flex items-center gap-2 text-[#FF4B4B]">
                 <span className="material-symbols-outlined text-[24px]">gavel</span>
                 <h3 className="text-base font-black uppercase">
-                  Xác nhận thanh lý HĐ #{liquidateContractTarget.contractCode}
+                  Xác nhận cưỡng chế dọn kho HĐ #{liquidateContractTarget.contractCode}
                 </h3>
               </div>
               <button
@@ -760,8 +773,8 @@ export default function OverdueContractsPage() {
                   <span className="material-symbols-outlined text-[18px] text-[#58A700]">verified</span>
                   <span>
                     Khách đã đồng ý <b>Điều khoản xử lý tài sản ({liquidateContractTarget.termsVersion})</b> khi đặt kho:
-                    sau thanh lý sẽ mở kho, kiểm kê, lưu giữ hàng 60 ngày, quá hạn được bán thanh lý để trừ nợ.
-                    Hệ thống sẽ sinh task <b>Dọn kho sau thanh lý</b>.
+                    sau cưỡng chế dọn kho sẽ mở kho, kiểm kê, lưu giữ hàng 60 ngày, quá hạn được bán thanh lý để trừ nợ.
+                    Hệ thống sẽ sinh task <b>Cưỡng chế dọn kho</b>.
                   </span>
                 </div>
               ) : (
@@ -769,7 +782,7 @@ export default function OverdueContractsPage() {
                   <span className="material-symbols-outlined text-[18px] text-[#B78900]">warning</span>
                   <span>
                     Đơn cũ — khách <b>chưa đồng ý</b> điều khoản xử lý tài sản: chỉ được lưu giữ hàng và trả lại khách
-                    hoặc giao cơ quan chức năng, <b>không được bán</b>. Hệ thống vẫn sinh task Dọn kho sau thanh lý.
+                    hoặc giao cơ quan chức năng, <b>không được bán</b>. Hệ thống vẫn sinh task Cưỡng chế dọn kho.
                   </span>
                 </div>
               )}
@@ -782,16 +795,22 @@ export default function OverdueContractsPage() {
                     {formatVND(liquidateContractTarget.depositHeldAmount)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-red-600 font-bold">
-                  <span>Phí phạt quá hạn khấu trừ vào cọc:</span>
-                  <span>-{formatVND(liquidateContractTarget.lateFeeAmount)}</span>
+                <div className="flex justify-between items-center text-red-600 font-black">
+                  <span>Tổng tiền phạt quá hạn ({liquidateContractTarget.overdueDays} ngày):</span>
+                  <span>-{formatVND(getOverdueFeeBreakdown(liquidateContractTarget).totalPenalty)}</span>
                 </div>
-                {Number(liquidateContractTarget.overstayFeeAmount) > 0 && (
-                  <div className="flex justify-between items-center text-red-600 font-bold">
-                    <span>Phí chiếm dụng ô ({liquidateContractTarget.overdueDays} ngày):</span>
-                    <span>-{formatVND(liquidateContractTarget.overstayFeeAmount)}</span>
+                <div className="pl-3 space-y-1 border-l-2 border-red-200">
+                  <div className="flex justify-between items-center text-red-600/90 font-bold">
+                    <span>• Phí phạt trễ hạn:</span>
+                    <span>-{formatVND(liquidateContractTarget.lateFeeAmount)}</span>
                   </div>
-                )}
+                  {Number(liquidateContractTarget.overstayFeeAmount) > 0 && (
+                    <div className="flex justify-between items-center text-red-600/90 font-bold">
+                      <span>• Phí chiếm dụng ô ({liquidateContractTarget.overdueDays} ngày):</span>
+                      <span>-{formatVND(liquidateContractTarget.overstayFeeAmount)}</span>
+                    </div>
+                  )}
+                </div>
                 {Number(liquidateContractTarget.goodsMovingFeeAmount) > 0 && (
                   <div className="flex justify-between items-center text-red-600 font-bold">
                     <span>Phí dọn & di dời hàng sang khu lưu giữ:</span>
@@ -799,7 +818,7 @@ export default function OverdueContractsPage() {
                   </div>
                 )}
                 <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline font-black">
-                  <span className="text-[#4B4B4B] uppercase text-[11px]">Cọc còn lại sau thanh lý:</span>
+                  <span className="text-[#4B4B4B] uppercase text-[11px]">Cọc còn lại sau cưỡng chế dọn kho:</span>
                   <span className="text-base text-[#58CC02]">
                     {formatVND(Math.max(0, Number(liquidateContractTarget.depositHeldAmount || 0) - liquidationCharge))}
                   </span>
@@ -815,7 +834,7 @@ export default function OverdueContractsPage() {
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs space-y-1">
                 <div className="font-black flex items-center gap-1 text-amber-900">
                   <span className="material-symbols-outlined text-[16px]">warning</span>
-                  Hành động thanh lý sẽ kích hoạt:
+                  Hành động cưỡng chế dọn kho sẽ kích hoạt:
                 </div>
                 <ul className="list-disc list-inside text-[11px] space-y-0.5 text-amber-900">
                   <li>Chuyển trạng thái HĐ sang <strong>LIQUIDATED</strong>.</li>
@@ -834,7 +853,7 @@ export default function OverdueContractsPage() {
                   required
                   value={liquidateNote}
                   onChange={(e) => setLiquidateNote(e.target.value)}
-                  placeholder="Ghi rõ các mốc liên hệ không thành công hoặc thỏa thuận thanh lý với khách..."
+                  placeholder="Ghi rõ các mốc liên hệ không thành công hoặc thỏa thuận cưỡng chế dọn kho với khách..."
                   className="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-[#FF4B4B] focus:outline-none text-xs text-[#4B4B4B] resize-none"
                 />
               </div>
@@ -860,7 +879,7 @@ export default function OverdueContractsPage() {
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[16px]">gavel</span>
-                      <span>Xác nhận thanh lý</span>
+                      <span>Xác nhận cưỡng chế dọn kho</span>
                     </>
                   )}
                 </button>
@@ -880,15 +899,20 @@ export default function OverdueContractsPage() {
               </div>
               <div>
                 <h3 className="text-lg font-black text-[#4B4B4B]">Miễn phí trễ HĐ #{waiveTarget.contractCode}</h3>
-                <p className="text-xs font-bold text-[#AFAFAF]">
-                  {waiveTarget.customerName} · quá hạn {waiveTarget.overdueDays} ngày · phí trễ {formatVND(waiveTarget.lateFeeAmount)}
-                  {Number(waiveTarget.overstayFeeAmount) > 0 && <> · phí chiếm dụng {formatVND(waiveTarget.overstayFeeAmount)}</>}
-                </p>
+                {(() => {
+                  const fee = getOverdueFeeBreakdown(waiveTarget)
+                  return (
+                    <p className="text-xs font-bold text-[#AFAFAF]">
+                      {waiveTarget.customerName} · quá hạn {waiveTarget.overdueDays} ngày · tổng phạt {formatVND(fee.totalPenalty)}
+                      {' '}(phí trễ {fee.lateFeeWaived ? '0₫ (đã miễn)' : formatVND(fee.lateFee)} + chiếm dụng {fee.overstayFeeWaived ? '0₫ (đã miễn)' : formatVND(fee.overstayFee)})
+                    </p>
+                  )
+                })()}
               </div>
             </div>
             <p className="text-xs font-bold text-[#777777] leading-relaxed">
               Không thu phí trễ của đợt quá hạn này (khi gia hạn hoặc khi trả kho). Phí chiếm dụng mặc định vẫn tính 100% giá ngày
-              (tiền thuê những ngày đã dùng ô, bỏ phần phạt) — có thể chọn miễn luôn bên dưới. Nếu khách bị thanh lý, mọi khoản phí
+              (tiền thuê những ngày đã dùng ô, bỏ phần phạt) — có thể chọn miễn luôn bên dưới. Nếu khách bị cưỡng chế dọn kho, mọi khoản phí
               vẫn được trừ vào cọc theo quy định (D-09). Chỉ dùng được khi chính sách thuê của cơ sở cho phép.
             </p>
             <form onSubmit={handleSubmitWaive} className="flex flex-col gap-3">

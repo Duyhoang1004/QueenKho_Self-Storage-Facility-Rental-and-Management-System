@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getVnpayStatus } from '../../services/vnpayService'
 import { useSearchParams } from 'react-router-dom'
 import { printReservationReceipt } from '../../utils/receipt'
+import { formatDateTimeVN } from '../../utils/date'
 
 function formatVND(amount) {
   return Number(amount || 0).toLocaleString('vi-VN') + 'đ'
@@ -53,7 +54,7 @@ export default function ReservationConfirmationPage() {
   const customerAddress = customerInfo.address || 'Chưa cập nhật'
 
   const paidAt = serverDetails.paid_at ? new Date(serverDetails.paid_at) : new Date()
-  const timeStr = `${paidAt.getHours()}:${String(paidAt.getMinutes()).padStart(2, '0')} ngày ${paidAt.getDate()}/${paidAt.getMonth() + 1}/${paidAt.getFullYear()}`
+  const timeStr = formatDateTimeVN(paidAt).replace(' ', ' ngày ')
   const startDateStr = startDate
     ? String(startDate).split('-').reverse().join('/')
     : 'Chưa cập nhật'

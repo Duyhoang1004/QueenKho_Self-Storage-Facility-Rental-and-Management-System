@@ -58,6 +58,16 @@ export const updateStorageUnitStatus = async (id, status, note = '', actorUserId
 };
 
 /**
+ * BR-140 (12/11/2026): đặt / bỏ ô kho khẩn cấp (không bán, chỉ dùng khi ô của khách gặp sự cố)
+ */
+export const setStorageUnitEmergency = async (id, emergency, actorUserId) => {
+  const response = await api.patch(`/storage-units/${id}/emergency`, { emergency }, {
+    params: { actorUserId }
+  });
+  return response.data;
+};
+
+/**
  * UC-06: Xóa ô kho
  * @param {String} id
  * @param {Number} actorUserId

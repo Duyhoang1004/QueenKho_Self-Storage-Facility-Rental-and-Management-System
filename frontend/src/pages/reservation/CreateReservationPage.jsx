@@ -5,9 +5,11 @@ import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 import AssetTermsModal from '../../components/AssetTermsModal'
 import { validateVoucher } from '../../services/voucherService'
+import { CCCD_ERROR, digitsOnly, isValidCccd, isValidPhone, PHONE_ERROR } from '../../utils/validators'
 import { getInsurancePlans } from '../../services/claimService'
 import { getGoodsCategories, TEMPERATURE_LABELS } from '../../services/catalogService'
 import GoodsCategoryDropdown from '../../components/GoodsCategoryDropdown'
+import DateInput from '../../components/DateInput'
 
 // BR-125: dự phòng khi chưa tải được danh sách gói từ backend (GET /insurance-plans)
 const FALLBACK_PLANS = [
@@ -318,6 +320,22 @@ export default function CreateReservationPage() {
       fail(customerInfo.address ? 'Vui lòng điền đầy đủ thông tin khách hàng.' : 'Vui lòng nhập địa chỉ thường trú / trụ sở để ghi vào hợp đồng.', 'sec-customer')
       return
     }
+    // Góp ý test 12/11: kiểm tra định dạng SĐT (10 số, bắt đầu 0), CCCD và email trước khi tạo đơn
+    if (!isValidPhone(customerInfo.phone)) {
+      setEditCustomer(true)
+      fail(PHONE_ERROR, 'sec-customer')
+      return
+    }
+    if (!isValidCccd(customerInfo.cccd)) {
+      setEditCustomer(true)
+      fail(CCCD_ERROR, 'sec-customer')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customerInfo.email).trim())) {
+      setEditCustomer(true)
+      fail('Email không đúng định dạng.', 'sec-customer')
+      return
+    }
     if (!agreed) {
       fail('Bạn cần tick cam kết không lưu trữ hàng cấm trước khi tiếp tục.', 'sec-commit')
       return
@@ -448,8 +466,7 @@ export default function CreateReservationPage() {
               <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#AFAFAF] text-[20px]">
                 calendar_month
               </span>
-              <input
-                type="date"
+              <DateInput
                 value={startDate}
                 min={minStartDate}
                 max={maxStartDate}
@@ -724,9 +741,11 @@ export default function CreateReservationPage() {
                 </label>
                 <input
                   type="tel"
-                  placeholder="0909 123 456"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="0909123456"
                   value={customerInfo.phone}
-                  onChange={(e) => setCustomerInfo({ ...customerInfo, phone: e.target.value })}
+                  onChange={(e) => setCustomerInfo({ ...customerInfo, phone: digitsOnly(e.target.value, 10) })}
                   className="duo-input w-full"
                 />
               </div>
@@ -737,9 +756,10 @@ export default function CreateReservationPage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="07919800xxxx"
+                  placeholder="079198001234"
+                  maxLength={12}
                   value={customerInfo.cccd}
-                  onChange={(e) => setCustomerInfo({ ...customerInfo, cccd: e.target.value })}
+                  onChange={(e) => setCustomerInfo({ ...customerInfo, cccd: e.target.value.replace(/\s/g, '').toUpperCase().slice(0, 12) })}
                   className="duo-input w-full"
                 />
                 <p className="text-[11px] font-bold text-[#AFAFAF] mt-1">

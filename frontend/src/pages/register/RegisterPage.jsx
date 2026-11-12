@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { register } from '../../services/authService'
+import { digitsOnly, isValidPhone, PHONE_ERROR } from '../../utils/validators'
 
 function DuoBrandMark() {
   return (
@@ -35,13 +36,16 @@ export default function RegisterPage() {
 
   const handleChange = (event) => {
     const { name, value } = event.target
-    setForm((current) => ({ ...current, [name]: value }))
+    // SĐT chỉ nhận chữ số, tối đa 10 số
+    setForm((current) => ({ ...current, [name]: name === 'phone' ? digitsOnly(value, 10) : value }))
     setError('')
   }
 
   const validate = () => {
     if (!form.fullName.trim()) return 'Vui lòng nhập họ và tên.'
+    if (form.fullName.trim().length < 2) return 'Họ và tên phải có ít nhất 2 ký tự.'
     if (!form.phone.trim()) return 'Vui lòng nhập số điện thoại.'
+    if (!isValidPhone(form.phone)) return PHONE_ERROR
     if (!form.email.trim()) return 'Vui lòng nhập email.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Email không đúng định dạng.'
     if (!form.password) return 'Vui lòng nhập mật khẩu.'
@@ -73,7 +77,7 @@ export default function RegisterPage() {
       setTimeout(() => navigate(redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : '/login'), 1500)
     } catch (requestError) {
       const errorMessage = requestError.response?.data?.message || requestError.response?.data || 'Không thể kết nối đến hệ thống. Vui lòng thử lại.'
-      if (typeof errorMessage === 'string' && errorMessage.includes('Email')) {
+      if (typeof errorMessage === 'string' && requestError.response?.status === 400) {
         setError(errorMessage)
       } else {
         setError('Đăng ký thất bại. Vui lòng thử lại.')
@@ -175,7 +179,9 @@ export default function RegisterPage() {
               <input
                 id="phone"
                 name="phone"
-                type="text"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
                 value={form.phone}
                 onChange={handleChange}
                 placeholder="0987654321"

@@ -110,7 +110,7 @@ public class RenewalPolicyService {
                     "JOIN storage_units su ON su.id = c.storage_unit_id " +
                     "LEFT JOIN reservations r ON r.id = c.reservation_id " +
                     "LEFT JOIN rental_policy rp ON rp.id = c.rental_policy_id " +
-                    "WHERE su.status = 'OCCUPIED' AND c.end_date IS NOT NULL " +
+                    "WHERE su.status = 'OCCUPIED' AND su.is_emergency = 0 AND c.end_date IS NOT NULL " + // BR-140: ô khẩn cấp không bán trước
                     "  AND (c.status IN ('OVERDUE', 'TERMINATION_PENDING') " +
                     "       OR (c.status = 'ACTIVE' AND DATEADD(DAY, -" + RENEWAL_NOTICE_DAYS + ", c.end_date) < ?)) " +
                     "  AND su.facility_id = ? ";

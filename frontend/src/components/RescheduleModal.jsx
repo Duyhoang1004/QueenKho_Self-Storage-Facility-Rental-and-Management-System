@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { rescheduleReservation } from '../services/reservationService'
+import DateInput from './DateInput'
 
 // [EXCEPTION] Modal dời lịch hẹn nhận kho — khách muốn đổi ngày
 export default function RescheduleModal({ isOpen, reservation, onClose, onSuccess }) {
@@ -78,8 +79,7 @@ export default function RescheduleModal({ isOpen, reservation, onClose, onSucces
         {/* Chọn ngày mới */}
         <div className="flex flex-col gap-1.5">
           <label className="text-[11px] font-black uppercase text-[#AFAFAF] tracking-wider">Ngày nhận kho mới <span className="text-[#FF4B4B]">*</span></label>
-          <input
-            type="date"
+          <DateInput
             min={today}
             value={newStartDate}
             onChange={(e) => setNewStartDate(e.target.value)}

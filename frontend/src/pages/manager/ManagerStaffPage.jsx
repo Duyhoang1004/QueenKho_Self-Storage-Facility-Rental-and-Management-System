@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { digitsOnly, isValidPhone, PHONE_ERROR } from '../../utils/validators';
 import {
   getFacilityStaff,
   createFacilityStaff,
@@ -130,6 +131,10 @@ export default function ManagerStaffPage() {
   // Xử lý tạo nhân viên mới (PR-22, PR-M12)
   const handleCreateStaff = async (e) => {
     e.preventDefault();
+    if (!isValidPhone(addForm.phone)) {
+      setAddError(PHONE_ERROR);
+      return;
+    }
     setAddLoading(true);
     setAddError(null);
     try {
@@ -668,8 +673,10 @@ export default function ManagerStaffPage() {
                   type="tel"
                   required
                   placeholder="0901234567"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={addForm.phone}
-                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  onChange={(e) => setAddForm({ ...addForm, phone: digitsOnly(e.target.value, 10) })}
                   className="w-full bg-[#F7F7F7] border-2 border-[#E5E5E5] text-[#4B4B4B] text-xs font-bold rounded-xl px-3.5 py-2.5 focus:border-[#1CB0F6] focus:bg-white outline-hidden"
                 />
               </div>

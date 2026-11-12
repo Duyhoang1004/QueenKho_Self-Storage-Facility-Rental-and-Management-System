@@ -51,6 +51,9 @@ public class LateFeeCalculationResult {
     /** Flow 6: FM đã miễn phí trễ cho đợt quá hạn này → lateFeeAmount = 0 */
     private boolean lateFeeWaived;
 
+    // PR-Q14 (sửa 12/11/2026): FM / BOM miễn luôn phí chiếm dụng khi miễn phí trễ
+    private boolean overstayFeeWaived;
+
     /** PR-Q14: hợp đồng có áp dụng phí chiếm dụng không (khách đồng ý điều khoản từ v2) */
     private boolean overstayApplied;
 

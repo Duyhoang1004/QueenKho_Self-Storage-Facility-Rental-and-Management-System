@@ -112,11 +112,14 @@ public class VoucherService {
             if (v.getUsedCount() + (holding != null ? holding : 0) >= v.getUsageLimit()) return "Mã voucher đã hết lượt sử dụng";
         }
         if (v.getPerUserLimit() != null && customerId != null) {
+            // (12/11/2026, góp ý test product "voucher trừ tiền chưa ổn định") chỉ tính đơn ĐÃ THANH TOÁN cọc.
+            // Trước đây tính cả đơn chưa thanh toán trong 15 phút → khách huỷ / lỗi ở VNPAY rồi đặt lại bị báo
+            // "hết lượt", tiền nhảy về mã mặc định, 15 phút sau lại dùng được. Đơn cũ chưa thanh toán của chính khách
+            // được nhả khi tạo đơn mới (releaseUnpaidHolds) nên không dùng 1 lượt cho 2 đơn.
             Integer mine = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM reservations r WHERE r.voucher_id = ? AND r.customer_id = ? AND (" +
+                    "SELECT COUNT(*) FROM reservations r WHERE r.voucher_id = ? AND r.customer_id = ? AND " +
                             " EXISTS (SELECT 1 FROM payment_transactions p WHERE p.reservation_id = r.id " +
-                            "         AND p.payment_type = 'DEPOSIT' AND p.status = 'SUCCESS') " +
-                            " OR (r.status = 'PENDING' AND r.created_at > DATEADD(MINUTE, -15, SYSDATETIME())))",
+                            "         AND p.payment_type = 'DEPOSIT' AND p.status = 'SUCCESS')",
                     Integer.class, v.getId(), customerId);
             if ((mine != null ? mine : 0) >= v.getPerUserLimit()) return "Bạn đã dùng hết lượt của mã voucher này";
         }
@@ -132,6 +135,26 @@ public class VoucherService {
             discount = discount.min(v.getMaxDiscount());
         }
         return discount.min(rent).max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * (12/11/2026) Khách đặt đơn mới với mã có giới hạn lượt → các đơn cũ CHƯA thanh toán của chính khách đang giữ
+     * cùng mã bị nhả (EXPIRED, link VNPAY cũ FAILED) — khách đã bỏ đơn cũ, 1 lượt mã chỉ giữ cho 1 đơn.
+     */
+    @Transactional
+    public void releaseUnpaidHolds(Integer voucherId, Integer customerId, Integer keepReservationId) {
+        if (voucherId == null || customerId == null) return;
+        Voucher v = voucherRepository.findById(voucherId).orElse(null);
+        if (v == null || (v.getPerUserLimit() == null && v.getUsageLimit() == null)) return;
+        String stale = "SELECT r.id FROM reservations r WHERE r.voucher_id = ? AND r.customer_id = ? AND r.status = 'PENDING' " +
+                "AND r.id <> ? AND NOT EXISTS (SELECT 1 FROM payment_transactions p WHERE p.reservation_id = r.id " +
+                "AND p.payment_type = 'DEPOSIT' AND p.status = 'SUCCESS')";
+        int keep = keepReservationId != null ? keepReservationId : -1;
+        jdbcTemplate.update("UPDATE payment_transactions SET status = 'FAILED', paid_at = NULL WHERE status = 'PENDING' " +
+                "AND payment_method = 'VNPAY' AND payment_type = 'DEPOSIT' AND reservation_id IN (" + stale + ")",
+                voucherId, customerId, keep);
+        jdbcTemplate.update("UPDATE reservations SET status = 'EXPIRED' WHERE id IN (" + stale + ")",
+                voucherId, customerId, keep);
     }
 
     // VNPAY báo cọc thành công → cộng 1 lượt cho voucher của đơn (nếu có)

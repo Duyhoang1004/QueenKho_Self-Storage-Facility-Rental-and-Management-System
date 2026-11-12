@@ -18,6 +18,7 @@ import {
   USER_STATUS_STYLES,
   getRoleLabel,
 } from '../../utils/roles'
+import { formatDateVN } from '../../utils/date'
 
 // UC-08: Quản lý tài khoản người dùng toàn hệ thống (Admin)
 // PR-03..05, PR-A2..A7 — mọi rule chặn nằm ở BE; FE chỉ kiểm tra sớm cho tiện và hiện lỗi BE trả về.
@@ -43,7 +44,7 @@ function getCurrentUser() {
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString('vi-VN')
+  return formatDateVN(value)
 }
 
 // ──────────────────────────────────────────────────────

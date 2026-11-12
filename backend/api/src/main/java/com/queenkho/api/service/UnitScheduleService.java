@@ -266,6 +266,7 @@ public class UnitScheduleService {
         int free = 0;
         for (StorageUnit unit : storageUnitRepository.findByFacility_Id(facilityId)) {
             if (unit.getUnitType() == null || !unitTypeId.equals(unit.getUnitType().getId())) continue;
+            if (unit.isEmergencyUnit()) continue; // BR-140: ô khẩn cấp không bán, không tính suất
             boolean ok = blocksOf(unit, byUnit.getOrDefault(unit.getId(), List.of()), true, today).stream()
                     .noneMatch(block -> overlaps(block.from(), block.to(), start, to));
             if (ok) free++;
@@ -295,7 +296,8 @@ public class UnitScheduleService {
     @Transactional
     public void refreshUnitStatus(StorageUnit unit) {
         if (unit == null || "MAINTENANCE".equalsIgnoreCase(unit.getStatus())) return;
-        String next = rentalContractRepository.countOccupyingNow(unit.getId(), today()) > 0 ? "OCCUPIED" : "AVAILABLE";
+        // BR-140: ô khẩn cấp rảnh về EMERGENCY (không bán)
+        String next = rentalContractRepository.countOccupyingNow(unit.getId(), today()) > 0 ? "OCCUPIED" : unit.idleStatus();
         if (!next.equals(unit.getStatus())) {
             unit.setStatus(next);
             storageUnitRepository.save(unit);
@@ -318,10 +320,11 @@ public class UnitScheduleService {
         String occupyingNow = "SELECT 1 FROM rental_contracts c WHERE c.storage_unit_id = su.id " +
                 "AND (c.status IN ('ACTIVE', 'TERMINATION_PENDING', 'OVERDUE') OR (c.status = 'PENDING_CHECK_IN' AND c.start_date <= ?))";
         int occupied = jdbcTemplate.update(
-                "UPDATE su SET su.status = 'OCCUPIED' FROM storage_units su WHERE su.status = 'AVAILABLE' AND EXISTS (" + occupyingNow + ")",
+                "UPDATE su SET su.status = 'OCCUPIED' FROM storage_units su WHERE su.status IN ('AVAILABLE', 'EMERGENCY') AND EXISTS (" + occupyingNow + ")",
                 today);
         int released = jdbcTemplate.update(
-                "UPDATE su SET su.status = 'AVAILABLE' FROM storage_units su WHERE su.status = 'OCCUPIED' " +
+                "UPDATE su SET su.status = CASE WHEN su.is_emergency = 1 THEN 'EMERGENCY' ELSE 'AVAILABLE' END " +
+                        "FROM storage_units su WHERE su.status = 'OCCUPIED' " +
                         "AND EXISTS (SELECT 1 FROM rental_contracts f WHERE f.storage_unit_id = su.id " +
                         "            AND f.status = 'PENDING_CHECK_IN' AND f.start_date > ?) " +
                         "AND NOT EXISTS (" + occupyingNow + ")",

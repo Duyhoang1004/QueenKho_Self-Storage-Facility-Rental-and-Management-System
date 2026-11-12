@@ -20,6 +20,7 @@ export default function BomOverduePage() {
   const [error, setError] = useState('')
   const [target, setTarget] = useState(null)
   const [reason, setReason] = useState('')
+  const [waiveOverstay, setWaiveOverstay] = useState(false)
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState('')
@@ -36,11 +37,12 @@ export default function BomOverduePage() {
   const submit = () => {
     setBusy(true)
     setFormError('')
-    waiveLateFee(target.contractId, reason.trim())
+    waiveLateFee(target.contractId, reason.trim(), waiveOverstay)
       .then((res) => {
         setToast(`${res.message} — FM cơ sở đã được báo.`)
         setTarget(null)
         setReason('')
+        setWaiveOverstay(false)
         load()
       })
       .catch((err) => setFormError(err.response?.data?.message || 'Không miễn được phí trễ.'))
@@ -53,7 +55,7 @@ export default function BomOverduePage() {
         <h1 className="text-2xl font-black text-[#4B4B4B]">Hợp đồng quá hạn toàn chuỗi</h1>
         <p className="text-xs font-bold text-[#AFAFAF]">
           BOM được miễn phí trễ cho mọi cơ sở (kể cả cơ sở đã tắt quyền miễn của FM). Miễn chỉ áp dụng đợt quá hạn hiện tại;
-          phí chiếm dụng vẫn tính 100% giá ngày. Thanh lý do Quản lý cơ sở thực hiện.
+          phí chiếm dụng mặc định vẫn tính 100% giá ngày, BOM có thể chọn miễn luôn. Thanh lý do Quản lý cơ sở thực hiện.
         </p>
       </div>
       {toast && (
@@ -86,7 +88,7 @@ export default function BomOverduePage() {
                   <td className="py-3 px-4">{formatDate(c.endDate)}</td>
                   <td className="py-3 px-4">{c.overdueDays} ngày</td>
                   <td className="py-3 px-4">{c.lateFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(c.lateFeeAmount)}</td>
-                  <td className="py-3 px-4">{formatVND(c.overstayFeeAmount)}</td>
+                  <td className="py-3 px-4">{c.overstayFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(c.overstayFeeAmount)}</td>
                   <td className="py-3 px-4 text-right">
                     {c.lateFeeWaived ? (
                       <span className="text-[11px] text-[#AFAFAF]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
@@ -109,7 +111,17 @@ export default function BomOverduePage() {
             <h2 className="text-base font-black text-[#4B4B4B]">Miễn phí trễ HĐ {target.contractCode}</h2>
             <p className="text-xs font-bold text-[#777777]">
               {target.facilityName} · quá hạn {target.overdueDays} ngày · phí trễ hiện tại {formatVND(target.lateFeeAmount)}
+              {Number(target.overstayFeeAmount) > 0 && <> · phí chiếm dụng {formatVND(target.overstayFeeAmount)}</>}
             </p>
+            <label className="flex items-start gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
+              <input type="checkbox" checked={waiveOverstay} onChange={(e) => setWaiveOverstay(e.target.checked)} className="mt-0.5" />
+              <span>
+                Miễn luôn phí chiếm dụng
+                <span className="block text-[11px] text-[#AFAFAF]">
+                  Không chọn: phí chiếm dụng còn 100% giá ngày (tiền thuê những ngày khách đã dùng ô, bỏ phần phạt).
+                </span>
+              </span>
+            </label>
             <textarea
               rows={3}
               value={reason}

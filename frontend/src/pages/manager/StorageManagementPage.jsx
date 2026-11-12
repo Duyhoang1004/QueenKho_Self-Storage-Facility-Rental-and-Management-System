@@ -4,6 +4,7 @@ import {
   getStorageUnits,
   createStorageUnit,
   updateStorageUnitStatus,
+  setStorageUnitEmergency,
   deleteStorageUnit,
   getFacilityLayout
 } from '../../services/storageUnitService';
@@ -14,6 +15,7 @@ import UnitPositionPicker from '../../components/UnitPositionPicker';
 import { DISPLAY_STATES, daysFromToday, formatReleaseDate, getDisplayState } from '../../utils/unitDisplayState';
 import UnitScheduleModal from '../../components/UnitScheduleModal';
 import { defaultUnitSize, isPlacementValid, sameFloor } from '../../utils/floorPlan';
+import { formatDateVN } from '../../utils/date';
 
 const PAGE_SIZE = 5;
 const VIEW_MODE_KEY = 'storageUnitsViewMode';
@@ -85,8 +87,28 @@ export default function StorageManagementPage() {
     zone: 'A',
     roomNumber: '',
     mapPosition: null, // { x, y, door } — chỗ đặt trên mặt bằng (tuỳ chọn)
-    rotated: false
+    rotated: false,
+    emergency: false // BR-140: tạo thành ô kho khẩn cấp
   });
+  const [emergencyBusy, setEmergencyBusy] = useState('');
+
+  // BR-140: đặt / bỏ ô kho khẩn cấp
+  const toggleEmergency = async (unit, emergency) => {
+    const question = emergency
+      ? `Đặt ô ${unit.id} làm ô kho khẩn cấp? Ô sẽ không được bán, chỉ dùng khi ô của khách gặp sự cố mà hết ô cùng loại.`
+      : `Bỏ ô kho khẩn cấp ${unit.id}? Ô sẽ mở bán lại như ô thường.`;
+    if (!window.confirm(question)) return;
+    setEmergencyBusy(unit.id);
+    try {
+      await setStorageUnitEmergency(unit.id, emergency, actorUserId);
+      setToast({ type: 'success', message: emergency ? `Ô ${unit.id} đã thành ô kho khẩn cấp.` : `Ô ${unit.id} đã mở bán lại.` });
+      reloadAll();
+    } catch (err) {
+      setToast({ type: 'error', message: err.response?.data?.message || 'Không đổi được ô khẩn cấp.' });
+    } finally {
+      setEmergencyBusy('');
+    }
+  };
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
 
   const [statusModal, setStatusModal] = useState({
@@ -251,7 +273,7 @@ export default function StorageManagementPage() {
   const renderUnitActions = (unit) => (
     <>
       {/* Khóa bảo trì */}
-      {unit.status === 'AVAILABLE' && (
+      {(unit.status === 'AVAILABLE' || unit.status === 'EMERGENCY') && (
         <button
           type="button"
           onClick={() => openStatusModal(unit, 'MAINTENANCE')}
@@ -271,6 +293,30 @@ export default function StorageManagementPage() {
           title="Xác nhận sửa xong, đưa ô vào sử dụng"
         >
           Mở lại kho
+        </button>
+      )}
+
+      {/* BR-140: đặt / bỏ ô kho khẩn cấp (ô đang trống, chưa có khách gán) */}
+      {unit.status === 'AVAILABLE' && !unit.locked && !(unit.upcomingContracts || []).length && (
+        <button
+          type="button"
+          disabled={emergencyBusy === unit.id}
+          onClick={() => toggleEmergency(unit, true)}
+          className="duo-btn-white px-3 py-1.5 text-[11px] text-[#7E3FC7] border-[#A560E8]"
+          title="Giữ ô này làm ô kho khẩn cấp (không bán)"
+        >
+          Đặt làm ô khẩn cấp
+        </button>
+      )}
+      {unit.status === 'EMERGENCY' && (
+        <button
+          type="button"
+          disabled={emergencyBusy === unit.id}
+          onClick={() => toggleEmergency(unit, false)}
+          className="duo-btn-white px-3 py-1.5 text-[11px]"
+          title="Bỏ ô khẩn cấp, mở bán lại"
+        >
+          Bỏ ô khẩn cấp
         </button>
       )}
 
@@ -329,7 +375,7 @@ export default function StorageManagementPage() {
       );
     }
     if (unit.maintenanceNote) {
-      const since = unit.maintenanceSince ? new Date(unit.maintenanceSince).toLocaleDateString('vi-VN') : '';
+      const since = unit.maintenanceSince ? formatDateVN(unit.maintenanceSince) : '';
       return (
         <span
           className="block max-w-[220px] truncate text-[10px] font-bold text-[#E58800]"
@@ -369,6 +415,7 @@ export default function StorageManagementPage() {
           floor: addForm.floor.trim(),
           zone: addForm.zone.trim().toUpperCase(),
           roomNumber: addForm.roomNumber.trim(),
+          emergency: addForm.emergency,
           ...(position && {
             mapX: Math.min(position.x, addFloorPlan.gridWidth - addSize.w),
             mapY: Math.min(position.y, addFloorPlan.gridHeight - addSize.h),
@@ -383,10 +430,10 @@ export default function StorageManagementPage() {
 
       setToast({
         type: 'success',
-        message: `Đã khởi tạo thành công ô kho ${res.id}${position ? ' và đặt trên mặt bằng' : ''}!`
+        message: `Đã khởi tạo thành công ${addForm.emergency ? 'ô kho khẩn cấp' : 'ô kho'} ${res.id}${position ? ' và đặt trên mặt bằng' : ''}!`
       });
       setShowAddModal(false);
-      setAddForm(prev => ({ ...prev, roomNumber: '', mapPosition: null }));
+      setAddForm(prev => ({ ...prev, roomNumber: '', mapPosition: null, emergency: false }));
       reloadAll();
     } catch (err) {
       console.error('Lỗi tạo ô kho:', err);
@@ -1164,6 +1211,22 @@ export default function StorageManagementPage() {
                 </div>
               </div>
               </div>
+
+              {/* BR-140: ô kho khẩn cấp */}
+              <label className="flex items-start gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addForm.emergency}
+                  onChange={e => setAddForm({ ...addForm, emergency: e.target.checked })}
+                  className="mt-0.5"
+                />
+                <span>
+                  Tạo làm ô kho khẩn cấp
+                  <span className="block text-[11px] text-[#AFAFAF]">
+                    Không bán cho khách đặt mới. Chỉ dùng khi ô của khách gặp sự cố (vd ngay trước check-in) mà hết ô cùng loại.
+                  </span>
+                </span>
+              </label>
 
               {/* UC-06: chọn chỗ đặt ô trên mặt bằng tầng */}
               {addFloorPlan && (

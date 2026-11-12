@@ -3,6 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
+import UnitIssueRescheduleModal from "../../components/UnitIssueRescheduleModal";
+import { formatDateVN } from "../../utils/date";
 import AssetTermsModal from "../../components/AssetTermsModal";
 import { createVnpayPayment } from "../../services/vnpayService";
 import SimulationButton from "../../components/SimulationButton";
@@ -194,6 +196,8 @@ function readUserId() {
 export default function MyReservationsPage() {
   const [selectedResToCancel, setSelectedResToCancel] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  // BR-141: ô đã gán gặp sự cố → khách dời ngày nhận kho
+  const [unitIssueTarget, setUnitIssueTarget] = useState(null);
   const userId = readUserId();
   const navigate = useNavigate();
 
@@ -577,6 +581,33 @@ export default function MyReservationsPage() {
             </p>
           )}
 
+        {/* BR-141 (12/11/2026): ô đã gán đang bảo trì trước ngày nhận kho → khách chọn dời lịch hoặc huỷ hoàn 100% */}
+        {!loading && !error && reservations.filter((r) => r.unitIssue).map((r) => (
+          <div key={`issue-${r.id}`} className="mx-4 my-3 rounded-2xl bg-[#FFF4CC] border-2 border-[#FFC800] px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+            <span className="material-symbols-outlined text-[#B58900] text-[28px] shrink-0">construction</span>
+            <div className="flex-1 text-xs font-bold text-[#777777] leading-relaxed">
+              <span className="block text-sm font-black text-[#B58900]">
+                Ô kho của đơn {r.reservationCode} đang gặp sự cố
+              </span>
+              Ô {r.storageUnitId} (nhận kho ngày {formatDateVN(r.startDate)}) đang bảo trì và cơ sở chưa có ô cùng loại để đổi.
+              Bạn có thể dời ngày nhận kho (không mất phí) hoặc huỷ đơn và được hoàn 100% số tiền đã thanh toán.
+              Nếu đã mang hàng tới, cơ sở sẽ xếp tạm vào ô kho khẩn cấp — vui lòng liên hệ hotline {r.facilityHotline || "của cơ sở"}.
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+              <button type="button" onClick={() => setUnitIssueTarget(r)} className="duo-btn-blue px-4 py-2 text-xs">
+                Dời ngày nhận kho
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedResToCancel(r); setIsCancelModalOpen(true); }}
+                className="duo-btn-red px-4 py-2 text-xs"
+              >
+                Huỷ & hoàn 100%
+              </button>
+            </div>
+          </div>
+        ))}
+
         {!loading && !error && visibleReservations.length > 0 && (
           <div className="max-w-full overflow-x-auto bg-white custom-scrollbar pb-2">
             <table className="w-full min-w-[1180px] table-fixed text-left border-collapse">
@@ -856,6 +887,18 @@ export default function MyReservationsPage() {
         reservation={selectedResToCancel}
         onSuccess={handleCancelSuccess}
       />
+
+      {unitIssueTarget && (
+        <UnitIssueRescheduleModal
+          reservation={unitIssueTarget}
+          onClose={() => setUnitIssueTarget(null)}
+          onDone={(message) => {
+            setUnitIssueTarget(null);
+            setReloadKey((k) => k + 1);
+            alert(message);
+          }}
+        />
+      )}
 
       <AssetTermsModal
         open={termsOpen}

@@ -2,6 +2,7 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CheckInRequest;
 import com.queenkho.api.dto.CheckOutRequest;
+import com.queenkho.api.dto.LateFeeCalculationResult;
 import com.queenkho.api.dto.CompleteMaintenanceRequest;
 import com.queenkho.api.dto.CompleteRefundRequest;
 import com.queenkho.api.dto.ContactReportRequest;
@@ -1312,7 +1313,7 @@ public class StaffTaskService {
                 createMaintenanceTask(contract, "DAMAGE", "Khắc phục sự cố sau trả kho ô " + unit.getId()
                         + " (HĐ " + contract.getContractCode() + "): " + issues);
             } else {
-                unit.setStatus("AVAILABLE");
+                unit.setStatus(unit.idleStatus()); // BR-140: ô khẩn cấp về EMERGENCY, không mở bán
                 storageUnitRepository.save(unit);
             }
         }
@@ -1557,7 +1558,7 @@ public class StaffTaskService {
         StaffTask done = staffTaskRepository.findDetailById(taskId).orElseThrow();
         StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
         if (unit != null && "MAINTENANCE".equals(unit.getStatus())) {
-            unit.setStatus("AVAILABLE");
+            unit.setStatus(unit.idleStatus());
             unit.setMaintenanceNote(null);
             unit.setMaintenanceSince(null);
             storageUnitRepository.save(unit);
@@ -2445,14 +2446,8 @@ public class StaffTaskService {
             totalDamageCost = BigDecimal.ZERO;
         }
 
-        BigDecimal baseMonthlyPrice = BigDecimal.ZERO;
-        if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null
-                && contract.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
-            baseMonthlyPrice = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
-        } else if (contract.getReservation() != null && contract.getReservation().getUnitType() != null
-                && contract.getReservation().getUnitType().getBasePriceMonthly() != null) {
-            baseMonthlyPrice = contract.getReservation().getUnitType().getBasePriceMonthly();
-        }
+        // BR-140: giá theo loại kho khách đã đặt — ô khẩn cấp đang tạm ở có thể khác loại
+        BigDecimal baseMonthlyPrice = PricingService.contractMonthlyPrice(contract);
 
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         if (depositHeld.compareTo(BigDecimal.ZERO) <= 0) {
@@ -2546,19 +2541,19 @@ public class StaffTaskService {
 
         if (overdueOrGrace) {
             daysPast = ChronoUnit.DAYS.between(endDate, actualDate);
-            if (daysPast == 1) {
-                graceFee = BigDecimal.ZERO;
-            } else if (daysPast >= 2 && daysPast <= 5) {
-                BigDecimal dailyRate = baseMonthlyPrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
-                graceFee = dailyRate.multiply(BigDecimal.valueOf(daysPast - 1));
-            } else {
+            // (sửa 12/11/2026) D-15 đã bỏ ân hạn → mọi ngày sau end_date: phí trễ PR-Q3 theo chính sách gắn HĐ
+            // (tỉ lệ / ngày, trần 50% cọc, = 0 nếu FM / BOM đã miễn) + phí chiếm dụng PR-Q14 (100% nếu đã miễn phí trễ,
+            // 0 nếu miễn luôn phí chiếm dụng). Trước đây tính cứng 10%/ngày và bỏ qua cờ miễn phí trễ.
+            LateFeeCalculationResult late = lateFeeService.calculateLateFee(contract, actualDate);
+            if (late != null && late.getLateFeeAmount() != null) {
+                lateFee = late.getLateFeeAmount();
+            } else if (!Boolean.TRUE.equals(contract.getLateFeeWaived())) {
                 long billableDays = Math.min(daysPast, 5);
-                BigDecimal percent = new BigDecimal("0.10").multiply(BigDecimal.valueOf(billableDays));
-                lateFee = depositHeld.multiply(percent).setScale(0, RoundingMode.HALF_UP);
-                // PR-Q14: lỡ ân hạn → ngoài phí trễ còn trả phí chiếm dụng cho MỌI ngày quá hạn (thay phí ân hạn)
-                BigDecimal fee = lateFeeService.overstayFee(contract, daysPast);
-                overstayFee = fee != null ? fee : BigDecimal.ZERO;
+                lateFee = depositHeld.multiply(new BigDecimal("0.10").multiply(BigDecimal.valueOf(billableDays)))
+                        .setScale(0, RoundingMode.HALF_UP);
             }
+            BigDecimal fee = lateFeeService.overstayFee(contract, daysPast);
+            overstayFee = fee != null ? fee : BigDecimal.ZERO;
         }
 
         // 3. Quyết toán hoàn cọc (PR-O11): cọc trừ lần lượt sự cố → phí ân hạn / phí trễ → phí chiếm dụng.
@@ -2603,6 +2598,11 @@ public class StaffTaskService {
         }
         if (overstayFee.compareTo(BigDecimal.ZERO) > 0) {
             desc.append(" - Phí chiếm dụng ").append(daysPast).append(" ngày: ").append(vndFmt.format(overstayFee)).append("đ");
+        }
+        if (overdueOrGrace && Boolean.TRUE.equals(contract.getLateFeeWaived())) {
+            desc.append(Boolean.TRUE.equals(contract.getOverstayFeeWaived())
+                    ? " (đã miễn phí trễ và phí chiếm dụng)"
+                    : " (đã miễn phí trễ; phí chiếm dụng tính 100% giá ngày)");
         }
         desc.append(" => Cọc hoàn: ").append(vndFmt.format(depositRefund)).append("đ");
 

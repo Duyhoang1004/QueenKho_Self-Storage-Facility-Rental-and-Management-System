@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getRenewalEligibility, getRenewalQuote, requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
+import DateInput from './DateInput'
 
 function formatVND(v) {
   if (v == null || isNaN(v)) return '0₫'
@@ -298,10 +299,16 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     const cDate = new Date(checkoutDate)
     const diffDays = Math.ceil(Math.abs(cDate - eDate) / (1000 * 60 * 60 * 24))
     // PR-Q14: phí trễ (trần 50% cọc) + phí chiếm dụng mỗi ngày quá hạn (không trần)
+    // Góp ý test 12/11: đã miễn phí trễ → phí trễ = 0; miễn luôn phí chiếm dụng → 0 (BE trả overstayDailyAmount theo đúng mức)
+    const deposit = Number(contract.depositHeldAmount || basePrice)
+    const rawFee = Math.round(deposit * Math.min(diffDays, 5) * 0.10)
+    const cap = Number(contract.maxLateFeeAmount) > 0 ? Number(contract.maxLateFeeAmount) : deposit * 0.5
     graceCalc = {
       days: diffDays,
-      fee: Math.round((contract.depositHeldAmount || basePrice) * Math.min(diffDays, 5) * 0.10),
-      overstay: Number(contract.overstayDailyAmount || 0) * diffDays,
+      fee: contract.lateFeeWaived ? 0 : Math.min(rawFee, cap),
+      overstay: contract.overstayFeeWaived ? 0 : Number(contract.overstayDailyAmount || 0) * diffDays,
+      lateFeeWaived: Boolean(contract.lateFeeWaived),
+      overstayFeeWaived: Boolean(contract.overstayFeeWaived),
     }
   }
 
@@ -604,9 +611,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             <div className="relative flex items-center bg-slate-100 rounded-lg px-3.5 py-2.5 transition-all border border-slate-200">
               <div className="flex items-center gap-2.5 text-slate-800 text-sm flex-1">
                 <span className="material-symbols-outlined text-slate-500 text-[20px]">calendar_today</span>
-                <input
+                <DateInput
                   id="checkoutDateInput"
-                  type="date"
                   value={checkoutDate}
                   min={tomorrow}
                   max={maxCheckoutDate}
@@ -677,7 +683,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="font-black text-sm">Phí quá hạn dự kiến</span>
                 </div>
                 <p className="leading-relaxed text-[11px]">
-                  {`Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}` : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
+                  {`Đã quá hạn ${graceCalc.days} ngày: phí trễ dự kiến ${graceCalc.lateFeeWaived ? '0₫ (đã được miễn)' : formatVND(graceCalc.fee)}${graceCalc.overstay > 0 ? ` + phí chiếm dụng ô ${formatVND(graceCalc.overstay)}${graceCalc.lateFeeWaived ? ' (chỉ tính tiền thuê theo ngày, không phạt)' : ''}` : graceCalc.overstayFeeWaived ? ' · phí chiếm dụng đã được miễn' : ''} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
                 </p>
               </div>
             )}

@@ -1077,3 +1077,32 @@ Không đổi schema.
 - `PUT /api/v1/storage-units/{id}`, `PUT /api/v1/storage-units/layout/floors/{floorId}/plan`: ô đang có hợp đồng (kể cả khách gán trước) → `409 UNIT_IN_USE` (dời / gỡ vị trí, sửa thông tin).
 - Check-in (`POST /api/v1/staff-tasks/{id}/check-in`): thêm `409 UNIT_IN_MAINTENANCE`, `409 UNIT_STILL_OCCUPIED`.
 - Giả lập `POST /api/v1/dev/simulation/tasks/{taskId}/appointment-in`: chỉ FM (`DEV_SIM_MANAGER`), Staff → `403`.
+
+---
+
+## Góp ý sau test product — 12/11/2026 (D-19)
+
+### Ô kho khẩn cấp (FM) — BR-140
+`PATCH /api/v1/storage-units/{id}/emergency` — body `{ "emergency": true | false }` → `StorageUnitDetailResponse` (thêm `emergency: boolean`).
+- Chỉ đổi khi ô đang trống (`AVAILABLE` / `EMERGENCY`) và không có hợp đồng đang / sắp dùng ô → 409 `UNIT_NOT_IDLE` / `UNIT_IN_USE`; đặt làm khẩn cấp không được làm âm suất → 409 `SLOT_IN_USE`.
+- `POST /api/v1/storage-units?facilityId=` thêm field tuỳ chọn `emergency: true` → tạo ô ở trạng thái `EMERGENCY`.
+- `PATCH /storage-units/{id}/status` với `AVAILABLE` cho ô khẩn cấp → về `EMERGENCY`.
+
+### Chuyển ô sang ô khẩn cấp — BR-122 / BR-140
+- `GET /api/v1/contracts/{id}/transfer-options`: mỗi phần tử thêm `emergency: boolean`; ô thường theo **loại khách đã đặt**, ô khẩn cấp cùng nhóm nhiệt độ (rảnh suốt phần còn lại của hợp đồng).
+- `POST /api/v1/contracts/{id}/transfer-unit` tới ô khẩn cấp: bắt buộc `reasonType = FACILITY_ISSUE` (khác → 400 `EMERGENCY_UNIT_RESTRICTED`); khác nhóm nhiệt độ → 400 `UNIT_TYPE_MISMATCH`.
+- `CustomerContractResponse` thêm `emergencyUnit`, `overstayFeeWaived`.
+
+### Khách dời ngày nhận kho khi ô sự cố — BR-141
+`POST /api/v1/reservations/{id}/reschedule-unit-issue` (CUSTOMER, chủ đơn) — body `{ "newStartDate": "yyyy-MM-dd" }` → `{ "message": "Đã dời ngày nhận kho" }`.
+- Chỉ khi hợp đồng `PENDING_CHECK_IN` và ô đã gán đang `MAINTENANCE` → khác: 409 `UNIT_NOT_IN_ISSUE`; ngày mới từ ngày mai, tối đa 90 ngày → 400 `INVALID_INPUT`.
+- `GET /reservations/my` thêm `unitIssue`, `emergencyUnit`. `GET /reservations/{id}/cancel-preview` trả tier `FACILITY_FAULT` (hoàn 100%) khi `unitIssue`.
+
+### Miễn phí trễ có tuỳ chọn phí chiếm dụng — PR-Q14
+`POST /api/v1/contracts/{id}/waive-late-fee` — body `{ "reason": "...", "waiveOverstay": true | false }` (mặc định false). Response thêm `overstayFeeWaived`. Miễn được cả hợp đồng `TERMINATION_PENDING` đã qua `end_date`. `GET /contracts/overdue`, `/contracts/overdue-all` thêm `overstayFeeWaived`.
+
+### Thay đổi kiểm tra dữ liệu
+- `POST /auth/register`: SĐT phải `^0\d{9}$`, họ tên ≥ 2 ký tự → 400 (body là chuỗi thông báo như cũ).
+- `POST /reservations`: `phone` sai định dạng / `cccd` không phải 12 số (hoặc hộ chiếu 1 chữ + 7–8 số) → 400 `INVALID_INPUT`.
+- `GET /vouchers/validate`: giới hạn lượt / khách chỉ đếm đơn đã thanh toán cọc; tạo đơn mới với mã có giới hạn lượt sẽ chuyển đơn cũ chưa thanh toán (cùng khách, cùng mã) sang `EXPIRED`.
+

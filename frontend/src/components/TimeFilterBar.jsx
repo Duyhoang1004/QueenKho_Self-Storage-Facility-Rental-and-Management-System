@@ -1,4 +1,5 @@
 import { hasDateRange, localToday } from '../utils/timeFilter'
+import DateInput from './DateInput'
 
 // (10/11/2026) Thanh lọc theo thời gian dùng chung cho các list.
 // value/onChange: state từ makeTimeFilter(fields); fields: [{ key, label, get }]
@@ -47,8 +48,7 @@ export default function TimeFilterBar({ value, onChange, fields, defaultLabel, c
       </button>
 
       <div className="flex items-center gap-1">
-        <input
-          type="date"
+        <DateInput
           value={value.from}
           max={value.to || undefined}
           onChange={(e) => set({ from: e.target.value })}
@@ -57,8 +57,7 @@ export default function TimeFilterBar({ value, onChange, fields, defaultLabel, c
           title="Từ ngày"
         />
         <span className="text-[#AFAFAF] text-xs font-black">→</span>
-        <input
-          type="date"
+        <DateInput
           value={value.to}
           min={value.from || undefined}
           onChange={(e) => set({ to: e.target.value })}

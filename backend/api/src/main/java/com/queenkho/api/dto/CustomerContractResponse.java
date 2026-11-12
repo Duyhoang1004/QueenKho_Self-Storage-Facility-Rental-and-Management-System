@@ -106,6 +106,10 @@ public class CustomerContractResponse {
     // Minh chứng FM đính kèm sau khi đã hoàn tiền thành công cho khách.
     private RefundEvidenceResponse refundEvidence;
 
+    // (12/11/2026) giữ ở cuối lớp: constructor rút gọn bên dưới truyền null theo thứ tự field
+    private Boolean overstayFeeWaived;               // (12/11/2026) miễn luôn phí chiếm dụng cùng phí trễ
+    private Boolean emergencyUnit;                   // BR-140: hợp đồng đang tạm ở ô kho khẩn cấp
+
     public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
                                     String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
                                     String floor, String zone, String roomNumber, String status, LocalDate startDate,
@@ -134,6 +138,6 @@ public class CustomerContractResponse {
                 facilityId, lateFeeWaived, lateFeeWaiverNote, facilityDamageFee, termsVersion, termsAcceptedAt,
                 heldGoodsStatus, heldGoodsHoldUntil, heldGoodsStorageLocation, facilityName, facilityAddress,
                 facilityHotline, customerEmail, customerCccd, overstayDailyAmount, overstayFeeAmount, totalOverdueCharge,
-                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null, null);
+                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

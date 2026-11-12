@@ -5,6 +5,7 @@ import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedbac
 import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile } from '../../services/staffTaskService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
 import { assignLockedUntil } from '../../utils/taskWindow'
+import DateInput from '../../components/DateInput'
 
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
 
@@ -574,8 +575,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               <label className="text-xs font-black uppercase text-[#4B4B4B]">
                 Ngày hạn mới (hạn lúc 21:00, tối đa {MAX_EXTEND_DAYS} ngày) <span className="text-[#FF4B4B]">*</span>
               </label>
-              <input
-                type="date"
+              <DateInput
                 min={todayIsoDate()}
                 max={isoDateAfter(MAX_EXTEND_DAYS)}
                 value={extendDueDate}

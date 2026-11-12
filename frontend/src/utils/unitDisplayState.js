@@ -52,6 +52,14 @@ export const DISPLAY_STATES = {
     badge: 'bg-[#EFFFE0] text-[#58A700] border-2 border-dashed border-[#58CC02]',
     dot: 'bg-[#A5ED6E]'
   },
+  // BR-140 (12/11/2026): ô kho khẩn cấp đang rảnh — không bán, chỉ dùng khi ô của khách gặp sự cố
+  EMERGENCY: {
+    label: 'Ô khẩn cấp',
+    icon: 'emergency_home',
+    tile: 'bg-[#F3E8FF] border-[#A560E8] border-dashed text-[#7E3FC7]',
+    badge: 'bg-[#F3E8FF] text-[#7E3FC7] border-2 border-dashed border-[#A560E8]',
+    dot: 'bg-[#A560E8]'
+  },
   AVAILABLE: {
     label: 'Còn trống',
     icon: 'check',
@@ -76,7 +84,8 @@ export const DISPLAY_STATE_ORDER = [
   'OCCUPIED',
   'RELEASING',
   'OVERDUE',
-  'MAINTENANCE'
+  'MAINTENANCE',
+  'EMERGENCY'
 ];
 
 // Ưu tiên: Bảo trì > Quá hạn > Chờ check-in > Sắp trống > Đang trả kho > Đang thuê > Trống đã đặt trước > Còn trống
@@ -88,6 +97,7 @@ export function getDisplayState(unit) {
   if (unit.releasing) return 'RELEASING';
   if (contractStatus === 'TERMINATION_PENDING') return 'TERMINATION_PENDING';
   if (unit.status === 'OCCUPIED' || unit.status === 'RESERVED') return 'OCCUPIED';
+  if (unit.status === 'EMERGENCY') return 'EMERGENCY';
   if (unit.status === 'AVAILABLE') return unit.upcomingContracts?.length ? 'BOOKED_AHEAD' : 'AVAILABLE';
   return 'UNKNOWN';
 }

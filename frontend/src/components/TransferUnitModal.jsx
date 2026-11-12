@@ -35,9 +35,16 @@ function TransferUnitForm({ contract, onClose, onDone }) {
     return () => { cancelled = true }
   }, [contractId])
 
-  const forcedMaintenance = reasonType === 'FACILITY_ISSUE'
+  // BR-140: khách đang ở ô khẩn cấp → rời ô khẩn cấp không bắt buộc bảo trì (ô không hỏng)
+  const leavingEmergency = Boolean(contract.emergencyUnit)
+  const forcedMaintenance = reasonType === 'FACILITY_ISSUE' && !leavingEmergency
   const reasonLen = reason.trim().length
-  const canSubmit = toUnitId && reasonLen >= 10 && reasonLen <= 500 && !submitting
+  const regularOptions = options.filter(u => !u.emergency)
+  const emergencyOptions = options.filter(u => u.emergency)
+  const selected = options.find(u => u.id === toUnitId)
+  // Ô khẩn cấp chỉ dùng khi lý do là sự cố do cơ sở
+  const emergencyBlocked = selected?.emergency && reasonType !== 'FACILITY_ISSUE'
+  const canSubmit = toUnitId && !emergencyBlocked && reasonLen >= 10 && reasonLen <= 500 && !submitting
 
   const submit = () => {
     setSubmitting(true)
@@ -67,7 +74,7 @@ function TransferUnitForm({ contract, onClose, onDone }) {
           <div>
             <h2 className="text-base font-black text-[#4B4B4B]">Chuyển ô cho hợp đồng {contract.contractCode}</h2>
             <p className="text-[11px] font-bold text-[#AFAFAF]">
-              Ô hiện tại {contract.storageUnitId} · chỉ chuyển sang ô cùng loại ({contract.unitTypeName}), giá thuê và mã PIN giữ nguyên
+              Ô hiện tại {contract.storageUnitId}{leavingEmergency ? ' (ô khẩn cấp)' : ''} · chuyển sang ô cùng loại đã đặt, giá thuê và mã PIN giữ nguyên
             </p>
           </div>
         </div>
@@ -78,10 +85,20 @@ function TransferUnitForm({ contract, onClose, onDone }) {
             {loadingOptions ? (
               <p className="text-xs font-bold text-[#AFAFAF]">Đang tải ô trống...</p>
             ) : options.length === 0 ? (
-              <p className="text-xs font-bold text-[#FF4B4B]">Không còn ô cùng loại trống suốt thời gian còn lại của hợp đồng (D-18: tính cả ô đã gán trước cho khách nhận kho sau).</p>
+              <div className="rounded-2xl bg-[#FFF2F2] border-2 border-[#FFDFDF] px-4 py-3 text-xs font-bold text-[#FF4B4B] flex flex-col gap-1">
+                <span>Không còn ô cùng loại trống suốt thời gian còn lại của hợp đồng (D-18: tính cả ô đã gán trước cho khách nhận kho sau) và không có ô kho khẩn cấp rảnh.</span>
+                <span className="text-[#777777]">
+                  Hướng xử lý (BR-141): khách chưa nhận kho có thể tự dời ngày nhận kho hoặc huỷ đơn được hoàn 100% ở trang Kho của tôi;
+                  hoặc tạo thêm ô kho khẩn cấp ở trang Quản lý kho rồi mở lại cửa sổ này.
+                </span>
+              </div>
             ) : (
+              <>
+              {regularOptions.length === 0 && (
+                <p className="text-[11px] font-bold text-[#E58800]">Hết ô cùng loại — chỉ còn ô kho khẩn cấp bên dưới (dùng khi ô có sự cố do cơ sở).</p>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {options.map(u => (
+                {regularOptions.map(u => (
                   <button
                     key={u.id}
                     type="button"
@@ -99,6 +116,32 @@ function TransferUnitForm({ contract, onClose, onDone }) {
                   </button>
                 ))}
               </div>
+              {/* BR-140: ô kho khẩn cấp — khác loại được (cùng nhóm nhiệt độ), khách vẫn trả giá loại đã đặt */}
+              {emergencyOptions.length > 0 && (
+                <div className="flex flex-col gap-2 mt-1">
+                  <span className="text-[11px] font-black uppercase text-[#7E3FC7]">Ô kho khẩn cấp (chỉ khi sự cố do cơ sở)</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {emergencyOptions.map(u => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => { setToUnitId(u.id); setReasonType('FACILITY_ISSUE') }}
+                        className={`rounded-2xl border-2 border-dashed px-3 py-2 text-left ${
+                          toUnitId === u.id ? 'bg-[#F3E8FF] border-[#A560E8]' : 'bg-white border-[#D9B8F5] hover:bg-[#FAF5FF]'
+                        }`}
+                      >
+                        <span className="block font-mono text-xs font-black text-[#4B4B4B]">{u.id}</span>
+                        <span className="block text-[10px] font-bold text-[#AFAFAF]">{u.unitTypeName} · {u.areaSqm}m²</span>
+                        <span className="block text-[10px] font-black text-[#7E3FC7]">Tạm thời · giữ giá cũ</span>
+                      </button>
+                    ))}
+                  </div>
+                  {emergencyBlocked && (
+                    <p className="text-[11px] font-bold text-[#FF4B4B]">Ô khẩn cấp chỉ dùng với lý do "Ô có sự cố do cơ sở".</p>
+                  )}
+                </div>
+              )}
+              </>
             )}
           </div>
 

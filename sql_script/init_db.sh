@@ -43,6 +43,7 @@ for script in \
     Update_bao_hiem_boi_thuong.sql \
     Update_hop_nhom_05_11.sql \
     Update_kho_lanh.sql \
+    Update_gop_y_product_12_11.sql \
     UC28_setup.sql \
     Update_admin_accounts.sql; do
     APPLIED=$("${SQLCMD[@]}" -d QueenKhoDB -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.docker_schema_history WHERE script_name = '$script'")
@@ -51,7 +52,7 @@ for script in \
         continue
     fi
     # The current full seed already includes the schema updates.
-    if [[ "$FRESH_DATABASE" == false || "$script" == UC28_setup.sql || "$script" == Update_admin_accounts.sql ]]; then
+    if [[ "$FRESH_DATABASE" == false || "$script" == UC28_setup.sql || "$script" == Update_admin_accounts.sql || "$script" == Update_gop_y_product_12_11.sql ]]; then
         echo "[DB-INIT] Applying $script..."
         "${SQLCMD[@]}" -d QueenKhoDB -i "/scripts/$script"
     fi

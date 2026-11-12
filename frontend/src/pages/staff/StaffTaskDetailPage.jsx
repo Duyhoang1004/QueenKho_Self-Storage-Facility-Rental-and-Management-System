@@ -143,6 +143,7 @@ function formatDateTime(value) {
 }
 
 import { parseRefundNote } from '../../utils/refundParser';
+import DateInput from '../../components/DateInput';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -1870,8 +1871,7 @@ export default function StaffTaskDetailPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex flex-col gap-1">
                       <span className="text-[11px] font-black uppercase text-[#777777]">Ngày hạn mới (21:00) *</span>
-                      <input
-                        type="date"
+                      <DateInput
                         min={new Date().toISOString().slice(0, 10)}
                         value={extendDueDate}
                         onChange={e => setExtendDueDate(e.target.value)}

@@ -88,6 +88,7 @@ export default function OverdueContractsPage() {
   // Modal 3 (Flow 6): Miễn phí trễ — chỉ khi chính sách cơ sở cho phép (BOM bật)
   const [waiveTarget, setWaiveTarget] = useState(null)
   const [waiveReason, setWaiveReason] = useState('')
+  const [waiveOverstay, setWaiveOverstay] = useState(false)
   const [waiveSubmitting, setWaiveSubmitting] = useState(false)
   const [waiveError, setWaiveError] = useState('')
 
@@ -101,8 +102,8 @@ export default function OverdueContractsPage() {
     setWaiveSubmitting(true)
     setWaiveError('')
     try {
-      await waiveLateFee(waiveTarget.contractId, reason)
-      setSuccessToast(`Đã miễn phí trễ cho HĐ #${waiveTarget.contractCode}. Khách gia hạn chỉ trả tiền thuê.`)
+      await waiveLateFee(waiveTarget.contractId, reason, waiveOverstay)
+      setSuccessToast(`Đã miễn phí trễ${waiveOverstay ? ' và phí chiếm dụng' : ''} cho HĐ #${waiveTarget.contractCode}.`)
       setTimeout(() => setSuccessToast(''), 4000)
       setWaiveTarget(null)
       fetchContracts()
@@ -442,7 +443,7 @@ export default function OverdueContractsPage() {
                           {!c.lateFeeWaived && Number(c.lateFeeAmount) > 0 && (
                             <button
                               type="button"
-                              onClick={() => { setWaiveTarget(c); setWaiveReason(''); setWaiveError('') }}
+                              onClick={() => { setWaiveTarget(c); setWaiveReason(''); setWaiveOverstay(false); setWaiveError('') }}
                               className="px-3 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#c4f59c] font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1"
                             >
                               <span className="material-symbols-outlined text-[15px]">volunteer_activism</span>
@@ -881,12 +882,14 @@ export default function OverdueContractsPage() {
                 <h3 className="text-lg font-black text-[#4B4B4B]">Miễn phí trễ HĐ #{waiveTarget.contractCode}</h3>
                 <p className="text-xs font-bold text-[#AFAFAF]">
                   {waiveTarget.customerName} · quá hạn {waiveTarget.overdueDays} ngày · phí trễ {formatVND(waiveTarget.lateFeeAmount)}
+                  {Number(waiveTarget.overstayFeeAmount) > 0 && <> · phí chiếm dụng {formatVND(waiveTarget.overstayFeeAmount)}</>}
                 </p>
               </div>
             </div>
             <p className="text-xs font-bold text-[#777777] leading-relaxed">
-              Khách gia hạn sẽ chỉ trả tiền thuê, không thu phí trễ của đợt quá hạn này. Nếu khách không gia hạn và bị thanh lý,
-              phí trễ vẫn được trừ vào cọc theo quy định (D-09). Chỉ dùng được khi chính sách thuê của cơ sở cho phép.
+              Không thu phí trễ của đợt quá hạn này (khi gia hạn hoặc khi trả kho). Phí chiếm dụng mặc định vẫn tính 100% giá ngày
+              (tiền thuê những ngày đã dùng ô, bỏ phần phạt) — có thể chọn miễn luôn bên dưới. Nếu khách bị thanh lý, mọi khoản phí
+              vẫn được trừ vào cọc theo quy định (D-09). Chỉ dùng được khi chính sách thuê của cơ sở cho phép.
             </p>
             <form onSubmit={handleSubmitWaive} className="flex flex-col gap-3">
               <label className="text-xs font-black uppercase text-[#4B4B4B]">
@@ -900,6 +903,13 @@ export default function OverdueContractsPage() {
                 placeholder="VD: Khách nằm viện, đã liên hệ và cam kết gia hạn trong hôm nay..."
                 className="duo-input w-full text-xs resize-none"
               />
+              <label className="flex items-start gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
+                <input type="checkbox" checked={waiveOverstay} onChange={(e) => setWaiveOverstay(e.target.checked)} className="mt-0.5" />
+                <span>
+                  Miễn luôn phí chiếm dụng
+                  <span className="block text-[11px] text-[#AFAFAF]">Chọn khi lỗi không do khách hoặc có lý do đặc biệt — khách không trả tiền những ngày quá hạn.</span>
+                </span>
+              </label>
               {waiveError && (
                 <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px]">error</span>

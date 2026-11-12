@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getLoginHistory } from '../../services/adminService'
 import { RoleBadge } from '../../components/admin/AdminBadges'
 import { formatLogTime, toInputDate } from '../../utils/activityLogs'
+import DateInput from '../../components/DateInput'
 
 // Admin: lịch sử đăng nhập / đăng xuất toàn hệ thống (ai, lúc nào, từ IP nào, thành công hay thất bại)
 
@@ -112,9 +113,9 @@ export default function AdminLoginHistoryPage() {
         </div>
         <div className="flex flex-col lg:flex-row lg:items-center gap-3">
         <div className="flex items-center gap-2">
-          <input type="date" value={filters.from} max={filters.to || undefined} onChange={(e) => updateFilter({ from: e.target.value })} className="duo-input text-sm" aria-label="Từ ngày" />
+          <DateInput value={filters.from} max={filters.to || undefined} onChange={(e) => updateFilter({ from: e.target.value })} className="duo-input text-sm" aria-label="Từ ngày" />
           <span className="text-xs font-black text-[#AFAFAF]">→</span>
-          <input type="date" value={filters.to} min={filters.from || undefined} onChange={(e) => updateFilter({ to: e.target.value })} className="duo-input text-sm" aria-label="Đến ngày" />
+          <DateInput value={filters.to} min={filters.from || undefined} onChange={(e) => updateFilter({ to: e.target.value })} className="duo-input text-sm" aria-label="Đến ngày" />
         </div>
         <div className="flex flex-wrap gap-2">
           {quickRanges.map((range) => (

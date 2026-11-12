@@ -41,8 +41,9 @@ export async function getUnitLocation(contractId) {
 }
 
 // Flow 6: FM miễn phí trễ cho hợp đồng quá hạn (lý do bắt buộc 5–400 ký tự)
-export async function waiveLateFee(contractId, reason) {
-  const res = await api.post(`/contracts/${contractId}/waive-late-fee`, { reason })
+// waiveOverstay = true → miễn luôn phí chiếm dụng (góp ý test 12/11: FM / BOM tự quyết có thu hay không)
+export async function waiveLateFee(contractId, reason, waiveOverstay = false) {
+  const res = await api.post(`/contracts/${contractId}/waive-late-fee`, { reason, waiveOverstay })
   return res.data
 }
 

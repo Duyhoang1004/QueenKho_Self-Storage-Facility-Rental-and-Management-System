@@ -38,6 +38,10 @@ public class StorageUnitService {
     private final RenewalPolicyService renewalPolicyService;
     private final UnitScheduleService unitScheduleService;
 
+    // BR-141: báo khách có lịch nhận kho trên ô vừa khoá bảo trì (field injection để test tạo service bằng new vẫn chạy)
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NotificationService notificationService;
+
     /**
      * UC-06: Lấy danh sách ô kho có lọc và tính toán thống kê KPI theo cơ sở
      */
@@ -208,6 +212,7 @@ public class StorageUnitService {
                 .freeFrom(freeFrom)
                 .upcomingContracts(upcoming)
                 .locked(locked)
+                .emergency(unit.isEmergencyUnit())
                 .scheduleWarning(UnitScheduleService.scheduleWarning(unit, bookings))
                 .canDelete(contracts.isEmpty())
                 .mapX(unit.getMapX())
@@ -274,7 +279,10 @@ public class StorageUnitService {
         unit.setFloor(request.getFloor().trim());
         unit.setZone(zone);
         unit.setRoomNumber(cleanRoom);
-        unit.setStatus("AVAILABLE");
+        // BR-140: ô khẩn cấp tạo mới ở trạng thái EMERGENCY (không tính vào suất trống, không bán)
+        boolean emergency = Boolean.TRUE.equals(request.getEmergency());
+        unit.setEmergency(emergency);
+        unit.setStatus(emergency ? StorageUnit.EMERGENCY : "AVAILABLE");
 
         // UC-06: đặt luôn vị trí trên mặt bằng nếu FM đã chọn chỗ (tầng phải có mặt bằng, không chồng ô khác)
         if (request.getMapX() != null) {
@@ -378,6 +386,11 @@ public class StorageUnitService {
                     "Ô kho đang có hợp đồng hoạt động (OCCUPIED), không thể tự ý chuyển trạng thái");
         }
 
+        // BR-140: ô khẩn cấp "mở lại" thì về EMERGENCY (vẫn không bán) — bỏ cờ khẩn cấp dùng PATCH /{id}/emergency
+        if ("AVAILABLE".equals(targetStatus)) {
+            targetStatus = unit.idleStatus();
+        }
+
         if (targetStatus.equalsIgnoreCase(unit.getStatus())) {
             return getStorageUnitDetail(id); // Trạng thái không đổi
         }
@@ -392,7 +405,7 @@ public class StorageUnitService {
 
         // Chuyển AVAILABLE -> MAINTENANCE: làm giảm 1 ô khả dụng
         // Bắt buộc kiểm tra PR-M10 / BR-11: không làm âm số suất cọc
-        if ("MAINTENANCE".equals(targetStatus)) {
+        if ("MAINTENANCE".equals(targetStatus) && "AVAILABLE".equalsIgnoreCase(unit.getStatus())) {
             checkSlotAvailabilityBeforeReduction(unit.getFacility().getId(), unit.getUnitType().getId());
         }
 
@@ -406,8 +419,23 @@ public class StorageUnitService {
         }
         storageUnitRepository.save(unit);
 
+        // BR-141 (12/11/2026): khách đã được gán ô này mà chưa nhận kho → báo ngay để khách biết các lựa chọn
+        if ("MAINTENANCE".equals(targetStatus) && notificationService != null) {
+            for (UnitScheduleService.Booking b : unitScheduleService.pendingCheckInsOnUnit(id, null)) {
+                rentalContractRepository.findById(b.contractId()).ifPresent(c -> {
+                    if (c.getCustomer() == null) return;
+                    notificationService.notifyCustomer(c.getCustomer().getId(),
+                            "Ô kho của đơn " + b.reservationCode() + " gặp sự cố",
+                            "Ô " + id + " (nhận kho ngày " + UnitScheduleService.formatDate(b.startDate())
+                                    + ") đang bảo trì. Cơ sở sẽ đổi ô cùng loại cho bạn; nếu chưa có ô, bạn có thể dời ngày nhận kho"
+                                    + " hoặc huỷ đơn được hoàn 100% tại trang Kho của tôi.",
+                            "BOOKING", "/kho-cua-toi");
+                });
+            }
+        }
+
         // PR-O10: "Mở lại kho" khi ô còn task bảo trì (sau trả kho có sự cố / thanh lý) → đóng luôn task đó
-        if ("AVAILABLE".equals(targetStatus)) {
+        if (!"MAINTENANCE".equals(targetStatus)) {
             staffTaskService.closeOpenMaintenanceForUnit(id, actorUserId);
             // D-18: khách gán trước đã tới ngày nhận kho → OCCUPIED
             unitScheduleService.refreshUnitStatus(unit);
@@ -421,6 +449,43 @@ public class StorageUnitService {
                 id
         );
 
+        return getStorageUnitDetail(id);
+    }
+
+    /**
+     * BR-140 (12/11/2026): FM đặt / bỏ ô kho khẩn cấp. Ô khẩn cấp không bán, không tính vào suất trống, chỉ dùng
+     * khi ô của khách gặp sự cố mà hết ô cùng loại (chuyển ô lý do FACILITY_ISSUE). Chỉ đổi khi ô đang rảnh và
+     * không có hợp đồng nào đang / sắp dùng ô.
+     */
+    @Transactional
+    public StorageUnitDetailResponse setEmergency(String id, boolean emergency, Integer actorUserId) {
+        StorageUnit unit = storageUnitRepository.findById(id)
+                .orElseThrow(() -> new FacilityException(HttpStatus.NOT_FOUND, "UNIT_NOT_FOUND", "Không tìm thấy ô kho: " + id));
+        if (emergency == unit.isEmergencyUnit()) {
+            return getStorageUnitDetail(id);
+        }
+        if (!"AVAILABLE".equalsIgnoreCase(unit.getStatus()) && !StorageUnit.EMERGENCY.equalsIgnoreCase(unit.getStatus())) {
+            throw new FacilityException(HttpStatus.CONFLICT, "UNIT_NOT_IDLE",
+                    "Chỉ đổi ô khẩn cấp khi ô đang trống (không bảo trì, không có khách)");
+        }
+        if (rentalContractRepository.existsByStorageUnit_IdAndStatusIn(id, UnitScheduleService.LIVE_CONTRACT_STATUSES)) {
+            throw new FacilityException(HttpStatus.CONFLICT, "UNIT_IN_USE",
+                    "Ô đang có / sắp có khách (hợp đồng chờ nhận kho hoặc đang thuê) — chuyển khách sang ô khác trước");
+        }
+        if (emergency) {
+            // Bớt 1 ô bán được → không được làm âm số suất đã giữ (PR-M10 / BR-11)
+            checkSlotAvailabilityBeforeReduction(unit.getFacility().getId(), unit.getUnitType().getId());
+        }
+        unit.setEmergency(emergency);
+        unit.setStatus(unit.idleStatus());
+        storageUnitRepository.save(unit);
+        activityLogService.log(
+                actorUserId != null ? actorUserId : 1,
+                emergency ? "[UNIT_EMERGENCY] Đặt ô " + id + " làm ô kho khẩn cấp (không bán)"
+                        : "[UNIT_EMERGENCY] Bỏ ô kho khẩn cấp " + id + " — ô mở bán lại",
+                "storage_units",
+                id
+        );
         return getStorageUnitDetail(id);
     }
 

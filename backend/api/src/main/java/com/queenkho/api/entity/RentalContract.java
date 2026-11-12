@@ -64,6 +64,11 @@ public class RentalContract {
     @Column(name = "late_fee_waiver_note", length = 500)
     private String lateFeeWaiverNote;
 
+    // PR-Q14 (sửa 12/11/2026): khi miễn phí trễ, FM / BOM chọn miễn luôn phí chiếm dụng (true → phí chiếm dụng = 0).
+    // Cùng vòng đời với lateFeeWaived: gia hạn / thanh lý → false.
+    @Column(name = "overstay_fee_waived", nullable = false)
+    private Boolean overstayFeeWaived = false;
+
     // BR-127: FM chốt hồ sơ bồi thường lỗi cơ sở với lựa chọn "chấm dứt hợp đồng" → trả kho không phí phá HĐ,
     // hoàn tiền thuê theo số ngày còn lại (thay công thức trả sớm PR-O2)
     @Column(name = "fault_termination", nullable = false)

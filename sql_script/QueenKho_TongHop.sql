@@ -156,6 +156,7 @@ CREATE TABLE storage_units (
     map_w           INT NULL,
     map_h           INT NULL,
     map_door        NVARCHAR(10) NULL,                         -- phía cửa: TOP / BOTTOM / LEFT / RIGHT
+    is_emergency    BIT NOT NULL DEFAULT 0,                    -- (12/11/2026) ô kho khẩn cấp: không bán, chỉ dùng khi ô của khách gặp sự cố (rảnh = status EMERGENCY)
     maintenance_note  NVARCHAR(500) NULL,                      -- lý do FM chuyển ô sang MAINTENANCE (xoá khi mở lại)
     maintenance_since DATETIME2 NULL,
     CONSTRAINT FK_storageunits_facility FOREIGN KEY (facility_id)  REFERENCES facilities(id),
@@ -333,6 +334,7 @@ CREATE TABLE rental_contracts (
     rfid_card_code          NVARCHAR(50) NULL,
     late_fee_waived         BIT NOT NULL DEFAULT 0,       -- FM miễn phí trễ cho đợt quá hạn hiện tại
     late_fee_waiver_note    NVARCHAR(500) NULL,
+    overstay_fee_waived     BIT NOT NULL DEFAULT 0,       -- (12/11/2026) FM / BOM miễn luôn phí chiếm dụng khi miễn phí trễ
     fault_termination       BIT NOT NULL DEFAULT 0,      -- BR-127: chấm dứt do lỗi cơ sở (không phí phá HĐ)
     CONSTRAINT FK_contracts_reservation FOREIGN KEY (reservation_id)   REFERENCES reservations(id),
     CONSTRAINT FK_contracts_customer    FOREIGN KEY (customer_id)      REFERENCES users(id),

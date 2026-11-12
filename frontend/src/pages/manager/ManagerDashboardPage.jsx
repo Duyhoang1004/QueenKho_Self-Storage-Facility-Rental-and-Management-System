@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getFacilityDashboard, getAllFacilities } from '../../services/facilityService';
+import { formatDateTimeVN, formatDateVN } from '../../utils/date'
 
 export default function ManagerDashboardPage() {
   const navigate = useNavigate();
@@ -511,7 +512,7 @@ export default function ManagerDashboardPage() {
               </p>
               <div className="flex items-center justify-between pt-3 mt-3 border-t border-white/20 text-[11px] font-bold text-emerald-100">
                 <span>Quản lý: {currentUser?.fullName || 'Trần Văn Dũng'}</span>
-                <span>{lastRefreshed.toLocaleDateString('vi-VN')}</span>
+                <span>{formatDateVN(lastRefreshed)}</span>
               </div>
             </div>
 
@@ -573,7 +574,7 @@ export default function ManagerDashboardPage() {
               </div>
 
               <p className="text-[11px] text-[#AFAFAF] italic text-center">
-                Số liệu được chốt lúc: {new Date().toLocaleString('vi-VN')}
+                Số liệu được chốt lúc: {formatDateTimeVN(new Date())}
               </p>
             </div>
 

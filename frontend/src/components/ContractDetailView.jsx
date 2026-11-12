@@ -244,7 +244,7 @@ export default function ContractDetailView({ contractId, initialTransfer = false
         {/* Thông tin ô kho */}
         <Section icon="warehouse" title="Thông tin ô kho thuê">
           <div className="grid grid-cols-2 gap-4">
-            <InfoRow label="Mã ô kho" value={contract.storageUnitId} mono />
+            <InfoRow label="Mã ô kho" value={contract.emergencyUnit ? `${contract.storageUnitId} (ô khẩn cấp — tạm thời)` : contract.storageUnitId} mono />
             <InfoRow label="Loại kho" value={contract.unitTypeName} />
             <InfoRow label="Diện tích" value={`${contract.areaSqm} m²`} />
             <InfoRow label="Tầng" value={`Tầng ${contract.floor}`} />

@@ -143,6 +143,22 @@ public class StorageUnitController {
     }
 
     /**
+     * BR-140 (12/11/2026): đặt / bỏ ô kho khẩn cấp — body { "emergency": true|false }
+     * PATCH /api/v1/storage-units/{id}/emergency
+     */
+    @PatchMapping("/{id}/emergency")
+    public ResponseEntity<StorageUnitDetailResponse> setEmergency(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body,
+            @RequestParam(required = false) Integer actorUserId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        ownershipGuard.checkStorageUnit(id);
+        boolean emergency = body != null && Boolean.parseBoolean(String.valueOf(body.get("emergency")));
+        Integer effectiveUserId = actorUserId != null ? actorUserId : headerUserId;
+        return ResponseEntity.ok(storageUnitService.setEmergency(id, emergency, effectiveUserId));
+    }
+
+    /**
      * UC-06 / PR-21: Xóa ô kho (chặn nếu đã từng có hợp đồng)
      * DELETE /api/v1/storage-units/{id}
      */

@@ -15,6 +15,12 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AuthService {
+
+    // SĐT Việt Nam 10 số, bắt đầu bằng 0 (giống AdminUserService / FacilityStaffService)
+    public static final java.util.regex.Pattern PHONE_PATTERN = java.util.regex.Pattern.compile("^0\\d{9}$");
+    // CCCD 12 chữ số, hoặc hộ chiếu 1 chữ cái + 7–8 chữ số (trang đặt kho ghi "CCCD / Passport")
+    public static final java.util.regex.Pattern CCCD_PATTERN = java.util.regex.Pattern.compile("^(\\d{12}|[A-Za-z]\\d{7,8})$");
+
     @Autowired
     private UserRepository userRepository;
 
@@ -65,6 +71,14 @@ public class AuthService {
     private com.queenkho.api.repository.RoleRepository roleRepository;
 
     public void register(com.queenkho.api.dto.RegisterRequest request) {
+        // (12/11/2026, góp ý test product) SĐT Việt Nam: đúng 10 chữ số, bắt đầu bằng 0 — cùng luật với Admin / FM tạo tài khoản
+        String phone = request.getPhone() == null ? "" : request.getPhone().trim();
+        if (!PHONE_PATTERN.matcher(phone).matches()) {
+            throw new RuntimeException("Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0");
+        }
+        if (request.getFullName() == null || request.getFullName().trim().length() < 2) {
+            throw new RuntimeException("Họ và tên phải có ít nhất 2 ký tự");
+        }
         if (userRepository.findByEmail(request.getEmail()).isPresent()) {
             throw new RuntimeException("Email này đã được sử dụng");
         }
@@ -73,9 +87,9 @@ public class AuthService {
                 .orElseThrow(() -> new RuntimeException("Lỗi hệ thống: Không tìm thấy Role Customer"));
 
         User newUser = new User();
-        newUser.setEmail(request.getEmail());
-        newUser.setFullName(request.getFullName());
-        newUser.setPhone(request.getPhone());
+        newUser.setEmail(request.getEmail().trim());
+        newUser.setFullName(request.getFullName().trim());
+        newUser.setPhone(phone);
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
         newUser.setRole(customerRole);
         newUser.setStatus("ACTIVE");

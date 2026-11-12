@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
@@ -122,11 +121,7 @@ public class PricingService {
      */
     @Transactional(readOnly = true)
     public RenewalQuoteResponse quoteRenewal(RentalContract contract, int months) {
-        BigDecimal monthlyPrice = BigDecimal.ZERO;
-        if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null
-                && contract.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
-            monthlyPrice = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
-        }
+        BigDecimal monthlyPrice = contractMonthlyPrice(contract);
         Integer facilityId = contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null
                 ? contract.getStorageUnit().getFacility().getId() : null;
         int percent = renewalDiscountPercent(activePolicy(facilityId), months);
@@ -138,7 +133,12 @@ public class PricingService {
         String status = contract.getStatus() != null ? contract.getStatus().toUpperCase() : "";
         BigDecimal lateFee = BigDecimal.ZERO;
         BigDecimal overstayFee = BigDecimal.ZERO;
-        if ("OVERDUE".equals(status)) {
+        // (sửa 12/11/2026) Đã qua end_date thì luôn thu phí trễ + phí chiếm dụng, kể cả khi khách quá hạn rồi mới
+        // hẹn trả kho (TERMINATION_PENDING). Nhánh "phí ân hạn ngày 2 → 5" (PR-O14) đã bỏ từ D-15.
+        LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
+        boolean pastEnd = contract.getEndDate() != null && today.isAfter(contract.getEndDate());
+        boolean overdueLike = "OVERDUE".equals(status) || ("TERMINATION_PENDING".equals(status) && pastEnd);
+        if (overdueLike) {
             var result = lateFeeService.calculateLateFee(contract);
             if (result != null && result.getLateFeeAmount() != null) {
                 lateFee = result.getLateFeeAmount().setScale(0, RoundingMode.HALF_UP);
@@ -147,18 +147,36 @@ public class PricingService {
             if (result != null && result.getOverstayFeeAmount() != null) {
                 overstayFee = result.getOverstayFeeAmount().setScale(0, RoundingMode.HALF_UP);
             }
-        } else if ("TERMINATION_PENDING".equals(status) && contract.getEndDate() != null) {
-            long daysPast = ChronoUnit.DAYS.between(contract.getEndDate(), LocalDate.now(LateFeeService.VIETNAM_ZONE));
-            if (daysPast >= 2 && daysPast <= 5) {
-                BigDecimal dailyRate = monthlyPrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
-                lateFee = dailyRate.multiply(BigDecimal.valueOf(daysPast - 1));
-            }
         }
-        boolean waived = Boolean.TRUE.equals(contract.getLateFeeWaived()) && "OVERDUE".equals(status);
+        boolean waived = Boolean.TRUE.equals(contract.getLateFeeWaived()) && overdueLike;
         // BR-125: gia hạn giữ nguyên gói bảo hiểm đã chọn lúc đặt → thu thêm phí bảo hiểm cho các tháng mới
         BigDecimal insurance = insurancePremiumMonthly(contract).multiply(BigDecimal.valueOf(months)).setScale(0, RoundingMode.HALF_UP);
         return new RenewalQuoteResponse(months, percent, monthlyPrice, subtotal, discount, rent, lateFee, waived,
                 overstayFee, rent.add(lateFee).add(overstayFee).add(insurance).setScale(0, RoundingMode.HALF_UP), insurance);
+    }
+
+    /**
+     * Giá niêm yết / tháng dùng tính tiền cho hợp đồng: theo loại kho khách đã đặt (đơn), không theo ô đang ở —
+     * BR-140 ô khẩn cấp có thể khác loại nhưng khách vẫn trả giá loại đã đặt. Thiếu đơn thì lấy loại của ô.
+     */
+    public static BigDecimal contractMonthlyPrice(RentalContract contract) {
+        if (contract == null) return BigDecimal.ZERO;
+        try {
+            if (contract.getReservation() != null && contract.getReservation().getUnitType() != null
+                    && contract.getReservation().getUnitType().getBasePriceMonthly() != null) {
+                return contract.getReservation().getUnitType().getBasePriceMonthly();
+            }
+        } catch (RuntimeException ignored) {
+            // quan hệ LAZY ngoài transaction
+        }
+        try {
+            if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null
+                    && contract.getStorageUnit().getUnitType().getBasePriceMonthly() != null) {
+                return contract.getStorageUnit().getUnitType().getBasePriceMonthly();
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return BigDecimal.ZERO;
     }
 
     /** BR-125: phí bảo hiểm / tháng đã chốt trên đơn (đơn cũ = 0) */

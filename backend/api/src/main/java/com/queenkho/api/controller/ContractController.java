@@ -2,6 +2,7 @@ package com.queenkho.api.controller;
 
 import com.queenkho.api.service.FloorPlanService;
 import com.queenkho.api.service.LateFeeService;
+import com.queenkho.api.service.PricingService;
 import com.queenkho.api.service.RefundStatusService;
 import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.service.UnitTransferService;
@@ -162,7 +163,11 @@ public class ContractController {
         BigDecimal totalOverdueCharge = BigDecimal.ZERO;
         BigDecimal amountBeyondDeposit = BigDecimal.ZERO;
 
-        if ("OVERDUE".equalsIgnoreCase(rc.getStatus())) {
+        // (sửa 12/11/2026) Khách quá hạn rồi mới hẹn trả kho (TERMINATION_PENDING, end_date đã qua) vẫn thấy phí trễ +
+        // phí chiếm dụng sẽ trừ vào cọc lúc nghiệm thu — trước đây màn khách hiện 0 khi đã hẹn trả.
+        boolean pendingPastEnd = "TERMINATION_PENDING".equalsIgnoreCase(rc.getStatus())
+                && rc.getEndDate() != null && today.isAfter(rc.getEndDate());
+        if ("OVERDUE".equalsIgnoreCase(rc.getStatus()) || pendingPastEnd) {
             var lateCalc = lateFeeService.calculateLateFee(rc);
             overstayDailyAmount = lateCalc.getOverstayDailyAmount();
             overstayFeeAmount = lateCalc.getOverstayFeeAmount();
@@ -284,7 +289,7 @@ public class ContractController {
                 rc.getReservation().getReservationCode(),
                 rc.getAccessPinCode(),
                 rc.getRfidCardCode(),
-                ut.getBasePriceMonthly(),
+                PricingService.contractMonthlyPrice(rc),
                 rc.getReservation().getId(),
                 totalPaid,
                 rentPaid,
@@ -307,7 +312,7 @@ public class ContractController {
                 liquidationDaysThreshold,
                 estimatedOverdueDepositRefund,
                 su.getFacility() != null ? su.getFacility().getId() : null,
-                Boolean.TRUE.equals(rc.getLateFeeWaived()) && "OVERDUE".equalsIgnoreCase(rc.getStatus()),
+                Boolean.TRUE.equals(rc.getLateFeeWaived()) && ("OVERDUE".equalsIgnoreCase(rc.getStatus()) || pendingPastEnd),
                 rc.getLateFeeWaiverNote(),
                 facilityDamageFee,
                 rc.getReservation().getTermsVersion(),
@@ -330,6 +335,8 @@ public class ContractController {
         // BR-125: gói bảo hiểm hàng hoá + trần bồi thường; BR-127: được chấm dứt không phí phá HĐ
         InsurancePlan plan = InsurancePlan.of(rc.getReservation().getInsurancePlan());
         dto.setInsurancePlan(plan.name());
+        dto.setOverstayFeeWaived(Boolean.TRUE.equals(dto.getLateFeeWaived()) && Boolean.TRUE.equals(rc.getOverstayFeeWaived()));
+        dto.setEmergencyUnit(su.isEmergencyUnit());
         dto.setInsurancePlanLabel(plan.label());
         dto.setInsurancePremiumMonthly(rc.getReservation().getInsurancePremiumMonthly());
         dto.setDeclaredGoodsValue(rc.getReservation().getDeclaredGoodsValue());
@@ -544,9 +551,11 @@ public class ContractController {
     @PostMapping("/{id}/waive-late-fee")
     public ResponseEntity<?> waiveLateFee(
             @PathVariable Integer id,
-            @RequestBody(required = false) Map<String, String> body) {
-        String reason = body != null ? body.get("reason") : null;
-        return ResponseEntity.ok(contractService.waiveLateFee(id, currentUser.require().id(), reason));
+            @RequestBody(required = false) Map<String, Object> body) {
+        String reason = body != null && body.get("reason") != null ? String.valueOf(body.get("reason")) : null;
+        // (12/11/2026) waiveOverstay = true → miễn luôn phí chiếm dụng
+        boolean waiveOverstay = body != null && Boolean.parseBoolean(String.valueOf(body.get("waiveOverstay")));
+        return ResponseEntity.ok(contractService.waiveLateFee(id, currentUser.require().id(), reason, waiveOverstay));
     }
 
     // POST /api/v1/contracts/{id}/overdue-contacts

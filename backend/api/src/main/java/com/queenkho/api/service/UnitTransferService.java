@@ -22,8 +22,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.queenkho.api.dto.UpcomingContractInfo;
 
+import com.queenkho.api.entity.UnitType;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -57,12 +61,44 @@ public class UnitTransferService {
         RentalContract contract = findContract(contractId);
         StorageUnit current = contract.getStorageUnit();
         LocalDate[] range = remainingRange(contract);
-        return unitScheduleService.candidates(current.getFacility().getId(), current.getUnitType().getId(),
-                        range[0], range[1], contract.getId(), current.getId())
+        // Ô thường: đúng loại khách đã đặt (khách đang tạm ở ô khẩn cấp khác loại thì vẫn về đúng loại đã đặt)
+        List<StorageUnitResponse> result = new ArrayList<>(unitScheduleService.candidates(current.getFacility().getId(),
+                        bookedType(contract).getId(), range[0], range[1], contract.getId(), current.getId())
                 .stream()
                 .map(c -> new StorageUnitResponse(c.unit().getId(), c.unit().getUnitType().getName(), c.unit().getUnitType().getAreaSqm(),
                         c.unit().getFloor(), c.unit().getZone(), c.unit().getRoomNumber(), c.unit().getStatus(),
                         c.freeUntil(), c.nextContractCode()))
+                .toList());
+        // BR-140: ô khẩn cấp rảnh cùng nhóm nhiệt độ (thường / lạnh / đông) — FE chỉ cho chọn khi lý do là sự cố do cơ sở
+        for (StorageUnit unit : emergencyCandidates(contract, range)) {
+            result.add(new StorageUnitResponse(unit.getId(), unit.getUnitType().getName(), unit.getUnitType().getAreaSqm(),
+                    unit.getFloor(), unit.getZone(), unit.getRoomNumber(), unit.getStatus(), null, null, true));
+        }
+        return result;
+    }
+
+    /** Loại kho khách đã đặt (giá tính theo loại này) — thiếu đơn thì lấy loại của ô hiện tại */
+    private static UnitType bookedType(RentalContract contract) {
+        if (contract.getReservation() != null && contract.getReservation().getUnitType() != null) {
+            return contract.getReservation().getUnitType();
+        }
+        return contract.getStorageUnit().getUnitType();
+    }
+
+    private static String temperatureOf(UnitType type) {
+        return type != null && type.getTemperatureClass() != null ? type.getTemperatureClass() : "NORMAL";
+    }
+
+    /** BR-140: ô khẩn cấp đang rảnh (EMERGENCY), cùng cơ sở, cùng nhóm nhiệt độ, không vướng lịch suốt khoảng còn lại */
+    private List<StorageUnit> emergencyCandidates(RentalContract contract, LocalDate[] range) {
+        StorageUnit current = contract.getStorageUnit();
+        String temperature = temperatureOf(bookedType(contract));
+        return storageUnitRepository.findByFacility_IdAndStatus(current.getFacility().getId(), StorageUnit.EMERGENCY).stream()
+                .filter(StorageUnit::isEmergencyUnit)
+                .filter(u -> !u.getId().equals(current.getId()))
+                .filter(u -> temperature.equals(temperatureOf(u.getUnitType())))
+                .filter(u -> unitScheduleService.conflicts(u, range[0], range[1], contract.getId()).isEmpty())
+                .sorted(Comparator.comparing(StorageUnit::getId))
                 .toList();
     }
 
@@ -101,8 +137,8 @@ public class UnitTransferService {
         if (reason.length() < 10 || reason.length() > 500) {
             throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Mô tả lý do chuyển ô từ 10 đến 500 ký tự");
         }
-        // Ô cũ lỗi do cơ sở thì không được cho thuê lại ngay — bắt buộc đưa vào bảo trì
-        boolean oldToMaintenance = "FACILITY_ISSUE".equals(reasonType) || Boolean.TRUE.equals(request.getOldUnitMaintenance());
+        // Ô cũ lỗi do cơ sở thì không được cho thuê lại ngay — bắt buộc đưa vào bảo trì (xét bên dưới, sau khi biết ô cũ)
+        boolean oldToMaintenance = Boolean.TRUE.equals(request.getOldUnitMaintenance());
 
         User manager = userRepository.findById(managerId)
                 .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
@@ -126,10 +162,27 @@ public class UnitTransferService {
         if (!newUnit.getFacility().getId().equals(facilityId)) {
             throw new ContractException(HttpStatus.BAD_REQUEST, "UNIT_NOT_IN_FACILITY", "Ô chuyển tới không cùng cơ sở");
         }
-        // Cùng loại → giá thuê, cọc, phí trễ / chiếm dụng (tính theo loại ô) không đổi
-        if (!newUnit.getUnitType().getId().equals(oldUnit.getUnitType().getId())) {
+        // BR-140: rời ô khẩn cấp về ô thường thì không bắt buộc bảo trì — ô khẩn cấp không hỏng, chỉ tạm giữ hàng
+        if ("FACILITY_ISSUE".equals(reasonType) && !oldUnit.isEmergencyUnit()) {
+            oldToMaintenance = true;
+        }
+        UnitType booked = bookedType(contract);
+        boolean toEmergency = newUnit.isEmergencyUnit();
+        if (toEmergency) {
+            // BR-140: ô khẩn cấp chỉ dùng khi ô của khách có sự cố do cơ sở; khác loại được nhưng phải cùng nhóm nhiệt độ
+            // (hàng lạnh / đông không để ô thường). Khách vẫn trả giá loại đã đặt (PricingService.contractMonthlyPrice).
+            if (!"FACILITY_ISSUE".equals(reasonType)) {
+                throw new ContractException(HttpStatus.BAD_REQUEST, "EMERGENCY_UNIT_RESTRICTED",
+                        "Ô kho khẩn cấp chỉ dùng khi ô của khách gặp sự cố do cơ sở (lý do FACILITY_ISSUE)");
+            }
+            if (!temperatureOf(booked).equals(temperatureOf(newUnit.getUnitType()))) {
+                throw new ContractException(HttpStatus.BAD_REQUEST, "UNIT_TYPE_MISMATCH",
+                        "Ô khẩn cấp " + newUnit.getId() + " khác nhóm nhiệt độ với loại kho khách đã đặt (" + booked.getName() + ")");
+            }
+        } else if (!newUnit.getUnitType().getId().equals(booked.getId())) {
+            // Cùng loại khách đã đặt → giá thuê, cọc, phí trễ / chiếm dụng không đổi
             throw new ContractException(HttpStatus.BAD_REQUEST, "UNIT_TYPE_MISMATCH",
-                    "Chỉ chuyển sang ô cùng loại (" + oldUnit.getUnitType().getName() + ") để giữ nguyên giá thuê");
+                    "Chỉ chuyển sang ô cùng loại (" + booked.getName() + ") để giữ nguyên giá thuê");
         }
 
         // D-18: ô cũ còn khách khác đang ở (hợp đồng này là khách gán trước cho ngày sau) → không khoá bảo trì được,
@@ -149,7 +202,7 @@ public class UnitTransferService {
         }
 
         // PR-M10: ô cũ vào bảo trì làm mất 1 ô trống so với trước → không được làm âm số suất đang giữ chỗ
-        if (oldToMaintenance && !oldAlreadyMaintenance) {
+        if (oldToMaintenance && !oldAlreadyMaintenance && !oldUnit.isEmergencyUnit()) {
             checkSlotAfterTransfer(facilityId, oldUnit.getUnitType().getId());
         }
 
@@ -157,7 +210,7 @@ public class UnitTransferService {
         // Ô mới phải AVAILABLE và rảnh suốt phần còn lại của hợp đồng.
         String lockedStatus = jdbcTemplate.queryForObject(
                 "SELECT status FROM storage_units WITH (UPDLOCK, HOLDLOCK) WHERE id = ?", String.class, newUnit.getId());
-        if (!"AVAILABLE".equalsIgnoreCase(lockedStatus)) {
+        if (!(toEmergency ? StorageUnit.EMERGENCY : "AVAILABLE").equalsIgnoreCase(lockedStatus)) {
             throw new ContractException(HttpStatus.CONFLICT, "UNIT_NOT_AVAILABLE", "Ô " + newUnit.getId() + " không còn trống");
         }
         LocalDate[] range = remainingRange(contract);
@@ -217,7 +270,9 @@ public class UnitTransferService {
 
         // BR-117: báo khách + email — PIN giữ nguyên, chỉ đổi vị trí ô
         if (contract.getCustomer() != null) {
-            String moveHint = "PENDING_CHECK_IN".equals(contract.getStatus())
+            String moveHint = toEmergency
+                    ? "Đây là ô kho khẩn cấp tạm thời, giá thuê giữ nguyên; cơ sở sẽ chuyển bạn về ô đúng loại đã đặt khi có ô trống."
+                    : "PENDING_CHECK_IN".equals(contract.getStatus())
                     ? "Lịch nhận kho giữ nguyên, bạn nhận ô mới khi tới cơ sở."
                     : "FACILITY_ISSUE".equals(reasonType)
                     ? "Cơ sở sẽ hỗ trợ chuyển hàng sang ô mới miễn phí, vui lòng liên hệ quầy để hẹn giờ."

@@ -8,6 +8,7 @@ import RescheduleModal from '../../components/RescheduleModal'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../../utils/timeFilter'
+import { formatDateVN } from '../../utils/date'
 
 const PAGE_SIZE = 5
 
@@ -30,7 +31,7 @@ function formatDate(value) {
 
 function formatDateOnly(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString('vi-VN')
+  return formatDateVN(value)
 }
 
 function daysUntil(value) {

@@ -15,7 +15,7 @@ function formatTime(value) {
   if (!value) return ''
   const d = new Date(value)
   const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
 }
 
 // Biểu đồ nhỏ nhiệt độ (đường cam) và độ ẩm (đường xanh) — điểm đỏ là lúc vượt ngưỡng.

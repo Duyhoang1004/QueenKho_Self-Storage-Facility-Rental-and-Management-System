@@ -137,11 +137,13 @@ public class ReservationService {
                     // 2. Lấy contractId và endDate nếu đơn đã có hợp đồng
                     Integer contractId = null;
                     LocalDate contractEndDate = null;
+                    String contractStatus = null;
                     try {
                         var contractRow = jdbcTemplate.queryForMap(
-                                "SELECT TOP 1 id, end_date FROM rental_contracts WHERE reservation_id = ?",
+                                "SELECT TOP 1 id, end_date, status FROM rental_contracts WHERE reservation_id = ?",
                                 r.getId());
                         contractId = (Integer) contractRow.get("id");
+                        contractStatus = (String) contractRow.get("status");
                         var ed = contractRow.get("end_date");
                         if (ed instanceof java.sql.Date) {
                             contractEndDate = ((java.sql.Date) ed).toLocalDate();
@@ -199,9 +201,72 @@ public class ReservationService {
                             assignedUnit != null ? assignedUnit.getRoomNumber() : null,
                             RefundStatusService.COMPLETED.equals(refundStatus)
                                     ? refundEvidenceService.findCompleted(r.getId(), r.getReservationCode(), contractId)
-                                    : null);
+                                    : null,
+                            "PENDING_CHECK_IN".equals(contractStatus) && assignedUnit != null
+                                    && "MAINTENANCE".equalsIgnoreCase(assignedUnit.getStatus()),
+                            assignedUnit != null && assignedUnit.isEmergencyUnit());
                 })
                 .toList();
+    }
+
+    /**
+     * BR-141 (12/11/2026): ô đã gán cho đơn đang bảo trì (sự cố) mà khách chưa nhận kho → lỗi cơ sở.
+     * Khách được chọn dời ngày nhận kho hoặc huỷ hoàn 100% (FACILITY_FAULT).
+     */
+    boolean hasUnitIssue(Reservation reservation) {
+        if (reservation == null || !"UNIT_ASSIGNED".equals(reservation.getStatus())) return false;
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts c JOIN storage_units su ON su.id = c.storage_unit_id " +
+                        "WHERE c.reservation_id = ? AND c.status = 'PENDING_CHECK_IN' AND su.status = 'MAINTENANCE'",
+                Integer.class, reservation.getId());
+        return count != null && count > 0;
+    }
+
+    /**
+     * BR-141: khách tự dời ngày nhận kho khi ô đã gán gặp sự cố (không cần gọi FM). Hợp đồng vẫn ở ô cũ —
+     * FM sửa ô xong trước ngày mới hoặc chuyển khách sang ô khác (kể cả ô kho khẩn cấp, BR-140).
+     */
+    @Transactional
+    public void rescheduleForUnitIssue(Integer reservationId, Integer customerId, LocalDate newStartDate) {
+        if (newStartDate == null) {
+            throw new IllegalArgumentException("Vui lòng chọn ngày nhận kho mới");
+        }
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đơn đặt chỗ"));
+        if (reservation.getCustomer() == null || !reservation.getCustomer().getId().equals(customerId)) {
+            throw new ReservationException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Bạn chỉ dời lịch được đơn của mình");
+        }
+        if (!hasUnitIssue(reservation)) {
+            throw new ReservationException(HttpStatus.CONFLICT, "UNIT_NOT_IN_ISSUE",
+                    "Ô kho của đơn không gặp sự cố — muốn dời lịch vui lòng liên hệ cơ sở");
+        }
+        if (!newStartDate.isAfter(UnitScheduleService.today())) {
+            throw new IllegalArgumentException("Ngày nhận kho mới phải từ ngày mai trở đi");
+        }
+        assertWithinBookingLead(newStartDate);
+        LocalDate oldDate = reservation.getStartDate();
+        applyNewStartDate(reservation, newStartDate);
+        String code = reservation.getReservationCode();
+        jdbcTemplate.update(
+                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                        "VALUES (?, ?, 'reservations', ?, SYSDATETIME())",
+                customerId,
+                "[RESCHEDULE] Khách dời ngày nhận kho đơn " + code + " từ " + UnitScheduleService.formatDate(oldDate)
+                        + " sang " + UnitScheduleService.formatDate(newStartDate) + " (ô đã gán đang bảo trì — BR-141)",
+                reservation.getId());
+        if (notificationService != null) {
+            notificationService.notifyCustomer(customerId,
+                    "Đã dời lịch nhận kho — đơn " + code,
+                    "Lịch nhận kho mới: " + UnitScheduleService.formatDate(newStartDate) + " (trước đó "
+                            + UnitScheduleService.formatDate(oldDate) + "). Cơ sở sẽ chuẩn bị ô trước ngày này.",
+                    "BOOKING", "/kho-cua-toi");
+            notificationService.notifyFacilityManagers(
+                    reservation.getFacility() != null ? reservation.getFacility().getId() : null,
+                    "Khách dời lịch nhận kho vì ô sự cố — đơn " + code,
+                    "Khách chọn nhận kho ngày " + UnitScheduleService.formatDate(newStartDate)
+                            + ". Hãy sửa xong ô hoặc chuyển khách sang ô khác trước ngày này.",
+                    "BOOKING", "/manager/storage");
+        }
     }
 
     // UC-13: FM xem các đơn đã đặt cọc nhưng chưa được gán ô kho.
@@ -372,12 +437,20 @@ public class ReservationService {
                 .orElseThrow(() -> new RuntimeException("Khách hàng không tồn tại"));
 
         // Cập nhật CCCD và SĐT nếu khách có nhập lúc đặt kho
+        // (12/11/2026, góp ý test product) kiểm tra định dạng: SĐT 10 số bắt đầu bằng 0, CCCD 12 số
         boolean customerUpdated = false;
         if (request.getCccd() != null && !request.getCccd().isBlank()) {
+            if (!AuthService.CCCD_PATTERN.matcher(request.getCccd().trim()).matches()) {
+                throw new ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Số CCCD phải gồm đúng 12 chữ số (hộ chiếu: 1 chữ cái + 7–8 chữ số)");
+            }
             customer.setCccd(request.getCccd().trim());
             customerUpdated = true;
         }
         if (request.getPhone() != null && !request.getPhone().isBlank()) {
+            if (!AuthService.PHONE_PATTERN.matcher(request.getPhone().trim()).matches()) {
+                throw new ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                        "Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0");
+            }
             customer.setPhone(request.getPhone().trim());
             customerUpdated = true;
         }
@@ -490,6 +563,10 @@ public class ReservationService {
         reservation.setCreatedAt(LocalDateTime.now());
 
         Reservation saved = reservationRepository.save(reservation);
+        // (12/11/2026) Mã có giới hạn lượt: nhả các đơn cũ chưa thanh toán của chính khách đang giữ cùng mã
+        if (voucherService != null && saved.getVoucherId() != null) {
+            voucherService.releaseUnpaidHolds(saved.getVoucherId(), customer.getId(), saved.getId());
+        }
 
         // PR-A9: log tạo đơn (ActivityLogService tự nuốt lỗi ghi log)
         activityLogService.log(customer.getId(),
@@ -711,7 +788,7 @@ public class ReservationService {
                     reservation.getCustomer().getId(),
                     "Đã được gán ô kho thành công",
                     "Đơn " + reservation.getReservationCode() + " của bạn đã được gán khoang " + storageUnit.getId() + " tại " + facilityName
-                            + ". Hẹn nhận kho ngày " + reservation.getStartDate() + " — vui lòng mang CCCD khi đến nhận.",
+                            + ". Hẹn nhận kho ngày " + UnitScheduleService.formatDate(reservation.getStartDate()) + " — vui lòng mang CCCD khi đến nhận.",
                     "ASSIGNED",
                     "/kho-cua-toi/hop-dong/" + reservation.getId()
             );
@@ -774,8 +851,10 @@ public class ReservationService {
         } catch (Exception ignored) {
         }
 
-        boolean facilityNoUnit = "DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
-                && appointmentTime != null && !calculatedAt.isBefore(appointmentTime);
+        boolean facilityNoUnit = ("DEPOSIT_PAID".equals(reservation.getStatus()) && reservation.getStorageUnitId() == null
+                && appointmentTime != null && !calculatedAt.isBefore(appointmentTime))
+                // BR-141: ô đã gán đang bảo trì (sự cố) trước khi khách nhận kho → lỗi cơ sở, hoàn 100%
+                || hasUnitIssue(reservation);
 
         int durationMonths = reservation.getDurationMonths() != null ? reservation.getDurationMonths() : 1;
         CancellationPolicyService.Decision decision = cancellationPolicyService.calculate(
@@ -1283,26 +1362,10 @@ public class ReservationService {
             }
         }
         LocalDate oldDate = reservation.getStartDate();
-        reservation.setStartDate(request.getNewStartDate());
-        // Check-in (PR-C1) và No-Show (PR-X3) lấy mốc theo giờ hẹn → phải dời cùng ngày nhận kho (PR-B10: 09:00)
-        reservation.setExpectedAppointmentTime(request.getNewStartDate().atTime(9, 0));
-        reservationRepository.save(reservation);
-
-        // cap nhat lai hop dong
-        rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
-            contract.setStartDate(request.getNewStartDate());
-            if (reservation.getDurationMonths() != null) {
-                contract.setEndDate(request.getNewStartDate().plusMonths(reservation.getDurationMonths()));
-            }
-            rentalContractRepository.save(contract);
-            // UC-16: hạn check-in theo ngày nhận kho mới
-            staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", request.getNewStartDate());
-            // D-18: dời về hôm nay → ô OCCUPIED; dời ra sau → ô trống lại tới ngày mới
-            unitScheduleService.refreshUnitStatus(contract.getStorageUnit());
-        });
+        applyNewStartDate(reservation, request.getNewStartDate());
         // ghi log
         String logAction = "[RESCHEDULE] Dời ngày hẹn nhận kho đơn " + reservation.getReservationCode()
-                + " từ " + oldDate + " sang " + request.getNewStartDate()
+                + " từ " + UnitScheduleService.formatDate(oldDate) + " sang " + UnitScheduleService.formatDate(request.getNewStartDate())
                 + (request.getReason() != null ? " (Lý do: " + request.getReason() + ")" : "");
         if (logAction.length() > 500)
             logAction = logAction.substring(0, 497) + "...";
@@ -1317,9 +1380,30 @@ public class ReservationService {
         if (notificationService != null && reservation.getCustomer() != null) notificationService.notifyCustomer(
                 reservation.getCustomer().getId(),
                 "Đã dời lịch nhận kho — đơn " + reservation.getReservationCode(),
-                "Lịch nhận kho mới: " + request.getNewStartDate() + " (trước đó " + oldDate + "). Vui lòng mang CCCD khi đến nhận.",
+                "Lịch nhận kho mới: " + UnitScheduleService.formatDate(request.getNewStartDate()) + " (trước đó "
+                        + UnitScheduleService.formatDate(oldDate) + "). Vui lòng mang CCCD khi đến nhận.",
                 "BOOKING",
                 "/kho-cua-toi");
+    }
+
+    /** Đổi ngày nhận kho của đơn + hợp đồng chờ nhận kho (hạn hợp đồng, task check-in, trạng thái ô đi theo) */
+    private void applyNewStartDate(Reservation reservation, LocalDate newStartDate) {
+        reservation.setStartDate(newStartDate);
+        // Check-in (PR-C1) và No-Show (PR-X3) lấy mốc theo giờ hẹn → phải dời cùng ngày nhận kho (PR-B10: 09:00)
+        reservation.setExpectedAppointmentTime(newStartDate.atTime(9, 0));
+        reservationRepository.save(reservation);
+
+        rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {
+            contract.setStartDate(newStartDate);
+            if (reservation.getDurationMonths() != null) {
+                contract.setEndDate(newStartDate.plusMonths(reservation.getDurationMonths()));
+            }
+            rentalContractRepository.save(contract);
+            // UC-16: hạn check-in theo ngày nhận kho mới
+            staffTaskService.rescheduleOpenTasks(contract.getId(), "CHECK_IN", newStartDate);
+            // D-18: dời về hôm nay → ô OCCUPIED; dời ra sau → ô trống lại tới ngày mới
+            unitScheduleService.refreshUnitStatus(contract.getStorageUnit());
+        });
     }
 
     // UC-13 / UC-14: FM xem chi tiết đơn trước khi gán ô (quyền theo cơ sở kiểm tra ở controller bằng OwnershipGuard)

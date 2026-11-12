@@ -444,6 +444,7 @@ public class VnpayService {
         c.setEndDate(currentEnd.plusMonths(monthsToRenew));
         // Flow 6: miễn phí trễ chỉ áp dụng cho đợt quá hạn vừa kết thúc
         c.setLateFeeWaived(false);
+        c.setOverstayFeeWaived(false);
         c.setLateFeeWaiverNote(null);
 
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
@@ -479,7 +480,7 @@ public class VnpayService {
                     ? " (kèm phí phạt trễ " + lateFeeAmount.setScale(0, RoundingMode.HALF_UP).toPlainString() + "đ)"
                     : "";
             String action = "[RENEW] Gia hạn hợp đồng " + c.getContractCode() + " thêm " + monthsToRenew + " tháng qua VNPAY"
-                    + lateFeeInfo + ". Hạn mới: " + c.getEndDate();
+                    + lateFeeInfo + ". Hạn mới: " + UnitScheduleService.formatDate(c.getEndDate());
 
             Integer userId = c.getCustomer() != null ? c.getCustomer().getId() : null;
             if (userId != null) {

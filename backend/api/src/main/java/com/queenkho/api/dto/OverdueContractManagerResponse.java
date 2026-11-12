@@ -40,6 +40,7 @@ public class OverdueContractManagerResponse {
     // Flow 6: FM đã miễn phí trễ cho đợt quá hạn này (kèm lý do, người, thời điểm)
     private Boolean lateFeeWaived;
     private String lateFeeWaiverNote;
+    private Boolean overstayFeeWaived; // (12/11/2026) miễn luôn phí chiếm dụng cùng phí trễ
 
     // Điều khoản xử lý tài sản: số lần liên hệ tối thiểu trước khi thanh lý + phiên bản khách đã đồng ý (NULL = đơn cũ)
     private Integer minContactsRequired;

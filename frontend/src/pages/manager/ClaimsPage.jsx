@@ -10,6 +10,7 @@ import { sensorRange } from '../../utils/sensor'
 import SimulationButton from '../../components/SimulationButton'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
+import { formatDateTimeVN } from '../../utils/date'
 
 // (10/11/2026) Lọc / sắp hồ sơ theo thời gian — mặc định hồ sơ mới nhất trước
 const CLAIM_TIME_FIELDS = [
@@ -37,7 +38,7 @@ function formatVND(v) {
 
 function formatDateTime(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString('vi-VN')
+  return formatDateTimeVN(value)
 }
 
 function isBom() {

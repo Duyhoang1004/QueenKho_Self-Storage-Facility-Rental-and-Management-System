@@ -76,10 +76,21 @@ public class LateFeeService {
      */
     public BigDecimal overstayFee(RentalContract contract, long days) {
         if (contract == null || days <= 0) return BigDecimal.ZERO;
+        // PR-Q14 (sửa 12/11/2026): FM / BOM chọn miễn luôn phí chiếm dụng → không thu
+        if (Boolean.TRUE.equals(contract.getOverstayFeeWaived())) return BigDecimal.ZERO;
         OverstayBasis basis = overstayBasis(contract);
         if (!acceptsOverstayTerms(basis.termsVersion())) return BigDecimal.ZERO;
         int percent = Boolean.TRUE.equals(contract.getLateFeeWaived()) ? 100 : overstayPercent(contract);
         return overstayDaily(basis.monthlyPrice(), percent).multiply(BigDecimal.valueOf(days));
+    }
+
+    /**
+     * Hợp đồng còn giữ ô (chưa kết thúc) — những ngày sau end_date đều là ngày quá hạn, kể cả khi khách
+     * đã hẹn trả kho (TERMINATION_PENDING): hẹn trả không xoá phí của những ngày đã quá hạn.
+     */
+    public static boolean holdsUnit(String status) {
+        return status != null && (status.equalsIgnoreCase("OVERDUE") || status.equalsIgnoreCase("TERMINATION_PENDING")
+                || status.equalsIgnoreCase("ACTIVE"));
     }
 
     /** % phí lưu giữ hàng sau thanh lý theo chính sách gắn hợp đồng (PR-Q15) */
@@ -123,16 +134,15 @@ public class LateFeeService {
         } catch (RuntimeException ignored) {
             // Quan hệ LAZY ngoài transaction → đọc lại bằng SQL bên dưới
         }
-        try {
-            if (contract.getStorageUnit() != null && contract.getStorageUnit().getUnitType() != null) {
-                monthly = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
-            }
-        } catch (RuntimeException ignored) {
-        }
+        monthly = PricingService.contractMonthlyPrice(contract);
+        if (monthly != null && monthly.signum() <= 0) monthly = null;
         if ((terms == null || monthly == null) && jdbcTemplate != null && contract.getId() != null) {
+            // BR-140: giá theo loại kho khách đã đặt (đơn), ô khẩn cấp đang tạm ở có thể khác loại
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                    "SELECT r.terms_version, ut.base_price_monthly FROM rental_contracts c " +
+                    "SELECT r.terms_version, COALESCE(rut.base_price_monthly, ut.base_price_monthly) AS base_price_monthly " +
+                            "FROM rental_contracts c " +
                             "LEFT JOIN reservations r ON r.id = c.reservation_id " +
+                            "LEFT JOIN unit_types rut ON rut.id = r.unit_type_id " +
                             "LEFT JOIN storage_units su ON su.id = c.storage_unit_id " +
                             "LEFT JOIN unit_types ut ON ut.id = su.unit_type_id WHERE c.id = ?",
                     contract.getId());
@@ -258,11 +268,14 @@ public class LateFeeService {
         int overstayPct = 0;
         BigDecimal overstayDaily = BigDecimal.ZERO;
         BigDecimal overstayFee = BigDecimal.ZERO;
-        if ("OVERDUE".equalsIgnoreCase(contract.getStatus())) {
+        // (sửa 12/11/2026) Tính cho mọi hợp đồng còn giữ ô: khách quá hạn rồi mới hẹn trả kho (TERMINATION_PENDING)
+        // vẫn phải trả những ngày đã quá hạn — trước đây chỉ tính khi OVERDUE nên màn khách / báo giá gia hạn hiện 0.
+        boolean overstayWaived = Boolean.TRUE.equals(contract.getOverstayFeeWaived());
+        if (holdsUnit(contract.getStatus())) {
             OverstayBasis basis = overstayBasis(contract);
             if (acceptsOverstayTerms(basis.termsVersion())) {
-                overstayApplied = true;
-                overstayPct = waived ? 100 : (policy != null && policy.getOverstayPercent() != null
+                overstayApplied = !overstayWaived;
+                overstayPct = overstayWaived ? 0 : waived ? 100 : (policy != null && policy.getOverstayPercent() != null
                         ? policy.getOverstayPercent() : DEFAULT_OVERSTAY_PERCENT);
                 overstayDaily = overstayDaily(basis.monthlyPrice(), overstayPct);
                 overstayFee = overstayDaily.multiply(BigDecimal.valueOf(overdueDays));
@@ -290,6 +303,7 @@ public class LateFeeService {
                 .ratePerDay(ratePerDay)
                 .maxPercent(maxPercent)
                 .lateFeeWaived(waived)
+                .overstayFeeWaived(overstayWaived)
                 .build();
     }
 }

@@ -173,6 +173,26 @@ public class ReservationController {
         }
     }
 
+    // BR-141 (12/11/2026): khách tự dời ngày nhận kho khi ô đã gán gặp sự cố — body { "newStartDate": "yyyy-MM-dd" }
+    @PostMapping("/{reservationId}/reschedule-unit-issue")
+    public ResponseEntity<?> rescheduleForUnitIssue(
+            @PathVariable Integer reservationId,
+            @RequestBody Map<String, String> body) {
+        ownershipGuard.checkReservation(reservationId);
+        try {
+            String raw = body != null ? body.get("newStartDate") : null;
+            java.time.LocalDate newStartDate = raw != null && !raw.isBlank() ? java.time.LocalDate.parse(raw.trim()) : null;
+            reservationService.rescheduleForUnitIssue(reservationId, currentUser.require().id(), newStartDate);
+            return ResponseEntity.ok(Map.of("message", "Đã dời ngày nhận kho"));
+        } catch (ReservationException e) {
+            return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
+        } catch (java.time.format.DateTimeParseException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", "Ngày nhận kho không hợp lệ"));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
+        }
+    }
+
     // Hỗ trợ khách dời ngày hẹn nhận kho
     @PutMapping("/{reservationId}/reschedule")
     public ResponseEntity<?> rescheduleReservation(

@@ -68,7 +68,7 @@ function formatDateTime(value) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())} · ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
 }
 
-// "Hôm nay 21:00", "Ngày mai 21:00" hoặc dd/MM 21:00
+// "Hôm nay 21:00", "Ngày mai 21:00" hoặc dd/MM/yyyy 21:00
 function formatDue(value) {
   if (!value) return '—'
   const d = new Date(value)
@@ -78,7 +78,7 @@ function formatDue(value) {
   const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
   if (d.toDateString() === today.toDateString()) return `Hôm nay ${time}`
   if (d.toDateString() === tomorrow.toDateString()) return `Ngày mai ${time}`
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${time}`
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${time}`
 }
 
 // Còn bao lâu tới hạn — chỉ áp dụng cho task còn mở

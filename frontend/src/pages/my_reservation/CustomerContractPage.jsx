@@ -530,8 +530,8 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* Cảnh báo quá hạn (OVERDUE) theo Business Rule */}
-      {contract.status === "OVERDUE" && (
+      {/* Cảnh báo quá hạn (OVERDUE) theo Business Rule — góp ý test 12/11: cả khi khách quá hạn rồi mới hẹn trả kho */}
+      {(contract.status === "OVERDUE" || (contract.status === "TERMINATION_PENDING" && Number(contract.overdueDays) > 0)) && (
         <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <span className="material-symbols-outlined text-[#FF4B4B] text-[32px] shrink-0 mt-0.5">
@@ -542,9 +542,18 @@ export default function CustomerContractPage() {
                 Hợp đồng đã quá hạn {contract.overdueDays || 1} ngày
               </h3>
               <p className="text-xs text-[#777777] mt-1 leading-relaxed">
-                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>. Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>.
+                Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>.{" "}
+                {contract.lateFeeWaived
+                  ? <>Phí phạt trễ: <strong className="text-[#58A700]">đã được miễn</strong>.</>
+                  : <>Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>.</>}
                 {Number(contract.overstayFeeAmount) > 0 && (
-                  <> Phí chiếm dụng ô ({formatVND(contract.overstayDailyAmount)}/ngày, không giới hạn): <strong className="text-[#FF4B4B]">{formatVND(contract.overstayFeeAmount)}</strong>.</>
+                  <> Phí chiếm dụng ô ({formatVND(contract.overstayDailyAmount)}/ngày{contract.lateFeeWaived ? " — chỉ tính tiền thuê theo ngày, không phạt" : ", không giới hạn"}): <strong className="text-[#FF4B4B]">{formatVND(contract.overstayFeeAmount)}</strong>.</>
+                )}
+                {contract.overstayFeeWaived && (
+                  <> Phí chiếm dụng: <strong className="text-[#58A700]">đã được miễn</strong>.</>
+                )}
+                {contract.status === "TERMINATION_PENDING" && (
+                  <span className="block mt-1">Bạn đã hẹn trả kho — các khoản phí trên sẽ trừ vào tiền cọc khi nhân viên nghiệm thu (tính tới ngày nghiệm thu thực tế).</span>
                 )}
                 {" "}Tiền cọc ước tính sau khi trừ các khoản phí: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
                 {Number(contract.amountBeyondDeposit) > 0 && (
@@ -565,6 +574,7 @@ export default function CustomerContractPage() {
               </p>
             </div>
           </div>
+          {contract.status === "OVERDUE" && (
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
             <button
               onClick={() => {
@@ -587,6 +597,7 @@ export default function CustomerContractPage() {
               <span>Hẹn trả kho trong 3 ngày tới</span>
             </button>
           </div>
+          )}
         </div>
       )}
 
@@ -631,7 +642,7 @@ export default function CustomerContractPage() {
             </h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-            <InfoRow label="Mã Ô kho" value={contract.storageUnitId} mono />
+            <InfoRow label="Mã Ô kho" value={contract.emergencyUnit ? `${contract.storageUnitId} (ô khẩn cấp — tạm thời)` : contract.storageUnitId} mono />
             <InfoRow label="Loại kho" value={contract.unitTypeName} />
             <InfoRow label="Diện tích" value={contract.areaSqm ? `${contract.areaSqm} m²` : "—"} />
             <InfoRow label="Tầng" value={contract.floor} />
@@ -1017,6 +1028,26 @@ export default function CustomerContractPage() {
                         </p>
                       </div>
                     ) : (
+                      <>
+                      {contract.scheduledCheckoutDate && (
+                        <span className="text-xs font-bold text-[#4B4B4B]">
+                          Ngày hẹn trả kho: <strong className="text-[#1CB0F6]">{formatDate(contract.scheduledCheckoutDate)}</strong>
+                        </span>
+                      )}
+                      {/* Góp ý test 12/11: khách dời lịch trả kho (chỉ dời sớm hơn ngày đã hẹn — PR-O1) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOptionsModalTab("checkout");
+                          setIsOptionsModalOpen(true);
+                        }}
+                        className="duo-btn-blue w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm uppercase font-black tracking-wider cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          event_repeat
+                        </span>
+                        DỜI NGÀY TRẢ KHO
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -1030,11 +1061,12 @@ export default function CustomerContractPage() {
                         </span>
                         HỦY CHỜ TRẢ KHO
                       </button>
+                      </>
                     )
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setIsOptionsModalOpen(true)}
+                      onClick={() => { setOptionsModalTab("renew"); setIsOptionsModalOpen(true); }}
                       className="duo-btn-blue w-full px-5 py-3 text-xs flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                     >
                       <span className="material-symbols-outlined text-[18px]">

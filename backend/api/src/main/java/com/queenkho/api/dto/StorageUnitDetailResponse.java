@@ -37,6 +37,8 @@ public class StorageUnitDetailResponse {
     private java.util.List<UpcomingContractInfo> upcomingContracts;
     // D-18: ô đang gắn hợp đồng còn hiệu lực (kể cả hợp đồng tương lai) → khoá sửa thông tin / vị trí trên mặt bằng
     private boolean locked;
+    // BR-140 (12/11/2026): ô kho khẩn cấp — không bán, chỉ dùng khi ô của khách gặp sự cố
+    private boolean emergency;
     // D-18: cảnh báo lịch — ô bảo trì nhưng có khách sắp nhận, hoặc 2 hợp đồng trùng ngày
     private String scheduleWarning;
     private boolean canDelete; // true only if never had any rental contract in history

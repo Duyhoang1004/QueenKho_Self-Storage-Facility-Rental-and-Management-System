@@ -60,6 +60,12 @@ export async function rescheduleReservation(reservationId, data) {
   return response.data
 }
 
+// BR-141 (12/11/2026): ô đã gán gặp sự cố → khách tự dời ngày nhận kho
+export async function rescheduleForUnitIssue(reservationId, newStartDate) {
+  const response = await api.post(`/reservations/${reservationId}/reschedule-unit-issue`, { newStartDate })
+  return response.data
+}
+
 // D-18: số ô còn trống cho đúng khoảng ngày khách chọn (trang đặt kho, không cần đăng nhập)
 export async function checkRangeAvailability({ facilityId, unitTypeId, startDate, durationMonths }) {
   const response = await api.get('/reservations/availability', {

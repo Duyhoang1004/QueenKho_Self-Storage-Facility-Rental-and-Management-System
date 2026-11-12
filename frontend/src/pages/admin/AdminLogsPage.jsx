@@ -4,6 +4,7 @@ import { getActivityLogTargetEntities, getActivityLogs } from '../../services/ad
 import { ActionCodeBadge, RoleBadge, SystemBadge } from '../../components/admin/AdminBadges'
 import { ROLE_ORDER, getRoleLabel } from '../../utils/roles'
 import { formatLogTime, getTargetEntityLabel, toInputDate } from '../../utils/activityLogs'
+import DateInput from '../../components/DateInput'
 
 // UC-31: Nhật ký hoạt động toàn hệ thống (Admin)
 // PR-07: chỉ xem · PR-A8: người thao tác thật / "Tự động" cho job · PR-A11: lọc người, role, đối tượng, mã, ngày
@@ -192,8 +193,7 @@ export default function AdminLogsPage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <input
-              type="date"
+            <DateInput
               value={filters.from}
               max={filters.to || undefined}
               onChange={(e) => updateParams({ from: e.target.value })}
@@ -201,8 +201,7 @@ export default function AdminLogsPage() {
               aria-label="Từ ngày"
             />
             <span className="text-xs font-black text-[#AFAFAF]">→</span>
-            <input
-              type="date"
+            <DateInput
               value={filters.to}
               min={filters.from || undefined}
               onChange={(e) => updateParams({ to: e.target.value })}

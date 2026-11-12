@@ -15,6 +15,8 @@ import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
 import TimeFilterBar from '../../components/TimeFilterBar';
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
+import DateInput from '../../components/DateInput';
+import { formatDateTimeVN } from '../../utils/date';
 
 const PAGE_SIZE = 5;
 // (10/11/2026) Lọc / sắp ticket theo thời gian — mặc định gửi gần nhất trước
@@ -130,7 +132,7 @@ function CustomerClaimSummary({ claim }) {
             <span className="text-[#58A700]">Bạn được chấm dứt hợp đồng không mất phí phá hợp đồng — hẹn trả kho ở trang hợp đồng.</span>
           )}
           {claim.decisionNote && <span className="text-[#777777]">{claim.decisionNote}</span>}
-          {claim.paidAt && <span>Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {new Date(claim.paidAt).toLocaleString('vi-VN')}</span>}
+          {claim.paidAt && <span>Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {formatDateTimeVN(claim.paidAt)}</span>}
         </div>
       )}
     </div>
@@ -1071,8 +1073,7 @@ export default function CustomerSupportPage() {
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Ngày phát hiện *</span>
-                    <input
-                      type="date"
+                    <DateInput
                       value={claimIncidentDate}
                       max={new Date().toISOString().slice(0, 10)}
                       onChange={(e) => { setClaimIncidentDate(e.target.value); setCreateError(''); }}

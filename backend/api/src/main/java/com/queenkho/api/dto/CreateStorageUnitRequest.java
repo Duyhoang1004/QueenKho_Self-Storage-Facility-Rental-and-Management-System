@@ -31,5 +31,8 @@ public class CreateStorageUnitRequest {
     private Integer mapW;
     private Integer mapH;
     private String mapDoor;
+
+    // BR-140 (12/11/2026): tạo luôn thành ô kho khẩn cấp (không bán)
+    private Boolean emergency;
 }
 

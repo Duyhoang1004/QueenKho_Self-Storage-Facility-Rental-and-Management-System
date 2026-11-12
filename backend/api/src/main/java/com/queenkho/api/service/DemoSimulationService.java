@@ -299,7 +299,7 @@ public class DemoSimulationService {
 
         jdbcTemplate.update(
                 "UPDATE rental_contracts SET start_date = ?, end_date = ?, status = 'OVERDUE', " +
-                        "late_fee_waived = 0, late_fee_waiver_note = NULL WHERE id = ?",
+                        "late_fee_waived = 0, overstay_fee_waived = 0, late_fee_waiver_note = NULL WHERE id = ?",
                 startDate, endDate, contractId);
         // Link gia hạn đang chờ đã chốt số tiền cũ → huỷ để khách tạo link mới có phí trễ đúng
         jdbcTemplate.update(

@@ -133,7 +133,7 @@ public class ContractService {
         // PR-O1: hẹn từ NGÀY MAI trở đi (cần thời gian xếp nhân viên nghiệm thu), tính theo giờ Việt Nam
         LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
         if (!checkoutDate.isAfter(today)) {
-            throw new IllegalArgumentException("Ngày hẹn trả kho phải từ ngày mai trở đi (" + today.plusDays(1) + ").");
+            throw new IllegalArgumentException("Ngày hẹn trả kho phải từ ngày mai trở đi (" + UnitScheduleService.formatDate(today.plusDays(1)) + ").");
         }
 
         // PR-O3: bắt buộc chọn cách nhận cọc; chuyển khoản phải đủ ngân hàng, số tài khoản, chủ tài khoản
@@ -160,20 +160,20 @@ public class ContractService {
             }
 
             if (prevCheckoutDate != null && checkoutDate.isAfter(prevCheckoutDate)) {
-                throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + prevCheckoutDate + ").");
+                throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + UnitScheduleService.formatDate(prevCheckoutDate) + ").");
             }
         } else if ("ACTIVE".equals(contract.getStatus())) {
             // PR-O1 (sửa 05/11/2026, D-15): bỏ ân hạn 5 ngày — hẹn trả kho từ ngày mai đến hết ngày end_date
             LocalDate maxAllowedDate = contract.getEndDate() != null ? contract.getEndDate() : today.plusDays(30);
             if (checkoutDate.isAfter(maxAllowedDate)) {
-                throw new IllegalArgumentException("Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất " + maxAllowedDate
+                throw new IllegalArgumentException("Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất " + UnitScheduleService.formatDate(maxAllowedDate)
                         + "). Muốn dùng kho lâu hơn vui lòng gia hạn.");
             }
         } else if ("OVERDUE".equals(contract.getStatus())) {
             // PR-O1: HĐ đang OVERDUE được hẹn trả kho trong 3 ngày tới
             LocalDate maxOverdueDate = today.plusDays(3);
             if (checkoutDate.isAfter(maxOverdueDate)) {
-                throw new IllegalArgumentException("Hợp đồng đã quá hạn chỉ có thể hẹn trả kho trong tối đa 3 ngày tới (đến ngày " + maxOverdueDate + ").");
+                throw new IllegalArgumentException("Hợp đồng đã quá hạn chỉ có thể hẹn trả kho trong tối đa 3 ngày tới (đến ngày " + UnitScheduleService.formatDate(maxOverdueDate) + ").");
             }
         }
 
@@ -194,7 +194,7 @@ public class ContractService {
 
         // Build notes (PR-O3: Chuyển khoản hoặc Tiền mặt tại quầy)
         StringBuilder noteBuilder = new StringBuilder();
-        noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(checkoutDate);
+        noteBuilder.append(isAlreadyPending ? "Dời ngày trả kho sang ngày: " : "Yêu cầu trả kho ngày: ").append(UnitScheduleService.formatDate(checkoutDate));
         if ("BANK_TRANSFER".equals(request.getRefundMethod().trim().toUpperCase())) {
             noteBuilder.append(" | Hoàn cọc STK: ").append(request.getBankAccountNumber().trim())
                     .append(" (").append(request.getBankName().trim()).append(" - ").append(request.getBankAccountName().trim()).append(")");
@@ -223,7 +223,7 @@ public class ContractService {
 
         // Log activity
         String logDesc = (isAlreadyPending ? "Dời ngày hẹn checkout cho HĐ " : "Yêu cầu trả kho và hẹn ngày checkout cho HĐ ")
-                + contract.getContractCode() + " vào ngày " + checkoutDate;
+                + contract.getContractCode() + " vào ngày " + UnitScheduleService.formatDate(checkoutDate);
         try {
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
@@ -240,7 +240,7 @@ public class ContractService {
                 noteStr.contains("Hoàn cọc STK") ? "chuyển khoản" : "tiền mặt tại quầy");
 
         String responseMsg = isAlreadyPending
-                ? "Dời ngày trả kho thành công sang ngày " + checkoutDate + "."
+                ? "Dời ngày trả kho thành công sang ngày " + UnitScheduleService.formatDate(checkoutDate) + "."
                 : "Yêu cầu trả kho đã được tiếp nhận. Nhân viên sẽ tiến hành kiểm tra khoang vào ngày đã hẹn.";
 
         return new RequestCheckoutResponse(
@@ -483,6 +483,7 @@ public class ContractService {
                 "c.rental_policy_id, " +
                 "c.status, " +
                 "c.late_fee_waived, " +
+                "c.overstay_fee_waived, " +
                 "c.late_fee_waiver_note, " +
                 "(SELECT r.terms_version FROM reservations r WHERE r.id = c.reservation_id) AS terms_version, " +
                 "ISNULL(al.contact_count, 0) AS contact_count, " +
@@ -553,6 +554,8 @@ public class ContractService {
             dummyContract.setStatus(status);
             boolean lateFeeWaived = rs.getBoolean("late_fee_waived");
             dummyContract.setLateFeeWaived(lateFeeWaived);
+            boolean overstayFeeWaived = lateFeeWaived && rs.getBoolean("overstay_fee_waived");
+            dummyContract.setOverstayFeeWaived(overstayFeeWaived);
 
             LateFeeCalculationResult lateCalc = lateFeeService.calculateLateFee(dummyContract);
 
@@ -614,6 +617,7 @@ public class ContractService {
                     .status(status)
                     .lateFeeWaived(lateFeeWaived && "OVERDUE".equalsIgnoreCase(status))
                     .lateFeeWaiverNote(rs.getString("late_fee_waiver_note"))
+                    .overstayFeeWaived(overstayFeeWaived && "OVERDUE".equalsIgnoreCase(status))
                     .minContactsRequired(MIN_CONTACTS_BEFORE_LIQUIDATION)
                     .termsVersion(rs.getString("terms_version"))
                     .overstayFeeAmount(overstayDisplay)
@@ -782,6 +786,7 @@ public class ContractService {
         // D-09: thanh lý luôn trừ phí trễ theo chính sách. Miễn phí trễ (Flow 6) chỉ để giúp khách gia hạn,
         // khách không gia hạn mà bị thanh lý thì việc miễn phí trễ hết hiệu lực.
         contract.setLateFeeWaived(false);
+        contract.setOverstayFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
         // D-15 (05/11/2026): điều khoản v4 — quá hạn là chuyển hàng vào kho tổng ngay, không chờ 15 ngày / 3 lần liên hệ
         boolean centralStorageTerms = LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion());
@@ -812,6 +817,7 @@ public class ContractService {
             return false;
         }
         contract.setLateFeeWaived(false);
+        contract.setOverstayFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
         performLiquidation(contract, systemUserId,
                 "Tự động: hết hạn không gia hạn / không trả kho, chuyển hàng vào kho tổng (D-15)", lateFeeCalc);
@@ -955,6 +961,16 @@ public class ContractService {
      */
     @Transactional
     public Map<String, Object> waiveLateFee(Integer contractId, Integer managerId, String reason) {
+        return waiveLateFee(contractId, managerId, reason, false);
+    }
+
+    /**
+     * (12/11/2026, góp ý test product) {@code waiveOverstay} = true → miễn luôn phí chiếm dụng (PR-Q14 = 0);
+     * false → giữ PR-Q14: phí chiếm dụng còn 100% giá ngày. FM / BOM quyết định từng trường hợp.
+     * Cũng miễn được cho hợp đồng quá hạn rồi mới hẹn trả kho (TERMINATION_PENDING, end_date đã qua).
+     */
+    @Transactional
+    public Map<String, Object> waiveLateFee(Integer contractId, Integer managerId, String reason, boolean waiveOverstay) {
         User manager = userRepository.findById(managerId)
                 .orElseThrow(() -> new ContractException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản người thao tác"));
         String role = manager.getRole() != null ? manager.getRole().getName() : "";
@@ -974,7 +990,9 @@ public class ContractService {
         if (!bom && (manager.getFacilityId() == null || !manager.getFacilityId().equals(facilityId))) {
             throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_FACILITY", "Hợp đồng không thuộc cơ sở do bạn quản lý");
         }
-        if (!"OVERDUE".equalsIgnoreCase(contract.getStatus())) {
+        boolean pendingPastEnd = "TERMINATION_PENDING".equalsIgnoreCase(contract.getStatus()) && contract.getEndDate() != null
+                && LocalDate.now(VIETNAM_ZONE).isAfter(contract.getEndDate());
+        if (!"OVERDUE".equalsIgnoreCase(contract.getStatus()) && !pendingPastEnd) {
             throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_OVERDUE", "Chỉ miễn phí trễ cho hợp đồng đang quá hạn");
         }
         if (Boolean.TRUE.equals(contract.getLateFeeWaived())) {
@@ -990,6 +1008,7 @@ public class ContractService {
         String note = "[" + java.time.LocalDateTime.now(VIETNAM_ZONE).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
                 + "] " + manager.getFullName() + ": " + trimmedReason;
         contract.setLateFeeWaived(true);
+        contract.setOverstayFeeWaived(waiveOverstay);
         contract.setLateFeeWaiverNote(note.length() > 500 ? note.substring(0, 500) : note);
         rentalContractRepository.save(contract);
 
@@ -1000,8 +1019,10 @@ public class ContractService {
                         "AND payment_type IN ('MONTHLY_RENT', 'LATE_FEE', 'OVERSTAY_FEE') AND status = 'PENDING' AND (payment_type <> 'OVERSTAY_FEE' OR renewal_months IS NOT NULL)",
                 contractId);
 
-        String logAction = "[FEE_WAIVE] " + (bom ? "BOM " : "") + manager.getFullName() + " miễn phí trễ HĐ " + contract.getContractCode()
-                + " (quá hạn " + before.getOverdueDays() + " ngày, phí trễ " + before.getLateFeeAmount().toPlainString() + "đ): " + trimmedReason;
+        String logAction = "[FEE_WAIVE] " + (bom ? "BOM " : "") + manager.getFullName() + " miễn phí trễ"
+                + (waiveOverstay ? " và phí chiếm dụng" : "") + " HĐ " + contract.getContractCode()
+                + " (quá hạn " + before.getOverdueDays() + " ngày, phí trễ " + before.getLateFeeAmount().toPlainString() + "đ"
+                + (waiveOverstay ? ", phí chiếm dụng " + before.getOverstayFeeAmount().toPlainString() + "đ" : "") + "): " + trimmedReason;
         jdbcTemplate.update(
                 "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                         "VALUES (?, ?, 'rental_contracts', ?, SYSDATETIME())",
@@ -1012,14 +1033,16 @@ public class ContractService {
         if (bom && notificationService != null && facilityId != null) {
             notificationService.notifyFacilityManagers(facilityId,
                     "BOM đã miễn phí trễ HĐ " + contract.getContractCode(),
-                    manager.getFullName() + ": " + trimmedReason + ". Khách gia hạn sẽ không phải trả phí trễ đợt này.",
+                    manager.getFullName() + ": " + trimmedReason + ". Khách gia hạn sẽ không phải trả phí trễ"
+                            + (waiveOverstay ? " và phí chiếm dụng" : "") + " đợt này.",
                     "OVERDUE", "/manager/overdue");
         }
 
         return Map.of(
-                "message", "Đã miễn phí trễ cho hợp đồng " + contract.getContractCode(),
+                "message", "Đã miễn phí trễ" + (waiveOverstay ? " và phí chiếm dụng" : "") + " cho hợp đồng " + contract.getContractCode(),
                 "contractId", contract.getId(),
                 "lateFeeWaived", true,
+                "overstayFeeWaived", waiveOverstay,
                 "waivedAmount", before.getLateFeeAmount()
         );
     }

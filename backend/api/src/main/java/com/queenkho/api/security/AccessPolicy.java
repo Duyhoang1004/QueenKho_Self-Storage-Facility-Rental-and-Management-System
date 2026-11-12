@@ -137,6 +137,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/reservations/my", "CUSTOMER_BOOKING");
         rule("GET", "/api/v1/reservations/{id}/cancel-preview", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/reservations/{id}/cancel", "CUSTOMER_BOOKING");
+        rule("POST", "/api/v1/reservations/{id}/reschedule-unit-issue", "CUSTOMER_BOOKING"); // BR-141: ô sự cố → khách dời lịch
         rule("POST", "/api/payments/vnpay/create", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/contracts/{id}/request-checkout", "CUSTOMER_RENTAL");
         rule("POST", "/api/v1/contracts/{id}/cancel-checkout", "CUSTOMER_RENTAL");

@@ -41,6 +41,12 @@ export function parseRefundNote(note) {
     refundAmountNum: 0,
     penaltyAmount: '',
     penaltyAmountNum: 0,
+    lateFee: '',
+    lateFeeNum: 0,
+    overstayFee: '',
+    overstayFeeNum: 0,
+    totalPenalty: '',
+    totalPenaltyNum: 0,
     originalTotal: '',
     originalTotalNum: 0,
     penaltyNote: '',
@@ -125,18 +131,30 @@ export function parseRefundNote(note) {
       }
     }
 
-    if (res.penaltyAmountNum > 0 || res.lateFeeNum > 0) {
+    const mOverstay = note.match(/(?:Phí chiếm dụng|Phi chiem dung)(?:\s*ô|\s*o)?:?\s*([0-9.,]+)\s*[₫đVND]*/i);
+    if (mOverstay) {
+      const numOverstay = parseVndAmount(mOverstay[1]);
+      res.overstayFeeNum = numOverstay;
+      res.overstayFee = `${numOverstay.toLocaleString('vi-VN')} ₫`;
+    }
+
+    res.totalPenaltyNum = (res.lateFeeNum || 0) + (res.overstayFeeNum || 0);
+    if (res.totalPenaltyNum > 0) {
+      res.totalPenalty = `${res.totalPenaltyNum.toLocaleString('vi-VN')} ₫`;
+    }
+
+    if (res.penaltyAmountNum > 0 || res.totalPenaltyNum > 0) {
       res.isDamagePenalty = res.penaltyAmountNum > 0;
-      res.isLatePenalty = res.lateFeeNum > 0;
+      res.isLatePenalty = res.totalPenaltyNum > 0;
       res.isFull100 = false;
-      if (res.penaltyAmountNum > 0 && res.lateFeeNum > 0) {
-        res.policyBadge = 'Khấu trừ hư hại & phí trễ';
-        res.policyApplied = 'Khấu trừ chi phí hư hại và phí phạt trễ hạn khi trả kho';
-        res.footerNote = '* Đã khấu trừ chi phí sửa chữa / vệ sinh và phí phạt trễ hạn theo biên bản nghiệm thu.';
-      } else if (res.lateFeeNum > 0) {
-        res.policyBadge = 'Khấu trừ phí trễ hạn';
-        res.policyApplied = 'Khấu trừ phí phạt trễ hạn trả kho';
-        res.footerNote = '* Đã khấu trừ chi phí phạt quá hạn hợp đồng khi trả kho theo quy định.';
+      if (res.penaltyAmountNum > 0 && res.totalPenaltyNum > 0) {
+        res.policyBadge = 'Khấu trừ hư hại & phạt quá hạn';
+        res.policyApplied = 'Khấu trừ chi phí hư hại và tiền phạt quá hạn khi trả kho';
+        res.footerNote = '* Đã khấu trừ chi phí sửa chữa / vệ sinh và tiền phạt quá hạn (phí trễ + phí chiếm dụng) theo biên bản nghiệm thu.';
+      } else if (res.totalPenaltyNum > 0) {
+        res.policyBadge = 'Khấu trừ phạt quá hạn';
+        res.policyApplied = 'Khấu trừ phí phạt trễ và phí chiếm dụng khi trả kho quá hạn';
+        res.footerNote = '* Đã khấu trừ chi phí phạt quá hạn hợp đồng (phí trễ + phí chiếm dụng) khi trả kho theo quy định.';
       } else {
         res.policyBadge = 'Khấu trừ phí hư hại';
         res.policyApplied = 'Khấu trừ theo biên bản nghiệm thu trả kho';
@@ -190,11 +208,11 @@ export function parseRefundNote(note) {
     }
   }
 
-  if (!res.originalTotalNum && res.refundAmountNum > 0 && (res.penaltyAmountNum > 0 || res.lateFeeNum > 0)) {
-    res.originalTotalNum = res.refundAmountNum - (res.earlyRentRefundNum || 0) + (res.penaltyAmountNum || 0) + (res.lateFeeNum || 0);
+  if (!res.originalTotalNum && res.refundAmountNum > 0 && (res.penaltyAmountNum > 0 || res.totalPenaltyNum > 0)) {
+    res.originalTotalNum = res.refundAmountNum - (res.earlyRentRefundNum || 0) + (res.penaltyAmountNum || 0) + (res.totalPenaltyNum || 0);
     res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
   }
-  if (!res.originalTotalNum && res.refundAmountNum > 0 && !res.penaltyAmountNum && !res.lateFeeNum) {
+  if (!res.originalTotalNum && res.refundAmountNum > 0 && !res.penaltyAmountNum && !res.totalPenaltyNum) {
     res.originalTotalNum = Math.max(0, res.refundAmountNum - (res.earlyRentRefundNum || 0));
     res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
   }

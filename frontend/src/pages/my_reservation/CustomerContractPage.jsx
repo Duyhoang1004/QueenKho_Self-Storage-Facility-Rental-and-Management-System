@@ -9,6 +9,7 @@ import SimulationButton from "../../components/SimulationButton";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
 import { simulateExpireSoon } from "../../services/simulationService";
+import { getOverdueFeeBreakdown } from "../../utils/overdueFee";
 
 // UC-06: hợp đồng còn giữ ô thì khách xem được vị trí ô trên mặt bằng
 const MAP_VISIBLE_STATUSES = ["PENDING_CHECK_IN", "ACTIVE", "OVERDUE", "TERMINATION_PENDING"];
@@ -77,7 +78,7 @@ const STATUS_MAP = {
     icon: "cancel",
   },
   LIQUIDATED: {
-    label: "Đã thanh lý hợp đồng",
+    label: "Đã cưỡng chế dọn kho",
     cls: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FFDFDF]",
     icon: "gavel",
   },
@@ -252,14 +253,16 @@ export default function CustomerContractPage() {
       : (contract.depositHeldAmount || contract.basePriceMonthly || 0)
   );
   const damageFee = Number(contract.damageFee || 0);
-  const lateFee = Number(contract.lateFeeAmount || 0);
+  const { lateFee, overstayFee, totalPenalty } = getOverdueFeeBreakdown(contract);
   const actualLateFee = lateFee > 0 ? lateFee : 0;
+  const actualOverstayFee = overstayFee > 0 ? overstayFee : 0;
+  const totalPenaltyFee = totalPenalty > 0 ? totalPenalty : actualLateFee + actualOverstayFee;
   const actualDamageFee = damageFee > 0 ? damageFee : 0;
 
   const depositRefund = Number(
     contract.depositRefund != null
       ? contract.depositRefund
-      : Math.max(0, depositAmount - actualDamageFee - actualLateFee)
+      : Math.max(0, depositAmount - actualDamageFee - actualLateFee - actualOverstayFee)
   );
   const earlyRentRefund = Number(contract.earlyRentRefund || 0);
   const refundedDeposit = Number(
@@ -267,7 +270,7 @@ export default function CustomerContractPage() {
       ? contract.refundAmount
       : (depositRefund + earlyRentRefund)
   );
-  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0 || actualLateFee > 0);
+  const isInspectionDone = Boolean(contract.isInspectionCompleted || actualDamageFee > 0 || totalPenaltyFee > 0);
 
   // Giá thuê 1 tháng: lấy từ basePriceMonthly (nếu có) hoặc cọc (vì cọc = 1 tháng tiền thuê)
   const monthlyRent = Number(
@@ -331,15 +334,20 @@ export default function CustomerContractPage() {
                   {" "}+ <strong className="text-[#58A700]">{formatVND(earlyRentRefund)}</strong> tiền thuê các tháng còn lại sau khi trừ {contract.usedMonths || 1} tháng đã dùng &amp; 1 tháng phí phạt trả sớm
                 </span>
               )}
-              {(actualDamageFee > 0 || actualLateFee > 0) && (
+              {(actualDamageFee > 0 || totalPenaltyFee > 0) && (
                 <span>
                   , đã khấu trừ{" "}
                   {actualDamageFee > 0 && (
                     <span><strong className="text-[#FF4B4B]">{formatVND(actualDamageFee)}</strong> phí hư hại</span>
                   )}
-                  {actualDamageFee > 0 && actualLateFee > 0 && " và "}
-                  {actualLateFee > 0 && (
-                    <span><strong className="text-[#D97706]">{formatVND(actualLateFee)}</strong> phí trễ hạn</span>
+                  {actualDamageFee > 0 && totalPenaltyFee > 0 && " và "}
+                  {totalPenaltyFee > 0 && (
+                    <span>
+                      <strong className="text-[#D97706]">{formatVND(totalPenaltyFee)}</strong> tổng tiền phạt quá hạn
+                      {actualOverstayFee > 0 && (
+                        <> (Phí trễ: {formatVND(actualLateFee)} · Chiếm dụng: {formatVND(actualOverstayFee)})</>
+                      )}
+                    </span>
                   )}
                 </span>
               )}
@@ -365,14 +373,14 @@ export default function CustomerContractPage() {
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
               <span className="text-base font-black text-[#FF4B4B]">
-                Hợp đồng đã bị thanh lý do hết hạn mà chưa gia hạn / trả kho
+                Hợp đồng đã bị cưỡng chế dọn kho do hết hạn mà chưa gia hạn / trả kho
               </span>
               <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#FF4B4B] text-white">
-                ĐÃ THANH LÝ
+                ĐÃ CƯỠNG CHẾ DỌN KHO
               </span>
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
-              Hợp đồng đã bị thanh lý theo điều khoản bạn đồng ý; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc để trừ các khoản phí.
+              Hợp đồng đã bị cưỡng chế dọn kho theo điều khoản bạn đồng ý; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc để trừ các khoản phí.
               {!contract.heldGoodsStatus && (
                 <>
                   {" "}Nhân viên đang mở kho, kiểm kê, chụp ảnh và <strong>chuyển hàng của bạn vào kho tổng</strong> của QueenKho
@@ -387,7 +395,7 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* PR-Q10 / BR-134 (05/11/2026): hàng của khách ở kho tổng sau thanh lý — giữ tới khi khách nhận lại, không bán */}
+      {/* PR-Q10 / BR-134 (05/11/2026): hàng của khách ở kho tổng sau cưỡng chế dọn kho — giữ tới khi khách nhận lại, không bán */}
       {contract.heldGoodsStatus && (() => {
         const cs = contract.centralStorage || {}
         const debt = Number(cs.customerDebt) || 0
@@ -399,7 +407,7 @@ export default function CustomerContractPage() {
             <span className="material-symbols-outlined text-[#9333EA] text-[28px]">home_storage</span>
             <div className="flex flex-col gap-2 text-xs font-bold text-[#4B4B4B] leading-relaxed flex-1 min-w-0">
               <span className="text-base font-black text-[#9333EA]">
-                {contract.heldGoodsStatus === "HOLDING" ? "Hàng của bạn đang ở kho tổng" : "Hàng của bạn sau thanh lý"}
+                {contract.heldGoodsStatus === "HOLDING" ? "Hàng của bạn đang ở kho tổng" : "Hàng của bạn sau cưỡng chế dọn kho"}
               </span>
               {contract.heldGoodsStatus === "HOLDING" ? (
                 <>
@@ -543,27 +551,32 @@ export default function CustomerContractPage() {
               </h3>
               <p className="text-xs text-[#777777] mt-1 leading-relaxed">
                 Hạn hợp đồng đã kết thúc vào ngày <strong className="text-[#4B4B4B]">{formatDate(contract.endDate)}</strong>.{" "}
+                Tổng tiền phạt quá hạn hiện tại: <strong className="text-[#FF4B4B]">{formatVND(totalPenaltyFee)}</strong>{" "}
+                (Phí phạt trễ:{" "}
                 {contract.lateFeeWaived
-                  ? <>Phí phạt trễ: <strong className="text-[#58A700]">đã được miễn</strong>.</>
-                  : <>Phí phạt trễ tích lũy: <strong className="text-[#FF4B4B]">{formatVND(contract.lateFeeAmount || 0)}</strong>.</>}
-                {Number(contract.overstayFeeAmount) > 0 && (
-                  <> Phí chiếm dụng ô ({formatVND(contract.overstayDailyAmount)}/ngày{contract.lateFeeWaived ? " — chỉ tính tiền thuê theo ngày, không phạt" : ", không giới hạn"}): <strong className="text-[#FF4B4B]">{formatVND(contract.overstayFeeAmount)}</strong>.</>
+                  ? <strong className="text-[#58A700]">đã được miễn (0₫)</strong>
+                  : <strong className="text-[#FF4B4B]">{formatVND(actualLateFee)}</strong>}
+                {" · "}
+                Phí chiếm dụng ô:{" "}
+                {contract.overstayFeeWaived
+                  ? <strong className="text-[#58A700]">đã được miễn (0₫)</strong>
+                  : <strong className="text-[#FF4B4B]">{formatVND(actualOverstayFee)}</strong>}
+                {Number(contract.overstayDailyAmount) > 0 && !contract.overstayFeeWaived && (
+                  <> — {formatVND(contract.overstayDailyAmount)}/ngày{contract.lateFeeWaived ? ", chỉ tính tiền thuê theo ngày, không phạt" : ", không giới hạn"}</>
                 )}
-                {contract.overstayFeeWaived && (
-                  <> Phí chiếm dụng: <strong className="text-[#58A700]">đã được miễn</strong>.</>
-                )}
+                ).
                 {contract.status === "TERMINATION_PENDING" && (
                   <span className="block mt-1">Bạn đã hẹn trả kho — các khoản phí trên sẽ trừ vào tiền cọc khi nhân viên nghiệm thu (tính tới ngày nghiệm thu thực tế).</span>
                 )}
-                {" "}Tiền cọc ước tính sau khi trừ các khoản phí: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
+                {" "}Tiền cọc ước tính sau khi trừ tổng tiền phạt: <strong className="text-[#58A700]">{formatVND(contract.estimatedOverdueDepositRefund != null ? contract.estimatedOverdueDepositRefund : contract.depositHeldAmount || 0)}</strong>.
                 {Number(contract.amountBeyondDeposit) > 0 && (
                   <span className="text-[#FF4B4B] font-bold block mt-1">
-                    * Phí đã vượt tiền cọc {formatVND(contract.amountBeyondDeposit)} — phần này sẽ thành khoản nợ khi trả kho hoặc bị thanh lý.
+                    * Phí đã vượt tiền cọc {formatVND(contract.amountBeyondDeposit)} — phần này sẽ thành khoản nợ khi trả kho hoặc bị cưỡng chế dọn kho.
                   </span>
                 )}
                 {contract.liquidationDaysThreshold && (
                   <span className="block mt-1">
-                    Quá hạn quá {contract.liquidationDaysThreshold} ngày, cơ sở có quyền thanh lý hợp đồng và chuyển hàng vào kho tổng.
+                    Quá hạn quá {contract.liquidationDaysThreshold} ngày, cơ sở có quyền cưỡng chế dọn kho và chuyển hàng vào kho tổng.
                   </span>
                 )}
                 {contract.isPinLocked && (
@@ -768,25 +781,39 @@ export default function CustomerContractPage() {
                       </div>
                     )}
 
-                    {/* Khấu trừ phí phạt trễ hạn */}
-                    {actualLateFee > 0 && (
-                      <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5] bg-amber-50/60 -mx-4 px-4 py-2 rounded-lg">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-[#D97706]">
-                              Khấu trừ phí phạt trễ hạn {contract.overdueDays ? `(${contract.overdueDays} ngày)` : ""}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF3C7] text-[#D97706] border border-[#F59E0B]/30">
-                              Quá hạn
+                    {/* Khấu trừ tiền phạt quá hạn (Phí phạt trễ + Phí chiếm dụng ô) */}
+                    {(totalPenaltyFee > 0 || contract.lateFeeWaived || contract.overstayFeeWaived) && (
+                      <div className="flex flex-col gap-1.5 pb-2 border-b border-[#E5E5E5] bg-amber-50/60 -mx-4 px-4 py-2 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-[#D97706]">
+                                Khấu trừ tổng tiền phạt quá hạn {contract.overdueDays ? `(${contract.overdueDays} ngày)` : ""}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF3C7] text-[#D97706] border border-[#F59E0B]/30">
+                                Quá hạn
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold text-[#D97706]/80">
+                              Gồm phí phạt trễ và phí chiếm dụng ô khấu trừ trực tiếp vào tiền cọc
                             </span>
                           </div>
-                          <span className="text-[10px] font-bold text-[#D97706]/80">
-                            Khấu trừ trực tiếp vào tiền cọc khi trả kho trễ
+                          <span className="text-sm font-black text-[#D97706]">
+                            -{formatVND(totalPenaltyFee)}
                           </span>
                         </div>
-                        <span className="text-sm font-black text-[#D97706]">
-                          -{formatVND(actualLateFee)}
-                        </span>
+                        <div className="pl-2 border-l-2 border-[#F59E0B]/40 flex flex-col gap-0.5 text-[11px] font-bold text-[#92400E]">
+                          <div className="flex items-center justify-between">
+                            <span>• Phí phạt trễ hạn:</span>
+                            <span>{contract.lateFeeWaived ? "Đã miễn (0₫)" : `-${formatVND(actualLateFee)}`}</span>
+                          </div>
+                          {(actualOverstayFee > 0 || contract.overstayFeeWaived) && (
+                            <div className="flex items-center justify-between">
+                              <span>• Phí chiếm dụng ô:</span>
+                              <span>{contract.overstayFeeWaived ? "Đã miễn (0₫)" : `-${formatVND(actualOverstayFee)}`}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -799,7 +826,7 @@ export default function CustomerContractPage() {
                           </span>
                         </div>
                         <span className="text-[10px] font-bold text-[#AFAFAF]">
-                          Khoản cọc sau khi trừ khấu trừ hư hại / trễ hạn
+                          Khoản cọc sau khi trừ khấu trừ hư hại / tổng phạt quá hạn
                         </span>
                       </div>
                       <div className="flex flex-col items-end">
@@ -984,7 +1011,7 @@ export default function CustomerContractPage() {
                   </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      Hợp đồng này đã bị thanh lý do quá hạn kéo dài. Hệ thống đang tạm giữ{" "}
+                      Hợp đồng này đã bị cưỡng chế dọn kho do quá hạn kéo dài. Hệ thống đang tạm giữ{" "}
                       <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc. Vui lòng đến cơ sở làm việc với Quản lý.
                     </span>
                   </div>
@@ -1013,7 +1040,7 @@ export default function CustomerContractPage() {
                 <div className="bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4 flex flex-col items-center gap-3 mt-1 text-center">
                   <span className="text-xs font-bold text-[#AFAFAF]">
                     {contract.status === "TERMINATION_PENDING"
-                      ? (isInspectionDone ? "Tiến trình thanh lý & hoàn tất cọc" : "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?")
+                      ? (isInspectionDone ? "Tiến trình tất toán hợp đồng & hoàn tất cọc" : "Đã hẹn ngày trả kho. Muốn tiếp tục thuê hoặc đổi ý?")
                       : "Cần thêm thời gian hoặc trả kho sớm?"}
                   </span>
                   {contract.status === "TERMINATION_PENDING" ? (
@@ -1105,7 +1132,7 @@ export default function CustomerContractPage() {
                 </span>
               ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
-                  Đã vô hiệu hoá (Đã thanh lý)
+                  Đã vô hiệu hoá (Đã cưỡng chế dọn kho)
                 </span>
               ) : contract.isPinLocked ? (
                 <div className="flex flex-col items-center gap-1">

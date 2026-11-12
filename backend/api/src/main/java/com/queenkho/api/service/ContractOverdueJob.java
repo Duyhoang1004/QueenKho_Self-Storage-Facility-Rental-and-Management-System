@@ -71,7 +71,7 @@ public class ContractOverdueJob {
         }
         int relocated = relocateToCentralWarehouse(null);
         if (relocated > 0) {
-            System.out.println("[QueenKho Overdue Job] 📦 Đã thanh lý " + relocated + " hợp đồng điều khoản v4, chờ chuyển hàng vào kho tổng.");
+            System.out.println("[QueenKho Overdue Job] 📦 Đã cưỡng chế dọn kho " + relocated + " hợp đồng điều khoản v4, chờ chuyển hàng vào kho tổng.");
         }
         return updated;
     }

@@ -29,7 +29,7 @@ const TYPE_CONFIG = {
     bg: 'bg-[#FFDFDF]',
     border: 'border-[#FF4B4B]',
     color: 'text-[#FF4B4B]',
-    label: 'Thanh lý'
+    label: 'Cưỡng chế dọn kho'
   },
   ASSIGNED: {
     icon: 'vpn_key',

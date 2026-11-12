@@ -354,7 +354,7 @@ public class SupportRequestService {
         RentalContract contract = ticket.getContract();
         if (contract == null || !ELIGIBLE_CONTRACT_STATUSES.contains(contract.getStatus())) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
-                    "Hợp đồng đã kết thúc hoặc thanh lý nên không thể mở lại yêu cầu hỗ trợ.");
+                    "Hợp đồng đã kết thúc hoặc cưỡng chế dọn kho nên không thể mở lại yêu cầu hỗ trợ.");
         }
         // BR-126: khiếu nại hồ sơ bị từ chối → kiểm tra lại; hồ sơ đã chấp nhận / chi trả thì không mở lại
         compensationClaimService.reopenForTicket(ticket.getId());

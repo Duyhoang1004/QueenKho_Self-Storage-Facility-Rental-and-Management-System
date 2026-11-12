@@ -5,6 +5,7 @@ import { createVnpayDebt } from '../../services/vnpayService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
 const PAGE_SIZE = 5
 const DEBT_PAGE_SIZE = 3
@@ -237,6 +238,7 @@ export default function CustomerPaymentsPage() {
                 )
               }
               const c = item.data
+              const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
               return (
                 <div key={item.key} className="rounded-2xl bg-white p-4 border-2 border-b-4 border-[#FF9600] flex flex-col md:flex-row md:items-center gap-4">
                   <span className="material-symbols-outlined text-[30px] text-[#FF9600]">event_busy</span>
@@ -244,7 +246,8 @@ export default function CustomerPaymentsPage() {
                     <p className="font-black text-[#4B4B4B]">Hợp đồng {c.contractCode} quá hạn {c.overdueDays} ngày</p>
                     <p className="text-xs font-bold text-[#777777]">
                       {c.facilityName} — gia hạn để mở lại mã PIN.{' '}
-                      {c.lateFeeWaived ? 'Quản lý đã miễn phí trễ cho bạn.' : `Phí trễ hiện tại ${formatVND(c.lateFeeAmount)}.`}{Number(c.overstayFeeAmount) > 0 ? ` Phí chiếm dụng ô ${formatVND(c.overstayFeeAmount)} (tăng mỗi ngày).` : ''}
+                      Tổng phạt hiện tại <strong className="text-[#EA2B2B]">{formatVND(totalPenalty)}</strong>{' '}
+                      (Phí trễ: {lateFeeWaived ? 'Đã miễn' : formatVND(lateFee)} · Chiếm dụng: {overstayFeeWaived ? 'Đã miễn' : formatVND(overstayFee)}).
                     </p>
                   </div>
                   {c.reservationId && (

@@ -75,6 +75,10 @@ public class StaffTaskDetailResponse {
     private BigDecimal breakFee;
     private BigDecimal graceFee;
     private BigDecimal lateFee;
+    private BigDecimal overstayFee;
+    private BigDecimal totalPenaltyFee;
+    private Boolean lateFeeWaived;
+    private Boolean overstayFeeWaived;
     private Integer usedMonths;
     private Integer cycleMonths;
     private BigDecimal baseMonthlyPrice;

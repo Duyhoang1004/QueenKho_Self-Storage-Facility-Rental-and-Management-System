@@ -314,7 +314,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] font-bold text-[#AFAFAF]">Ô chỉ gán được sau khi khách cũ trả kho / bị thanh lý xong (PR-R11).</p>
+              <p className="text-[11px] font-bold text-[#AFAFAF]">Ô chỉ gán được sau khi khách cũ trả kho / bị cưỡng chế dọn kho xong (PR-R11).</p>
             </div>
           )}
 

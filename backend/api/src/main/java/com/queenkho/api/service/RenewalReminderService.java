@@ -55,11 +55,11 @@ public class RenewalReminderService {
         }
         int warned = warnLiquidationAll();
         if (warned > 0) {
-            System.out.println("[QueenKho Renewal] Đã gửi " + warned + " cảnh báo thanh lý.");
+            System.out.println("[QueenKho Renewal] Đã gửi " + warned + " cảnh báo cưỡng chế dọn kho.");
         }
     }
 
-    /** Quét hợp đồng OVERDUE, cảnh báo khách trước / khi tới mốc thanh lý. Trả số cảnh báo mới gửi. */
+    /** Quét hợp đồng OVERDUE, cảnh báo khách trước / khi tới mốc cưỡng chế dọn kho. Trả số cảnh báo mới gửi. */
     @Transactional
     public int warnLiquidationAll() {
         LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
@@ -73,7 +73,7 @@ public class RenewalReminderService {
         return sent;
     }
 
-    /** Cảnh báo thanh lý cho 1 hợp đồng OVERDUE (dùng cho nút giả lập quá hạn). Trả true nếu vừa gửi cảnh báo mới. */
+    /** Cảnh báo cưỡng chế dọn kho cho 1 hợp đồng OVERDUE (dùng cho nút giả lập quá hạn). Trả true nếu vừa gửi cảnh báo mới. */
     @Transactional
     public boolean warnLiquidationContract(Integer contractId) {
         return contractRepository.findById(contractId)
@@ -85,7 +85,7 @@ public class RenewalReminderService {
     private boolean warnLiquidation(RentalContract contract, LocalDate today) {
         if (contract.getEndDate() == null || contract.getCustomer() == null) return false;
         LateFeeCalculationResult late = lateFeeService.calculateLateFee(contract, today);
-        // Quản lý được thanh lý khi quá hạn > liquidationDays ngày (LateFeeService.canLiquidate)
+        // Quản lý được cưỡng chế dọn kho khi quá hạn > liquidationDays ngày (LateFeeService.canLiquidate)
         LocalDate liquidableFrom = contract.getEndDate().plusDays(late.getLiquidationDaysThreshold() + 1L);
         long daysLeft = ChronoUnit.DAYS.between(today, liquidableFrom);
         if (daysLeft > LIQUIDATION_WARN_DAYS) return false;
@@ -97,14 +97,14 @@ public class RenewalReminderService {
         String message = "Hợp đồng " + code + " đã quá hạn " + late.getOverdueDays() + " ngày"
                 + (owed.signum() > 0 ? ", phí trễ và phí chiếm dụng hiện tại " + vnd(owed) + "đ" : "") + ". "
                 + (due
-                    ? "Hợp đồng đã tới mốc thanh lý theo điều khoản: quản lý cơ sở có thể thanh lý bất cứ lúc nào, hàng còn trong ô "
-                        + "sẽ được kiểm kê và lưu giữ tại cơ sở (có tính phí lưu giữ). "
-                    : "Từ ngày " + liquidableFrom.format(DATE_FMT) + " hợp đồng có thể bị thanh lý theo điều khoản bạn đã đồng ý. ")
-                + "Vui lòng gia hạn hoặc hẹn trả kho ngay để tránh bị thanh lý.";
+                    ? "Hợp đồng đã tới mốc cưỡng chế dọn kho theo điều khoản: quản lý cơ sở có thể cưỡng chế dọn kho bất cứ lúc nào, hàng còn trong ô "
+                        + "sẽ được kiểm kê và lưu giữ tại kho tổng (có tính phí lưu giữ). "
+                    : "Từ ngày " + liquidableFrom.format(DATE_FMT) + " hợp đồng có thể bị cưỡng chế dọn kho theo điều khoản bạn đã đồng ý. ")
+                + "Vui lòng gia hạn hoặc hẹn trả kho ngay để tránh bị cưỡng chế dọn kho.";
         String refKey = (due ? "LIQUIDATION_DUE:" : "LIQUIDATION_WARN:") + contract.getId() + ":" + contract.getEndDate();
         Integer reservationId = contract.getReservation() != null ? contract.getReservation().getId() : null;
         return notificationService.notifyCustomer(contract.getCustomer().getId(), refKey,
-                due ? "Hợp đồng " + code + " đã tới mốc thanh lý" : "Cảnh báo sắp thanh lý hợp đồng " + code,
+                due ? "Hợp đồng " + code + " đã tới mốc cưỡng chế dọn kho" : "Cảnh báo sắp cưỡng chế dọn kho hợp đồng " + code,
                 message, "OVERDUE",
                 reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi") != null;
     }

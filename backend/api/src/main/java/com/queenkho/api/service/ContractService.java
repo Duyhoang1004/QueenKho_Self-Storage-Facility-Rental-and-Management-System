@@ -757,7 +757,7 @@ public class ContractService {
             throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác (managerId)");
         }
         if (request.getNote() == null || request.getNote().trim().isEmpty() || request.getNote().trim().length() > 400) {
-            throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Ghi chú thanh lý là bắt buộc và tối đa 400 ký tự");
+            throw new ContractException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Ghi chú cưỡng chế dọn kho là bắt buộc và tối đa 400 ký tự");
         }
 
         User manager = userRepository.findById(request.getManagerId())
@@ -765,7 +765,7 @@ public class ContractService {
 
         String roleName = manager.getRole() != null ? manager.getRole().getName() : "";
         if (!"FACILITY_MANAGER".equals(roleName) && !"ADMIN".equals(roleName)) {
-            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý cơ sở mới có quyền thực hiện thanh lý");
+            throw new ContractException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE", "Chỉ Quản lý cơ sở mới có quyền thực hiện cưỡng chế dọn kho");
         }
 
         RentalContract contract = rentalContractRepository.findDetailById(contractId)
@@ -783,8 +783,8 @@ public class ContractService {
             throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_OVERDUE", "Hợp đồng không ở trạng thái quá hạn (hiện tại: " + contract.getStatus() + ")");
         }
 
-        // D-09: thanh lý luôn trừ phí trễ theo chính sách. Miễn phí trễ (Flow 6) chỉ để giúp khách gia hạn,
-        // khách không gia hạn mà bị thanh lý thì việc miễn phí trễ hết hiệu lực.
+        // D-09: cưỡng chế dọn kho luôn trừ phí trễ theo chính sách. Miễn phí trễ (Flow 6) chỉ để giúp khách gia hạn,
+        // khách không gia hạn mà bị cưỡng chế dọn kho thì việc miễn phí trễ hết hiệu lực.
         contract.setLateFeeWaived(false);
         contract.setOverstayFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
@@ -792,13 +792,13 @@ public class ContractService {
         boolean centralStorageTerms = LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion());
         if (!centralStorageTerms && !lateFeeCalc.isCanLiquidate()) {
             throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
-                    "Hợp đồng chưa đủ số ngày để thanh lý (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
+                    "Hợp đồng chưa đủ số ngày để cưỡng chế dọn kho (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
         }
-        // Điều khoản xử lý tài sản (mục 2): phải liên hệ khách đủ số lần trước khi thanh lý
+        // Điều khoản xử lý tài sản (mục 2): phải liên hệ khách đủ số lần trước khi cưỡng chế dọn kho
         int contactCount = countOverdueContacts(contract.getId());
         if (!centralStorageTerms && contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
             throw new ContractException(HttpStatus.CONFLICT, "NOT_ENOUGH_CONTACTS",
-                    "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi thanh lý (hiện có: " + contactCount + ")");
+                    "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi cưỡng chế dọn kho (hiện có: " + contactCount + ")");
         }
 
         return performLiquidation(contract, manager.getId(), request.getNote().trim(), lateFeeCalc);
@@ -866,10 +866,10 @@ public class ContractService {
         staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_OUT");
         staffTaskService.closeOpenSupportTicketsAndTasks(contract.getId());
 
-        // 4b. PR-Q9: sinh task "Dọn kho sau thanh lý" — mở kho, kiểm kê, chuyển hàng của khách sang khu lưu giữ
+        // 4b. PR-Q9: sinh task "Cưỡng chế dọn kho" — mở kho, kiểm kê, chuyển hàng của khách sang khu lưu giữ
         if (contract.getStorageUnit() != null) {
-            staffTaskService.createMaintenanceTask(contract, "LIQUIDATION", "Dọn ô " + contract.getStorageUnit().getId()
-                    + " sau thanh lý HĐ " + contract.getContractCode()
+            staffTaskService.createMaintenanceTask(contract, "LIQUIDATION", "Cưỡng chế dọn ô " + contract.getStorageUnit().getId()
+                    + " của HĐ " + contract.getContractCode()
                     + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển vào kho tổng (không bán)");
         }
 
@@ -930,18 +930,18 @@ public class ContractService {
                 String.valueOf(contract.getId())
         );
 
-        // BR-111 / BR-117: khách nhận thông báo + email về việc thanh lý và hàng được lưu giữ
+        // BR-111 / BR-117: khách nhận thông báo + email về việc cưỡng chế dọn kho và hàng được lưu giữ
         if (notificationService != null && customerId != null) notificationService.notifyCustomer(
                 customerId,
-                "Hợp đồng " + contract.getContractCode() + " đã bị thanh lý",
-                "Hợp đồng đã hết hạn mà chưa gia hạn / trả kho nên đã được thanh lý theo điều khoản bạn đồng ý. Hàng trong ô được "
+                "Hợp đồng " + contract.getContractCode() + " đã bị cưỡng chế dọn kho",
+                "Hợp đồng đã hết hạn mà chưa gia hạn / trả kho nên đã bị cưỡng chế dọn kho theo điều khoản bạn đồng ý. Hàng trong ô được "
                         + "kiểm kê, chụp ảnh và chuyển vào KHO TỔNG (QueenKho không bán hàng của bạn). Xem vị trí, phí lưu giữ và cách "
                         + "nhận lại trong trang hợp đồng.",
                 "LIQUIDATION",
                 reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
 
         return Map.of(
-                "message", "Thanh lý hợp đồng thành công",
+                "message", "Cưỡng chế dọn kho thành công",
                 "contractId", contract.getId(),
                 "status", "LIQUIDATED",
                 "lateFeeAmount", lateFee,
@@ -1076,7 +1076,7 @@ public class ContractService {
 
         // Hợp đồng LIQUIDATED (409 CONTRACT_NOT_LIQUIDATED)
         if (!"LIQUIDATED".equalsIgnoreCase(contract.getStatus())) {
-            throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_LIQUIDATED", "Hợp đồng chưa được thanh lý (trạng thái: " + contract.getStatus() + ")");
+            throw new ContractException(HttpStatus.CONFLICT, "CONTRACT_NOT_LIQUIDATED", "Hợp đồng chưa bị cưỡng chế dọn kho (trạng thái: " + contract.getStatus() + ")");
         }
 
         // deposit_held_amount > 0 (409 NO_DEPOSIT_TO_REFUND)
@@ -1105,10 +1105,10 @@ public class ContractService {
 
         // Ghi chú task đúng định dạng parser đọc được, chứa mã hợp đồng và số tiền hoàn.
         // TUYỆT ĐỐI không đưa mã đơn đặt chỗ (RES-...) vào ghi chú
-        String refundNoteStr = "Hoàn tiền cọc thanh lý | HĐ: " + contract.getContractCode()
+        String refundNoteStr = "Hoàn tiền cọc cưỡng chế dọn kho | HĐ: " + contract.getContractCode()
                 + (customerName != null && !customerName.isBlank() ? " | Khách: " + customerName + (customerPhone != null && !customerPhone.isBlank() ? " (SĐT: " + customerPhone + ")" : "") : "")
                 + " => Cọc hoàn: " + formattedRefund + "đ"
-                + " => THỰC HOÀN " + formattedRefund + "đ | Quản lý yêu cầu hoàn cọc còn lại sau thanh lý";
+                + " => THỰC HOÀN " + formattedRefund + "đ | Quản lý yêu cầu hoàn cọc còn lại sau cưỡng chế dọn kho";
 
         if (refundNoteStr.length() > 1000) {
             refundNoteStr = refundNoteStr.substring(0, 997) + "...";

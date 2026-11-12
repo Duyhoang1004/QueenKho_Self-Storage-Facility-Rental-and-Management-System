@@ -9,6 +9,7 @@ import {
 } from '../../services/revenueService'
 import { getOverdueContracts } from '../../services/contractService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
 const PAGE_SIZE = 5
 const OVERDUE_PAGE_SIZE = 4
@@ -124,7 +125,7 @@ export default function ManagerReportsPage() {
   const occupancy = data?.occupancy
   const overview = data?.overview
   const overdue = data?.overdue || []
-  const overdueFeeTotal = overdue.reduce((sum, c) => sum + (c.lateFeeWaived ? 0 : Number(c.lateFeeAmount || 0)), 0)
+  const overdueFeeTotal = overdue.reduce((sum, c) => sum + getOverdueFeeBreakdown(c).totalPenalty, 0)
 
   const totalTxPages = Math.max(1, Math.ceil(transactions.length / PAGE_SIZE))
   const safeTxPage = Math.min(txPage, totalTxPages)
@@ -293,7 +294,7 @@ export default function ManagerReportsPage() {
                 <ListBoxHeader
                   icon="event_busy"
                   title="Hợp đồng quá hạn"
-                  subtitle={`Phí trễ đang tích luỹ: ${formatVND(overdueFeeTotal)}`}
+                  subtitle={`Tổng phạt đang tích luỹ: ${formatVND(overdueFeeTotal)}`}
                   count={overdue.length}
                   countLabel="hợp đồng"
                   accentColor="bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]"
@@ -305,17 +306,25 @@ export default function ManagerReportsPage() {
                 />
                 <div className="p-4 flex flex-col gap-2.5">
                   {overdue.length === 0 && <p className="text-xs font-bold text-[#AFAFAF]">Không có hợp đồng quá hạn 🎉</p>}
-                  {paginatedOverdue.map((c) => (
-                    <div key={c.contractId} className="flex items-center justify-between gap-3 rounded-xl border border-[#F0F0F0] bg-[#FAFAFA] px-3.5 py-2.5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-[#4B4B4B] truncate">#{c.contractCode} · {c.customerName}</p>
-                        <p className="text-[11px] font-bold text-[#AFAFAF]">Ô {c.storageUnitId} · quá hạn {c.overdueDays} ngày</p>
+                  {paginatedOverdue.map((c) => {
+                    const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
+                    return (
+                      <div key={c.contractId} className="flex items-center justify-between gap-3 rounded-xl border border-[#F0F0F0] bg-[#FAFAFA] px-3.5 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-[#4B4B4B] truncate">#{c.contractCode} · {c.customerName}</p>
+                          <p className="text-[11px] font-bold text-[#AFAFAF]">Ô {c.storageUnitId} · quá hạn {c.overdueDays} ngày</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className={`text-xs font-black whitespace-nowrap block ${totalPenalty === 0 && lateFeeWaived ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
+                            {totalPenalty === 0 && lateFeeWaived ? 'Đã miễn toàn bộ' : formatVND(totalPenalty)}
+                          </span>
+                          <span className="text-[10px] font-bold text-[#777777] whitespace-nowrap block">
+                            Trễ: {lateFeeWaived ? 'Miễn' : formatVND(lateFee)} · Chiếm dụng: {overstayFeeWaived ? 'Miễn' : formatVND(overstayFee)}
+                          </span>
+                        </div>
                       </div>
-                      <span className={`text-xs font-black whitespace-nowrap ${c.lateFeeWaived ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
-                        {c.lateFeeWaived ? 'Đã miễn phí trễ' : formatVND(c.lateFeeAmount)}
-                      </span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
               {overdue.length > 0 && (

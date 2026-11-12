@@ -1584,7 +1584,7 @@ public class StaffTaskService {
         // BR-111: nhân viên làm xong thì FM được báo (FM tự đóng thì không cần)
         if (notificationService != null && !isManager) notificationService.notifyFacilityManagers(
                 task.getFacilityId(),
-                (cleanup ? "Đã dọn xong kho sau thanh lý" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
+                (cleanup ? "Đã cưỡng chế dọn kho xong" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
                 user.getFullName() + " hoàn tất task #" + taskId + ": " + workNote
                         + (unit != null ? ". Ô đã mở lại cho thuê." : ""),
                 "TASK",
@@ -1974,6 +1974,10 @@ public class StaffTaskService {
         BigDecimal breakFee = BigDecimal.ZERO;
         BigDecimal graceFee = BigDecimal.ZERO;
         BigDecimal lateFee = BigDecimal.ZERO;
+        BigDecimal overstayFee = BigDecimal.ZERO;
+        BigDecimal totalPenaltyFee = BigDecimal.ZERO;
+        boolean lateFeeWaived = false;
+        boolean overstayFeeWaived = false;
         Integer usedMonths = null;
         Integer cycleMonths = null;
         BigDecimal baseMonthlyPrice = null;
@@ -1983,7 +1987,9 @@ public class StaffTaskService {
         if (contract != null && ("CHECK_OUT".equals(task.getTaskType()) || "REFUND".equals(task.getTaskType()))) {
             LocalDate refDate = task.getCompletedAt() != null
                     ? task.getCompletedAt().toLocalDate()
-                    : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now());
+                    : ("CHECK_OUT".equals(task.getTaskType())
+                        ? LocalDate.now(LateFeeService.VIETNAM_ZONE)
+                        : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now(LateFeeService.VIETNAM_ZONE)));
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, totalDamageCost);
             depositHeld = calc.getDepositHeld();
             refundAmount = calc.getTotalRefundAmount();
@@ -1994,6 +2000,10 @@ public class StaffTaskService {
             breakFee = calc.getBreakFee();
             graceFee = calc.getGraceFee();
             lateFee = calc.getLateFee();
+            overstayFee = calc.getOverstayFee() != null ? calc.getOverstayFee() : BigDecimal.ZERO;
+            totalPenaltyFee = graceFee.add(lateFee).add(overstayFee);
+            lateFeeWaived = Boolean.TRUE.equals(contract.getLateFeeWaived());
+            overstayFeeWaived = lateFeeWaived && Boolean.TRUE.equals(contract.getOverstayFeeWaived());
             usedMonths = calc.getUsedMonths();
             cycleMonths = calc.getCycleMonths();
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
@@ -2061,6 +2071,10 @@ public class StaffTaskService {
                 .breakFee(breakFee)
                 .graceFee(graceFee)
                 .lateFee(lateFee)
+                .overstayFee(overstayFee)
+                .totalPenaltyFee(totalPenaltyFee)
+                .lateFeeWaived(lateFeeWaived)
+                .overstayFeeWaived(overstayFeeWaived)
                 .usedMonths(usedMonths)
                 .cycleMonths(cycleMonths)
                 .baseMonthlyPrice(baseMonthlyPrice)

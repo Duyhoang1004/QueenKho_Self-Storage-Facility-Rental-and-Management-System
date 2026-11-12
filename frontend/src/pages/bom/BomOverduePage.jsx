@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getOverdueContractsChain, waiveLateFee } from '../../services/contractService'
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
 // Flow 6 (04/11/2026): BOM xem hợp đồng quá hạn toàn chuỗi và miễn phí trễ (mọi cơ sở,
 // không phụ thuộc cờ "cho phép FM miễn phí trễ" trong chính sách). Thanh lý vẫn do FM cơ sở làm.
@@ -55,7 +56,7 @@ export default function BomOverduePage() {
         <h1 className="text-2xl font-black text-[#4B4B4B]">Hợp đồng quá hạn toàn chuỗi</h1>
         <p className="text-xs font-bold text-[#AFAFAF]">
           BOM được miễn phí trễ cho mọi cơ sở (kể cả cơ sở đã tắt quyền miễn của FM). Miễn chỉ áp dụng đợt quá hạn hiện tại;
-          phí chiếm dụng mặc định vẫn tính 100% giá ngày, BOM có thể chọn miễn luôn. Thanh lý do Quản lý cơ sở thực hiện.
+          phí chiếm dụng mặc định vẫn tính 100% giá ngày, BOM có thể chọn miễn luôn. Cưỡng chế dọn kho do Quản lý cơ sở thực hiện.
         </p>
       </div>
       {toast && (
@@ -76,42 +77,48 @@ export default function BomOverduePage() {
               <tr>
                 <th className="py-3 px-4">Hợp đồng</th><th className="py-3 px-4">Cơ sở</th><th className="py-3 px-4">Khách</th>
                 <th className="py-3 px-4">Hết hạn</th><th className="py-3 px-4">Quá hạn</th><th className="py-3 px-4">Phí trễ</th>
-                <th className="py-3 px-4">Chiếm dụng</th><th className="py-3 px-4 text-right">Thao tác</th>
+                <th className="py-3 px-4">Chiếm dụng</th><th className="py-3 px-4 text-right">Tổng phạt</th><th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y-2 divide-[#F0F0F0] font-bold text-[#4B4B4B]">
-              {rows.map((c) => (
-                <tr key={c.contractId}>
-                  <td className="py-3 px-4 font-black text-[#1CB0F6]">{c.contractCode}<div className="text-[11px] text-[#AFAFAF]">{c.storageUnitId}</div></td>
-                  <td className="py-3 px-4">{c.facilityName}</td>
-                  <td className="py-3 px-4">{c.customerName}<div className="text-[11px] text-[#AFAFAF]">{c.customerPhone}</div></td>
-                  <td className="py-3 px-4">{formatDate(c.endDate)}</td>
-                  <td className="py-3 px-4">{c.overdueDays} ngày</td>
-                  <td className="py-3 px-4">{c.lateFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(c.lateFeeAmount)}</td>
-                  <td className="py-3 px-4">{c.overstayFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(c.overstayFeeAmount)}</td>
-                  <td className="py-3 px-4 text-right">
-                    {c.lateFeeWaived ? (
-                      <span className="text-[11px] text-[#AFAFAF]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
-                    ) : (
-                      <button type="button" onClick={() => { setTarget(c); setFormError('') }} className="duo-btn-white px-3 py-1.5 text-xs">
-                        Miễn phí trễ
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {rows.map((c) => {
+                const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
+                return (
+                  <tr key={c.contractId}>
+                    <td className="py-3 px-4 font-black text-[#1CB0F6]">{c.contractCode}<div className="text-[11px] text-[#AFAFAF]">{c.storageUnitId}</div></td>
+                    <td className="py-3 px-4">{c.facilityName}</td>
+                    <td className="py-3 px-4">{c.customerName}<div className="text-[11px] text-[#AFAFAF]">{c.customerPhone}</div></td>
+                    <td className="py-3 px-4">{formatDate(c.endDate)}</td>
+                    <td className="py-3 px-4">{c.overdueDays} ngày</td>
+                    <td className="py-3 px-4">{lateFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(lateFee)}</td>
+                    <td className="py-3 px-4">{overstayFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(overstayFee)}</td>
+                    <td className="py-3 px-4 text-right font-black text-[#FF4B4B]">{formatVND(totalPenalty)}</td>
+                    <td className="py-3 px-4 text-right">
+                      {lateFeeWaived ? (
+                        <span className="text-[11px] text-[#AFAFAF]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
+                      ) : (
+                        <button type="button" onClick={() => { setTarget(c); setFormError('') }} className="duo-btn-white px-3 py-1.5 text-xs">
+                          Miễn phí trễ
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      {target && (
+      {target && (() => {
+        const tFee = getOverdueFeeBreakdown(target)
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setTarget(null)}>
           <div className="duo-card bg-white w-full max-w-[480px] p-6 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-black text-[#4B4B4B]">Miễn phí trễ HĐ {target.contractCode}</h2>
             <p className="text-xs font-bold text-[#777777]">
-              {target.facilityName} · quá hạn {target.overdueDays} ngày · phí trễ hiện tại {formatVND(target.lateFeeAmount)}
-              {Number(target.overstayFeeAmount) > 0 && <> · phí chiếm dụng {formatVND(target.overstayFeeAmount)}</>}
+              {target.facilityName} · quá hạn {target.overdueDays} ngày · tổng phạt {formatVND(tFee.totalPenalty)}
+              {' '}(phí trễ {formatVND(tFee.lateFee)} + chiếm dụng {formatVND(tFee.overstayFee)})
             </p>
             <label className="flex items-start gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
               <input type="checkbox" checked={waiveOverstay} onChange={(e) => setWaiveOverstay(e.target.checked)} className="mt-0.5" />
@@ -139,7 +146,8 @@ export default function BomOverduePage() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

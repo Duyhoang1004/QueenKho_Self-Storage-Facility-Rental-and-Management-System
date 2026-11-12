@@ -261,6 +261,18 @@ public class ContractController {
         Integer usedMonths = calc.getUsedMonths();
         BigDecimal breakFee = calc.getBreakFee();
 
+        if (!"OVERDUE".equalsIgnoreCase(rc.getStatus()) && !pendingPastEnd
+                && (isInspectionCompleted || "TERMINATED".equalsIgnoreCase(rc.getStatus()))
+                && calc.isOverdueOrGrace()) {
+            overdueDays = calc.getDaysPastEndDate();
+            BigDecimal calcGrace = calc.getGraceFee() != null ? calc.getGraceFee() : BigDecimal.ZERO;
+            BigDecimal calcLate = calc.getLateFee() != null ? calc.getLateFee() : BigDecimal.ZERO;
+            lateFeeAmount = calcGrace.add(calcLate);
+            overstayFeeAmount = calc.getOverstayFee() != null ? calc.getOverstayFee() : BigDecimal.ZERO;
+            totalOverdueCharge = lateFeeAmount.add(overstayFeeAmount);
+            amountBeyondDeposit = calc.getOverstayDebtAmount() != null ? calc.getOverstayDebtAmount() : BigDecimal.ZERO;
+        }
+
         if (isInspectionCompleted || "TERMINATED".equalsIgnoreCase(rc.getStatus())) {
             if (calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
                 refundAmount = calc.getTotalRefundAmount();

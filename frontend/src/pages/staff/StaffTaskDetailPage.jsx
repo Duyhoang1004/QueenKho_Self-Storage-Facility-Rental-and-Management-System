@@ -20,6 +20,7 @@ import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
 import { getCentralWarehouses } from '../../services/catalogService';
+import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -71,7 +72,7 @@ const CONTRACT_STATUS_LABEL = {
   OVERDUE: 'Quá hạn thanh toán',
   TERMINATION_PENDING: 'Chờ trả kho',
   TERMINATED: 'Đã chấm dứt',
-  LIQUIDATED: 'Đã thanh lý',
+  LIQUIDATED: 'Đã cưỡng chế dọn kho',
 };
 
 const UNIT_STATUS_LABEL = {
@@ -410,7 +411,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         <span className={`duo-badge whitespace-nowrap border ${isLiquidation
           ? 'bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]'
           : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'}`}>
-          {isLiquidation ? 'Dọn kho sau thanh lý' : 'Sửa chữa sau trả kho'}
+          {isLiquidation ? 'Cưỡng chế dọn kho' : 'Sửa chữa sau trả kho'}
         </span>
       </div>
 
@@ -898,9 +899,8 @@ export default function StaffTaskDetailPage() {
       : Math.max(0, rentPaid - usedCost - breakFee);
   }
 
-  // PR-O14 & PR-Q3: Phí ân hạn & trễ hạn
-  let estimatedGraceFee = 0;
-  let estimatedLateFee = 0;
+  // PR-Q3 & PR-Q14 (D-15 đã bỏ ân hạn 5 ngày): Phí phạt trễ hạn & phí chiếm dụng ô tính tới hôm nay
+  const taskOverdueFee = getOverdueFeeBreakdown(task);
   let daysPast = 0;
 
   if (isOverdueOrGrace) {
@@ -908,17 +908,19 @@ export default function StaffTaskDetailPage() {
     const nDate = new Date(todayStr);
     const diffTime = Math.abs(nDate - eDate);
     daysPast = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (daysPast === 1) {
-      estimatedGraceFee = 0; // PR-O14: Ngày end_date + 1 miễn phí
-    } else if (daysPast >= 2 && daysPast <= 5) {
-      estimatedGraceFee = Math.round((basePrice / 30) * (daysPast - 1));
-    } else {
-      estimatedLateFee = Math.round(depositHeld * Math.min(daysPast, 5) * 0.10);
-    }
   }
 
-  const totalDepositDeductions = totalDamageCost + estimatedGraceFee + estimatedLateFee;
+  const hasBackendOverdueFee =
+    task?.totalPenaltyFee != null || task?.lateFee != null || task?.overstayFee != null || task?.graceFee != null;
+  const estimatedLateFee = hasBackendOverdueFee
+    ? taskOverdueFee.lateFee
+    : (isOverdueOrGrace && !taskOverdueFee.lateFeeWaived ? Math.round(depositHeld * Math.min(daysPast, 5) * 0.10) : 0);
+  const estimatedOverstayFee = hasBackendOverdueFee ? taskOverdueFee.overstayFee : 0;
+  const estimatedTotalPenalty = hasBackendOverdueFee
+    ? taskOverdueFee.totalPenalty
+    : (estimatedLateFee + estimatedOverstayFee);
+
+  const totalDepositDeductions = totalDamageCost + estimatedTotalPenalty;
   const estimatedDepositRefund = Math.max(0, depositHeld - totalDepositDeductions);
   let estimatedExcessDebt = Math.max(0, totalDepositDeductions - depositHeld);
 
@@ -1259,7 +1261,7 @@ export default function StaffTaskDetailPage() {
           {isManager && task.contractId && (
             <SimulationButton
               label="Khách không tới trả kho (31 ngày)"
-              description="Qua ngày hẹn trả kho mà khách không tới: hợp đồng chuyển QUÁ HẠN 31 ngày (phí trễ chạm trần 50% cọc), huỷ task nghiệm thu. Sau đó vào màn Hợp đồng quá hạn để liên hệ và thanh lý."
+              description="Qua ngày hẹn trả kho mà khách không tới: hợp đồng chuyển QUÁ HẠN 31 ngày (phí trễ chạm trần 50% cọc), huỷ task nghiệm thu. Sau đó vào màn Hợp đồng quá hạn để liên hệ và cưỡng chế dọn kho."
               onRun={() => simulateOverdue(task.contractId, 31)}
               onDone={() => navigate('/manager/overdue')}
             />
@@ -1393,14 +1395,30 @@ export default function StaffTaskDetailPage() {
                             </span>
                           </div>
                         )}
-                        {parsedRefund?.lateFeeNum > 0 && (
-                          <div className="flex justify-between items-center py-0.5">
-                            <span className="font-bold text-[#718096]">
-                              Khấu trừ phí trễ hạn {parsedRefund.overdueDays ? `(${parsedRefund.overdueDays} ngày):` : ':'}
-                            </span>
-                            <span className="font-black text-[#E53E3E]">
-                              - {parsedRefund.lateFee}
-                            </span>
+                        {parsedRefund?.totalPenaltyNum > 0 && (
+                          <div className="space-y-0.5 py-0.5">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-[#718096]">
+                                Khấu trừ tổng tiền phạt quá hạn {parsedRefund.overdueDays ? `(${parsedRefund.overdueDays} ngày):` : ':'}
+                              </span>
+                              <span className="font-black text-[#E53E3E]">
+                                - {parsedRefund.totalPenalty}
+                              </span>
+                            </div>
+                            <div className="pl-3 space-y-0.5 text-[11px] text-[#718096]">
+                              {parsedRefund.lateFeeNum > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <span>• Phí phạt trễ hạn:</span>
+                                  <span className="font-bold text-[#E53E3E]">- {parsedRefund.lateFee}</span>
+                                </div>
+                              )}
+                              {parsedRefund.overstayFeeNum > 0 && (
+                                <div className="flex justify-between items-center">
+                                  <span>• Phí chiếm dụng ô:</span>
+                                  <span className="font-bold text-[#E53E3E]">- {parsedRefund.overstayFee}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                         {effectiveEarlyRentRefund > 0 && (
@@ -1411,7 +1429,7 @@ export default function StaffTaskDetailPage() {
                             </span>
                           </div>
                         )}
-                        {!parsedRefund?.penaltyAmountNum && !parsedRefund?.lateFeeNum && !(Number(task.totalDamageCost) > 0) && (
+                        {!parsedRefund?.penaltyAmountNum && !parsedRefund?.totalPenaltyNum && !(Number(task.totalDamageCost) > 0) && (
                           <div className="flex justify-between items-center py-0.5">
                             <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
                             <span className="font-black text-[#2F855A]">
@@ -2099,12 +2117,30 @@ export default function StaffTaskDetailPage() {
                       <span className="font-black text-[#FF4B4B]">- {formatCurrency(task.totalDamageCost)}</span>
                     </div>
                   )}
-                  {((Number(task.graceFee) || 0) + (Number(task.lateFee) || 0)) > 0 && (
-                    <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
-                      <span>Khấu trừ phí ân hạn / trễ hạn:</span>
-                      <span className="font-black text-[#FF4B4B]">- {formatCurrency((Number(task.graceFee) || 0) + (Number(task.lateFee) || 0))}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    const fee = getOverdueFeeBreakdown(task);
+                    if (!(fee.totalPenalty > 0 || fee.lateFeeWaived || fee.overstayFeeWaived)) return null;
+                    return (
+                      <div className="flex flex-col gap-1 py-1">
+                        <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
+                          <span>Khấu trừ tổng tiền phạt quá hạn:</span>
+                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(fee.totalPenalty)}</span>
+                        </div>
+                        <div className="pl-3 border-l-2 border-[#FCA5A5] space-y-0.5 text-[11px] font-bold text-[#777777]">
+                          <div className="flex justify-between">
+                            <span>• Phí phạt trễ hạn:</span>
+                            <span className="text-[#FF4B4B]">{fee.lateFeeWaived ? 'Đã miễn (0₫)' : `- ${formatCurrency(fee.lateFee)}`}</span>
+                          </div>
+                          {(fee.overstayFee > 0 || fee.overstayFeeWaived) && (
+                            <div className="flex justify-between">
+                              <span>• Phí chiếm dụng ô:</span>
+                              <span className="text-[#FF4B4B]">{fee.overstayFeeWaived ? 'Đã miễn (0₫)' : `- ${formatCurrency(fee.overstayFee)}`}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
                     <span>Tiền cọc hoàn lại:</span>
                     <span className="font-black text-[#026AA2]">
@@ -2641,10 +2677,24 @@ export default function StaffTaskDetailPage() {
                     <span className="font-black">{formatCurrency(facilityDamageCost)}</span>
                   </div>
                 )}
-                {(estimatedGraceFee + estimatedLateFee) > 0 && (
-                  <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
-                    <span>Khấu trừ phí {estimatedGraceFee > 0 ? `ân hạn dọn đồ (${daysPast - 1} ngày)` : 'trễ hạn'}:</span>
-                    <span className="font-black text-[#FF4B4B]">- {formatCurrency(estimatedGraceFee + estimatedLateFee)}</span>
+                {(estimatedTotalPenalty > 0 || taskOverdueFee.lateFeeWaived || taskOverdueFee.overstayFeeWaived) && (
+                  <div className="flex flex-col gap-1 py-1">
+                    <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
+                      <span>Khấu trừ tổng tiền phạt quá hạn {daysPast > 0 ? `(${daysPast} ngày)` : ''}:</span>
+                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(estimatedTotalPenalty)}</span>
+                    </div>
+                    <div className="pl-3 border-l-2 border-[#FCA5A5] space-y-0.5 text-[11px] font-bold text-[#777777]">
+                      <div className="flex justify-between">
+                        <span>• Phí phạt trễ hạn:</span>
+                        <span className="text-[#FF4B4B]">{taskOverdueFee.lateFeeWaived ? 'Đã miễn (0₫)' : `- ${formatCurrency(estimatedLateFee)}`}</span>
+                      </div>
+                      {(estimatedOverstayFee > 0 || taskOverdueFee.overstayFeeWaived) && (
+                        <div className="flex justify-between">
+                          <span>• Phí chiếm dụng ô:</span>
+                          <span className="text-[#FF4B4B]">{taskOverdueFee.overstayFeeWaived ? 'Đã miễn (0₫)' : `- ${formatCurrency(estimatedOverstayFee)}`}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
                 <div className="flex justify-between text-xs font-bold text-[#4B4B4B]">
@@ -2682,7 +2732,7 @@ export default function StaffTaskDetailPage() {
                       <span className="font-black text-[#FF4B4B] text-base">{formatCurrency(estimatedExcessDebt)}</span>
                     </div>
                     <span className="text-[11px] font-bold text-[#FF4B4B]/90">
-                      Hệ thống sẽ ghi nhận công nợ DAMAGE_FEE (PENDING). Khách cần thanh toán khoản này ở mục Thanh toán.
+                      Hệ thống sẽ ghi nhận công nợ {totalDamageCost > 0 && estimatedOverstayFee > 0 ? 'DAMAGE_FEE / OVERSTAY_FEE' : estimatedOverstayFee > 0 ? 'OVERSTAY_FEE' : 'DAMAGE_FEE'} (PENDING). Khách cần thanh toán khoản này ở mục Thanh toán.
                     </span>
                   </div>
                 ) : (

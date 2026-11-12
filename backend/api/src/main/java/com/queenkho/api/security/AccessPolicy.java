@@ -64,14 +64,14 @@ public class AccessPolicy {
         group("TASK_MANAGE", "Giao / gỡ việc, gia hạn hỗ trợ, xác nhận hoàn tiền",
                 "Flow 5: phân công nhân viên cho bàn giao, nghiệm thu, hỗ trợ", scopes("FACILITY_MANAGER", FACILITY));
         group("TASK_MAINTENANCE", "Bảo trì ô kho: sửa xong / dọn xong",
-                "PR-O10: đóng task bảo trì sau trả kho có sự cố hoặc sau thanh lý, ô quay về sẵn sàng cho thuê",
+                "PR-O10: đóng task bảo trì sau trả kho có sự cố hoặc sau cưỡng chế dọn kho, ô quay về sẵn sàng cho thuê",
                 scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
-        group("HELD_GOODS_MANAGE", "Hàng lưu giữ sau thanh lý",
+        group("HELD_GOODS_MANAGE", "Hàng lưu giữ sau cưỡng chế dọn kho",
                 "PR-Q10: trả khách, bán thanh lý, tiêu huỷ, giao cơ quan chức năng", scopes("FACILITY_MANAGER", FACILITY));
         group("RESERVATION_MANAGE", "Duyệt đơn, gán ô, chuyển ô, No-Show, dời lịch",
                 "Flow 1 / 2: gán ô đúng loại cho đơn đã cọc, chuyển hợp đồng sang ô khác (BR-122)",
                 scopes("FACILITY_MANAGER", FACILITY));
-        group("CONTRACT_MANAGE", "Quá hạn: liên hệ, thanh lý",
+        group("CONTRACT_MANAGE", "Quá hạn: liên hệ, cưỡng chế dọn kho",
                 "Flow 6: theo dõi hợp đồng quá hạn của cơ sở", scopes("FACILITY_MANAGER", FACILITY));
         group("LATE_FEE_WAIVE", "Miễn phí trễ cho hợp đồng quá hạn",
                 "Flow 6 (04/11/2026): FM miễn cho cơ sở mình (khi chính sách cho phép), BOM miễn cho mọi cơ sở",
@@ -90,7 +90,7 @@ public class AccessPolicy {
                 "Flow 4 / 5: ô trống, ô đang thuê, doanh thu, tỷ lệ sử dụng, quá hạn",
                 scopes("FACILITY_MANAGER", FACILITY, "BOM", SYSTEM));
         group("POLICY_VIEW", "Xem chính sách thuê",
-                "Cọc, huỷ, phí trễ, ưu đãi, thanh lý", scopes("FACILITY_MANAGER", FACILITY, "BOM", SYSTEM));
+                "Cọc, huỷ, phí trễ, ưu đãi, cưỡng chế dọn kho", scopes("FACILITY_MANAGER", FACILITY, "BOM", SYSTEM));
         group("BOM_CATALOG", "Cơ sở, loại kho & bảng giá, chính sách (sửa)",
                 "Flow 4: quản lý danh mục và quy định chung", scopes("BOM", SYSTEM));
         group("BOM_REVENUE", "So sánh doanh thu giữa các cơ sở",
@@ -106,7 +106,7 @@ public class AccessPolicy {
                 "Dời lịch hẹn về hôm nay để check-in / nghiệm thu trả kho ngay", scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
         group("DEV_SIM_CUSTOMER", "Giả lập demo: giữ chỗ 15 phút, ticket tự đóng, sắp hết hạn",
                 "Tua giờ để thấy job tự huỷ đơn / tự đóng ticket / nhắc gia hạn", scopes("CUSTOMER", OWN, "FACILITY_MANAGER", FACILITY));
-        group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, thanh lý, task quá hạn",
+        group("DEV_SIM_MANAGER", "Giả lập demo: No-Show, quá hạn, cưỡng chế dọn kho, task quá hạn",
                 "Tua 48h / 3 ngày / 31 ngày để demo chế tài; đẩy task quá hạn để demo gia hạn xử lý", scopes("FACILITY_MANAGER", FACILITY));
 
         // ---------- Luật: khớp từ trên xuống, luật đầu tiên khớp được dùng ----------

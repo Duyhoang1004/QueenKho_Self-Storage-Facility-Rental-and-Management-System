@@ -1217,6 +1217,16 @@ public class StaffTaskService {
 
         // 1. Kiểm tra dữ liệu biên bản nghiệm thu và danh sách sự cố (UC-23 / UC-24)
         validateCheckOutRequest(request);
+
+        // UC-23 (góp ý test 13/11): không nghiệm thu trước ngày khách hẹn trả kho — tiền hoàn tính theo ngày nghiệm thu
+        // thực tế, nghiệm thu sớm sẽ làm sai số tiền khách đã thấy lúc hẹn. Hạn task CHECK_OUT = 21:00 ngày hẹn
+        // (task trả kho không gia hạn được, chỉ khách dời lịch → due_at luôn là ngày hẹn).
+        LocalDate checkoutAppointment = task.getDueAt() != null ? task.getDueAt().toLocalDate() : null;
+        if (checkoutAppointment != null && LocalDate.now().isBefore(checkoutAppointment)) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_OUT_TOO_EARLY",
+                    "Khách hẹn trả kho ngày " + checkoutAppointment.format(DATE_FMT)
+                            + ", chưa được nghiệm thu trước ngày hẹn");
+        }
         String notes = request.getNotes() == null || request.getNotes().isBlank() ? null : request.getNotes().trim();
         String originalTaskNote = task.getNote();
 

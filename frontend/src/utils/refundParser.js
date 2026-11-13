@@ -85,7 +85,7 @@ export function parseRefundNote(note) {
     res.refundAmount = `${numNet.toLocaleString('vi-VN')} ₫`;
   }
 
-  const mAmount = note.match(/(?:Số tiền hoàn|So tien hoan|Hoàn tiền|Hoan tien|Số tiền|So tien):\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
+  const mAmount = note.match(/(?:Số tiền hoàn đã chốt|So tien hoan da chot|Số tiền hoàn|So tien hoan|Hoàn tiền|Hoan tien|Số tiền|So tien):\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
   if (mAmount && !res.refundAmountNum) {
     const num = parseVndAmount(mAmount[1]);
     res.refundAmountNum = num;
@@ -113,6 +113,26 @@ export function parseRefundNote(note) {
       res.earlyRentRefundNum = numEarly;
       res.earlyRentRefund = `${numEarly.toLocaleString('vi-VN')} ₫`;
     }
+
+    // Chi tiết trả sớm (PR-O2): "(Đã trả 3T: 2.465.000đ - Đã dùng 1T: 900.000đ - Phí hủy HĐ: 900.000đ)"
+    const mRentPaid = note.match(/Đã trả\s*(\d+)T:\s*([0-9.,]+)/i);
+    if (mRentPaid) {
+      res.rentPaidMonths = Number(mRentPaid[1]);
+      res.rentPaidNum = parseVndAmount(mRentPaid[2]);
+    }
+    const mUsed = note.match(/Đã dùng\s*(\d+)T:\s*([0-9.,]+)/i);
+    if (mUsed) {
+      res.usedMonths = Number(mUsed[1]);
+      res.usedCostNum = parseVndAmount(mUsed[2]);
+    }
+    const mBreak = note.match(/Phí hủy HĐ:\s*([0-9.,]+)/i);
+    if (mBreak) res.breakFeeNum = parseVndAmount(mBreak[1]);
+
+    const mDebt = note.match(/Nợ vượt cọc cần truy thu:\s*([0-9.,]+)/i);
+    if (mDebt) res.excessDebtNum = parseVndAmount(mDebt[1]);
+
+    const mUnit = note.match(/\(Ô\s+([^)]+)\)/);
+    if (mUnit) res.unitId = mUnit[1].trim();
 
     const mDamage = note.match(/(?:Phí hư hại|Phi hu hai|Sự cố|Su co):?\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mDamage) {
@@ -232,16 +252,23 @@ export function parseRefundNote(note) {
     res.accountHolder = res.bankAccountName;
   }
 
-  const mStkAlt = note.match(/(?:Hoàn cọc STK|Hoan coc STK):\s*([A-Za-z0-9_-]+)\s*\(([^)-]+)(?:-\s*([^)]+))?\)/i);
+  // Ghi chú trả kho: "Hoàn cọc STK: 4567367979 (Techcombank (TCB) - NGUYỄN VĂN AN)" — tên ngân hàng có thể chứa
+  // ngoặc nên tách theo đoạn giữa hai dấu "|" và lấy " - " cuối cùng làm ranh giới với tên chủ TK
+  const stkSegment = note.split('|').map(s => s.trim()).find(s => /^(?:Hoàn cọc STK|Hoan coc STK):/i.test(s));
+  const mStkAlt = stkSegment && stkSegment.match(/^(?:Hoàn cọc STK|Hoan coc STK):\s*([A-Za-z0-9_-]+)\s*(?:\((.*)\))?/i);
   if (mStkAlt) {
     if (!res.bankAccountNumber) {
       res.bankAccountNumber = mStkAlt[1].trim();
       res.accountNumber = res.bankAccountNumber;
     }
-    if (!res.bankName) res.bankName = mStkAlt[2].trim();
-    if (!res.bankAccountName && mStkAlt[3]) {
-      res.bankAccountName = mStkAlt[3].trim();
-      res.accountHolder = res.bankAccountName;
+    const inner = (mStkAlt[2] || '').trim();
+    const cut = inner.lastIndexOf(' - ');
+    const bank = cut >= 0 ? inner.slice(0, cut).trim() : inner;
+    const holder = cut >= 0 ? inner.slice(cut + 3).trim() : '';
+    if (!res.bankName && bank) res.bankName = bank;
+    if (!res.bankAccountName && holder) {
+      res.bankAccountName = holder;
+      res.accountHolder = holder;
     }
   }
 

@@ -1106,3 +1106,11 @@ Không đổi schema.
 - `POST /reservations`: `phone` sai định dạng / `cccd` không phải 12 số (hoặc hộ chiếu 1 chữ + 7–8 số) → 400 `INVALID_INPUT`.
 - `GET /vouchers/validate`: giới hạn lượt / khách chỉ đếm đơn đã thanh toán cọc; tạo đơn mới với mã có giới hạn lượt sẽ chuyển đơn cũ chưa thanh toán (cùng khách, cùng mã) sang `EXPIRED`.
 
+
+## Góp ý test 13/11/2026
+
+### Xem trước tiền hoàn khi hẹn trả kho — UC-22
+`GET /api/v1/contracts/{id}/checkout-refund-preview?checkoutDate=yyyy-MM-dd` (CUSTOMER chủ HĐ; Staff / FM cùng cơ sở) → `RefundCalculationResult` (cùng hàm tính lúc nghiệm thu, phí hư hại = 0): `earlyCheckout`, `usedMonths`, `cycleMonths`, `baseMonthlyPrice`, `rentPaid`, `breakFee`, `earlyRentRefund`, `overdueOrGrace`, `daysPastEndDate`, `lateFee`, `overstayFee`, `depositHeld`, `depositRefund`, `totalRefundAmount`, `excessDebtAmount`, `breakdownDescription`. Bỏ `checkoutDate` = hôm nay.
+
+### Chặn nghiệm thu trả kho trước ngày hẹn — UC-23
+`POST /api/v1/staff-tasks/{id}/check-out`: hôm nay trước ngày hẹn (ngày của `dueAt`) → 409 `CHECK_OUT_TOO_EARLY`.

@@ -6,8 +6,106 @@ import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTa
 import { getFacilityStaff } from '../../services/facilityStaffService'
 import { assignLockedUntil } from '../../utils/taskWindow'
 import DateInput from '../../components/DateInput'
+import { parseRefundNote } from '../../utils/refundParser'
 
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
+
+const vnd = n => `${Number(n || 0).toLocaleString('vi-VN')} ₫`
+
+function MoneyRow({ label, amount, sign, tone = 'text-[#4B4B4B]', sub }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${sub ? 'pl-3 text-[11px] text-[#777777]' : ''}`}>
+      <span className={sub ? 'font-bold' : 'font-bold text-[#777777]'}>{label}</span>
+      <span className={`font-black whitespace-nowrap ${tone}`}>{sign}{vnd(amount)}</span>
+    </div>
+  )
+}
+
+// Góp ý test 13/11: ghi chú hoàn tiền BE ghép một dòng ("… | Cọc gốc … => Cọc hoàn … + … => THỰC HOÀN …") —
+// tách thành bảng tiền + khối nhận tiền cho FM dễ đối chiếu trước khi chuyển khoản
+function RefundBreakdown({ note }) {
+  const [showRaw, setShowRaw] = useState(false)
+  if (!note) {
+    return <p className="text-xs font-bold text-[#AFAFAF]">Không có ghi chú chi tiết</p>
+  }
+  const p = parseRefundNote(note)
+  const hasMoney = p.refundAmountNum > 0 || p.originalTotalNum > 0
+
+  return (
+    <div className="flex flex-col gap-3 text-xs">
+      {(p.orderCode || p.unitId) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="px-2 py-0.5 rounded-md bg-[#F3E8FF] text-[#805AD5] text-[10px] font-black uppercase">
+            {p.isCheckout ? 'Hoàn tiền trả kho' : 'Hoàn tiền huỷ đơn'}
+          </span>
+          {p.orderCode && <span className="font-black text-[#4B4B4B]">{p.isCheckout ? 'HĐ' : 'Đơn'} {p.orderCode}</span>}
+          {p.unitId && <span className="font-bold text-[#777777]">· Ô {p.unitId}</span>}
+          {p.customerName && <span className="font-bold text-[#777777]">· {p.customerName}</span>}
+        </div>
+      )}
+
+      {hasMoney && (
+        <div className="rounded-xl border border-[#E5E5E5] bg-[#F7F7F7] p-3 flex flex-col gap-1.5">
+          {p.isCheckout ? (
+            <>
+              <MoneyRow label="Cọc gốc" amount={p.originalTotalNum} />
+              {p.penaltyAmountNum > 0 && <MoneyRow sub label="• Phí hư hại khoang" amount={p.penaltyAmountNum} sign="− " tone="text-[#FF4B4B]" />}
+              {p.lateFeeNum > 0 && <MoneyRow sub label={`• Phí trễ${p.overdueDays ? ` (${p.overdueDays} ngày)` : ''}`} amount={p.lateFeeNum} sign="− " tone="text-[#FF4B4B]" />}
+              {p.overstayFeeNum > 0 && <MoneyRow sub label="• Phí chiếm dụng ô" amount={p.overstayFeeNum} sign="− " tone="text-[#FF4B4B]" />}
+              {p.depositRefundNum != null && <MoneyRow label="Cọc hoàn lại" amount={p.depositRefundNum} sign="+ " tone="text-[#1CB0F6]" />}
+              {p.earlyRentRefundNum > 0 && (
+                <>
+                  <MoneyRow label="Hoàn tiền thuê trả sớm" amount={p.earlyRentRefundNum} sign="+ " tone="text-[#58A700]" />
+                  {p.rentPaidNum > 0 && <MoneyRow sub label={`• Đã trả ${p.rentPaidMonths} tháng`} amount={p.rentPaidNum} />}
+                  {p.usedCostNum > 0 && <MoneyRow sub label={`• Đã dùng ${p.usedMonths} tháng`} amount={p.usedCostNum} sign="− " />}
+                  {p.breakFeeNum > 0 && <MoneyRow sub label="• Phí huỷ hợp đồng sớm" amount={p.breakFeeNum} sign="− " />}
+                </>
+              )}
+            </>
+          ) : (
+            p.penaltyAmountNum > 0 && <MoneyRow label="Phí huỷ đã trừ" amount={p.penaltyAmountNum} sign="− " tone="text-[#FF4B4B]" />
+          )}
+          <div className="mt-1 pt-2 border-t-2 border-dashed border-[#D9D9D9] flex items-baseline justify-between gap-3">
+            <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Thực hoàn cho khách</span>
+            <span className="text-lg font-black text-[#58A700] whitespace-nowrap">{vnd(p.refundAmountNum)}</span>
+          </div>
+          {p.excessDebtNum > 0 && (
+            <div className="flex items-baseline justify-between gap-3 rounded-lg bg-[#FFDFDF] px-2 py-1">
+              <span className="text-[11px] font-black text-[#C53030]">Nợ vượt cọc cần truy thu</span>
+              <span className="font-black text-[#C53030] whitespace-nowrap">{vnd(p.excessDebtNum)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 flex flex-col gap-1">
+        <span className="text-[10px] font-black uppercase text-[#1899D6]">
+          {p.isCash ? 'Khách nhận tiền mặt tại quầy' : 'Chuyển khoản tới'}
+        </span>
+        {!p.isCash && (p.bankAccountNumber || p.bankName) ? (
+          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-bold text-[#4B4B4B]">
+            <span className="text-[#777777]">Ngân hàng</span><span>{p.bankName || '—'}</span>
+            <span className="text-[#777777]">Số TK</span><span className="font-mono font-black">{p.bankAccountNumber || '—'}</span>
+            <span className="text-[#777777]">Chủ TK</span><span className="uppercase">{p.bankAccountName || '—'}</span>
+          </div>
+        ) : !p.isCash ? (
+          <span className="font-bold text-[#777777]">Chưa có thông tin tài khoản trong ghi chú.</span>
+        ) : null}
+      </div>
+
+      {p.reason && (
+        <p className="font-bold text-[#4B4B4B]"><span className="text-[#AFAFAF] uppercase text-[10px] font-black mr-1">Lý do:</span>{p.reason}</p>
+      )}
+
+      <button type="button" onClick={() => setShowRaw(v => !v)} className="self-start text-[11px] font-bold text-[#AFAFAF] hover:text-[#1CB0F6] underline">
+        {showRaw ? 'Ẩn ghi chú gốc' : 'Xem ghi chú gốc'}
+      </button>
+      {showRaw && (
+        <p className="rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] p-2.5 text-[11px] font-bold text-[#777777] break-words">{note}</p>
+      )}
+    </div>
+  )
+}
 
 // Flow 5: chọn nhân viên ACTIVE cùng cơ sở để giao task — hiện số việc đang làm để chia việc đều
 function AssignTaskModal({ task, facilityId, onClose, onAssigned }) {
@@ -646,10 +744,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </div>
             )}
 
-            <div className="bg-[#F7F7F7] p-3 rounded-xl border border-[#E5E5E5] text-xs font-bold text-[#4B4B4B] leading-relaxed">
-              <span className="text-[10px] font-black uppercase text-[#AFAFAF] block mb-1">Chi tiết số tiền & phương thức hoàn:</span>
-              {refundTask.note || 'Không có ghi chú chi tiết'}
-            </div>
+            <RefundBreakdown note={refundTask.note} />
 
             {/* Chọn hình thức hoàn tiền (PR-O15) */}
             <div className="flex flex-col gap-1.5">

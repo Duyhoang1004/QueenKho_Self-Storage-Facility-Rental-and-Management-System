@@ -176,6 +176,17 @@ public class ContractController {
         return ResponseEntity.ok(contractService.refundRemainingDeposit(id, currentUser.require().id()));
     }
 
+    // UC-22: xem trước tiền hoàn theo ngày hẹn trả kho (cùng công thức lúc nghiệm thu)
+    @GetMapping("/{id}/checkout-refund-preview")
+    public ResponseEntity<?> getCheckoutRefundPreview(
+            @PathVariable Integer id,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkoutDate) {
+        ownershipGuard.checkContract(id);
+        return contractViewService.previewCheckoutRefund(id, checkoutDate)
+                .map(r -> ResponseEntity.ok((Object) r))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     // Flow 6: báo giá 4 gói gia hạn (1/3/6/12 tháng) — đúng số tiền VNPAY sẽ thu
     @GetMapping("/{id}/renewal-quote")
     public ResponseEntity<?> getRenewalQuote(@PathVariable Integer id) {

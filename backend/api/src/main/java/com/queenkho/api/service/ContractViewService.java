@@ -1,6 +1,7 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CustomerContractResponse;
+import com.queenkho.api.dto.RefundCalculationResult;
 import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.repository.HeldGoodsRepository;
@@ -64,6 +65,14 @@ public class ContractViewService {
     private HeldGoodsService heldGoodsService;
 
     // ── Truy vấn ────────────────────────────────────────────────────────────
+
+    // UC-22 (góp ý test 13/11): xem trước số tiền hoàn khi khách chọn ngày trả kho — dùng đúng công thức lúc
+    // nghiệm thu (PR-O2/O2a/O2c, BR-125, PR-Q3/Q14) thay vì FE tự tính, chưa có sự cố nên phí hư hại = 0
+    public Optional<RefundCalculationResult> previewCheckoutRefund(Integer contractId, LocalDate checkoutDate) {
+        LocalDate date = checkoutDate != null ? checkoutDate : LocalDate.now(VN_ZONE);
+        return rentalContractRepository.findDetailById(contractId)
+                .map(rc -> staffTaskService.calculateCheckoutRefund(rc, date, BigDecimal.ZERO));
+    }
 
     // GET /contracts/{id}
     public Optional<CustomerContractResponse> getDetail(Integer contractId) {

@@ -1101,7 +1101,7 @@ export default function StorageManagementPage() {
       {/* ======================================================== */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`duo-card w-full ${addFloorPlan ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto p-6 flex flex-col gap-5 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200`}>
+          <div className={`duo-card w-full ${addFloorPlan ? 'max-w-6xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto p-6 flex flex-col gap-5 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200`}>
             <div className="flex items-center justify-between border-b-2 border-[#E5E5E5] pb-3">
               <div>
                 <h2 className="text-xl font-black text-[#4B4B4B] uppercase tracking-wide">
@@ -1210,9 +1210,8 @@ export default function StorageManagementPage() {
                   />
                 </div>
               </div>
-              </div>
 
-              {/* BR-140: ô kho khẩn cấp */}
+              {/* BR-140: ô kho khẩn cấp — nằm trong cột trái, để bản đồ giữ cột phải rộng */}
               <label className="flex items-start gap-2 text-xs font-bold text-[#4B4B4B] cursor-pointer">
                 <input
                   type="checkbox"
@@ -1227,6 +1226,7 @@ export default function StorageManagementPage() {
                   </span>
                 </span>
               </label>
+              </div>
 
               {/* UC-06: chọn chỗ đặt ô trên mặt bằng tầng */}
               {addFloorPlan && (

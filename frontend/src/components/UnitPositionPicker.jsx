@@ -15,7 +15,9 @@ import { DOOR_SIDES, cellsToMeters, centerOnCell, clampToFloor, isPlacementValid
 export default function UnitPositionPicker({ floor, units, size, value, onChange, onRotate }) {
   const [boxRef, boxWidth] = useElementWidth();
   const [hover, setHover] = useState(null);
-  const cellSize = Math.max(5, Math.min(16, Math.floor((boxWidth - 12) / floor.gridWidth) || 8));
+  // Lấp đầy chiều ngang khung (tối thiểu 8px/ô — hẹp hơn thì cuộn ngang thay vì thu bé)
+  const fitted = boxWidth > 0 ? Math.floor((boxWidth - 12) / floor.gridWidth) : 12;
+  const cellSize = Math.max(8, Math.min(24, fitted));
 
   const placed = useMemo(
     () => units.filter(u => sameFloor(u.floor, floor.name) && u.mapX != null),

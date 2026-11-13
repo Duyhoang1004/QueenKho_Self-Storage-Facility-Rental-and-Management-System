@@ -20,6 +20,12 @@ export async function getContractByReservation(reservationId) {
 
 // Flow 6: báo giá gia hạn 1/3/6/12 tháng (đúng số VNPAY sẽ thu)
 // trả [{ months, discountPercent, subtotal, discountAmount, rentAmount, lateFeeAmount, lateFeeWaived, overstayFeeAmount, totalAmount }]
+// UC-22: xem trước tiền hoàn theo ngày hẹn trả kho (BE dùng đúng công thức lúc nghiệm thu)
+export async function getCheckoutRefundPreview(contractId, checkoutDate) {
+  const res = await api.get(`/contracts/${contractId}/checkout-refund-preview`, { params: { checkoutDate } })
+  return res.data
+}
+
 export async function getRenewalQuote(contractId) {
   const res = await api.get(`/contracts/${contractId}/renewal-quote`)
   return res.data

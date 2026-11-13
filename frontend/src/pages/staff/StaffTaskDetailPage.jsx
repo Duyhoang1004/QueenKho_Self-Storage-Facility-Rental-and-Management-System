@@ -191,8 +191,21 @@ function blockedReason(task, userId) {
     default:
       if (task.staffId !== userId) return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
       if (new Date(task.dueAt) <= new Date()) return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản.';
+      // UC-23 (góp ý test 13/11): chưa tới ngày khách hẹn trả kho thì chưa nghiệm thu (BE chặn CHECK_OUT_TOO_EARLY)
+      if (task.taskType === 'CHECK_OUT' && task.dueAt) {
+        const appointment = String(task.dueAt).slice(0, 10);
+        if (localTodayIso() < appointment) {
+          const [y, m, d] = appointment.split('-');
+          return `Khách hẹn trả kho ngày ${d}/${m}/${y}. Chưa được nghiệm thu trước ngày hẹn.`;
+        }
+      }
       return null;
   }
+}
+
+function localTodayIso() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
 function InfoRow({ label, value, mono, highlight }) {

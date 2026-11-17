@@ -249,7 +249,7 @@ export default function OverdueContractsPage() {
     : 0
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-6 max-w-[1440px] mx-auto">
       {/* Toast thông báo */}
       {successToast && (
         <div className="fixed top-6 right-6 z-50 bg-[#D7FFB8] border-2 border-[#58CC02] text-[#58A700] px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2 font-bold text-sm animate-in fade-in slide-in-from-top-4 duration-300">
@@ -366,17 +366,17 @@ export default function OverdueContractsPage() {
           </div>
         ) : activeTab === 'OVERDUE' ? (
           /* TAB 1: ĐANG QUÁ HẠN */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="overflow-x-auto custom-scrollbar pb-2">
+            <table className="w-full min-w-[1220px] text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b-2 border-[#E5E5E5] bg-[#FAFAFA] text-[#AFAFAF] uppercase font-black tracking-wider text-[11px]">
-                  <th className="py-3.5 px-4">Mã Hợp Đồng</th>
-                  <th className="py-3.5 px-4">Khách Hàng</th>
-                  <th className="py-3.5 px-4">Ô Kho</th>
-                  <th className="py-3.5 px-4 text-center">Quá Hạn</th>
-                  <th className="py-3.5 px-4 text-right">Tổng Phạt (Trễ + Chiếm Dụng)</th>
-                  <th className="py-3.5 px-4">Ghi Chú Đôn Đốc Gần Nhất</th>
-                  <th className="py-3.5 px-4 text-center">Thao Tác</th>
+                  <th className="py-3.5 px-3 whitespace-nowrap">Mã Hợp Đồng</th>
+                  <th className="py-3.5 px-3 whitespace-nowrap">Khách Hàng</th>
+                  <th className="py-3.5 px-3 whitespace-nowrap">Ô Kho</th>
+                  <th className="py-3.5 px-3 text-center whitespace-nowrap">Quá Hạn</th>
+                  <th className="py-3.5 px-3 text-right">Tổng Phạt (Trễ + Chiếm Dụng)</th>
+                  <th className="py-3.5 px-3">Ghi Chú Đôn Đốc Gần Nhất</th>
+                  <th className="py-3.5 px-3 text-center whitespace-nowrap">Thao Tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y-2 divide-[#F0F0F0]">
@@ -385,25 +385,25 @@ export default function OverdueContractsPage() {
                   const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-3 whitespace-nowrap">
                         <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
                           className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
                           #{c.contractCode}
                         </button>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-3 whitespace-nowrap">
                         <div className="font-bold text-[#4B4B4B]">{c.customerName || '—'}</div>
                         <div className="text-[11px] text-[#AFAFAF] font-mono">{c.customerPhone || '—'}</div>
                       </td>
-                      <td className="py-3.5 px-4 font-bold text-[#4B4B4B]">
+                      <td className="py-3.5 px-3 font-bold text-[#4B4B4B] whitespace-nowrap">
                         {c.storageUnitId || '—'}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
+                      <td className="py-3.5 px-3 text-center whitespace-nowrap">
                         <span className="inline-block px-2.5 py-1 rounded-full text-xs font-black bg-[#FFE8CC] text-[#E58800] border border-[#FF9600]">
                           {c.overdueDays || 1} ngày
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-black text-[#FF4B4B]">
+                      <td className="py-3.5 px-3 text-right font-black text-[#FF4B4B] whitespace-nowrap">
                         {totalPenalty === 0 && lateFeeWaived && overstayFeeWaived ? (
                           <span className="text-[#58A700]" title={c.lateFeeWaiverNote || ''}>0₫ (Đã miễn toàn bộ)</span>
                         ) : (
@@ -425,7 +425,7 @@ export default function OverdueContractsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 max-w-xs">
+                      <td className="py-3.5 px-3 min-w-[170px] max-w-[220px]">
                         {c.lastContactNote ? (
                           <div>
                             <p className="text-xs text-[#4B4B4B] line-clamp-2" title={c.lastContactNote}>
@@ -439,35 +439,37 @@ export default function OverdueContractsPage() {
                           <span className="text-[#AFAFAF] italic">Chưa ghi nhận</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
+                      <td className="py-3.5 px-3 text-center">
+                        <div className="inline-grid grid-cols-[88px_118px_214px_168px] items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenContactModal(c)}
-                            className="px-3 py-1.5 rounded-xl border-2 border-[#1CB0F6] bg-[#DDF4FF] text-[#1CB0F6] hover:bg-[#84D8FF]/30 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1"
+                            className="w-full h-9 px-2.5 py-1.5 rounded-xl border-2 border-[#1CB0F6] bg-[#DDF4FF] text-[#1CB0F6] hover:bg-[#84D8FF]/30 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-1 whitespace-nowrap"
                           >
-                            <span className="material-symbols-outlined text-[15px]">call</span>
+                            <span className="material-symbols-outlined text-[15px] shrink-0">call</span>
                             <span>Liên hệ</span>
                           </button>
 
-                          {!c.lateFeeWaived && Number(c.lateFeeAmount) > 0 && (
+                          {!c.lateFeeWaived && Number(c.lateFeeAmount) > 0 ? (
                             <button
                               type="button"
                               onClick={() => { setWaiveTarget(c); setWaiveReason(''); setWaiveOverstay(false); setWaiveError('') }}
-                              className="px-3 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#c4f59c] font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1"
+                              className="w-full h-9 px-2.5 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#c4f59c] font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-1 whitespace-nowrap"
                             >
-                              <span className="material-symbols-outlined text-[15px]">volunteer_activism</span>
+                              <span className="material-symbols-outlined text-[15px] shrink-0">volunteer_activism</span>
                               <span>Miễn phí trễ</span>
                             </button>
+                          ) : (
+                            <span aria-hidden="true" />
                           )}
 
                           {c.canLiquidate && (c.contactCount || 0) >= (c.minContactsRequired || 3) ? (
                             <button
                               type="button"
                               onClick={() => handleOpenLiquidateModal(c)}
-                              className="px-3 py-1.5 rounded-xl border-2 border-[#FF4B4B] bg-[#FFDFDF] text-[#FF4B4B] hover:bg-red-200 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1 shadow-xs whitespace-nowrap"
+                              className="w-full h-9 px-2.5 py-1.5 rounded-xl border-2 border-[#FF4B4B] bg-[#FFDFDF] text-[#FF4B4B] hover:bg-red-200 font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-1 shadow-xs whitespace-nowrap"
                             >
-                              <span className="material-symbols-outlined text-[15px]">gavel</span>
+                              <span className="material-symbols-outlined text-[15px] shrink-0">gavel</span>
                               <span>Cưỡng chế dọn kho</span>
                             </button>
                           ) : (
@@ -477,9 +479,9 @@ export default function OverdueContractsPage() {
                               title={c.canLiquidate
                                 ? `Cần ghi nhận ít nhất ${c.minContactsRequired || 3} lần liên hệ khách trước khi cưỡng chế dọn kho (Điều khoản xử lý tài sản)`
                                 : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện cưỡng chế dọn kho`}
-                              className="px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed flex items-center gap-1 whitespace-nowrap"
+                              className="w-full h-9 px-2.5 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap"
                             >
-                              <span className="material-symbols-outlined text-[15px]">gavel</span>
+                              <span className="material-symbols-outlined text-[15px] shrink-0">gavel</span>
                               <span>Cưỡng chế dọn kho</span>
                               <span className="text-[9px] font-normal lowercase">
                                 ({c.canLiquidate ? `${c.contactCount || 0}/${c.minContactsRequired || 3} liên hệ` : `${daysLeft}d`})
@@ -488,22 +490,24 @@ export default function OverdueContractsPage() {
                           )}
 
                           {/* Demo: tua qua mốc cưỡng chế dọn kho của chính sách (bản mới 15 ngày) để bật nút */}
-                          {!c.canLiquidate && (
+                          {!c.canLiquidate ? (
                             <SimulationButton
+                              className="w-full"
                               label={`${(c.liquidationDaysThreshold || 15) + 1} ngày`}
                               description={`Cho HĐ #${c.contractCode} quá hạn ${(c.liquidationDaysThreshold || 15) + 1} ngày để vượt mốc ${c.liquidationDaysThreshold || 15} ngày và bật nút Cưỡng chế dọn kho.`}
                               onRun={() => simulateOverdue(c.contractId, (c.liquidationDaysThreshold || 15) + 1)}
                               onDone={() => fetchContracts()}
                             />
-                          )}
-                          {/* Demo: đã gọi khách 3 lần không được → đủ điều kiện liên hệ để cưỡng chế dọn kho */}
-                          {c.canLiquidate && (c.contactCount || 0) < (c.minContactsRequired || 3) && (
+                          ) : c.canLiquidate && (c.contactCount || 0) < (c.minContactsRequired || 3) ? (
                             <SimulationButton
+                              className="w-full"
                               label="3 lần liên hệ"
                               description={`Ghi ${c.minContactsRequired || 3} lần gọi khách HĐ #${c.contractCode} không nghe máy (cách nhau 1 tuần) để đủ điều kiện cưỡng chế dọn kho theo điều khoản.`}
                               onRun={() => simulateFailedContacts(c.contractId)}
                               onDone={() => fetchContracts()}
                             />
+                          ) : (
+                            <span aria-hidden="true" />
                           )}
                         </div>
                       </td>
@@ -515,8 +519,8 @@ export default function OverdueContractsPage() {
           </div>
         ) : (
           /* TAB 2: ĐÃ THANH LÝ */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="overflow-x-auto custom-scrollbar pb-2">
+            <table className="w-full min-w-[1040px] text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b-2 border-[#E5E5E5] bg-[#FAFAFA] text-[#AFAFAF] uppercase font-black tracking-wider text-[11px]">
                   <th className="py-3.5 px-4">Mã Hợp Đồng</th>
@@ -580,7 +584,7 @@ export default function OverdueContractsPage() {
                           <button
                             type="button"
                             disabled
-                            className="px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed"
+                            className="w-[185px] h-9 px-3 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed inline-flex items-center justify-center whitespace-nowrap mx-auto"
                           >
                             Đã tạo lệnh hoàn
                           </button>
@@ -589,9 +593,9 @@ export default function OverdueContractsPage() {
                             type="button"
                             disabled={isRefunding}
                             onClick={() => handleRefundDeposit(c)}
-                            className="px-3 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#58CC02] hover:text-white font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer flex items-center gap-1 mx-auto disabled:opacity-50"
+                            className="w-[185px] h-9 px-3 py-1.5 rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] text-[#58A700] hover:bg-[#58CC02] hover:text-white font-black text-[11px] uppercase tracking-wide transition-colors cursor-pointer inline-flex items-center justify-center gap-1 whitespace-nowrap mx-auto disabled:opacity-50"
                           >
-                            <span className="material-symbols-outlined text-[15px]">payments</span>
+                            <span className="material-symbols-outlined text-[15px] shrink-0">payments</span>
                             <span>{isRefunding ? 'Đang tạo...' : 'Hoàn phần cọc còn lại'}</span>
                           </button>
                         ) : (

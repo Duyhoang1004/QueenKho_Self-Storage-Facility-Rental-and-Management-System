@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@900&amp;display=swap');
+      .brand-text {
+        font-family: 'Nunito', 'Segoe UI', Arial, sans-serif;
+        font-weight: 900;
+        font-size: 32px;
+        letter-spacing: -0.5px;
+      }
+      .sub-text {
+        font-family: 'Nunito', 'Segoe UI', Arial, sans-serif;
+        font-weight: 800;
+        font-size: 10px;
+        letter-spacing: 2.5px;
+        text-transform: uppercase;
+        fill: #AFAFAF;
+      }
+    </style>
+  </defs>
+
+  <!-- 3D Duolingo-style Icon Box -->
+  <!-- Shadow / bottom border -->
+  <rect x="8" y="12" width="60" height="60" rx="18" fill="#58A700" />
+  <!-- Main face -->
+  <rect x="8" y="8" width="60" height="56" rx="18" fill="#58CC02" />
+
+  <!-- Warehouse Icon (SVG Path) -->
+  <g fill="#FFFFFF" transform="translate(20, 20)">
+    <!-- Roof / warehouse structure -->
+    <path d="M18 2 L33 13 L33 34 L3 34 L3 13 Z" fill="#FFFFFF" />
+    <path d="M18 6 L29 14.5 L29 31 L7 31 L7 14.5 Z" fill="#58CC02" />
+    <!-- Door -->
+    <rect x="13" y="18" width="10" height="13" rx="2" fill="#FFFFFF" />
+    <!-- Top triangle accent -->
+    <polygon points="18,1 35,13.5 32,15 18,4 4,15 1,13.5" fill="#FFFFFF" />
+  </g>
+
+  <!-- Brand Typography -->
+  <!-- QUEEN -->
+  <text x="82" y="44" class="brand-text" fill="#58CC02">QUEEN</text>
+  <!-- KHO -->
+  <text x="194" y="44" class="brand-text" fill="#1CB0F6">KHO</text>
+  <!-- Slogan -->
+  <text x="83" y="60" class="sub-text">KHO LƯU TRỮ THÔNG MINH</text>
+</svg>

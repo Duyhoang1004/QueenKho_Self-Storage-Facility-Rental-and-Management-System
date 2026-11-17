@@ -267,7 +267,7 @@
 # ==============================================================================
 # UC-16: BANG CONG VIEC TAI CO SO (Staff Task Board)
 # ==============================================================================
-# Endpoint:  GET /api/v1/staff-tasks?facilityId={id}[&status={STATUS}]
+# Endpoint:  GET /api/v1/staff-tasks?facilityId={id}[&status={STATUS}][&staffId={staffId}]
 # Muc dich:  Staff va Facility Manager xem cac viec check-in / check-out cua co so minh
 # ==============================================================================
 #
@@ -282,6 +282,7 @@
 # Query params:
 #   - facilityId (BAT BUOC): lay tu sessionStorage user.facilityId (login da tra ve)
 #   - status (tuy chon): OPEN | IN_PROGRESS | OVERDUE | COMPLETED | CANCELLED. Khong truyen = tat ca
+#   - staffId (tuy chon): loc cac task duoc giao cho nhan vien cu the (dung cho popup xem task cua nhan vien)
 #
 # --- RESPONSE THANH CONG ---
 # HTTP Status: 200 OK  (sap xep dueAt tang dan)

@@ -267,6 +267,11 @@ public class StaffTaskService {
     // hơn
     @Transactional(readOnly = true)
     public List<StaffTaskResponse> getBoard(Integer facilityId, String status) {
+        return getBoard(facilityId, status, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<StaffTaskResponse> getBoard(Integer facilityId, String status, Integer staffId) {
         if (facilityId == null) {
             throw new IllegalArgumentException("Thiếu facilityId");
         }
@@ -280,6 +285,15 @@ public class StaffTaskService {
         List<StaffTask> tasks = staffTaskRepository.findBoard(facilityId, normalizedStatus);
         if (tasks.isEmpty()) {
             return Collections.emptyList();
+        }
+
+        if (staffId != null) {
+            tasks = tasks.stream()
+                    .filter(t -> t.getStaff() != null && Objects.equals(t.getStaff().getId(), staffId))
+                    .toList();
+            if (tasks.isEmpty()) {
+                return Collections.emptyList();
+            }
         }
 
         List<Integer> supportIds = tasks.stream()

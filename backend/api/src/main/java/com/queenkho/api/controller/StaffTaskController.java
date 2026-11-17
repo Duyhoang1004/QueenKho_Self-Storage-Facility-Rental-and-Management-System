@@ -27,12 +27,13 @@ public class StaffTaskController {
 
     // UC-16: Bảng công việc — dùng chung cho Staff và Facility Manager
     // GET /api/v1/staff-tasks?facilityId=1
-    // GET /api/v1/staff-tasks?facilityId=1&status=OPEN
+    // GET /api/v1/staff-tasks?facilityId=1&status=OPEN&staffId=5
     @GetMapping
     public ResponseEntity<?> getBoard(@RequestParam Integer facilityId,
-                                      @RequestParam(required = false) String status) {
+                                      @RequestParam(required = false) String status,
+                                      @RequestParam(required = false) Integer staffId) {
         try {
-            return ResponseEntity.ok(staffTaskService.getBoard(facilityId, status));
+            return ResponseEntity.ok(staffTaskService.getBoard(facilityId, status, staffId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }

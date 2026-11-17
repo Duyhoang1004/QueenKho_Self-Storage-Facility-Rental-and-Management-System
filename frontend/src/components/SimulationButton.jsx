@@ -41,10 +41,10 @@ export default function SimulationButton({ label, description, onRun, onDone, cl
         onClick={handleClick}
         disabled={running}
         title={description || label}
-        className="inline-flex items-center gap-1.5 rounded-xl border-2 border-dashed border-[#FF9600] bg-[#FFF8EE] px-3 py-2 text-[11px] font-black uppercase tracking-wide text-[#E58800] hover:bg-[#FFE8CC] disabled:opacity-50 cursor-pointer"
+        className="w-full h-9 inline-flex items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#FF9600] bg-[#FFF8EE] px-2.5 py-1.5 text-[11px] font-black uppercase tracking-wide text-[#E58800] hover:bg-[#FFE8CC] disabled:opacity-50 cursor-pointer whitespace-nowrap"
       >
-        <span className="material-symbols-outlined text-[16px]">bolt</span>
-        {running ? 'Đang giả lập...' : `Giả lập: ${label}`}
+        <span className="material-symbols-outlined text-[15px] shrink-0">bolt</span>
+        <span>{running ? 'Đang giả lập...' : `Giả lập: ${label}`}</span>
       </button>
       {feedback && (
         <span className={`text-[11px] font-bold ${feedback.ok ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>{feedback.text}</span>

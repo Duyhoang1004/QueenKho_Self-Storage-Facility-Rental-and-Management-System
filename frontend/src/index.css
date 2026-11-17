@@ -18,13 +18,41 @@
     overscroll-behavior: none;
   }
 
-  /* Ẩn scrollbar nhưng vẫn scroll được */
-  ::-webkit-scrollbar {
+  /* Ẩn scrollbar mặc định nhưng giữ thanh trượt cho các vùng có .custom-scrollbar */
+  *:not(.custom-scrollbar)::-webkit-scrollbar {
     display: none;
   }
 
-  * {
+  *:not(.custom-scrollbar) {
     scrollbar-width: none;
+  }
+
+  .custom-scrollbar {
+    --scrollbar-thumb: #777777;
+    --scrollbar-track: #F0F0F0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  @supports not (scrollbar-color: auto) {
+    .custom-scrollbar {
+      scrollbar-width: auto;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: var(--scrollbar-thumb);
+      border-radius: 9999px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: var(--scrollbar-track);
+      border-radius: 9999px;
+    }
   }
 }
 

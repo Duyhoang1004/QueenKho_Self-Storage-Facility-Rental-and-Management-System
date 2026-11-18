@@ -21,7 +21,7 @@ public class RentalPolicyService {
     private static final int CANCEL_FEE_PERCENT = CancellationPolicyService.PARTIAL_DEPOSIT_PENALTY_PERCENT;
     private static final int CANCEL_FREE_HOURS = CancellationPolicyService.FULL_REFUND_HOURS;
     private static final int LATE_FEE_CAP_PERCENT = 50;
-    private static final int LIQUIDATION_DAYS = 15; // PR-Q8 (27/10/2026): bản cũ 30 ngày
+    private static final int LIQUIDATION_DAYS = LateFeeService.V5_LIQUIDATION_DAYS; // D-20 (18/11/2026): điều khoản v5 — cưỡng chế dọn kho sau 5 ngày quá hạn
     private final RentalPolicyRepository policies;
     private final FacilityRepository facilities;
     private final UserRepository users;

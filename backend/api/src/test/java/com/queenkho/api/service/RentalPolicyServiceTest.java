@@ -78,7 +78,7 @@ class RentalPolicyServiceTest {
         assertEquals(50, result.cancelFeePercent());
         assertEquals(48, result.cancelFreeHours());
         assertEquals(50, result.lateFeeMaxPercent());
-        assertEquals(15, result.liquidationDays()); // PR-Q8 (27/10/2026): phiên bản mới thanh lý sau 15 ngày
+        assertEquals(5, result.liquidationDays()); // D-20 (18/11/2026): điều khoản v5 — cưỡng chế dọn kho sau 5 ngày quá hạn
         assertTrue(result.active());
         assertFalse(previous.isActive());
         assertEquals(1, previous.getVersion());

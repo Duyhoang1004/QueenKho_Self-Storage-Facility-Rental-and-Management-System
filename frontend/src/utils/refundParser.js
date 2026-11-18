@@ -77,6 +77,8 @@ export function parseRefundNote(note) {
 
   const isCheckout = /trả kho|tra kho|nghiệm thu|nghiem thu|cọc gốc|coc goc|hư hại|hu hai/i.test(note);
   res.isCheckout = isCheckout;
+  res.isNoShow = /^\[HOÀN TIỀN NO-SHOW\]/i.test(note.trim());
+  res.noShowWaived = res.isNoShow && /FM phê duyệt miễn phạt No-Show/i.test(note);
 
   const mNetRefund = note.match(/(?:THỰC HOÀN|THUC HOAN|Tổng hoàn:?|Tong hoan:?)\s*([0-9.,]+)\s*[₫đVND]*/i);
   if (mNetRefund) {
@@ -92,7 +94,15 @@ export function parseRefundNote(note) {
     res.refundAmount = `${num.toLocaleString('vi-VN')} ₫`;
   }
 
-  if (isCheckout) {
+  if (res.isNoShow) {
+    const kept = note.match(/Giữ cọc \+ 1 tháng tiền thuê:\s*([0-9.,]+)/i);
+    res.noShowKeptAmountNum = kept ? parseVndAmount(kept[1]) : 0;
+    res.noShowKeptAmount = `${res.noShowKeptAmountNum.toLocaleString('vi-VN')} ₫`;
+    res.policyBadge = res.noShowWaived ? 'Miễn phạt No-Show' : 'Giữ cọc + 1 tháng thuê';
+    res.policyApplied = res.noShowWaived ? 'FM miễn phạt No-Show, hoàn toàn bộ tiền đã đóng' : 'Hoàn tiền thuê các tháng còn lại; giữ cọc và 1 tháng thuê';
+    res.footerNote = res.noShowWaived ? '* Quản lý đã miễn phạt No-Show.' : '* No-Show: giữ cọc và 1 tháng thuê, hoàn tiền thuê các tháng còn lại.';
+    res.isFull100 = res.noShowWaived;
+  } else if (isCheckout) {
     const mDeposit = note.match(/(?:Cọc gốc|Coc goc):?\s*([0-9.,]+)\s*[₫đVND]*/i);
     if (mDeposit) {
       const numDep = parseVndAmount(mDeposit[1]);
@@ -232,6 +242,10 @@ export function parseRefundNote(note) {
     res.originalTotalNum = res.refundAmountNum - (res.earlyRentRefundNum || 0) + (res.penaltyAmountNum || 0) + (res.totalPenaltyNum || 0);
     res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
   }
+  if (!res.originalTotalNum && res.refundAmountNum > 0 && res.isNoShow && !res.noShowWaived) {
+    res.originalTotalNum = res.refundAmountNum + res.noShowKeptAmountNum;
+    res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
+  }
   if (!res.originalTotalNum && res.refundAmountNum > 0 && !res.penaltyAmountNum && !res.totalPenaltyNum) {
     res.originalTotalNum = Math.max(0, res.refundAmountNum - (res.earlyRentRefundNum || 0));
     res.originalTotal = `${res.originalTotalNum.toLocaleString('vi-VN')} ₫`;
@@ -276,7 +290,9 @@ export function parseRefundNote(note) {
     res.isCash = true;
   }
 
-  const mReason = note.match(/(?:Lý do|Ly do):\s*([^|]+)/i);
+  const mReason = note.match(res.isNoShow
+    ? /Lý do No-Show:\s*([^|]+)/i
+    : /(?:Lý do|Ly do):\s*([^|]+)/i);
   if (mReason) {
     res.reason = mReason[1].trim();
   } else {

@@ -324,7 +324,7 @@ function PolicyFormModal({ facility, policy, onClose, onSaved }) {
           <p className="font-black text-[#1899D6]">Chính sách khách hủy đơn được cố định toàn hệ thống</p>
           <p className="mt-1">Từ 48 giờ: hoàn 100%; từ 24 đến dưới 48 giờ: giữ 50% cọc; dưới 24 giờ: giữ 100% cọc; đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê (như No-Show). Hủy trong 30 phút sau thanh toán và vẫn trước giờ hẹn luôn hoàn 100%.</p>
         </div>
-        <p className="mt-2 text-xs font-medium text-[#777777]">Mốc cưỡng chế dọn kho của phiên bản mới cố định 15 ngày quá hạn. Phí chiếm dụng, lưu giữ áp dụng khách đồng ý điều khoản từ v2; phí dọn & di dời hàng áp dụng từ v3.</p>
+        <p className="mt-2 text-xs font-medium text-[#777777]">Mốc cưỡng chế dọn kho của phiên bản mới cố định 5 ngày quá hạn (điều khoản v5: tự động cưỡng chế sau 5 ngày, hoặc FM cưỡng chế sớm sau 2 lần liên hệ không thành công). Phí chiếm dụng, lưu giữ áp dụng từ v2; phí dọn &amp; di dời hàng áp dụng từ v3.</p>
 
         {/* Flow 4: ưu đãi theo gói thuê — gói 1 tháng luôn 0% */}
         <div className="mt-4 border-t-2 border-[#F0F0F0] pt-4">
@@ -610,14 +610,28 @@ export default function BomRentalPoliciesPage() {
                   <PolicySection icon="running_with_errors" title="Xử lý thanh toán trễ hạn" tone="red" expanded={expandedSections.overdue} onToggle={() => toggleSection('overdue')}>
                     <RuleLine icon="schedule" title={`Mỗi ngày quá hạn: ${selectedPolicy.lateFeePercentPerDay}% cọc đang giữ`} description="Phí được tính động theo số ngày quá hạn và chưa ghi giao dịch cho đến khi khách thanh toán hoặc bị khấu trừ vào cọc." tone="blue" />
                     <RuleLine icon="vertical_align_top" title={`Mức phí tối đa: ${selectedPolicy.lateFeeMaxPercent}% cọc đang giữ`} description="Khi chạm mức trần, hệ thống ngừng tăng phí trễ hạn." tone="orange" />
-                    <RuleLine icon="door_front" title={`Phí chiếm dụng: ${selectedPolicy.overstayPercent ?? 150}% giá thuê theo ngày × số ngày quá hạn`} description="Không có trần — quá hạn luôn đắt hơn gia hạn. Trừ vào cọc sau phí trễ; vượt cọc thành khoản nợ của khách (chỉ khách đồng ý điều khoản v2)." tone="red" />
-                    <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Cho phép FM cưỡng chế dọn kho`} description="Hệ thống chỉ mở quyền thao tác; FM phải xác nhận cưỡng chế dọn kho và nhập ghi chú quá trình liên hệ khách." tone="red" />
+                    <RuleLine icon="door_front" title={`Phí chiếm dụng: ${selectedPolicy.overstayPercent ?? 150}% giá thuê theo ngày × số ngày quá hạn`} description="Không có trần — quá hạn luôn đắt hơn gia hạn. Trừ vào cọc sau phí trễ; vượt cọc thành khoản nợ của khách (chỉ khách đồng ý điều khoản từ v2)." tone="red" />
+                    {(selectedPolicy.version >= 5 || selectedPolicy.liquidationDays <= 5) ? (
+                      <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Tự động cưỡng chế dọn kho (sớm hơn cần 2 lần liên hệ)`} description={`Hệ thống tự động cưỡng chế dọn kho và sinh task khi quá ${selectedPolicy.liquidationDays} ngày quá hạn, hoặc ngay khi có khách mới đặt trúng ô quá hạn. Trước mốc ${selectedPolicy.liquidationDays} ngày, FM có thể cưỡng chế sớm sau ít nhất 2 lần liên lạc không thành công.`} tone="red" />
+                    ) : (
+                      <RuleLine icon="inventory_2" title={`Quá ${selectedPolicy.liquidationDays} ngày: Cho phép FM cưỡng chế dọn kho`} description="Hệ thống chỉ mở quyền thao tác; FM phải xác nhận cưỡng chế dọn kho và nhập ghi chú quá trình liên hệ khách." tone="red" />
+                    )}
                   </PolicySection>
 
                   <PolicySection icon="inventory" title="Chính sách cưỡng chế dọn kho tài sản" tone="purple" expanded={expandedSections.liquidation} onToggle={() => toggleSection('liquidation')}>
-                    <RuleLine icon="event_upcoming" title={`Điều kiện cưỡng chế dọn kho: Quá hạn trên ${selectedPolicy.liquidationDays} ngày`} description="Thời hạn được đọc từ phiên bản chính sách đã gắn với hợp đồng khi ký." tone="blue" />
-                    <RuleLine icon="fact_check" title="FM xác nhận cưỡng chế dọn kho và ghi chú liên hệ" description="Cưỡng chế dọn kho không chạy tự động; FM tại cơ sở là người thực hiện thao tác khi đã đủ điều kiện." tone="green" />
-                    <RuleLine icon="savings" title="Khấu trừ phí trễ và tạm giữ phần cọc còn lại" description="Phần cọc còn lại chỉ được hoàn khi khách đến cơ sở làm việc; việc xử lý tài sản diễn ra ngoài hệ thống và được ghi log." tone="orange" />
+                    {(selectedPolicy.version >= 5 || selectedPolicy.liquidationDays <= 5) ? (
+                      <>
+                        <RuleLine icon="event_upcoming" title={`Điều kiện cưỡng chế dọn kho (v5): Quá hạn ${selectedPolicy.liquidationDays} ngày hoặc sau 2 lần liên hệ`} description={`Tự động cưỡng chế dọn kho sau ${selectedPolicy.liquidationDays} ngày quá hạn; muốn cưỡng chế sớm hơn cần tối thiểu 2 lần liên lạc khách không thành công. Nếu có khách mới đặt trúng ô đang quá hạn, hệ thống cưỡng chế ngay và sinh task dọn kho trong giờ làm việc sớm nhất.`} tone="blue" />
+                        <RuleLine icon="event_available" title="Khóa ngày nhận kho sớm cho khách đặt mới (+3 ngày / +7 ngày)" description="Khách đặt trúng ô đang quá hạn phải hẹn ngày nhận kho tối thiểu sau 3 ngày kể từ ngày đặt. Khách đặt ô đang thuê gần hết hạn (đã qua mốc gia hạn ưu tiên) chỉ được chọn ngày nhận kho sớm nhất 7 ngày sau ngày hết hạn." tone="green" />
+                        <RuleLine icon="savings" title="Khấu trừ phí trễ, phí di dời & lưu giữ hàng tại kho tổng" description={`Phí di dời ${selectedPolicy.goodsMovingFeePercent ?? 30}% giá tháng thu 1 lần khi dọn ô; hàng hóa chuyển về kho tổng tính phí lưu giữ ${selectedPolicy.heldGoodsFeePercent ?? 20}% giá ngày (tối đa 60 ngày). Phần cọc còn lại được quyết toán khi khách đến làm việc.`} tone="orange" />
+                      </>
+                    ) : (
+                      <>
+                        <RuleLine icon="event_upcoming" title={`Điều kiện cưỡng chế dọn kho: Quá hạn trên ${selectedPolicy.liquidationDays} ngày`} description="Thời hạn được đọc từ phiên bản chính sách đã gắn với hợp đồng khi ký." tone="blue" />
+                        <RuleLine icon="fact_check" title="FM xác nhận cưỡng chế dọn kho và ghi chú liên hệ" description="Cưỡng chế dọn kho không chạy tự động; FM tại cơ sở là người thực hiện thao tác khi đã đủ điều kiện." tone="green" />
+                        <RuleLine icon="savings" title="Khấu trừ phí trễ và tạm giữ phần cọc còn lại" description="Phần cọc còn lại chỉ được hoàn khi khách đến cơ sở làm việc; việc xử lý tài sản diễn ra ngoài hệ thống và được ghi log." tone="orange" />
+                      </>
+                    )}
                   </PolicySection>
                 </div>
               </section>
@@ -649,7 +663,11 @@ export default function BomRentalPoliciesPage() {
                   <div className="rounded-2xl border-2 border-b-4 border-[#CE82FF] bg-[#F3E3FF] p-4">
                     <p className="text-[10px] font-semibold uppercase text-[#A559D9]">Giai đoạn 3</p>
                     <p className="mt-0.5 text-lg font-black text-[#4B4B4B]">Quá {selectedPolicy.liquidationDays} ngày</p>
-                    <p className="mt-1 text-xs font-medium text-[#777777]">FM được phép xác nhận cưỡng chế dọn kho sau khi ghi chú liên hệ</p>
+                    <p className="mt-1 text-xs font-medium text-[#777777]">
+                      {(selectedPolicy.version >= 5 || selectedPolicy.liquidationDays <= 5)
+                        ? 'Tự động cưỡng chế dọn kho & sinh task (sớm hơn cần 2 lần liên hệ thất bại)'
+                        : 'FM được phép xác nhận cưỡng chế dọn kho sau khi ghi chú liên hệ'}
+                    </p>
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-medium text-[#AFAFAF]">

@@ -111,6 +111,12 @@ public class ContractViewService {
         var reservation = rc.getReservation();
         String status = rc.getStatus();
         LocalDate today = LocalDate.now(VN_ZONE);
+        boolean noShow = "TERMINATED".equalsIgnoreCase(status) && countOf(
+                "SELECT COUNT(1) FROM activity_logs WHERE target_entity = 'reservations' AND target_id = ? AND LEFT(action, 9) = '[NO-SHOW]'",
+                reservation.getId()) > 0;
+        boolean noShowWaived = noShow && countOf(
+                "SELECT COUNT(1) FROM activity_logs WHERE target_entity = 'reservations' AND target_id = ? AND LEFT(action, 9) = '[NO-SHOW]' AND action LIKE '%FM phê duyệt miễn phạt%'",
+                reservation.getId()) > 0;
 
         // Tiền đã đóng (cọc + tiền thuê) từ payment_transactions
         BigDecimal totalPaid = sumPayments(rc, "status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')");
@@ -174,6 +180,7 @@ public class ContractViewService {
 
         // Tiền đã hoàn thực tế (giao dịch REFUND)
         BigDecimal refundAmount = sumPayments(rc, "status IN ('SUCCESS', 'PENDING') AND payment_type = 'REFUND'");
+        BigDecimal noShowDepositRefund = noShowWaived ? orZero(originalDeposit).min(refundAmount) : BigDecimal.ZERO;
 
         // UC-24: sự cố lỗi khách trừ cọc; lỗi cơ sở chỉ hiển thị, không trừ
         BigDecimal damageFee = sumDamage(rc.getId(), "CUSTOMER");
@@ -209,7 +216,7 @@ public class ContractViewService {
             totalOverdueCharge = lateFeeAmount.add(overstayFeeAmount);
             amountBeyondDeposit = orZero(calc.getOverstayDebtAmount());
         }
-        if (settled && calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
+        if (!noShow && settled && calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
             refundAmount = calc.getTotalRefundAmount();
         }
 
@@ -245,8 +252,8 @@ public class ContractViewService {
                 refundAmount,
                 damageFee,
                 isInspectionCompleted,
-                calc.getDepositRefund(),
-                calc.getEarlyRentRefund(),
+                noShow ? noShowDepositRefund : calc.getDepositRefund(),
+                noShow ? refundAmount.subtract(noShowDepositRefund) : calc.getEarlyRentRefund(),
                 calc.getUsedMonths(),
                 calc.getBreakFee(),
                 maxLateFeeAmount,
@@ -280,6 +287,8 @@ public class ContractViewService {
         dto.setInsurancePlan(plan.name());
         dto.setOverstayFeeWaived(Boolean.TRUE.equals(dto.getLateFeeWaived()) && Boolean.TRUE.equals(rc.getOverstayFeeWaived()));
         dto.setEmergencyUnit(su.isEmergencyUnit());
+        dto.setNoShow(noShow);
+        dto.setNoShowWaived(noShowWaived);
         dto.setInsurancePlanLabel(plan.label());
         dto.setInsurancePremiumMonthly(reservation.getInsurancePremiumMonthly());
         dto.setDeclaredGoodsValue(reservation.getDeclaredGoodsValue());

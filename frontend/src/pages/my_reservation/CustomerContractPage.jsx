@@ -222,13 +222,21 @@ export default function CustomerContractPage() {
   if (!contract) return null;
 
   const isTerminated = contract.status === "TERMINATED";
+  const isNoShow = isTerminated && Boolean(contract.noShow);
+  const isNoShowWithoutRefund = isNoShow && contract.refundStatus === "NONE";
   // PR-O12: "đã hoàn" chỉ khi FM đã xác nhận task REFUND (BE trả refundStatus, cùng nguồn với danh sách đơn)
   const hasRefunded = contract.refundStatus
     ? contract.refundStatus === "COMPLETED"
     : isTerminated;
   const isRefundPending = isTerminated && !hasRefunded;
 
-  const statusInfo = isTerminated
+  const statusInfo = isNoShow
+    ? {
+        label: `Đã kết thúc (No-Show, ${isNoShowWithoutRefund ? "không hoàn tiền" : hasRefunded ? "đã hoàn tiền" : "chờ hoàn tiền"})`,
+        cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
+        icon: "cancel",
+      }
+    : isTerminated
     ? hasRefunded
       ? {
           label: "Đã kết thúc (Đã hoàn cọc)",
@@ -303,7 +311,21 @@ export default function CustomerContractPage() {
       )}
 
       {/* Thông báo hợp đồng đã thanh lý & hoàn tiền nếu TERMINATED */}
-      {isTerminated && (
+      {isNoShow ? (
+        <div className="border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm bg-[#F7F7F7] border-[#E5E5E5]">
+          <span className="material-symbols-outlined text-[28px] text-[#777777]">event_busy</span>
+          <div className="flex flex-col gap-1">
+            <strong className="text-base text-[#4B4B4B]">Hợp đồng đã kết thúc do không đến nhận kho</strong>
+            <span className="text-xs font-bold text-[#4B4B4B]">
+              {isNoShowWithoutRefund
+                ? "Theo chính sách No-Show, tiền cọc và tiền thuê 1 tháng đã thanh toán được giữ lại. Không có khoản hoàn tiền."
+                : contract.noShowWaived
+                  ? `Quản lý đã miễn phạt No-Show. ${hasRefunded ? "Đã hoàn" : "Đang chờ hoàn"} ${formatVND(contract.refundAmount)} tiền khách đã đóng.`
+                  : `Theo chính sách No-Show, cơ sở giữ ${formatVND(depositAmount)} tiền cọc và 1 tháng tiền thuê. ${hasRefunded ? "Đã hoàn" : "Đang chờ hoàn"} ${formatVND(contract.refundAmount)} tiền thuê các tháng còn lại.`}
+            </span>
+          </div>
+        </div>
+      ) : isTerminated && (
         <div className={`border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm ${isRefundPending ? "bg-[#FFF8EE] border-[#FF9600]" : "bg-[#FAF5FF] border-[#CE82FF]"}`}>
           <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-2 ${isRefundPending ? "bg-[#FFE8CC] border-[#FF9600]" : "bg-[#F3E8FF] border-[#CE82FF]"}`}>
             <span className={`material-symbols-outlined text-[28px] ${isRefundPending ? "text-[#E58800]" : "text-[#A560E8]"}`}>
@@ -845,7 +867,9 @@ export default function CustomerContractPage() {
                         </span>
                       </div>
                       <span className="text-[10px] font-bold text-[#AFAFAF]">
-                        Hoàn lại 100% khi khoang nguyên vẹn
+                          {isNoShow
+                            ? contract.noShowWaived ? "Cọc được hoàn do quản lý miễn phạt No-Show" : "Khoản cọc được giữ lại theo chính sách No-Show"
+                            : "Hoàn lại 100% khi khoang nguyên vẹn"}
                       </span>
                     </div>
                     <div className="flex flex-col items-end">
@@ -887,8 +911,16 @@ export default function CustomerContractPage() {
                   </span>
                 </div>
 
+                {isNoShow && (
+                  <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] flex flex-col gap-2 text-xs font-bold text-[#4B4B4B]">
+                    <span className="font-black uppercase text-[#A560E8]">Quyết toán No-Show</span>
+                    <div className="flex justify-between"><span>Tiền đã đóng được giữ lại:</span><span>{formatVND(Number(contract.totalPaid || 0) - Number(contract.refundAmount || 0))}</span></div>
+                    <div className="flex justify-between"><span>{hasRefunded ? "Tiền đã hoàn:" : "Tiền cần hoàn:"}</span><span>{formatVND(contract.refundAmount || 0)}</span></div>
+                  </div>
+                )}
+
                 {/* 4. Bảng quyết toán hoàn trả (gồm cả hoàn cọc + hoàn tiền thuê trả sớm PR-O2) */}
-                {(hasRefunded || isInspectionDone) && (
+                {!isNoShow && (hasRefunded || isInspectionDone) && (
                   <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] bg-[#FAF5FF] -mx-4 -mb-4 p-4 rounded-b-2xl flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-[#A560E8]">
@@ -1023,10 +1055,14 @@ export default function CustomerContractPage() {
                   </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      {isRefundPending
-                        ? "Hợp đồng này đã kết thúc, đang chờ Quản lý cơ sở hoàn tiền. Số tiền dự kiến hoàn trả là "
-                        : "Hợp đồng này đã kết thúc. Tổng tiền hoàn trả cho bạn là "}
-                      <strong className="text-[#A560E8]">{formatVND(refundedDeposit)}</strong>.
+                      {isNoShow
+                        ? isNoShowWithoutRefund
+                          ? "Khách không đến nhận kho. Theo chính sách No-Show, cọc và tiền thuê 1 tháng được giữ lại; không có khoản hoàn tiền."
+                          : <>Khách không đến nhận kho. {hasRefunded ? "Đã hoàn" : "Đang chờ hoàn"} <strong className="text-[#A560E8]">{formatVND(contract.refundAmount)}</strong> theo chính sách No-Show.</>
+                        : <>{isRefundPending
+                            ? "Hợp đồng này đã kết thúc, đang chờ Quản lý cơ sở hoàn tiền. Số tiền dự kiến hoàn trả là "
+                            : "Hợp đồng này đã kết thúc. Tổng tiền hoàn trả cho bạn là "}
+                            <strong className="text-[#A560E8]">{formatVND(refundedDeposit)}</strong>.</>}
                     </span>
                     {actualDamageFee > 0 && (
                       <span className="text-[11px] font-medium text-[#FF4B4B]">
@@ -1128,7 +1164,7 @@ export default function CustomerContractPage() {
               </span>
               {isTerminated ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
-                  Đã vô hiệu hoá (Đã trả kho)
+                  {isNoShow ? "Đã vô hiệu hoá (Không đến nhận kho)" : "Đã vô hiệu hoá (Đã trả kho)"}
                 </span>
               ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
@@ -1163,7 +1199,7 @@ export default function CustomerContractPage() {
               </span>
               {isTerminated ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
-                  Đã thu hồi thẻ
+                  {isNoShow ? "Chưa cấp thẻ (Không đến nhận kho)" : "Đã thu hồi thẻ"}
                 </span>
               ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">

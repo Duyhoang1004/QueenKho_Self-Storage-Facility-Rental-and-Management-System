@@ -1335,7 +1335,7 @@ export default function StaffTaskDetailPage() {
             </InfoCard>
           ) : (
             <InfoCard icon="inventory_2" title="Đối tượng">
-              <InfoRow label="Loại việc" value="Hoàn tiền đơn đặt chỗ (Hủy đơn)" />
+              <InfoRow label="Loại việc" value={parsedRefund?.isNoShow ? "Hoàn tiền No-Show" : "Hoàn tiền đơn đặt chỗ (Hủy đơn)"} />
               <InfoRow label="Mã đơn đặt" value={task.reservationCode || parsedRefund?.orderCode} mono />
               {task.unitTypeName && <InfoRow label="Loại khoang" value={task.unitTypeName} />}
               <InfoRow label="Cơ sở" value={task.facilityName || 'Cơ sở hiện tại'} />
@@ -1346,7 +1346,7 @@ export default function StaffTaskDetailPage() {
             <InfoCard icon="notes" title="Lý do hoàn tiền & Ghi chú">
               <div className="flex flex-col gap-3">
                 <div className="rounded-xl bg-[#F7F7F7] p-3.5 border border-[#E5E5E5] text-xs font-bold text-[#4B4B4B] leading-relaxed">
-                  <span className="text-[11px] font-black uppercase text-[#AFAFAF] block mb-1">Lý do từ khách hàng</span>
+                  <span className="text-[11px] font-black uppercase text-[#AFAFAF] block mb-1">{parsedRefund?.isNoShow ? "Lý do No-Show" : "Lý do từ khách hàng"}</span>
                   <p className="text-sm font-black text-[#4B4B4B]">
                     {parsedRefund?.reason || 'Khách yêu cầu trả kho / hoàn tiền.'}
                   </p>
@@ -1377,6 +1377,13 @@ export default function StaffTaskDetailPage() {
                   </div>
 
                   <div className="flex flex-col gap-1.5 text-xs">
+                    {parsedRefund?.isNoShow ? (
+                      <>
+                        <div className="flex justify-between py-0.5"><span>Tổng tiền khách đã đóng:</span><strong>{parsedRefund.originalTotal}</strong></div>
+                        {!parsedRefund.noShowWaived && <div className="flex justify-between py-0.5"><span>Giữ cọc + 1 tháng thuê:</span><strong>{parsedRefund.noShowKeptAmount}</strong></div>}
+                        <div className="flex justify-between py-0.5"><span>Chính sách áp dụng:</span><strong>{parsedRefund.policyApplied}</strong></div>
+                      </>
+                    ) : (<>
                     {(Number(task.depositHeldAmount) > 0 || parsedRefund?.originalTotal) && (
                       <div className="flex justify-between py-0.5">
                         <span className="font-bold text-[#718096]">
@@ -1452,6 +1459,7 @@ export default function StaffTaskDetailPage() {
                         )}
                       </>
                     )}
+                    </>)}
 
                     <div className="pt-2 mt-1 border-t-2 border-dashed border-[#CBD5E0] flex justify-between items-baseline">
                       <span className="text-xs font-black uppercase tracking-wider text-[#2D3748]">

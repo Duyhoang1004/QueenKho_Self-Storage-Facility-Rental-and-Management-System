@@ -633,7 +633,7 @@ export default function TaskBoard({
                           {isRefund && !task.storageUnitId ? 'Đối tượng' : 'Ô kho'}
                         </span>
                         <span className="font-black text-xs text-[#4B4B4B] font-mono truncate">
-                          {task.storageUnitId || (isRefund ? 'Đơn đặt chỗ hủy' : '—')}
+                          {task.storageUnitId || (isRefund ? parsed?.isNoShow ? 'Đơn No-Show' : 'Đơn đặt chỗ hủy' : '—')}
                         </span>
                         <span
                           className="font-bold text-[11px] text-[#777777] truncate"
@@ -719,6 +719,9 @@ export default function TaskBoard({
                               Tổng tiền hoàn:
                             </span>
                             <span className="font-mono font-black text-sm text-[#805AD5]">{parsed.refundAmount}</span>
+                            {parsed.isNoShow && (
+                              <span className="px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] text-[10px] font-black border border-[#FDE68A]">{parsed.policyBadge}</span>
+                            )}
                             {parsed.earlyRentRefundNum > 0 && (
                               <span className="px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[10px] font-black border border-[#86EFAC]">
                                 Cọc + Trả sớm ({parsed.earlyRentRefund})
@@ -887,7 +890,7 @@ export default function TaskBoard({
                           {isRefund && !task.storageUnitId ? 'Đối tượng' : 'Ô kho'}
                         </span>
                         <span className="font-black text-[#4B4B4B] font-mono">
-                          {task.storageUnitId || (isRefund ? 'Đơn đặt chỗ hủy' : '—')}
+                          {task.storageUnitId || (isRefund ? parsed?.isNoShow ? 'Đơn No-Show' : 'Đơn đặt chỗ hủy' : '—')}
                         </span>
                         <span className="font-bold text-[#777777]">
                           {isSupport && task.issueType
@@ -908,6 +911,9 @@ export default function TaskBoard({
                           <span className="font-mono font-black text-sm text-[#805AD5]">
                             {parsed.refundAmount}
                           </span>
+                          {parsed.isNoShow && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] text-[10px] font-black border border-[#FDE68A]">{parsed.policyBadge}</span>
+                          )}
                           {parsed.earlyRentRefundNum > 0 && (
                             <span className="px-2 py-0.5 rounded-md bg-[#DCFCE7] text-[#15803D] text-[10px] font-black border border-[#86EFAC]">
                               Cọc + Trả sớm ({parsed.earlyRentRefund})

@@ -150,7 +150,11 @@ export default function ManagerLayout() {
             {/* Manager Avatar & Logout Button */}
             <div className="flex items-center gap-3">
               <NotificationDropdown />
-              <div className="flex items-center gap-2.5 p-1 rounded-2xl">
+              <Link
+                to="/manager/profile"
+                title="Xem & chỉnh sửa hồ sơ cá nhân"
+                className="flex items-center gap-2.5 p-1.5 rounded-2xl hover:bg-[#F7F7F7] transition-colors cursor-pointer"
+              >
                 <div className="w-10 h-10 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] text-white flex items-center justify-center font-black text-sm">
                   {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'M'}
                 </div>
@@ -158,7 +162,7 @@ export default function ManagerLayout() {
                   <span className="text-xs font-black text-[#4B4B4B] leading-tight">{currentUser.fullName}</span>
                   <span className="text-[10px] font-extrabold text-[#AFAFAF] uppercase leading-tight">Quản lý</span>
                 </div>
-              </div>
+              </Link>
 
               <button
                 onClick={handleLogout}

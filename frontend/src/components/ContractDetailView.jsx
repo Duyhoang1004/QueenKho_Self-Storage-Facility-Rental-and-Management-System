@@ -152,8 +152,7 @@ export default function ContractDetailView({ contractId, initialTransfer = false
         </div>
       </div>
 
-      {/* Demo: tua thời gian — mốc nhắc gia hạn 15/10/7/3/1 ngày (PR-R9), quá hạn 1 ngày (điều khoản v4: chuyển kho tổng ngay),
-          quá hạn 31 ngày (điều khoản cũ: nút thanh lý) — ẩn khi backend tắt giả lập */}
+      {/* Demo: tua thời gian — mốc nhắc gia hạn 15/10/7/3/1 ngày (PR-R9) và mốc quá hạn 1 / 3 / 5 ngày (điều khoản v5) */}
       {['ACTIVE', 'OVERDUE'].includes(contract.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           {contract.status === 'ACTIVE' && [15, 10, 7, 3, 1].map((days) => (
@@ -167,20 +166,20 @@ export default function ContractDetailView({ contractId, initialTransfer = false
           ))}
           <SimulationButton
             label="Quá hạn 1 ngày"
-            description="Cho hợp đồng hết hạn hôm qua. Khách đồng ý điều khoản v4: cưỡng chế dọn kho ngay và sinh việc chuyển hàng vào kho tổng (như job 00:05). Điều khoản cũ: chuyển QUÁ HẠN, khoá PIN, tính phí trễ."
+            description="Cho hợp đồng hết hạn 1 ngày trước: chuyển sang QUÁ HẠN (điều khoản v5), khoá mã PIN, tính phí trễ hạn và phí chiếm dụng (muốn cưỡng chế sớm cần đủ 2 lần liên hệ thất bại)."
             onRun={() => simulateOverdue(contract.contractId, 1)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
           <SimulationButton
             label="Quá hạn 3 ngày"
-            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển QUÁ HẠN, khoá PIN, tính phí trễ theo chính sách (điều khoản v4 sẽ cưỡng chế dọn kho + chuyển kho tổng luôn). Dùng để demo nút Miễn phí trễ với hợp đồng cũ."
+            description="Cho hợp đồng hết hạn 3 ngày trước: chuyển sang QUÁ HẠN (điều khoản v5), khoá mã PIN, tính phí trễ và phí chiếm dụng để demo nút Miễn phí trễ hoặc cưỡng chế sớm sau 2 lần liên hệ thất bại."
             onRun={() => simulateOverdue(contract.contractId, 3)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
           <SimulationButton
-            label="Quá hạn 31 ngày (cưỡng chế)"
-            description="Cho hợp đồng hết hạn 31 ngày trước: vượt mốc 30 ngày, nút Cưỡng chế dọn kho ở màn Hợp đồng quá hạn được bật."
-            onRun={() => simulateOverdue(contract.contractId, 31)}
+            label="Quá hạn 5 ngày (cưỡng chế)"
+            description="Cho hợp đồng hết hạn 5 ngày trước: đạt mốc 5 ngày của điều khoản v5 — hệ thống tự động cưỡng chế dọn kho và sinh ngay task dọn kho đưa hàng về Kho tổng."
+            onRun={() => simulateOverdue(contract.contractId, 5)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
         </div>

@@ -215,6 +215,11 @@ public class StaffTaskService {
     // reason: DAMAGE (sự cố trả kho) / LIQUIDATION (dọn kho sau thanh lý — "Dọn xong" bắt buộc kiểm kê hàng, PR-Q10)
     @Transactional
     public void createMaintenanceTask(RentalContract contract, String reason, String note) {
+        createMaintenanceTask(contract, reason, note, false);
+    }
+
+    @Transactional
+    public void createMaintenanceTask(RentalContract contract, String reason, String note, boolean urgentSameWorkingDay) {
         if (contract == null || contract.getStorageUnit() == null) return;
         if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(contract.getId(), "MAINTENANCE", OPEN_STATUSES)) {
             return;
@@ -225,7 +230,8 @@ public class StaffTaskService {
         task.setTaskType("MAINTENANCE");
         task.setMaintenanceReason(reason);
         task.setStatus("OPEN");
-        task.setDueAt(computeDueAt(LocalDate.now().plusDays(MAINTENANCE_DUE_DAYS)));
+        LocalDate targetDate = urgentSameWorkingDay ? LocalDate.now() : LocalDate.now().plusDays(MAINTENANCE_DUE_DAYS);
+        task.setDueAt(computeDueAt(targetDate));
         task.setNote(note != null && note.length() > 1000 ? note.substring(0, 997) + "..." : note);
         staffTaskRepository.save(task);
     }

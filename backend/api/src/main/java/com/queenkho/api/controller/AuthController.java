@@ -32,6 +32,9 @@ public class AuthController {
     @Autowired
     private com.queenkho.api.service.NotificationService notificationService;
 
+    @Autowired
+    private com.queenkho.api.security.CurrentUserProvider currentUser;
+
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody(required = false) LoginRequest request,
                                                HttpServletRequest http) {
@@ -80,5 +83,23 @@ public class AuthController {
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/profile")
+    public ResponseEntity<com.queenkho.api.dto.UserProfileResponse> getProfile() {
+        return ResponseEntity.ok(authService.getProfile(currentUser.require().id()));
+    }
+
+    @org.springframework.web.bind.annotation.PutMapping("/profile")
+    public ResponseEntity<com.queenkho.api.dto.UserProfileResponse> updateProfile(
+            @RequestBody(required = false) com.queenkho.api.dto.UpdateProfileRequest request) {
+        return ResponseEntity.ok(authService.updateProfile(currentUser.require().id(), request));
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @RequestBody(required = false) com.queenkho.api.dto.ChangePasswordRequest request) {
+        authService.changePassword(currentUser.require().id(), request);
+        return ResponseEntity.ok(Map.of("message", "Đổi mật khẩu thành công"));
     }
 }

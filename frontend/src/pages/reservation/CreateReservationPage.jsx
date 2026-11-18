@@ -32,6 +32,7 @@ function buildUnit(availability, unitTypeId) {
     pricePerMonth: Number(slot.basePriceMonthly),
     depositMonthMultiplier: Number(facility.depositMonthMultiplier || 1),
     availableCount: slot.availableCount,
+    availableFrom: slot.availableFrom || '',
     branch: facility.name,
     address: facility.address,
     hotline: facility.hotline,
@@ -213,8 +214,15 @@ export default function CreateReservationPage() {
       .then((data) => {
         if (cancelled) return
         const found = buildUnit(data, unitTypeId)
-        if (found) setUnit(found)
-        else setUnitError('Cơ sở này không có loại kho bạn đã chọn.')
+        if (found) {
+          setUnit(found)
+          const minFromSlot = [availableFrom, found.availableFrom].filter(Boolean).sort().pop() || ''
+          if (minFromSlot) {
+            setStartDate((prev) => (!prev || prev < minFromSlot ? minFromSlot : prev))
+          }
+        } else {
+          setUnitError('Cơ sở này không có loại kho bạn đã chọn.')
+        }
       })
       .catch(() => {
         if (!cancelled) setUnitError('Không tải được thông tin kho. Vui lòng thử lại.')
@@ -226,18 +234,27 @@ export default function CreateReservationPage() {
     return () => {
       cancelled = true
     }
-  }, [hasParams, facilityId, unitTypeId])
+  }, [hasParams, facilityId, unitTypeId, availableFrom])
 
   useEffect(() => {
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
-    setStartDate(tomorrow.toISOString().split('T')[0])
+    const tomorrowIso = tomorrow.toISOString().split('T')[0]
+    const initialDate = availableFrom && availableFrom > tomorrowIso ? availableFrom : tomorrowIso
+    setStartDate((prev) => (!prev || prev < initialDate ? initialDate : prev))
 
     const paymentResult = new URLSearchParams(window.location.search).get('payment')
     if (paymentResult === 'failed') {
       setError('Thanh toán thất bại hoặc đã bị hủy. Vui lòng thử lại.')
     }
-  }, [])
+  }, [availableFrom])
+
+  // Nếu API kiểm tra khoảng ngày trả về minStartDate lớn hơn ngày đang chọn -> tự động đẩy ngày chọn lên mốc tối thiểu và khóa lịch
+  useEffect(() => {
+    if (range?.minStartDate && startDate && startDate < range.minStartDate) {
+      setStartDate(range.minStartDate)
+    }
+  }, [range?.minStartDate, startDate])
 
   if (!hasParams || unitLoading || unitError || !unit) {
     const message = !hasParams
@@ -293,9 +310,9 @@ export default function CreateReservationPage() {
       fail('Vui lòng chọn ngày bắt đầu nhận kho.', 'sec-start')
       return
     }
-    // PR-R11: ô "sắp trống" chỉ giao được từ ngày khách cũ hết ân hạn
-    if (availableFrom && startDate < availableFrom) {
-      fail(`Loại kho này hiện hết ô trống, chỉ nhận kho được từ ngày ${formatIso(availableFrom)}.`, 'sec-start')
+    // PR-R11 / Điều khoản v5: ô "sắp trống" / ô quá hạn chỉ nhận kho được từ mốc tối thiểu
+    if (effectiveAvailableFrom && startDate < effectiveAvailableFrom) {
+      fail(`Loại kho này hiện hết ô trống, chỉ nhận kho được từ ngày ${formatIso(effectiveAvailableFrom)}.`, 'sec-start')
       return
     }
     if (startDate > maxStartDate) {
@@ -405,7 +422,11 @@ export default function CreateReservationPage() {
   }
 
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-  const minStartDate = availableFrom && availableFrom > tomorrowStr ? availableFrom : tomorrowStr
+  const effectiveAvailableFrom = [availableFrom, unit?.availableFrom, range?.minStartDate]
+    .filter(Boolean)
+    .sort()
+    .pop() || ''
+  const minStartDate = effectiveAvailableFrom && effectiveAvailableFrom > tomorrowStr ? effectiveAvailableFrom : tomorrowStr
   const maxStartDate = (() => {
     const [y, m, d] = tomorrowStr.split('-').map(Number)
     return isoDate(new Date(y, m - 1, d + MAX_LEAD_DAYS - 1)) // hôm nay + 90 ngày
@@ -481,10 +502,10 @@ export default function CreateReservationPage() {
                 <span>{range.message}</span>
               </p>
             )}
-            {availableFrom && (
+            {effectiveAvailableFrom && (
               <p className="text-xs font-bold text-[#1899D6] mt-2">
-                Loại kho này đang hết ô trống — quý khách đặt trước ô sắp được trả, nhận kho từ ngày {availableFrom.split('-').reverse().join('/')}.
-                Nếu tới ngày nhận cơ sở chưa bàn giao được ô, quý khách được huỷ và hoàn 100%.
+                Loại kho này đang hết ô trống ngay hôm nay — quý khách đặt trước ô sắp được trả, nhận kho sớm nhất từ ngày {formatIso(effectiveAvailableFrom)} (tối thiểu 3 ngày kể từ khi đặt đối với kho quá hạn, hoặc 7 ngày sau khi hợp đồng hiện tại hết hạn theo điều khoản v5).
+                Các ngày trước mốc này đã được khóa trên lịch. Nếu tới ngày nhận cơ sở chưa bàn giao được ô, quý khách được huỷ và hoàn 100%.
               </p>
             )}
             <p className="text-xs font-bold text-[#AFAFAF] mt-2">
@@ -812,7 +833,7 @@ export default function CreateReservationPage() {
               </label>
             </div>
 
-            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (v4: chuyển hàng vào kho tổng, không bán) */}
+            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (v5) */}
             <div className="flex items-start gap-3 mt-3">
               <input
                 type="checkbox"
@@ -828,14 +849,14 @@ export default function CreateReservationPage() {
                   onClick={(e) => { e.preventDefault(); setTermsOpen(true) }}
                   className="font-black text-[#1CB0F6] underline cursor-pointer"
                 >
-                  Điều khoản xử lý tài sản khi không trả kho
+                  Điều khoản xử lý tài sản khi không trả kho (v5)
                 </button>
                 .
                 <details className="mt-1 text-[11px] text-[#777777]">
-                  <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt</summary>
-                  Hết hạn mà không gia hạn / không trả kho, hôm sau hợp đồng bị cưỡng chế dọn kho và hàng được{' '}
-                  <span className="font-black text-[#FF4B4B]">chuyển vào kho tổng, tính phí lưu giữ mỗi ngày</span>{' '}
-                  (QueenKho không bán hàng của bạn).
+                  <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt điều khoản v5</summary>
+                  Hết hạn mà không gia hạn / không trả kho, hợp đồng chuyển quá hạn và chỉ tự động cưỡng chế dọn kho{' '}
+                  <span className="font-black text-[#FF4B4B]">sau 5 ngày quá hạn (hoặc sớm hơn sau 2 lần liên lạc không thành công / có khách đặt mới)</span>;
+                  hàng được chuyển vào kho tổng, tính phí lưu giữ mỗi ngày (QueenKho không bán hàng của bạn).
                 </details>
               </label>
             </div>

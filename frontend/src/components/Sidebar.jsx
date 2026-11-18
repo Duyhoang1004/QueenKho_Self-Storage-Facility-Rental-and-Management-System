@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 
-export default function Sidebar({ menuItems, role, user, onLogout, onCollapseChange }) {
+export default function Sidebar({ menuItems, role, user, onLogout, onCollapseChange, profilePath = '/ho-so' }) {
   const [collapsed, setCollapsed] = useState(false);
+  const navigate = useNavigate();
 
   const handleToggle = () => {
     const next = !collapsed;
@@ -89,9 +90,14 @@ export default function Sidebar({ menuItems, role, user, onLogout, onCollapseCha
         {collapsed ? (
           /* Collapsed: chỉ hiện avatar + logout */
           <div className="flex flex-col items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-[#58CC02] border-b-2 border-[#58A700] text-white flex items-center justify-center font-black text-sm">
+            <button
+              type="button"
+              onClick={() => navigate(profilePath)}
+              title="Xem hồ sơ cá nhân"
+              className="w-10 h-10 rounded-xl bg-[#58CC02] border-b-2 border-[#58A700] hover:bg-[#4db800] text-white flex items-center justify-center font-black text-sm cursor-pointer transition-colors"
+            >
               {user.initials || 'QK'}
-            </div>
+            </button>
             <button
               onClick={onLogout}
               className="w-8 h-8 rounded-xl text-[#AFAFAF] hover:text-[#FF4B4B] hover:bg-[#FFDFDF] flex items-center justify-center transition-colors cursor-pointer"
@@ -102,20 +108,25 @@ export default function Sidebar({ menuItems, role, user, onLogout, onCollapseCha
           </div>
         ) : (
           /* Expanded: hiện đầy đủ */
-          <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border-2 border-b-4 border-[#E5E5E5]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-[#58CC02] border-b-2 border-[#58A700] text-white flex items-center justify-center font-black text-sm shrink-0">
+          <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border-2 border-b-4 border-[#E5E5E5] hover:border-[#1CB0F6] transition-colors">
+            <button
+              type="button"
+              onClick={() => navigate(profilePath)}
+              title="Xem & chỉnh sửa hồ sơ cá nhân"
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-[#58CC02] border-b-2 border-[#58A700] group-hover:bg-[#4db800] text-white flex items-center justify-center font-black text-sm shrink-0 transition-colors">
                 {user.initials || 'QK'}
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-xs font-black text-[#4B4B4B] truncate">
+                <span className="text-xs font-black text-[#4B4B4B] group-hover:text-[#1CB0F6] truncate transition-colors">
                   {user.name}
                 </span>
                 <span className="text-[11px] font-extrabold text-[#AFAFAF] uppercase truncate">
                   {role}
                 </span>
               </div>
-            </div>
+            </button>
             <button
               onClick={onLogout}
               className="w-8 h-8 rounded-xl text-[#AFAFAF] hover:text-[#FF4B4B] hover:bg-[#FFDFDF] flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-1"

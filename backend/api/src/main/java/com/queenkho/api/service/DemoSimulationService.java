@@ -192,12 +192,14 @@ public class DemoSimulationService {
     }
 
     // ---------- 5b. Flow 6: FM đã gọi khách quá hạn 3 lần không được ----------
-    // Ghi 3 log [OVERDUE_CONTACT] (cùng định dạng ContractService) để đủ điều kiện thanh lý theo điều khoản.
+    // Ghi log [OVERDUE_CONTACT] (cùng định dạng ContractService) để đủ điều kiện thanh lý theo điều khoản (v5: 2 lần, cũ: 3 lần).
     @Transactional
     public Map<String, Object> addFailedContacts(Integer contractId, CurrentUser actor) {
         requireEnabled();
         Map<String, Object> contract = row(
-                "SELECT rc.id, rc.contract_code, rc.status, su.facility_id FROM rental_contracts rc " +
+                "SELECT rc.id, rc.contract_code, rc.status, su.facility_id, " +
+                        "(SELECT r.terms_version FROM reservations r WHERE r.id = rc.reservation_id) AS terms_version " +
+                        "FROM rental_contracts rc " +
                         "JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
                 contractId, "Không tìm thấy hợp đồng");
         requireSameFacility(actor, toInt(contract.get("facility_id")));
@@ -205,7 +207,10 @@ public class DemoSimulationService {
             throw notApplicable("Chỉ giả lập được cho hợp đồng đang quá hạn");
         }
         LocalDateTime now = LocalDateTime.now();
-        int attempts = ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION;
+        String termsVersion = (String) contract.get("terms_version");
+        int attempts = LateFeeService.acceptsV5Terms(termsVersion)
+                ? LateFeeService.V5_EARLY_LIQUIDATION_CONTACTS
+                : ContractService.MIN_CONTACTS_BEFORE_LIQUIDATION;
         for (int i = 1; i <= attempts; i++) {
             jdbcTemplate.update(
                     "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) VALUES (?, ?, 'rental_contracts', ?, ?)",
@@ -282,7 +287,8 @@ public class DemoSimulationService {
             throw new AccessException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Số ngày quá hạn phải từ 1 đến " + MAX_OVERDUE_DAYS);
         }
         Map<String, Object> contract = row(
-                "SELECT rc.id, rc.contract_code, rc.status, rc.billing_cycle_months, rc.customer_id, su.facility_id " +
+                "SELECT rc.id, rc.contract_code, rc.status, rc.billing_cycle_months, rc.customer_id, su.facility_id, " +
+                        "(SELECT r.terms_version FROM reservations r WHERE r.id = rc.reservation_id) AS terms_version " +
                         "FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
                 contractId, "Không tìm thấy hợp đồng");
         requireSameFacility(actor, toInt(contract.get("facility_id")));
@@ -319,9 +325,15 @@ public class DemoSimulationService {
                 "rental_contracts", contractId);
         // BR-117: chạy ngay cảnh báo thanh lý (job thật chạy 8h sáng) để demo thấy chuông + email
         if (renewalReminderService != null) renewalReminderService.warnLiquidationContract(contractId);
-        // D-15: điều khoản v4 → chạy ngay bước thanh lý + chuyển kho tổng như job 00:05
+        String termsVersion = (String) contract.get("terms_version");
+        // Điều khoản v4 (ngày 1) hoặc v5 (từ ngày thứ 5 trở đi) → tự động cưỡng chế dọn kho + sinh task dọn kho
         if (contractOverdueJob != null && contractOverdueJob.relocateToCentralWarehouse(contractId) > 0) {
-            return result("Hợp đồng quá hạn " + days + " ngày — điều khoản v4: đã cưỡng chế dọn kho, sinh việc chuyển hàng vào kho tổng",
+            String label = LateFeeService.acceptsV5Terms(termsVersion) ? "điều khoản v5" : "điều khoản v4";
+            return result("Hợp đồng quá hạn " + days + " ngày — " + label + ": đã tự động cưỡng chế dọn kho, sinh việc chuyển hàng vào kho tổng",
+                    "endDate", endDate);
+        }
+        if (LateFeeService.acceptsV5Terms(termsVersion)) {
+            return result("Hợp đồng quá hạn " + days + " ngày (điều khoản v5) — đang tính phí trễ; tự cưỡng chế sau 5 ngày hoặc cưỡng chế sớm sau 2 lần liên hệ thất bại",
                     "endDate", endDate);
         }
         return result(days > 30 ? "Hợp đồng quá hạn " + days + " ngày — đủ ngày cưỡng chế dọn kho (cần thêm "
@@ -338,7 +350,8 @@ public class DemoSimulationService {
                     "Số ngày còn lại phải từ 1 đến " + MAX_EXPIRE_SOON_DAYS);
         }
         Map<String, Object> contract = row(
-                "SELECT rc.id, rc.contract_code, rc.status, rc.billing_cycle_months, rc.customer_id, su.facility_id " +
+                "SELECT rc.id, rc.contract_code, rc.status, rc.billing_cycle_months, rc.customer_id, su.facility_id, " +
+                        "(SELECT r.terms_version FROM reservations r WHERE r.id = rc.reservation_id) AS terms_version " +
                         "FROM rental_contracts rc JOIN storage_units su ON su.id = rc.storage_unit_id WHERE rc.id = ?",
                 contractId, "Không tìm thấy hợp đồng");
         requireOwnerOrFacility(actor, toInt(contract.get("customer_id")), toInt(contract.get("facility_id")));

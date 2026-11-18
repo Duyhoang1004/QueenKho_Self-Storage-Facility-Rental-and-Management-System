@@ -104,7 +104,11 @@ public class UnitScheduleService {
                     "LEFT JOIN reservations r ON r.id = c.reservation_id " +
                     "LEFT JOIN rental_policy rp ON rp.id = c.rental_policy_id " +
                     "LEFT JOIN users cu ON cu.id = c.customer_id " +
-                    "WHERE c.status IN ('PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING', 'OVERDUE') ";
+                    "WHERE (c.status IN ('PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING', 'OVERDUE') " +
+                    "       OR (c.status = 'LIQUIDATED' AND su.status = 'MAINTENANCE' " +
+                    "           AND EXISTS (SELECT 1 FROM facility_tasks t WHERE t.contract_id = c.id " +
+                    "                       AND t.task_type = 'MAINTENANCE' AND t.maintenance_reason = 'LIQUIDATION' " +
+                    "                       AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')))) ";
 
     @Transactional(readOnly = true)
     public List<Booking> bookingsOfFacility(Integer facilityId) {
@@ -172,7 +176,9 @@ public class UnitScheduleService {
      */
     public static List<Block> blocksOf(StorageUnit unit, List<Booking> unitBookings, boolean strict, LocalDate today) {
         List<Block> blocks = new ArrayList<>();
-        if ("MAINTENANCE".equalsIgnoreCase(unit.getStatus())) {
+        boolean hasLiquidationCleanup = unitBookings != null && unitBookings.stream()
+                .anyMatch(b -> "LIQUIDATED".equalsIgnoreCase(b.status()));
+        if ("MAINTENANCE".equalsIgnoreCase(unit.getStatus()) && !hasLiquidationCleanup) {
             blocks.add(new Block(today, null, null, "MAINTENANCE"));
         }
         boolean coveredToday = false;

@@ -28,8 +28,50 @@ const HOME_PATH_BY_ROLE = {
   BOM: '/bom',
 }
 
+const PROFILE_PATH_BY_ROLE = {
+  CUSTOMER: '/ho-so',
+  STAFF: '/staff/profile',
+  FACILITY_MANAGER: '/manager/profile',
+  ADMIN: '/admin/profile',
+  BOM: '/bom/profile',
+}
+
 export function getHomePath(role) {
   return HOME_PATH_BY_ROLE[role] || '/'
+}
+
+export function getProfilePath(role) {
+  return PROFILE_PATH_BY_ROLE[role] || '/ho-so'
+}
+
+export async function getMyProfile() {
+  const response = await api.get('/auth/profile')
+  return response.data
+}
+
+export async function updateMyProfile(payload) {
+  const response = await api.put('/auth/profile', payload)
+  const data = response.data
+  try {
+    const current = JSON.parse(sessionStorage.getItem('user') || '{}')
+    const updated = {
+      ...current,
+      fullName: data.fullName ?? current.fullName,
+      phone: data.phone ?? current.phone,
+      cccd: data.cccd ?? current.cccd,
+      email: data.email ?? current.email,
+    }
+    sessionStorage.setItem('user', JSON.stringify(updated))
+    window.dispatchEvent(new CustomEvent('queenkho:user-updated', { detail: updated }))
+  } catch {
+    // ignore storage errors
+  }
+  return data
+}
+
+export async function changeMyPassword(payload) {
+  const response = await api.post('/auth/change-password', payload)
+  return response.data
 }
 
 // Người dùng bấm Đăng xuất: báo backend huỷ token + ghi lịch sử đăng nhập (không chờ, lỗi mạng cũng bỏ qua)

@@ -49,8 +49,12 @@ public class LateFeeService {
     // PR-Q16 (04/11/2026): phí dọn & di dời hàng khi thanh lý — chỉ áp dụng khách đã đồng ý điều khoản từ v3
     public static final int DEFAULT_GOODS_MOVING_FEE_PERCENT = 30;
     public static final String MOVING_FEE_TERMS_VERSION = "v3";
-    // D-15 (05/11/2026): từ điều khoản v4 — bỏ ân hạn, quá hạn là chuyển hàng vào kho tổng ngay, giữ hàng không thời hạn, không bán
+    // D-15 (05/11/2026): từ điều khoản v4 — bỏ ân hạn, chuyển hàng vào kho tổng, giữ hàng không thời hạn, không bán
     public static final String CENTRAL_STORAGE_TERMS_VERSION = "v4";
+    // Điều khoản v5: tự động cưỡng chế dọn kho sau khi quá hạn 5 ngày; cưỡng chế sớm (1–4 ngày) cần tối thiểu 2 lần liên hệ thất bại
+    public static final String V5_TERMS_VERSION = "v5";
+    public static final int V5_LIQUIDATION_DAYS = 5;
+    public static final int V5_EARLY_LIQUIDATION_CONTACTS = 2;
 
     @Autowired
     private RentalPolicyRepository rentalPolicyRepository;
@@ -103,6 +107,16 @@ public class LateFeeService {
     /** D-15: khách đã đồng ý điều khoản kho tổng (v4 trở đi) */
     public static boolean acceptsCentralStorageTerms(String termsVersion) {
         return termsVersion != null && termsVersion.compareTo(CENTRAL_STORAGE_TERMS_VERSION) >= 0;
+    }
+
+    /** Điều khoản v5 trở đi: cưỡng chế dọn kho sau 5 ngày quá hạn, hoặc sớm hơn khi có >= 2 lần liên hệ thất bại */
+    public static boolean acceptsV5Terms(String termsVersion) {
+        return termsVersion != null && termsVersion.compareTo(V5_TERMS_VERSION) >= 0;
+    }
+
+    /** Điều khoản v4 (chưa phải v5): cưỡng chế dọn kho ngay ngày đầu quá hạn */
+    public static boolean isImmediateV4LiquidationTerms(String termsVersion) {
+        return CENTRAL_STORAGE_TERMS_VERSION.equalsIgnoreCase(termsVersion);
     }
 
     /** Khách đã đồng ý điều khoản có phí dọn & di dời hàng chưa (v3 trở đi) */
@@ -207,6 +221,12 @@ public class LateFeeService {
             }
         }
 
+        OverstayBasis basis = overstayBasis(contract);
+        boolean isV5 = acceptsV5Terms(basis.termsVersion());
+        if (isV5) {
+            liquidationDays = V5_LIQUIDATION_DAYS;
+        }
+
         LocalDate endDate = contract.getEndDate();
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null
                 ? contract.getDepositHeldAmount()
@@ -259,8 +279,9 @@ public class LateFeeService {
         // PR-Q5: OVERDUE thì PIN bị khóa ở mức hiển thị
         boolean isPinLocked = "OVERDUE".equalsIgnoreCase(contract.getStatus());
 
-        // PR-Q8: FM chỉ được thanh lý khi đã quá mốc liquidationDays.
-        boolean canLiquidate = "OVERDUE".equalsIgnoreCase(contract.getStatus()) && overdueDays > liquidationDays;
+        // PR-Q8: FM chỉ được thanh lý khi đã quá mốc liquidationDays (v5: đủ 5 ngày quá hạn).
+        boolean canLiquidate = "OVERDUE".equalsIgnoreCase(contract.getStatus())
+                && (isV5 ? overdueDays >= V5_LIQUIDATION_DAYS : overdueDays > liquidationDays);
 
         // PR-Q14: phí chiếm dụng — mỗi ngày quá hạn trả tiền ô theo ngày × overstay_percent, KHÔNG có trần,
         // để quá hạn luôn đắt hơn gia hạn. Chỉ áp dụng khi đang OVERDUE và khách đã đồng ý điều khoản v2.
@@ -272,7 +293,6 @@ public class LateFeeService {
         // vẫn phải trả những ngày đã quá hạn — trước đây chỉ tính khi OVERDUE nên màn khách / báo giá gia hạn hiện 0.
         boolean overstayWaived = Boolean.TRUE.equals(contract.getOverstayFeeWaived());
         if (holdsUnit(contract.getStatus())) {
-            OverstayBasis basis = overstayBasis(contract);
             if (acceptsOverstayTerms(basis.termsVersion())) {
                 overstayApplied = !overstayWaived;
                 overstayPct = overstayWaived ? 0 : waived ? 100 : (policy != null && policy.getOverstayPercent() != null

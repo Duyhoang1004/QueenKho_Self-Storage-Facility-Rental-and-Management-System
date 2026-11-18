@@ -1,14 +1,15 @@
-// Điều khoản xử lý tài sản khi không trả kho (v4) — khách tick đồng ý khi đặt kho, lưu reservations.terms_version.
+// Điều khoản xử lý tài sản khi không trả kho (v5) — khách tick đồng ý khi đặt kho, lưu reservations.terms_version.
 // Đổi nội dung → tăng version ở đây VÀ ReservationService.ASSET_TERMS_VERSION ở backend.
 // v2 (27/10/2026): gia hạn báo trước 3 ngày (PR-R10), phí chiếm dụng (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15).
 // v3 (04/11/2026): phí dọn & di dời hàng khi thanh lý (PR-Q16), chuyển ô cùng loại (BR-122), ảnh biên bản bàn giao (BR-121).
 // v4 (05/11/2026, D-15): bỏ ân hạn 5 ngày, hết hạn là chuyển hàng vào KHO TỔNG; QueenKho không bán / tiêu huỷ hàng của khách.
-const TERMS_VERSION = 'v4'
+// v5 (18/11/2026): chỉ tự động cưỡng chế dọn kho sau khi đã quá hạn 5 ngày; cưỡng chế sớm hơn (1–4 ngày) thực hiện sau 2 lần liên lạc không thành công, hoặc cưỡng chế ngay trong ngày nếu có khách mới đặt đơn trúng ô quá hạn.
+const TERMS_VERSION = 'v5'
 
 const CLAUSES = [
-  'Muốn thuê tiếp, Bên thuê gia hạn chậm nhất 3 ngày trước ngày hết hạn. QueenKho nhắc trước 15, 10, 7, 3 và 1 ngày. Sau mốc 3 ngày ô kho được mở cho khách khác đặt trước; Bên thuê chỉ còn gia hạn được nếu chưa có ai đặt ô.',
+  'Muốn thuê tiếp, Bên thuê gia hạn chậm nhất 3 ngày trước ngày hết hạn. QueenKho nhắc trước 15, 10, 7, 3 và 1 ngày. Sau mốc 3 ngày mà chưa gia hạn, ô kho được mở cho khách khác đặt trước (ngày nhận kho sớm nhất đối với khách mới là 7 ngày sau khi hợp đồng hiện tại hết hạn); Bên thuê chỉ còn gia hạn được nếu chưa có ai đặt ô.',
   'Muốn trả kho, Bên thuê hẹn ngày trả trong thời hạn hợp đồng (chậm nhất là ngày hết hạn). Không có thời gian ân hạn sau ngày hết hạn.',
-  'Hết ngày hết hạn mà Bên thuê không gia hạn và không trả kho, hợp đồng chuyển QUÁ HẠN: mã truy cập bị khoá, tính phí trễ theo chính sách thuê và PHÍ CHIẾM DỤNG ô cho số ngày quá hạn (mặc định 150% giá thuê theo ngày). Ngay hôm sau, QueenKho CƯỠNG CHẾ DỌN KHO hợp đồng: thu hồi khoá, mã PIN, thẻ RFID và mở ô với sự có mặt của ít nhất 2 nhân sự; tài sản được kiểm kê, chụp ảnh, lập biên bản và CHUYỂN VÀO KHO TỔNG của QueenKho. Bên thuê chịu PHÍ DỌN & DI DỜI HÀNG một lần (mặc định 30% giá thuê tháng của ô). Các khoản phí trừ vào tiền cọc, phần vượt cọc là khoản nợ.',
+  'Hết ngày hết hạn mà Bên thuê không gia hạn và không trả kho, hợp đồng chuyển QUÁ HẠN: mã truy cập bị khoá, tính phí trễ theo chính sách thuê và PHÍ CHIẾM DỤNG ô cho số ngày quá hạn (mặc định 150% giá thuê theo ngày). Hệ thống chỉ TỰ ĐỘNG CƯỠNG CHẾ DỌN KHO sau khi hợp đồng đã quá hạn đủ 5 ngày; trường hợp cần cưỡng chế sớm hơn (trong 1–4 ngày đầu quá hạn) chỉ thực hiện sau tối thiểu 2 lần liên lạc không thành công, HOẶC chuyển ngay sang cưỡng chế dọn kho trong ngày (trong giờ làm việc) nếu có khách hàng khác đặt đơn vào ô kho quá hạn (khách mới hẹn ngày check-in nhận kho tối thiểu sau 3 ngày kể từ khi đặt). Khi cưỡng chế dọn kho, ít nhất 2 nhân sự mở ô, kiểm kê, chụp ảnh, lập biên bản và CHUYỂN HÀNG VÀO KHO TỔNG của QueenKho; Bên thuê chịu PHÍ DỌN & DI DỜI HÀNG một lần (mặc định 30% giá thuê tháng). Các khoản phí trừ vào tiền cọc, phần vượt cọc là khoản nợ.',
   'Tại kho tổng, tài sản được giữ nguyên vẹn cho tới khi Bên thuê nhận lại, tính PHÍ LƯU GIỮ mỗi ngày (mặc định 20% giá thuê theo ngày của ô cũ). QueenKho KHÔNG bán và không tiêu huỷ tài sản của Bên thuê. Bên thuê xem địa chỉ kho tổng và số tiền cần thanh toán trong trang hợp đồng, nhận lại hàng sau khi thanh toán đủ nợ và phí lưu giữ.',
   'Hàng cấm, chất nguy hiểm, giấy tờ tuỳ thân được giao ngay cho cơ quan công an / UBND phường.',
   'Khi đặt kho Bên thuê khai báo loại hàng gửi; thực phẩm chỉ gửi ở kho lạnh / kho đông. Lúc nhận kho nhân viên kiểm tra hàng mang vào phải khớp khai báo, không có chất dễ cháy nổ, hàng cấm; không đạt thì không bàn giao ô.',

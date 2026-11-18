@@ -110,7 +110,11 @@ export default function BomLayout() {
 
         {/* User Card at bottom of sidebar */}
         {!collapsed && (
-          <div className="p-4 border-t-2 border-[#E5E5E5] m-3 rounded-2xl bg-[#F7F7F7] flex items-center gap-3">
+          <Link
+            to="/bom/profile"
+            title="Xem & chỉnh sửa hồ sơ cá nhân"
+            className="p-4 border-t-2 border-[#E5E5E5] m-3 rounded-2xl bg-[#F7F7F7] hover:bg-[#EFEFEF] transition-colors flex items-center gap-3 cursor-pointer"
+          >
             <div className="w-9 h-9 rounded-xl bg-[#FF9600] border-b-2 border-[#CC7A00] text-white flex items-center justify-center font-black text-xs shrink-0">
               {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'B'}
             </div>
@@ -122,7 +126,7 @@ export default function BomLayout() {
                 Giám đốc vận hành
               </p>
             </div>
-          </div>
+          </Link>
         )}
       </aside>
 
@@ -146,7 +150,11 @@ export default function BomLayout() {
               <span>Hệ thống trực tuyến</span>
             </div>
 
-            <div className="flex items-center gap-2.5 p-1 rounded-2xl">
+            <Link
+              to="/bom/profile"
+              title="Xem & chỉnh sửa hồ sơ cá nhân"
+              className="flex items-center gap-2.5 p-1.5 rounded-2xl hover:bg-[#F7F7F7] transition-colors cursor-pointer"
+            >
               <div className="w-10 h-10 rounded-2xl bg-[#FF9600] border-b-2 border-[#CC7A00] text-white flex items-center justify-center font-black text-sm">
                 {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'B'}
               </div>
@@ -158,7 +166,7 @@ export default function BomLayout() {
                   Quản lý BOM
                 </span>
               </div>
-            </div>
+            </Link>
 
             <button
               onClick={handleLogout}

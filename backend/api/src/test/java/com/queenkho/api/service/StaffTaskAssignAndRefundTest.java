@@ -253,4 +253,17 @@ class StaffTaskAssignAndRefundTest {
         assertEquals("HANDOVER_PHOTO_REQUIRED", ex.getCode());
         verify(staffTaskRepository, never()).completeCheckIn(anyInt(), anyInt(), any());
     }
+
+    @Test
+    @DisplayName("Nhận diện đúng phương thức hoàn tiền từ ghi chú task CHECK_OUT / REFUND")
+    void detectRefundMethodFromNoteHandlesCashAndBankTransfer() {
+        assertEquals("CASH", StaffTaskService.detectRefundMethodFromNote(
+                "Yêu cầu trả kho ngày: 20/11/2026 | Hoàn tiền: Nhận tiền mặt trực tiếp tại quầy"));
+        assertEquals("CASH", StaffTaskService.detectRefundMethodFromNote(
+                "Hủy đơn RES-123 | HOÀN CỌC TIỀN MẶT"));
+        assertEquals("BANK_TRANSFER", StaffTaskService.detectRefundMethodFromNote(
+                "Yêu cầu trả kho ngày: 20/11/2026 | Hoàn cọc STK: 123456789 (VCB - NGUYEN VAN A) | Ghi chú: không lấy tiền mặt"));
+        assertEquals("BANK_TRANSFER", StaffTaskService.detectRefundMethodFromNote(null));
+        assertEquals("BANK_TRANSFER", StaffTaskService.detectRefundMethodFromNote(""));
+    }
 }

@@ -1434,14 +1434,16 @@ public class StaffTaskService {
         }
 
         // 8d. Ghi nhận giao dịch hoàn tiền PENDING (nếu có số tiền hoàn > 0)
+        //     Lưu đúng phương thức khách đã chọn (CASH / BANK_TRANSFER) ngay từ lúc tạo PENDING
+        String initialRefundMethod = detectRefundMethodFromNote(originalTaskNote);
         if (refundAmount.compareTo(BigDecimal.ZERO) > 0) {
             try {
                 String refTxnCode = "REF-OUT-" + contract.getId() + "-" + (System.currentTimeMillis() % 100000);
                 jdbcTemplate.update(
                         "INSERT INTO payment_transactions " +
                                 "(transaction_code, user_id, reservation_id, contract_id, payment_type, payment_method, amount, status, paid_at) " +
-                                "VALUES (?, ?, ?, ?, 'REFUND', 'BANK_TRANSFER', ?, 'PENDING', NULL)",
-                        refTxnCode, customerId, reservationId, contract.getId(), refundAmount);
+                                "VALUES (?, ?, ?, ?, 'REFUND', ?, ?, 'PENDING', NULL)",
+                        refTxnCode, customerId, reservationId, contract.getId(), initialRefundMethod, refundAmount);
             } catch (Exception ignored) {
             }
         }
@@ -1799,6 +1801,21 @@ public class StaffTaskService {
             return note.substring(idx).trim();
         }
         return note.trim();
+    }
+
+    static String detectRefundMethodFromNote(String note) {
+        if (note == null || note.isBlank()) {
+            return "BANK_TRANSFER";
+        }
+        if (note.contains("Hoàn cọc STK:") || note.contains("STK:")) {
+            return "BANK_TRANSFER";
+        }
+        String lower = note.toLowerCase(java.util.Locale.ROOT);
+        boolean isCash = note.contains("HOÀN CỌC TIỀN MẶT")
+                || note.contains("HOAN COC TIEN MAT")
+                || lower.contains("tiền mặt")
+                || lower.contains("tien mat");
+        return isCash ? "CASH" : "BANK_TRANSFER";
     }
 
     private String serializeEvidenceImages(List<String> images) {
@@ -2232,12 +2249,9 @@ public class StaffTaskService {
             request = new CompleteRefundRequest();
         }
 
-        boolean isTaskCash = task.getNote() != null && (
-                task.getNote().contains("HOÀN CỌC TIỀN MẶT") ||
-                task.getNote().toLowerCase().contains("tiền mặt"));
         String method = (request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank())
                 ? request.getPaymentMethod().trim().toUpperCase()
-                : (isTaskCash ? "CASH" : "BANK_TRANSFER");
+                : detectRefundMethodFromNote(task.getNote());
 
         String extraNote = request.getNote() != null && !request.getNote().isBlank()
                 ? request.getNote().trim()

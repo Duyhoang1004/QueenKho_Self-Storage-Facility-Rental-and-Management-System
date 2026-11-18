@@ -33,7 +33,8 @@ public class StaffTaskController {
                                       @RequestParam(required = false) String status,
                                       @RequestParam(required = false) Integer staffId) {
         try {
-            return ResponseEntity.ok(staffTaskService.getBoard(facilityId, status, staffId));
+            Integer staffFilter = "STAFF".equals(currentUser.require().role()) ? null : staffId;
+            return ResponseEntity.ok(staffTaskService.getBoard(facilityId, status, staffFilter));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }

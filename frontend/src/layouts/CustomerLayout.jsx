@@ -50,21 +50,29 @@ export default function CustomerLayout({ children }) {
       return;
     }
 
-    // Tạo chữ viết tắt từ tên thật
-    const names = user.fullName ? user.fullName.split(' ') : ['K', 'H'];
-    let initials = '';
-    if (names.length >= 2) {
-      initials = (names[0][0] + names[names.length - 1][0]).toUpperCase();
-    } else if (names.length === 1) {
-      initials = names[0][0].toUpperCase();
-    }
+    const applyUser = (u) => {
+      const names = u.fullName ? String(u.fullName).trim().split(/\s+/).filter(Boolean) : ['K', 'H'];
+      let initials = '';
+      if (names.length >= 2) {
+        initials = (names[0][0] + names[names.length - 1][0]).toUpperCase();
+      } else if (names.length === 1) {
+        initials = names[0][0].toUpperCase();
+      }
+      setCurrentUser({
+        ...u,
+        name: u.fullName, // Map từ fullName sang name để Sidebar dùng
+        initials: initials || 'KH',
+        role: 'Khách Hàng' // Hiển thị tiếng Việt trên UI
+      });
+    };
 
-    setCurrentUser({
-      ...user,
-      name: user.fullName, // Map từ fullName sang name để Sidebar dùng
-      initials: initials || 'KH',
-      role: 'Khách Hàng' // Hiển thị tiếng Việt trên UI
-    });
+    applyUser(user);
+
+    const onUserUpdated = (e) => {
+      if (e?.detail) applyUser(e.detail);
+    };
+    window.addEventListener('queenkho:user-updated', onUserUpdated);
+    return () => window.removeEventListener('queenkho:user-updated', onUserUpdated);
   }, [navigate]);
 
   const handleLogout = () => {

@@ -114,7 +114,11 @@ export default function StaffLayout() {
             {/* Staff Avatar & Logout Button */}
             <div className="flex items-center gap-3">
               <NotificationDropdown />
-              <div className="flex items-center gap-2.5 p-1 rounded-2xl">
+              <Link
+                to="/staff/profile"
+                title="Xem & chỉnh sửa hồ sơ cá nhân"
+                className="flex items-center gap-2.5 p-1.5 rounded-2xl hover:bg-[#F7F7F7] transition-colors cursor-pointer"
+              >
                 <div className="w-10 h-10 rounded-2xl bg-[#1CB0F6] border-b-2 border-[#1899D6] text-white flex items-center justify-center font-black text-sm">
                   {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'S'}
                 </div>
@@ -122,7 +126,7 @@ export default function StaffLayout() {
                   <span className="text-xs font-black text-[#4B4B4B] leading-tight">{currentUser.fullName || 'Nhân viên'}</span>
                   <span className="text-[10px] font-extrabold text-[#AFAFAF] uppercase leading-tight">Nhân viên</span>
                 </div>
-              </div>
+              </Link>
 
               <button
                 onClick={handleLogout}

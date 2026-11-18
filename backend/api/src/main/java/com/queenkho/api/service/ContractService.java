@@ -546,12 +546,18 @@ public class ContractService {
                 }
             }
 
+            String termsVersion = rs.getString("terms_version");
             RentalContract dummyContract = new RentalContract();
             dummyContract.setId(contractId);
             dummyContract.setEndDate(endDate);
             dummyContract.setDepositHeldAmount(depositHeld);
             dummyContract.setRentalPolicyId(policyId);
             dummyContract.setStatus(status);
+            if (termsVersion != null) {
+                com.queenkho.api.entity.Reservation dummyRes = new com.queenkho.api.entity.Reservation();
+                dummyRes.setTermsVersion(termsVersion);
+                dummyContract.setReservation(dummyRes);
+            }
             boolean lateFeeWaived = rs.getBoolean("late_fee_waived");
             dummyContract.setLateFeeWaived(lateFeeWaived);
             boolean overstayFeeWaived = lateFeeWaived && rs.getBoolean("overstay_fee_waived");
@@ -562,6 +568,20 @@ public class ContractService {
             BigDecimal lateFeeDisplay = lateCalc.getLateFeeAmount();
             BigDecimal overstayDisplay = lateCalc.getOverstayFeeAmount();
             boolean canLiquidate = lateCalc.isCanLiquidate();
+            int minContactsReq = MIN_CONTACTS_BEFORE_LIQUIDATION;
+            if (LateFeeService.acceptsV5Terms(termsVersion)) {
+                if (lateCalc.getOverdueDays() >= LateFeeService.V5_LIQUIDATION_DAYS) {
+                    canLiquidate = "OVERDUE".equalsIgnoreCase(status);
+                    minContactsReq = 0;
+                } else {
+                    minContactsReq = LateFeeService.V5_EARLY_LIQUIDATION_CONTACTS;
+                    canLiquidate = "OVERDUE".equalsIgnoreCase(status)
+                            && contactCount >= LateFeeService.V5_EARLY_LIQUIDATION_CONTACTS;
+                }
+            } else if (LateFeeService.isImmediateV4LiquidationTerms(termsVersion)) {
+                canLiquidate = "OVERDUE".equalsIgnoreCase(status);
+                minContactsReq = 0;
+            }
 
             if ("LIQUIDATED".equalsIgnoreCase(status)) {
                 canLiquidate = false;
@@ -618,8 +638,8 @@ public class ContractService {
                     .lateFeeWaived(lateFeeWaived && "OVERDUE".equalsIgnoreCase(status))
                     .lateFeeWaiverNote(rs.getString("late_fee_waiver_note"))
                     .overstayFeeWaived(overstayFeeWaived && "OVERDUE".equalsIgnoreCase(status))
-                    .minContactsRequired(MIN_CONTACTS_BEFORE_LIQUIDATION)
-                    .termsVersion(rs.getString("terms_version"))
+                    .minContactsRequired(minContactsReq)
+                    .termsVersion(termsVersion)
                     .overstayFeeAmount(overstayDisplay)
                     .goodsMovingFeeAmount(movingFeeDisplay)
                     .totalOverdueCharge(lateFeeDisplay.add(overstayDisplay))
@@ -788,44 +808,100 @@ public class ContractService {
         contract.setLateFeeWaived(false);
         contract.setOverstayFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
-        // D-15 (05/11/2026): điều khoản v4 — quá hạn là chuyển hàng vào kho tổng ngay, không chờ 15 ngày / 3 lần liên hệ
-        boolean centralStorageTerms = LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion());
-        if (!centralStorageTerms && !lateFeeCalc.isCanLiquidate()) {
-            throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
-                    "Hợp đồng chưa đủ số ngày để cưỡng chế dọn kho (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
-        }
-        // Điều khoản xử lý tài sản (mục 2): phải liên hệ khách đủ số lần trước khi cưỡng chế dọn kho
+        String termsVersion = lateFeeService.overstayBasis(contract).termsVersion();
         int contactCount = countOverdueContacts(contract.getId());
-        if (!centralStorageTerms && contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
-            throw new ContractException(HttpStatus.CONFLICT, "NOT_ENOUGH_CONTACTS",
-                    "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi cưỡng chế dọn kho (hiện có: " + contactCount + ")");
+
+        if (LateFeeService.acceptsV5Terms(termsVersion)) {
+            // Điều khoản v5: cưỡng chế khi đã quá hạn đủ 5 ngày HOẶC cưỡng chế sớm khi đã có >= 2 lần liên lạc không thành công
+            boolean enoughDays = lateFeeCalc.getOverdueDays() >= LateFeeService.V5_LIQUIDATION_DAYS;
+            boolean enoughEarlyContacts = contactCount >= LateFeeService.V5_EARLY_LIQUIDATION_CONTACTS;
+            if (!enoughDays && !enoughEarlyContacts) {
+                throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
+                        "Theo điều khoản v5, chỉ cưỡng chế dọn kho sau khi đã quá hạn "
+                                + LateFeeService.V5_LIQUIDATION_DAYS + " ngày (hiện tại: " + lateFeeCalc.getOverdueDays()
+                                + " ngày), hoặc cưỡng chế sớm sau ít nhất " + LateFeeService.V5_EARLY_LIQUIDATION_CONTACTS
+                                + " lần liên lạc không thành công (hiện có: " + contactCount + " lần)");
+            }
+        } else if (!LateFeeService.isImmediateV4LiquidationTerms(termsVersion)) {
+            if (!lateFeeCalc.isCanLiquidate()) {
+                throw new ContractException(HttpStatus.CONFLICT, "LIQUIDATION_NOT_ALLOWED_YET",
+                        "Hợp đồng chưa đủ số ngày để cưỡng chế dọn kho (ngưỡng: " + lateFeeCalc.getLiquidationDaysThreshold() + " ngày, hiện tại: " + lateFeeCalc.getOverdueDays() + " ngày)");
+            }
+            if (contactCount < MIN_CONTACTS_BEFORE_LIQUIDATION) {
+                throw new ContractException(HttpStatus.CONFLICT, "NOT_ENOUGH_CONTACTS",
+                        "Cần ghi nhận ít nhất " + MIN_CONTACTS_BEFORE_LIQUIDATION + " lần liên hệ khách trước khi cưỡng chế dọn kho (hiện có: " + contactCount + ")");
+            }
         }
 
-        return performLiquidation(contract, manager.getId(), request.getNote().trim(), lateFeeCalc);
+        return performLiquidation(contract, manager.getId(), request.getNote().trim(), lateFeeCalc, false);
     }
 
     /**
-     * D-15 (05/11/2026): job 00:05 tự thanh lý hợp đồng quá hạn của khách đồng ý điều khoản v4 — không còn ân hạn,
-     * hôm sau ngày hết hạn là mở ô, kiểm kê và chuyển hàng vào kho tổng (task MAINTENANCE lý do LIQUIDATION).
-     * Trả false nếu hợp đồng không còn quá hạn / không thuộc điều khoản v4.
+     * Job 00:05 tự cưỡng chế dọn kho:
+     *  - Điều khoản v4: quá hạn là chuyển hàng vào kho tổng ngay.
+     *  - Điều khoản v5: quá hạn từ 5 ngày trở lên tự động cưỡng chế dọn kho, sinh task dọn kho.
      */
     @Transactional
     public boolean autoRelocateToCentralWarehouse(Integer contractId, Integer systemUserId) {
         RentalContract contract = rentalContractRepository.findDetailById(contractId).orElse(null);
-        if (contract == null || !"OVERDUE".equalsIgnoreCase(contract.getStatus())
-                || !LateFeeService.acceptsCentralStorageTerms(lateFeeService.overstayBasis(contract).termsVersion())) {
+        if (contract == null || !"OVERDUE".equalsIgnoreCase(contract.getStatus())) {
             return false;
         }
+        String termsVersion = lateFeeService.overstayBasis(contract).termsVersion();
         contract.setLateFeeWaived(false);
         contract.setOverstayFeeWaived(false);
         var lateFeeCalc = lateFeeService.calculateLateFee(contract);
-        performLiquidation(contract, systemUserId,
-                "Tự động: hết hạn không gia hạn / không trả kho, chuyển hàng vào kho tổng (D-15)", lateFeeCalc);
+
+        boolean isV4 = LateFeeService.isImmediateV4LiquidationTerms(termsVersion);
+        boolean isV5Ready = LateFeeService.acceptsV5Terms(termsVersion)
+                && lateFeeCalc.getOverdueDays() >= LateFeeService.V5_LIQUIDATION_DAYS;
+        if (!isV4 && !isV5Ready) {
+            return false;
+        }
+        String autoNote = isV5Ready
+                ? "Tự động: hợp đồng điều khoản v5 đã quá hạn đủ " + LateFeeService.V5_LIQUIDATION_DAYS + " ngày, cưỡng chế dọn kho và chuyển hàng vào kho tổng"
+                : "Tự động: hết hạn không gia hạn / không trả kho, chuyển hàng vào kho tổng (D-15)";
+        performLiquidation(contract, systemUserId, autoNote, lateFeeCalc, true);
+        return true;
+    }
+
+    /**
+     * Khi có khách mới đặt đơn trúng ô đang quá hạn (chưa cưỡng chế dọn):
+     * chuyển ngay hợp đồng OVERDUE sang cưỡng chế dọn kho (LIQUIDATED) và sinh task dọn kho ngay trong ngày
+     * (hoặc sớm nhất có thể trong giờ làm việc).
+     */
+    @Transactional
+    public boolean autoLiquidateOverdueForIncomingBooking(Integer facilityId, Integer unitTypeId, String reservationCode) {
+        List<Integer> overdueIds = jdbcTemplate.queryForList(
+                "SELECT TOP 1 c.id FROM rental_contracts c " +
+                        "JOIN storage_units su ON su.id = c.storage_unit_id " +
+                        "WHERE su.facility_id = ? AND su.unit_type_id = ? AND su.is_emergency = 0 " +
+                        "  AND c.status = 'OVERDUE' " +
+                        "ORDER BY c.end_date ASC, c.id ASC",
+                Integer.class, facilityId, unitTypeId);
+        if (overdueIds.isEmpty()) {
+            return false;
+        }
+        Integer contractId = overdueIds.get(0);
+        RentalContract contract = rentalContractRepository.findDetailById(contractId).orElse(null);
+        if (contract == null || !"OVERDUE".equalsIgnoreCase(contract.getStatus())) {
+            return false;
+        }
+        List<Integer> systemIds = jdbcTemplate.queryForList(
+                "SELECT TOP 1 id FROM users WHERE email = ?", Integer.class, ActivityLogService.SYSTEM_EMAIL);
+        Integer actorId = !systemIds.isEmpty() ? systemIds.get(0)
+                : (contract.getCustomer() != null ? contract.getCustomer().getId() : 1);
+        contract.setLateFeeWaived(false);
+        contract.setOverstayFeeWaived(false);
+        var lateFeeCalc = lateFeeService.calculateLateFee(contract);
+        String note = "Tự động cưỡng chế dọn kho ngay trong ngày do có khách mới đặt đơn "
+                + (reservationCode != null ? reservationCode : "") + " vào ô quá hạn (điều khoản v5)";
+        performLiquidation(contract, actorId, note, lateFeeCalc, true);
         return true;
     }
 
     private Map<String, Object> performLiquidation(RentalContract contract, Integer actorId, String note,
-                                                   LateFeeCalculationResult lateFeeCalc) {
+                                                   LateFeeCalculationResult lateFeeCalc, boolean urgentSameWorkingDay) {
         BigDecimal depositHeld = contract.getDepositHeldAmount() != null ? contract.getDepositHeldAmount() : BigDecimal.ZERO;
         BigDecimal lateFee = lateFeeCalc.getLateFeeAmount(); // Đã trần 50% cọc
         // PR-Q14: phí chiếm dụng trừ tiếp vào phần cọc còn lại; thiếu bao nhiêu thành khoản nợ OVERSTAY_FEE
@@ -870,7 +946,8 @@ public class ContractService {
         if (contract.getStorageUnit() != null) {
             staffTaskService.createMaintenanceTask(contract, "LIQUIDATION", "Cưỡng chế dọn ô " + contract.getStorageUnit().getId()
                     + " của HĐ " + contract.getContractCode()
-                    + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển vào kho tổng (không bán)");
+                    + ": ít nhất 2 người mở kho, kiểm kê + chụp ảnh hàng của khách, lập biên bản, chuyển vào kho tổng (không bán)",
+                    urgentSameWorkingDay);
         }
 
         // 5. Ghi 1 giao dịch payment_transactions loại LATE_FEE, phương thức DEPOSIT_OFFSET, trạng thái SUCCESS

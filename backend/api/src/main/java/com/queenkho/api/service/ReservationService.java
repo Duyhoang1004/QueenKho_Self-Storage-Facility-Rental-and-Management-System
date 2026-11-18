@@ -44,7 +44,9 @@ public class ReservationService {
     // v3 (04/11/2026): thêm phí dọn & di dời hàng khi thanh lý (PR-Q16), cơ sở được chuyển ô cùng loại (BR-122)
     // v4 (05/11/2026, D-15): bỏ ân hạn 5 ngày; hết hạn không gia hạn / trả kho → chuyển hàng vào kho tổng ngay, giữ không thời hạn,
     // không bán; khai báo loại hàng, thực phẩm chỉ gửi kho lạnh / đông
-    public static final String ASSET_TERMS_VERSION = "v4";
+    // v5 (18/11/2026): cưỡng chế dọn kho tự động sau khi đã quá hạn 5 ngày; cưỡng chế sớm hơn (1–4 ngày) cần tối thiểu 2 lần liên hệ thất bại,
+    // hoặc cưỡng chế ngay trong ngày nếu có khách mới đặt đơn trúng ô quá hạn
+    public static final String ASSET_TERMS_VERSION = "v5";
     // PR-X3 (08/11/2026): Staff liên hệ khách trong 48h sau giờ hẹn; ≥ 2 lần thất bại thì FM được xử lý No-Show
     public static final int NO_SHOW_WAIT_HOURS = 48;
     public static final int NO_SHOW_MIN_FAILED_CONTACTS = 2;
@@ -107,6 +109,9 @@ public class ReservationService {
     // D-18: ô kho tính theo lịch (khoảng ngày) — gán đơn tương lai không khoá ô ở hiện tại
     @Autowired
     private UnitScheduleService unitScheduleService;
+
+    @Autowired(required = false)
+    private ContractService contractService;
 
     // UC-12: khách hàng xem danh sách đơn đặt chỗ của chính mình (mới nhất trước)
     @Transactional(readOnly = true)
@@ -504,6 +509,15 @@ public class ReservationService {
         // Khoá dòng cơ sở trong transaction → 2 khách đặt cùng lúc phải xếp hàng, người sau thấy đúng số suất còn lại.
         jdbcTemplate.queryForObject("SELECT id FROM facilities WITH (UPDLOCK, HOLDLOCK) WHERE id = ?",
                 Integer.class, facility.getId());
+        int freeNowBefore = renewalPolicyService != null
+                ? renewalPolicyService.freeSlotsNow(facility.getId(), unitType.getId()) : 1;
+        if (freeNowBefore <= 0 && renewalPolicyService != null) {
+            LocalDate earliestSlot = renewalPolicyService.earliestSlotDate(facility.getId(), unitType.getId(), freeNowBefore);
+            if (earliestSlot != null && request.getStartDate().isBefore(earliestSlot)) {
+                throw new ReservationException(HttpStatus.CONFLICT, "NO_AVAILABILITY",
+                        noAvailabilityMessage(facility, unitType, request.getStartDate(), request.getDurationMonths()));
+            }
+        }
         // D-18: đếm theo khoảng ngày thuê [ngày nhận kho, hết hạn + ngày dọn ô) thay vì chỉ đếm ô AVAILABLE hôm nay
         int freeSlots = unitScheduleService.freeSlots(facility.getId(), unitType.getId(),
                 request.getStartDate(), request.getDurationMonths());
@@ -567,6 +581,15 @@ public class ReservationService {
         if (voucherService != null && saved.getVoucherId() != null) {
             voucherService.releaseUnpaidHolds(saved.getVoucherId(), customer.getId(), saved.getId());
         }
+        // Điều khoản v5: nếu khách đặt đơn khi loại kho đã hết ô AVAILABLE, phải lấy suất từ ô đang OVERDUE chưa cưỡng chế
+        // → chuyển ngay hợp đồng OVERDUE sang cưỡng chế dọn kho (LIQUIDATED) và sinh task dọn kho ngay trong ngày (trong giờ làm việc)
+        if (freeNowBefore <= 0 && contractService != null) {
+            try {
+                contractService.autoLiquidateOverdueForIncomingBooking(
+                        facility.getId(), unitType.getId(), saved.getReservationCode());
+            } catch (Exception ignored) {
+            }
+        }
 
         // PR-A9: log tạo đơn (ActivityLogService tự nuốt lỗi ghi log)
         activityLogService.log(customer.getId(),
@@ -616,13 +639,20 @@ public class ReservationService {
             throw new IllegalArgumentException("Vui lòng chọn cơ sở, loại kho và ngày nhận kho");
         }
         int duration = months != null && months > 0 ? months : 1;
+        LocalDate tomorrow = UnitScheduleService.today().plusDays(1);
         LocalDate maxStart = UnitScheduleService.today().plusDays(UnitScheduleService.MAX_BOOKING_LEAD_DAYS);
+        int freeNow = renewalPolicyService != null ? renewalPolicyService.freeSlotsNow(facilityId, unitTypeId) : 1;
+        LocalDate earliestSlot = (freeNow <= 0 && renewalPolicyService != null)
+                ? renewalPolicyService.earliestSlotDate(facilityId, unitTypeId, freeNow) : null;
+        LocalDate minStart = (earliestSlot != null && earliestSlot.isAfter(tomorrow)) ? earliestSlot : tomorrow;
+
         RangeAvailabilityResponse.RangeAvailabilityResponseBuilder builder = RangeAvailabilityResponse.builder()
                 .facilityId(facilityId)
                 .unitTypeId(unitTypeId)
                 .startDate(startDate)
                 .endDate(startDate.plusMonths(duration))
                 .durationMonths(duration)
+                .minStartDate(minStart)
                 .maxStartDate(maxStart);
         if (startDate.isBefore(UnitScheduleService.today())) {
             return builder.freeSlots(0).available(false).message("Ngày nhận kho không được ở quá khứ").build();
@@ -636,6 +666,10 @@ public class ReservationService {
                 .orElseThrow(() -> new IllegalArgumentException("Cơ sở không tồn tại"));
         UnitType unitType = unitTypeRepository.findById(unitTypeId)
                 .orElseThrow(() -> new IllegalArgumentException("Loại kho không tồn tại"));
+        if (earliestSlot != null && startDate.isBefore(earliestSlot)) {
+            return builder.freeSlots(0).available(false)
+                    .message(noAvailabilityMessage(facility, unitType, startDate, duration)).build();
+        }
         int free = Math.max(unitScheduleService.freeSlots(facilityId, unitTypeId, startDate, duration), 0);
         return builder.freeSlots(free).available(free > 0)
                 .message(free > 0

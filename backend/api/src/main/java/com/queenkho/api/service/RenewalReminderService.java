@@ -161,11 +161,12 @@ public class RenewalReminderService {
                         + " — ô có thể đã được khách khác đặt trước. Hãy gia hạn ngay (nếu ô còn) hoặc hẹn ngày trả kho."
                     : "Gia hạn trước ngày " + deadline.format(DATE_FMT)
                         + " để chắc chắn giữ ô; sau mốc này ô có thể được nhận đặt trước cho khách khác.")
-                // D-15: điều khoản v4 — hết hạn là chuyển hàng vào kho tổng ngay, không còn ân hạn
-                + (LateFeeService.acceptsCentralStorageTerms((String) row.get("terms_version"))
-                    ? " Hết ngày " + endDate.format(DATE_FMT) + " mà chưa gia hạn hoặc trả kho, hôm sau QueenKho mở ô, kiểm kê và"
-                        + " chuyển hàng vào kho tổng (có phí di dời + phí lưu giữ theo ngày)."
-                    : "");
+                + (LateFeeService.acceptsV5Terms((String) row.get("terms_version"))
+                    ? " Theo điều khoản v5, sau khi quá hạn 5 ngày (hoặc sau 2 lần liên hệ không thành công / có khách mới đặt ô), QueenKho sẽ cưỡng chế dọn kho và chuyển hàng vào kho tổng (có phí di dời + phí lưu giữ theo ngày)."
+                    : LateFeeService.acceptsCentralStorageTerms((String) row.get("terms_version"))
+                        ? " Hết ngày " + endDate.format(DATE_FMT) + " mà chưa gia hạn hoặc trả kho, hôm sau QueenKho mở ô, kiểm kê và"
+                            + " chuyển hàng vào kho tổng (có phí di dời + phí lưu giữ theo ngày)."
+                        : "");
         Object reservationId = row.get("reservation_id");
         String refKey = "RENEWAL:" + contractId + ":" + endDate + ":" + milestone;
         return notificationService.notifyCustomer(((Number) row.get("customer_id")).intValue(), refKey,

@@ -128,6 +128,9 @@ public class AccessPolicy {
         rule("POST", "/api/v1/auth/logout", PUBLIC);
 
         // Đăng nhập là được
+        rule("GET", "/api/v1/auth/profile", AUTHENTICATED);
+        rule("PUT", "/api/v1/auth/profile", AUTHENTICATED);
+        rule("POST", "/api/v1/auth/change-password", AUTHENTICATED);
         rule("POST", "/api/v1/uploads", AUTHENTICATED);
         rule(null, "/api/v1/notifications/**", AUTHENTICATED);
 

@@ -70,6 +70,9 @@ public class AuthService {
     @Autowired
     private com.queenkho.api.repository.RoleRepository roleRepository;
 
+    @Autowired(required = false)
+    private ActivityLogService activityLogService;
+
     public void register(com.queenkho.api.dto.RegisterRequest request) {
         // (12/11/2026, góp ý test product) SĐT Việt Nam: đúng 10 chữ số, bắt đầu bằng 0 — cùng luật với Admin / FM tạo tài khoản
         String phone = request.getPhone() == null ? "" : request.getPhone().trim();
@@ -95,6 +98,98 @@ public class AuthService {
         newUser.setStatus("ACTIVE");
 
         userRepository.save(newUser);
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public com.queenkho.api.dto.UserProfileResponse getProfile(Integer userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy người dùng"));
+        return toProfileResponse(user);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public com.queenkho.api.dto.UserProfileResponse updateProfile(Integer userId, com.queenkho.api.dto.UpdateProfileRequest request) {
+        if (request == null) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Dữ liệu cập nhật không hợp lệ");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy người dùng"));
+
+        String fullName = request.getFullName() == null ? "" : request.getFullName().trim();
+        if (fullName.length() < 2 || fullName.length() > 100) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_FULL_NAME", "Họ và tên phải từ 2 đến 100 ký tự");
+        }
+
+        String phone = request.getPhone() == null ? "" : request.getPhone().trim();
+        if (!PHONE_PATTERN.matcher(phone).matches()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_PHONE", "Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0");
+        }
+
+        String cccd = request.getCccd() == null ? "" : request.getCccd().trim();
+        if (!cccd.isEmpty() && !CCCD_PATTERN.matcher(cccd).matches()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_CCCD", "CCCD phải gồm đúng 12 chữ số (hoặc hộ chiếu gồm 1 chữ cái và 7–8 chữ số)");
+        }
+
+        user.setFullName(fullName);
+        user.setPhone(phone);
+        user.setCccd(cccd.isEmpty() ? null : cccd);
+        User saved = userRepository.save(user);
+
+        if (activityLogService != null) {
+            activityLogService.log(userId,
+                    "[PROFILE_UPDATE] Người dùng " + saved.getFullName() + " cập nhật thông tin hồ sơ cá nhân",
+                    "users", String.valueOf(userId));
+        }
+
+        return toProfileResponse(saved);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void changePassword(Integer userId, com.queenkho.api.dto.ChangePasswordRequest request) {
+        String currentPwd = request != null && request.getCurrentPassword() != null ? request.getCurrentPassword() : "";
+        String newPwd = request != null && request.getNewPassword() != null ? request.getNewPassword() : "";
+        if (currentPwd.isEmpty() || newPwd.isEmpty()) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới");
+        }
+        if (newPwd.length() < 6) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "Mật khẩu mới phải có ít nhất 6 ký tự");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new AuthException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy người dùng"));
+
+        if (!passwordEncoder.matches(currentPwd, user.getPassword())) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "INVALID_CURRENT_PASSWORD", "Mật khẩu hiện tại không chính xác");
+        }
+        if (passwordEncoder.matches(newPwd, user.getPassword())) {
+            throw new AuthException(HttpStatus.BAD_REQUEST, "SAME_PASSWORD", "Mật khẩu mới phải khác mật khẩu hiện tại");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPwd));
+        userRepository.save(user);
+
+        if (activityLogService != null) {
+            activityLogService.log(userId,
+                    "[PASSWORD_CHANGE] Người dùng " + user.getFullName() + " đã đổi mật khẩu tài khoản",
+                    "users", String.valueOf(userId));
+        }
+    }
+
+    private com.queenkho.api.dto.UserProfileResponse toProfileResponse(User user) {
+        String facilityName = user.getFacilityId() == null ? null
+                : facilityRepository.findById(user.getFacilityId()).map(Facility::getName).orElse(null);
+        return com.queenkho.api.dto.UserProfileResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .phone(user.getPhone())
+                .cccd(user.getCccd())
+                .role(user.getRole() != null ? user.getRole().getName() : null)
+                .facilityId(user.getFacilityId())
+                .facilityName(facilityName)
+                .status(user.getStatus())
+                .createdAt(user.getCreatedAt())
+                .build();
     }
 }
 

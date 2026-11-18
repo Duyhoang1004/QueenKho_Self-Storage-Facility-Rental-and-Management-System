@@ -381,15 +381,26 @@ export default function OverdueContractsPage() {
               </thead>
               <tbody className="divide-y-2 divide-[#F0F0F0]">
                 {paginatedContracts.map((c) => {
-                  const daysLeft = (c.liquidationDaysThreshold || 7) - (c.overdueDays || 0)
+                  const isV5 = c.termsVersion && c.termsVersion >= 'v5'
+                  const minContacts = c.minContactsRequired ?? (isV5 ? 2 : 3)
+                  const thresholdDays = c.liquidationDaysThreshold || (isV5 ? 5 : 15)
+                  const daysLeft = Math.max(0, thresholdDays - (c.overdueDays || 0))
+                  const readyToLiquidate = Boolean(c.canLiquidate) && (c.contactCount || 0) >= minContacts
                   const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
                   return (
                     <tr key={c.contractId} className="hover:bg-[#F9F9F9] transition-colors">
                       <td className="py-3.5 px-3 whitespace-nowrap">
-                        <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
-                          className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
-                          #{c.contractCode}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button type="button" title="Xem hợp đồng" onClick={() => setPeekId(c.contractId)}
+                            className="font-mono font-bold text-[#1CB0F6] hover:underline cursor-pointer">
+                            #{c.contractCode}
+                          </button>
+                          {c.termsVersion && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-[#F0F0F0] text-[#777777]">
+                              {c.termsVersion}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3.5 px-3 whitespace-nowrap">
                         <div className="font-bold text-[#4B4B4B]">{c.customerName || '—'}</div>
@@ -440,7 +451,7 @@ export default function OverdueContractsPage() {
                         )}
                       </td>
                       <td className="py-3.5 px-3 text-center">
-                        <div className="inline-grid grid-cols-[88px_118px_214px_168px] items-center gap-1.5">
+                        <div className="inline-grid grid-cols-[88px_118px_176px_168px] items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleOpenContactModal(c)}
@@ -463,7 +474,7 @@ export default function OverdueContractsPage() {
                             <span aria-hidden="true" />
                           )}
 
-                          {c.canLiquidate && (c.contactCount || 0) >= (c.minContactsRequired || 3) ? (
+                          {readyToLiquidate ? (
                             <button
                               type="button"
                               onClick={() => handleOpenLiquidateModal(c)}
@@ -476,33 +487,40 @@ export default function OverdueContractsPage() {
                             <button
                               type="button"
                               disabled
-                              title={c.canLiquidate
-                                ? `Cần ghi nhận ít nhất ${c.minContactsRequired || 3} lần liên hệ khách trước khi cưỡng chế dọn kho (Điều khoản xử lý tài sản)`
-                                : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện cưỡng chế dọn kho`}
+                              title={isV5
+                                ? `Điều khoản v5: Tự động cưỡng chế sau 5 ngày quá hạn (còn ${daysLeft} ngày), hoặc cưỡng chế sớm sau ít nhất ${minContacts} lần liên lạc không thành công (hiện có ${c.contactCount || 0}/${minContacts} lần)`
+                                : c.canLiquidate
+                                  ? `Cần ghi nhận ít nhất ${minContacts} lần liên hệ khách trước khi cưỡng chế dọn kho (Điều khoản xử lý tài sản)`
+                                  : `Còn ${daysLeft > 0 ? daysLeft : 0} ngày nữa mới đủ điều kiện cưỡng chế dọn kho`}
                               className="w-full h-9 px-2.5 py-1.5 rounded-xl border-2 border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] font-black text-[11px] uppercase tracking-wide cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap"
                             >
                               <span className="material-symbols-outlined text-[15px] shrink-0">gavel</span>
                               <span>Cưỡng chế dọn kho</span>
-                              <span className="text-[9px] font-normal lowercase">
-                                ({c.canLiquidate ? `${c.contactCount || 0}/${c.minContactsRequired || 3} liên hệ` : `${daysLeft}d`})
-                              </span>
                             </button>
                           )}
 
-                          {/* Demo: tua qua mốc cưỡng chế dọn kho của chính sách (bản mới 15 ngày) để bật nút */}
-                          {!c.canLiquidate ? (
+                          {/* Demo: giả lập đủ điều kiện cưỡng chế dọn kho */}
+                          {isV5 && !readyToLiquidate ? (
                             <SimulationButton
                               className="w-full"
-                              label={`${(c.liquidationDaysThreshold || 15) + 1} ngày`}
-                              description={`Cho HĐ #${c.contractCode} quá hạn ${(c.liquidationDaysThreshold || 15) + 1} ngày để vượt mốc ${c.liquidationDaysThreshold || 15} ngày và bật nút Cưỡng chế dọn kho.`}
-                              onRun={() => simulateOverdue(c.contractId, (c.liquidationDaysThreshold || 15) + 1)}
+                              label={`${minContacts} lần liên hệ`}
+                              description={`Ghi ${minContacts} lần gọi khách HĐ #${c.contractCode} không thành công để đủ điều kiện cưỡng chế dọn kho sớm trước 5 ngày (điều khoản v5).`}
+                              onRun={() => simulateFailedContacts(c.contractId)}
                               onDone={() => fetchContracts()}
                             />
-                          ) : c.canLiquidate && (c.contactCount || 0) < (c.minContactsRequired || 3) ? (
+                          ) : !c.canLiquidate ? (
                             <SimulationButton
                               className="w-full"
-                              label="3 lần liên hệ"
-                              description={`Ghi ${c.minContactsRequired || 3} lần gọi khách HĐ #${c.contractCode} không nghe máy (cách nhau 1 tuần) để đủ điều kiện cưỡng chế dọn kho theo điều khoản.`}
+                              label="5 ngày"
+                              description={`Cho HĐ #${c.contractCode} quá hạn 5 ngày để đạt mốc cưỡng chế dọn kho.`}
+                              onRun={() => simulateOverdue(c.contractId, isV5 ? 5 : (c.liquidationDaysThreshold || 15) + 1)}
+                              onDone={() => fetchContracts()}
+                            />
+                          ) : c.canLiquidate && (c.contactCount || 0) < minContacts ? (
+                            <SimulationButton
+                              className="w-full"
+                              label={`${minContacts} lần liên hệ`}
+                              description={`Ghi ${minContacts} lần gọi khách HĐ #${c.contractCode} không nghe máy để đủ điều kiện cưỡng chế dọn kho theo điều khoản.`}
                               onRun={() => simulateFailedContacts(c.contractId)}
                               onDone={() => fetchContracts()}
                             />
@@ -776,8 +794,10 @@ export default function OverdueContractsPage() {
                 <div className="p-3 rounded-xl bg-[#D7FFB8]/50 border border-[#58CC02] text-xs font-bold text-[#4B4B4B] flex gap-2">
                   <span className="material-symbols-outlined text-[18px] text-[#58A700]">verified</span>
                   <span>
-                    Khách đã đồng ý <b>Điều khoản xử lý tài sản ({liquidateContractTarget.termsVersion})</b> khi đặt kho:
-                    sau cưỡng chế dọn kho sẽ mở kho, kiểm kê, lưu giữ hàng 60 ngày, quá hạn được bán thanh lý để trừ nợ.
+                    Khách đã đồng ý <b>Điều khoản xử lý tài sản ({liquidateContractTarget.termsVersion})</b> khi đặt kho:{' '}
+                    {liquidateContractTarget.termsVersion >= 'v5'
+                      ? 'cưỡng chế dọn kho sau 5 ngày quá hạn (hoặc sớm hơn sau 2 lần liên hệ không thành công / có khách đặt mới); mở kho kiểm kê và chuyển hàng vào Kho tổng.'
+                      : 'sau cưỡng chế dọn kho sẽ mở kho, kiểm kê, chuyển hàng vào Kho tổng lưu giữ.'}{' '}
                     Hệ thống sẽ sinh task <b>Cưỡng chế dọn kho</b>.
                   </span>
                 </div>

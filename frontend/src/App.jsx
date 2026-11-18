@@ -3,6 +3,7 @@ import CustomerLayout from './layouts/CustomerLayout';
 import HomePage from './pages/home/HomePage';
 import LoginPage from './pages/login/LoginPage';
 import RegisterPage from './pages/register/RegisterPage';
+import UserProfilePage from './pages/auth/UserProfilePage';
 
 // Import Landing Page công khai & Public Navbar
 import PublicLandingPage from './pages/public/PublicLandingPage';
@@ -146,11 +147,16 @@ export default function App() {
 
         {/* UC-20: Thanh toán (lịch sử giao dịch, khoản cần trả) */}
         <Route path="/thanh-toan" element={<CustomerPaymentsPage />} />
+
+        {/* Hồ sơ cá nhân & đổi mật khẩu */}
+        <Route path="/ho-so" element={<UserProfilePage />} />
+        <Route path="/profile" element={<Navigate to="/ho-so" replace />} />
       </Route>
 
       {/* ========== Manager Portal ========== */}
       <Route element={<ManagerLayout />}>
         <Route path="/manager" element={<ManagerDashboardPage />} />
+        <Route path="/manager/profile" element={<UserProfilePage />} />
         <Route path="/manager/storage" element={<StorageManagementPage />} />
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
         <Route path="/manager/overdue" element={<OverdueContractsPage />} />
@@ -172,12 +178,14 @@ export default function App() {
       {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}
       <Route element={<StaffLayout />}>
         <Route path="/staff" element={<StaffTaskBoardPage />} />
+        <Route path="/staff/profile" element={<UserProfilePage />} />
         <Route path="/staff/tasks/:id" element={<StaffTaskDetailPage />} />
       </Route>
 
       {/* ========== Admin Portal (UC-03, UC-08, UC-31) ========== */}
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/admin/profile" element={<UserProfilePage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/roles" element={<AdminRolesPage />} />
         <Route path="/admin/logs" element={<AdminLogsPage />} />
@@ -188,6 +196,7 @@ export default function App() {
       {/* ========== BOM Portal (UC-04, UC-05, UC-07, UC-29) ========== */}
       <Route element={<BomLayout />}>
         <Route path="/bom" element={<BomFacilitiesPage />} />
+        <Route path="/bom/profile" element={<UserProfilePage />} />
         <Route path="/bom/facilities" element={<BomFacilitiesPage />} />
         <Route path="/bom/unit-types" element={<BomUnitTypesPage />} />
         <Route path="/bom/policies" element={<BomRentalPoliciesPage />} />

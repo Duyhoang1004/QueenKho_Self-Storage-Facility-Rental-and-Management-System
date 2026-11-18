@@ -1115,3 +1115,36 @@ Không đổi schema.
 
 ### Chặn nghiệm thu trả kho trước ngày hẹn — UC-23
 `POST /api/v1/staff-tasks/{id}/check-out`: hôm nay trước ngày hẹn (ngày của `dueAt`) → 409 `CHECK_OUT_TOO_EARLY`.
+
+---
+
+## Cập nhật 18/11/2026 — Điều khoản `v5` & Khóa ngày nhận kho sớm (D-20)
+
+### 1. Đặt kho & Khóa mốc ngày nhận kho sớm (`PR-R11a` / `D-20`)
+- `POST /api/v1/reservations`:
+  - Đơn mới lưu `reservations.terms_version = 'v5'`.
+  - Khi loại kho hết ô `AVAILABLE` trống ngay hôm nay, kiểm tra `startDate` tối thiểu theo trạng thái ô sắp trống:
+    - Ô đang **quá hạn (`OVERDUE`)** hoặc đang dọn kho sau cưỡng chế (`LIQUIDATED` có task `MAINTENANCE` lý do `LIQUIDATION` đang mở): ngày nhận kho sớm nhất = **`hôm nay + 3 ngày`** (`OVERDUE_UNIT_BOOKING_LEAD_DAYS = 3`).
+    - Ô đang **thuê (`ACTIVE`) gần hết hạn** đã qua hạn chót ưu tiên (`end_date − 3`): ngày nhận kho sớm nhất = **`end_date + 7 ngày`** (`EXPIRING_ACTIVE_BOOKING_LEAD_DAYS = 7`).
+    - Nếu `startDate` nhỏ hơn mốc tối thiểu → `409 NO_AVAILABILITY` (message trả rõ ngày sớm nhất có thể nhận kho).
+  - Nếu đơn đặt mới lấy suất từ một ô đang `OVERDUE` (chưa cưỡng chế dọn): hệ thống **tự động chuyển ngay hợp đồng `OVERDUE` đó sang `LIQUIDATED` (cưỡng chế dọn kho)** và sinh task `MAINTENANCE` (`maintenanceReason = 'LIQUIDATION'`) có `dueAt` **ngay trong ngày trong giờ làm việc** (`21:00` hôm nay nếu đặt trước `21:00`, hoặc `21:00` ngày làm việc kế tiếp nếu đặt sau `21:00`).
+- `GET /api/v1/reservations/availability?facilityId=&unitTypeId=&startDate=yyyy-MM-dd&durationMonths=`:
+  - `RangeAvailabilityResponse` trả thêm trường **`minStartDate`** (`LocalDate`) để FE khóa trực tiếp các ngày trước mốc hợp lệ trên bảng lịch chọn ngày (`<DateInput min={minStartDate} />`).
+
+### 2. Cưỡng chế dọn kho theo Điều khoản `v5` (`PR-Q1` / `PR-Q8` / `PR-Q10`)
+- `GET /api/v1/contracts/overdue` và `GET /api/v1/contracts/overdue-all`:
+  - Với hợp đồng có `termsVersion = 'v5'`:
+    - `liquidationDaysThreshold = 5`.
+    - Khi `overdueDays >= 5`: `canLiquidate = true`, `minContactsRequired = 0`.
+    - Khi `1 <= overdueDays < 5`: `minContactsRequired = 2`, `canLiquidate = (contactCount >= 2)`.
+- `POST /api/v1/contracts/{id}/liquidate`:
+  - Với hợp đồng `v5`: cho phép cưỡng chế khi **`overdueDays >= 5`** HOẶC **`contactCount >= 2`** (muốn cưỡng chế sớm trước 5 ngày phải sau tối thiểu 2 lần liên lạc không thành công; chưa đủ → `409 LIQUIDATION_NOT_ALLOWED_YET`).
+- Job `00:05` (`ContractOverdueJob.relocateToCentralWarehouse`):
+  - Tự động cưỡng chế dọn kho + sinh task dọn kho đưa hàng về Kho tổng cho hợp đồng `v5` khi `overdueDays >= 5` (còn `v4` vẫn tự cưỡng chế ở ngày 1).
+
+### 3. Giả lập Demo (`DemoSimulationController` / `DemoSimulationService`)
+- `POST /api/v1/dev/simulation/contracts/{id}/make-overdue?days=`:
+  - Trên giao diện chi tiết hợp đồng (`ContractDetailView.jsx`), 3 nút giả lập quá hạn chuẩn hóa thành: **`Quá hạn 1 ngày`**, **`Quá hạn 3 ngày`**, **`Quá hạn 5 ngày (cưỡng chế)`**.
+  - Với hợp đồng `v5`: mốc `1` và `3` ngày giữ hợp đồng ở `OVERDUE` (tính phí trễ + phí chiếm dụng); mốc `5` ngày tự động kích hoạt cưỡng chế dọn kho (`LIQUIDATED`) và sinh task dọn kho.
+- `POST /api/v1/dev/simulation/contracts/{id}/add-failed-contacts`:
+  - Với hợp đồng `v5`: ghi `2` lần liên hệ thất bại (`[OVERDUE_CONTACT]`) để mở khóa ngay nút **Cưỡng chế dọn kho sớm** (khi đang quá hạn 1–4 ngày). Với hợp đồng cũ (`v3`): giữ nguyên `3` lần.

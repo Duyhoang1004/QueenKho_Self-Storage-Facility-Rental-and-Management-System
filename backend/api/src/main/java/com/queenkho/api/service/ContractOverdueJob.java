@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -77,7 +78,9 @@ public class ContractOverdueJob {
     }
 
     /**
-     * D-15 (05/11/2026): hợp đồng OVERDUE của khách đồng ý điều khoản v4 → thanh lý ngay, sinh việc chuyển hàng vào kho tổng.
+     * D-15 / Điều khoản v5:
+     *  - Điều khoản v4: hợp đồng OVERDUE → cưỡng chế dọn kho ngay.
+     *  - Điều khoản v5: hợp đồng OVERDUE đã quá hạn từ 5 ngày trở lên → tự động cưỡng chế dọn kho, sinh task dọn kho.
      * Mỗi hợp đồng 1 transaction riêng (gọi qua proxy của ContractService). contractId != null = chỉ xử lý 1 hợp đồng (giả lập).
      */
     public int relocateToCentralWarehouse(Integer contractId) {
@@ -87,10 +90,19 @@ public class ContractOverdueJob {
             System.err.println("[QueenKho Overdue Job] ⚠️ Thiếu tài khoản system, bỏ qua chuyển kho tổng");
             return 0;
         }
+        LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
         List<Integer> ids = jdbcTemplate.queryForList(
                 "SELECT c.id FROM rental_contracts c JOIN reservations r ON r.id = c.reservation_id " +
-                        "WHERE c.status = 'OVERDUE' AND r.terms_version >= ? AND (? IS NULL OR c.id = ?)",
-                Integer.class, LateFeeService.CENTRAL_STORAGE_TERMS_VERSION, contractId, contractId);
+                        "WHERE c.status = 'OVERDUE' " +
+                        "  AND (r.terms_version = ? " +
+                        "       OR (r.terms_version >= ? AND DATEDIFF(DAY, c.end_date, ?) >= ?)) " +
+                        "  AND (? IS NULL OR c.id = ?)",
+                Integer.class,
+                LateFeeService.CENTRAL_STORAGE_TERMS_VERSION,
+                LateFeeService.V5_TERMS_VERSION,
+                java.sql.Date.valueOf(today),
+                LateFeeService.V5_LIQUIDATION_DAYS,
+                contractId, contractId);
         int done = 0;
         for (Integer id : ids) {
             try {

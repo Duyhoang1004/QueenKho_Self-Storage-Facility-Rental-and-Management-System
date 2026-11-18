@@ -20,6 +20,7 @@ public class RangeAvailabilityResponse {
     private int durationMonths;
     private int freeSlots;
     private boolean available;
+    private LocalDate minStartDate;   // ngày nhận kho sớm nhất được chọn (khóa các ngày trước đó trên lịch)
     private LocalDate maxStartDate;   // ngày nhận kho xa nhất được đặt (hôm nay + 90 ngày)
     private String message;
 }

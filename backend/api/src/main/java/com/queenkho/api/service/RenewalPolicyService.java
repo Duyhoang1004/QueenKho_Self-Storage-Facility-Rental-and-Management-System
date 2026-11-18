@@ -38,6 +38,10 @@ public class RenewalPolicyService {
     public static final int RENEWAL_NOTICE_DAYS = 3;
     public static final int GRACE_DAYS_AFTER_END = 6;
     public static final int CLEANUP_DAYS_AFTER_LIQUIDATION = 2;
+    /** Điều khoản v5: khách đặt trúng kho quá hạn phải hẹn ngày check-in nhận kho tối thiểu sau 3 ngày kể từ khi đặt */
+    public static final int OVERDUE_UNIT_BOOKING_LEAD_DAYS = 3;
+    /** Điều khoản v5: khách đặt kho đang thuê (gần hết hạn, quá mốc ưu tiên) nhận kho sớm nhất 7 ngày sau khi ô hết hạn */
+    public static final int EXPIRING_ACTIVE_BOOKING_LEAD_DAYS = 7;
     private static final String RENEWABLE_STATUSES = "ACTIVE|TERMINATION_PENDING|OVERDUE";
 
     private final JdbcTemplate jdbcTemplate;
@@ -92,27 +96,37 @@ public class RenewalPolicyService {
         return result;
     }
 
-    // Ngày ô sắp trống giao được: đã hẹn trả → ngày hẹn + 1; điều khoản v4 → end_date + dọn ô; cũ → + ngày thanh lý + dọn ô
+    // Ngày ô sắp trống giao được:
+    //  - TERMINATION_PENDING: ngày hẹn trả + 1
+    //  - OVERDUE / đang dọn kho sau cưỡng chế (LIQUIDATED): hôm nay + 3 ngày (tối thiểu 3 ngày sau khi đặt)
+    //  - ACTIVE gần hết hạn (đã qua mốc ưu tiên): end_date + 7 ngày (7 ngày sau khi ô hết hạn)
+    //  - Còn lại (PENDING_CHECK_IN...): end_date + ngày dọn ô
     static final String RELEASE_DATE_SQL =
             "CASE WHEN c.status = 'TERMINATION_PENDING' " +
                     "            THEN DATEADD(DAY, 1, COALESCE((SELECT TOP 1 CAST(t.due_at AS DATE) FROM facility_tasks t " +
                     "                 WHERE t.contract_id = c.id AND t.task_type = 'CHECK_OUT' " +
                     "                   AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE') ORDER BY t.id DESC), c.end_date)) " +
-                    "       WHEN r.terms_version >= '" + LateFeeService.CENTRAL_STORAGE_TERMS_VERSION + "' " +
-                    "            THEN DATEADD(DAY, " + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) " +
-                    "       ELSE DATEADD(DAY, COALESCE(rp.liquidation_days, " + LateFeeService.DEFAULT_LIQUIDATION_DAYS + ") + "
-                    + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) END";
+                    "       WHEN c.status IN ('OVERDUE', 'LIQUIDATED') " +
+                    "            THEN DATEADD(DAY, " + OVERDUE_UNIT_BOOKING_LEAD_DAYS + ", CAST(SYSDATETIME() AS DATE)) " +
+                    "       WHEN c.status = 'ACTIVE' " +
+                    "            THEN DATEADD(DAY, " + EXPIRING_ACTIVE_BOOKING_LEAD_DAYS + ", c.end_date) " +
+                    "       ELSE DATEADD(DAY, " + CLEANUP_DAYS_AFTER_LIQUIDATION + ", c.end_date) END";
 
-    // Hợp đồng đang giữ ô OCCUPIED và đã "sắp trống": quá hạn / đã hẹn trả / ACTIVE đã qua hạn chót gia hạn ưu tiên.
+    // Hợp đồng đang giữ ô và đã "sắp trống": quá hạn / đã hẹn trả / ACTIVE đã qua hạn chót gia hạn ưu tiên / vừa cưỡng chế đang dọn ô.
     // Tham số: (1) hôm nay, (2) facility_id
     private static final String RELEASING_FROM_SQL =
             "FROM rental_contracts c " +
                     "JOIN storage_units su ON su.id = c.storage_unit_id " +
                     "LEFT JOIN reservations r ON r.id = c.reservation_id " +
                     "LEFT JOIN rental_policy rp ON rp.id = c.rental_policy_id " +
-                    "WHERE su.status = 'OCCUPIED' AND su.is_emergency = 0 AND c.end_date IS NOT NULL " + // BR-140: ô khẩn cấp không bán trước
-                    "  AND (c.status IN ('OVERDUE', 'TERMINATION_PENDING') " +
-                    "       OR (c.status = 'ACTIVE' AND DATEADD(DAY, -" + RENEWAL_NOTICE_DAYS + ", c.end_date) < ?)) " +
+                    "WHERE su.is_emergency = 0 AND c.end_date IS NOT NULL " + // BR-140: ô khẩn cấp không bán trước
+                    "  AND ((su.status = 'OCCUPIED' " +
+                    "        AND (c.status IN ('OVERDUE', 'TERMINATION_PENDING') " +
+                    "             OR (c.status = 'ACTIVE' AND DATEADD(DAY, -" + RENEWAL_NOTICE_DAYS + ", c.end_date) < ?))) " +
+                    "       OR (su.status = 'MAINTENANCE' AND c.status = 'LIQUIDATED' " +
+                    "           AND EXISTS (SELECT 1 FROM facility_tasks t WHERE t.contract_id = c.id " +
+                    "                       AND t.task_type = 'MAINTENANCE' AND t.maintenance_reason = 'LIQUIDATION' " +
+                    "                       AND t.status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')))) " +
                     "  AND su.facility_id = ? ";
 
     /** Số ô "sắp trống" mà đơn có ngày nhận startDate được phép tính vào (PR-R11) */

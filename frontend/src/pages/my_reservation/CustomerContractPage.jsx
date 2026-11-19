@@ -285,8 +285,39 @@ export default function CustomerContractPage() {
     contract.basePriceMonthly || contract.depositHeldAmount || 0,
   );
   const totalMonths = getContractMonths(contract.startDate, contract.endDate);
-  const rentPaid = monthlyRent * totalMonths;
-  const totalPaidAll = depositAmount + rentPaid;
+  const cycleMonths = contract.billingCycleMonths || totalMonths || 1;
+  const baseRentAmount = Number(
+    contract.baseRentAmount != null
+      ? contract.baseRentAmount
+      : monthlyRent * cycleMonths,
+  );
+  const discountPercent = Number(contract.rentDiscountPercent || 0);
+  const discountAmount = Number(
+    contract.rentDiscountAmount != null
+      ? contract.rentDiscountAmount
+      : (discountPercent > 0 ? (baseRentAmount * discountPercent) / 100 : 0),
+  );
+  const voucherCode = contract.voucherCode;
+  const voucherDiscount = Number(contract.voucherDiscount || 0);
+  const voucherPercent =
+    contract.voucherDiscountType === "PERCENT" && contract.voucherDiscountPercent != null
+      ? Number(contract.voucherDiscountPercent)
+      : null;
+  const actualRentPaid = Number(
+    contract.actualRentPaid != null
+      ? contract.actualRentPaid
+      : (contract.rentPaid != null
+          ? contract.rentPaid
+          : Math.max(0, baseRentAmount - discountAmount - voucherDiscount)),
+  );
+  const insuranceMonthly = Number(contract.insurancePremiumMonthly || 0);
+  const insuranceTotal = Number(
+    contract.insuranceTotalAmount != null
+      ? contract.insuranceTotalAmount
+      : insuranceMonthly * cycleMonths,
+  );
+  const rentPaid = actualRentPaid;
+  const totalPaidAll = depositAmount + actualRentPaid + insuranceTotal;
 
   // PR-R9 / PR-R10: nhắc gia hạn khi còn ≤ 7 ngày; hạn chót gia hạn ưu tiên = end_date − 3
   const renewalReminder = getRenewalReminder(contract.endDate);
@@ -863,13 +894,13 @@ export default function CustomerContractPage() {
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-black text-[#4B4B4B]">
-                          Tiền cọc giữ kho
+                          Tiền cọc theo chính sách (1 tháng)
                         </span>
                       </div>
                       <span className="text-[10px] font-bold text-[#AFAFAF]">
                           {isNoShow
                             ? contract.noShowWaived ? "Cọc được hoàn do quản lý miễn phạt No-Show" : "Khoản cọc được giữ lại theo chính sách No-Show"
-                            : "Hoàn lại 100% khi khoang nguyên vẹn"}
+                            : "Hoàn lại 100% khi bàn giao kho nguyên vẹn"}
                       </span>
                     </div>
                     <div className="flex flex-col items-end">
@@ -880,24 +911,109 @@ export default function CustomerContractPage() {
                   </div>
                 )}
 
-                {/* 2. Tiền thuê đã đóng thực tế từ payment_transactions */}
+                {/* 2. Tiền thuê gốc */}
                 <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
                   <div className="flex flex-col">
                     <span className="text-xs font-black text-[#4B4B4B]">
-                      Tiền thuê đã đóng
+                      Tiền thuê kho ({cycleMonths} tháng)
                     </span>
-                    <span className="text-[10px] font-bold text-[#58A700]">
-                      Đã thanh toán {totalMonths} tháng (sau chiết khấu/voucher)
+                    <span className="text-[10px] font-bold text-[#AFAFAF]">
+                      {formatVND(monthlyRent)} × {cycleMonths} tháng
                     </span>
                   </div>
-                  <span className="text-sm font-black text-[#58CC02]">
-                    {formatVND(
-                      contract.rentPaid != null ? contract.rentPaid : rentPaid,
-                    )}
+                  <span className="text-sm font-black text-[#4B4B4B]">
+                    {formatVND(baseRentAmount)}
                   </span>
                 </div>
 
-                {/* 3. Tổng chi phí thực tế */}
+                {/* Ưu đãi chiết khấu gói */}
+                {discountAmount > 0 && (
+                  <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-[#58A700]">
+                          Ưu đãi gói {cycleMonths} tháng{discountPercent > 0 ? ` (Giảm ${discountPercent}%)` : ""}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#D7FFB8] text-[#58A700] border border-[#58CC02]/40">
+                          {discountPercent > 0 ? `-${discountPercent}%` : "Chiết khấu"}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-[#AFAFAF]">
+                        {discountPercent > 0
+                          ? `Chiết khấu ${discountPercent}% trực tiếp vào tiền thuê (${cycleMonths} tháng)`
+                          : `Giảm trực tiếp vào tiền thuê (${cycleMonths} tháng)`}
+                      </span>
+                    </div>
+                    <span className="text-sm font-black text-[#58CC02]">
+                      -{formatVND(discountAmount)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Voucher giảm giá */}
+                {voucherDiscount > 0 && (
+                  <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-[#58A700]">
+                          Voucher {voucherCode ? `(${voucherCode})` : "giảm giá"}{voucherPercent != null && voucherPercent > 0 ? ` (Giảm ${voucherPercent}%)` : ""}
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF08A] text-[#854D0E] border border-[#EAB308]/40">
+                          {voucherPercent != null && voucherPercent > 0 ? `-${voucherPercent}%` : "Mã ưu đãi"}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-[#AFAFAF]">
+                        {voucherPercent != null && voucherPercent > 0
+                          ? `Áp dụng giảm ${voucherPercent}% trực tiếp vào tiền thuê`
+                          : "Giảm cố định trực tiếp vào tiền thuê"}
+                      </span>
+                    </div>
+                    <span className="text-sm font-black text-[#58CC02]">
+                      -{formatVND(voucherDiscount)}
+                    </span>
+                  </div>
+                )}
+
+                {/* 3. Tiền thuê thực đóng (NỔI BẬT & IN ĐẬM NHƯ DÒNG TỔNG TIỀN ĐÃ ĐÓNG) */}
+                <div className="flex items-center justify-between p-3 bg-[#F0FDF4] border-2 border-[#86EFAC] rounded-xl my-1 shadow-xs">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-[#15803D] uppercase tracking-wide">
+                      Tiền thuê thực đóng ({cycleMonths} tháng)
+                    </span>
+                    <span className="text-[10px] font-bold text-[#16A34A]/90">
+                      Đã trừ ưu đãi gói &amp; voucher
+                    </span>
+                  </div>
+                  <span className="text-lg font-black text-[#16A34A] whitespace-nowrap">
+                    {formatVND(actualRentPaid)}
+                  </span>
+                </div>
+
+                {/* 4. Bảo hiểm hàng hoá */}
+                <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-[#4B4B4B]">
+                        Bảo hiểm hàng hóa ({contract.insurancePlanLabel || "Gói tiêu chuẩn"})
+                      </span>
+                      {contract.insured && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#E0F2FE] text-[#0369A1] border border-[#7DD3FC]">
+                          Đã bảo hiểm
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-bold text-[#AFAFAF]">
+                      {insuranceMonthly > 0
+                        ? `${formatVND(insuranceMonthly)}/tháng × ${cycleMonths} tháng`
+                        : "Bảo hiểm cơ bản theo chính sách"}
+                    </span>
+                  </div>
+                  <span className={`text-sm font-black ${insuranceTotal > 0 ? "text-[#0284C7]" : "text-[#777777]"}`}>
+                    {insuranceTotal > 0 ? formatVND(insuranceTotal) : "0đ (Miễn phí)"}
+                  </span>
+                </div>
+
+                {/* 5. Tổng chi phí thực tế */}
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-xs font-black text-[#4B4B4B] uppercase">
                     Tổng tiền đã đóng

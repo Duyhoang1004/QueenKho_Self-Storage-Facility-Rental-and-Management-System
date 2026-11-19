@@ -684,7 +684,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   <span className="text-sm font-black text-[#58A700]">Chính sách hoàn tiền thuê trả sớm (PR-O2)</span>
                 </div>
                 <p className="text-[#2B5300]/90 leading-relaxed text-[11px]">
-                  Hợp đồng gói {earlyRefundCalc.cycleMonths} tháng (đã đóng: {formatVND(earlyRefundCalc.rentPaid)}). Quý khách đã sử dụng {earlyRefundCalc.usedMonths} tháng (làm tròn lên).
+                  Hợp đồng gói {earlyRefundCalc.cycleMonths} tháng (tiền thuê thực đóng: {formatVND(earlyRefundCalc.rentPaid)}). Quý khách đã sử dụng {earlyRefundCalc.usedMonths} tháng (làm tròn lên).
                 </p>
                 <div className="bg-white/80 p-2.5 rounded-lg border border-[#D0F8AB] flex flex-col gap-1 text-[11px] font-semibold text-[#4B4B4B]">
                   <div className="flex justify-between">

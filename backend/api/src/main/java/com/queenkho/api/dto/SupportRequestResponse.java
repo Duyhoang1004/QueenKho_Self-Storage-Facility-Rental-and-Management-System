@@ -16,10 +16,13 @@ public class SupportRequestResponse {
     private Integer id;
     private String ticketCode;
     private String issueType;
+    private String subCategory;
     private boolean urgent;
     private String description;
     private String status; // OPEN / IN_PROGRESS / RESOLVED / CLOSED
     private String resolutionNote;
+    private java.util.List<String> evidenceImages;
+    private java.util.List<String> resolutionImages;
     private LocalDateTime createdAt;
     private LocalDateTime resolvedAt;
     private LocalDateTime closedAt;

@@ -146,6 +146,33 @@ public class StaffTaskController {
         }
     }
 
+    // PR-S5: Staff / Quản lý cơ sở chỉnh sửa lại kết quả xử lý hỗ trợ khi ticket đang RESOLVED (tránh nhầm lẫn)
+    // PUT /api/v1/staff-tasks/12/update-support-resolution?staffId=5   body: { "resolutionNote": "...", "inspectionImages": [...] }
+    @PutMapping("/{id}/update-support-resolution")
+    public ResponseEntity<?> updateSupportResolution(@PathVariable Integer id,
+                                                    @RequestParam(required = false) Integer staffId,
+                                                    @RequestBody(required = false) ResolveSupportTaskRequest request) {
+        try {
+            return ResponseEntity.ok(staffTaskService.updateSupportResolution(id, staffId != null ? staffId : currentUser.require().id(), request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // PR-S5: Staff / Quản lý cơ sở thu hồi kết quả và mở lại toàn bộ task hỗ trợ để xử lý lại từ đầu
+    // POST /api/v1/staff-tasks/12/reopen-support?staffId=5   body: { "reason": "..." }
+    @PostMapping("/{id}/reopen-support")
+    public ResponseEntity<?> reopenSupport(@PathVariable Integer id,
+                                          @RequestParam(required = false) Integer staffId,
+                                          @RequestBody(required = false) Map<String, String> request) {
+        try {
+            String reason = request != null ? request.get("reason") : null;
+            return ResponseEntity.ok(staffTaskService.reopenSupportTask(id, staffId != null ? staffId : currentUser.require().id(), reason));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     // UC-27 / PR-S6: Staff cấp lại mã PIN 6 số cho ticket LOCK_ISSUE
     // POST /api/v1/staff-tasks/12/reset-pin?staffId=5
     @PostMapping("/{id}/reset-pin")

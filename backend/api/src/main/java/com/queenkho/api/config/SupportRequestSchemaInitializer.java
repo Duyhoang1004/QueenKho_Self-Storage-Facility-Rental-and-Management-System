@@ -32,6 +32,10 @@ public class SupportRequestSchemaInitializer implements BeanPostProcessor {
                         "    ALTER TABLE support_requests ADD resolved_at DATETIME2 NULL; " +
                         "  IF COL_LENGTH('support_requests', 'closed_at') IS NULL " +
                         "    ALTER TABLE support_requests ADD closed_at DATETIME2 NULL; " +
+                        "  IF COL_LENGTH('support_requests', 'evidence_images') IS NULL " +
+                        "    ALTER TABLE support_requests ADD evidence_images NVARCHAR(MAX) NULL; " +
+                        "  IF COL_LENGTH('support_requests', 'sub_category') IS NULL " +
+                        "    ALTER TABLE support_requests ADD sub_category NVARCHAR(100) NULL; " +
                         "END"
                 );
             } catch (Exception e) {

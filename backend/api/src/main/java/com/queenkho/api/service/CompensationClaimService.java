@@ -242,14 +242,24 @@ public class CompensationClaimService {
                 goods = goodsLoss.min(cap);
                 penalty = price.setScale(0, RoundingMode.HALF_UP);
                 rentRefund = dailyRent.multiply(BigDecimal.valueOf(days));
-                explanation = "Lỗi cơ sở: bồi thường tiền hàng (tối đa trần gói " + plan.label() + ") + phạt vi phạm 1 tháng tiền thuê"
-                        + (days > 0 ? " + hoàn tiền thuê " + days + " ngày ô không dùng được" : "") + ".";
+                String capDetail = "";
+                if (goodsLoss.compareTo(cap) > 0) {
+                    if (declaredValue == null || declaredValue.signum() <= 0) {
+                        capDetail = " (khống chế theo trần sàn mặc định " + formatVnd(cap) + " do khách không khai báo giá trị khi ký HĐ, thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
+                    } else if (declaredValue.compareTo(plan.coverageLimit()) > 0) {
+                        capDetail = " (khống chế theo trần tối đa gói " + plan.label() + " " + formatVnd(cap) + " do giá trị hàng vượt trần gói bảo hiểm, thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
+                    } else {
+                        capDetail = " (khống chế theo giá trị khai báo trong HĐ " + formatVnd(cap) + ", thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
+                    }
+                }
+                explanation = "Lỗi cơ sở: bồi thường tiền hàng " + formatVnd(goods) + capDetail + " + phạt vi phạm 1 tháng tiền thuê (" + formatVnd(penalty) + ")"
+                        + (days > 0 ? " + hoàn tiền thuê " + days + " ngày ô không dùng được (" + formatVnd(rentRefund) + ")" : "") + ".";
             }
             case "FORCE_MAJEURE" -> {
                 goods = plan.insured() ? goodsLoss.min(cap) : BigDecimal.ZERO;
                 rentRefund = dailyRent.multiply(BigDecimal.valueOf(days));
                 explanation = plan.insured()
-                        ? "Bất khả kháng, gói " + plan.label() + " có bảo hiểm: bồi thường tiền hàng tối đa trần gói (cơ sở chi trước, đòi lại bên bảo hiểm), không phạt vi phạm."
+                        ? "Bất khả kháng, gói " + plan.label() + " có bảo hiểm: bồi thường tiền hàng tối đa trần gói " + formatVnd(cap) + " (cơ sở chi trước, đòi lại bên bảo hiểm), không phạt vi phạm."
                         : "Bất khả kháng, gói Cơ bản không có bảo hiểm: không bồi thường tiền hàng, chỉ hoàn tiền thuê những ngày ô không dùng được.";
             }
             default -> explanation = "Lỗi do khách (đóng gói, hàng tự hư, hàng cấm...): không bồi thường.";
@@ -650,6 +660,7 @@ public class CompensationClaimService {
     }
 
     private static String formatVnd(BigDecimal amount) {
+        if (amount == null) return "0đ";
         return String.format("%,d", amount.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', '.') + "đ";
     }
 

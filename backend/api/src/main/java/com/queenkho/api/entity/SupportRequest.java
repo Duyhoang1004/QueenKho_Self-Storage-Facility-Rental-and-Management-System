@@ -42,6 +42,12 @@ public class SupportRequest {
     @Column(name = "resolution_note", length = 1000)
     private String resolutionNote;
 
+    @Column(name = "evidence_images")
+    private String evidenceImages;
+
+    @Column(name = "sub_category", length = 100)
+    private String subCategory;
+
     @Column(name = "resolved_at")
     private LocalDateTime resolvedAt;
 

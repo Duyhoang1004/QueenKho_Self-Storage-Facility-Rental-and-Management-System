@@ -81,6 +81,40 @@ export const ISSUE_TYPE_META = {
   },
 };
 
+// Phân loại chi tiết và luồng nghiệp vụ riêng cho từng loại sự cố
+export const SUB_ISSUE_OPTIONS = {
+  LOCK_ISSUE: [
+    { value: 'Quên mã PIN SmartLock', label: 'Quên mã PIN mở khóa', desc: 'Cần cấp lại mã PIN 6 số mới' },
+    { value: 'Khóa không nhận mã / Hết pin', label: 'Khóa không sáng đèn / Hết pin', desc: 'Bàn phím không phản hồi, nghi hết pin' },
+    { value: 'Bàn phím số bị kẹt', label: 'Kẹt phím / lỗi bàn phím', desc: 'Phím số bị rít hoặc liệt không bấm được' },
+    { value: 'Lỗi thẻ từ RFID', label: 'Thẻ từ RFID không nhận', desc: 'Quẹt thẻ không kêu tiếng bip hoặc báo đỏ' },
+  ],
+  SECURITY: [
+    { value: 'Có dấu vết cạy phá cửa / can thiệp khóa', label: 'Dấu vết cạy phá / can thiệp khóa', desc: 'Có vết xước sâu, móp méo tại ổ khóa hoặc cửa' },
+    { value: 'Người lạ khả nghi quanh khu kho', label: 'Người lạ / hành vi khả nghi', desc: 'Phát hiện đối tượng lạ lảng vảng quanh dãy kho' },
+    { value: 'Cửa ô lân cận hoặc cửa thoát hiểm bị mở', label: 'Cửa thoát hiểm / ô lân cận mở bất thường', desc: 'Cửa chung hoặc ô bên cạnh không khóa an toàn' },
+    { value: 'Cảnh báo an ninh khác', label: 'Vấn đề an toàn / an ninh khác', desc: 'Báo động kêu, ánh sáng bất thường...' },
+  ],
+  FACILITY_DAMAGE: [
+    { value: 'Cửa cuốn bị kẹt / khó kéo', label: 'Cửa cuốn kẹt / khó kéo', desc: 'Cửa bị lệch ray, kêu to hoặc kẹt cứng' },
+    { value: 'Đèn chiếu sáng bị cháy / chập', label: 'Đèn chiếu sáng hỏng', desc: 'Đèn trước ô hoặc hành lang bị tắt, chập chờn' },
+    { value: 'Mái dột / trần thấm nước / vách nứt', label: 'Mái dột / vách thấm nứt', desc: 'Có nước rò rỉ từ trần hoặc vách ngăn ẩm mốc' },
+    { value: 'Ổ cắm điện / công tắc chập chờn', label: 'Ổ cắm / thiết bị điện lỗi', desc: 'Mất điện ô kho hoặc ổ cắm bị lỏng' },
+    { value: 'Hệ thống thông gió / quạt gió kêu to', label: 'Thông gió / quạt gió kêu to', desc: 'Ống gió rung lắc hoặc không thông thoáng' },
+  ],
+  CLEANING: [
+    { value: 'Rác thải / thùng carton trước cửa ô', label: 'Rác thải trước cửa ô kho', desc: 'Bao bì, rác sinh hoạt chắn lối vào ô' },
+    { value: 'Nước tràn / chất lỏng trơn trượt', label: 'Nước tràn / chất lỏng hành lang', desc: 'Chất lỏng trơn trượt gây nguy hiểm đi lại' },
+    { value: 'Bụi bẩn sau bốc dỡ hàng', label: 'Bụi bẩn nhiều sau bốc xếp', desc: 'Hành lang nhiều bụi cát sau khi chuyển đồ' },
+  ],
+  OTHER: [
+    { value: 'Tư vấn thủ tục hợp đồng / gia hạn', label: 'Hợp đồng & gia hạn', desc: 'Hỏi về điều khoản, phụ lục hoặc gia hạn thuê' },
+    { value: 'Thắc mắc cước phí / hóa đơn thanh toán', label: 'Cước phí & thanh toán', desc: 'Cần giải thích hóa đơn, cọc hoặc biên lai' },
+    { value: 'Hướng dẫn đổi ô kho / chuyển đồ', label: 'Đổi ô kho / di chuyển đồ', desc: 'Muốn nâng cấp ô lớn hơn hoặc đổi vị trí' },
+    { value: 'Yêu cầu hỗ trợ chung khác', label: 'Yêu cầu khác', desc: 'Các câu hỏi vận hành kho khác' },
+  ],
+};
+
 // BR-126 → BR-128: trạng thái hồ sơ bồi thường hiện trong ticket
 const CLAIM_STATUS_META = {
   SUBMITTED: { label: 'Chờ kiểm tra hiện trường', cls: 'bg-[#DDF4FF] text-[#1CB0F6]' },
@@ -221,6 +255,9 @@ export default function CustomerSupportPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedContractId, setSelectedContractId] = useState('');
   const [selectedIssueType, setSelectedIssueType] = useState('LOCK_ISSUE');
+  const [subCategory, setSubCategory] = useState('');
+  const [locationDetail, setLocationDetail] = useState('');
+  const [evidencePhotos, setEvidencePhotos] = useState([]);
   const [description, setDescription] = useState('');
   // BR-126: thông tin hồ sơ bồi thường (chỉ với Hàng bị hư hỏng / Mất hàng)
   const [claimItems, setClaimItems] = useState('');
@@ -289,6 +326,9 @@ export default function CustomerSupportPage() {
     const firstFreeIssue = Object.keys(ISSUE_TYPE_META).find((t) => !openTypes.includes(t)) || 'LOCK_ISSUE';
 
     setSelectedIssueType(firstFreeIssue);
+    setSubCategory(SUB_ISSUE_OPTIONS[firstFreeIssue]?.[0]?.value || '');
+    setLocationDetail('');
+    setEvidencePhotos([]);
     setDescription('');
     setCreateError('');
     setShowCreateModal(true);
@@ -307,7 +347,10 @@ export default function CustomerSupportPage() {
     const openTypes = found?.openIssueTypes || [];
     if (openTypes.includes(selectedIssueType)) {
       const nextFree = Object.keys(ISSUE_TYPE_META).find((t) => !openTypes.includes(t));
-      if (nextFree) setSelectedIssueType(nextFree);
+      if (nextFree) {
+        setSelectedIssueType(nextFree);
+        setSubCategory(SUB_ISSUE_OPTIONS[nextFree]?.[0]?.value || '');
+      }
     }
   };
 
@@ -354,16 +397,21 @@ export default function CustomerSupportPage() {
     createSupportTicket(customerId, {
       contractId: Number(selectedContractId),
       issueType: selectedIssueType,
+      subCategory: subCategory || undefined,
+      locationDetail: locationDetail || undefined,
       description: trimmed,
+      evidenceImages: isClaim ? claimImages : (evidencePhotos.length > 0 ? evidencePhotos : undefined),
       ...(isClaim ? {
         itemsDescription: claimItems.trim(),
         claimedAmount: Number(claimAmount),
         incidentDate: claimIncidentDate,
-        evidenceImages: claimImages,
       } : {}),
     })
       .then((created) => {
         setShowCreateModal(false);
+        setSubCategory('');
+        setLocationDetail('');
+        setEvidencePhotos([]);
         setClaimItems('');
         setClaimAmount('');
         setClaimIncidentDate('');
@@ -773,13 +821,29 @@ export default function CustomerSupportPage() {
                 </div>
 
                 {/* Mô tả sự cố của khách hàng */}
-                <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-4">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-[#AFAFAF] block mb-1">
-                    Nội dung yêu cầu của bạn
-                  </span>
+                <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-4 flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#AFAFAF]">
+                      Nội dung yêu cầu của bạn
+                    </span>
+                    {ticket.subCategory && (
+                      <span className="px-2.5 py-0.5 rounded-lg bg-[#E0F2FE] text-[#0284C7] border border-[#BAE6FD] text-[11px] font-black">
+                        {ticket.subCategory}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs md:text-sm font-bold text-[#4B4B4B] whitespace-pre-line leading-relaxed">
                     {ticket.description}
                   </p>
+                  {ticket.evidenceImages?.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-[#E5E5E5] flex flex-col gap-1.5">
+                      <span className="text-[11px] font-black uppercase text-[#777777] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                        Hình ảnh hiện trường bạn đính kèm:
+                      </span>
+                      <PhotoGrid images={ticket.evidenceImages} />
+                    </div>
+                  )}
                 </div>
 
                 {/* BR-126 → BR-128: tiến độ hồ sơ bồi thường */}
@@ -822,7 +886,7 @@ export default function CustomerSupportPage() {
 
                 {/* Hiển thị Kết quả xử lý từ Nhân viên (khi RESOLVED hoặc CLOSED có resolutionNote) */}
                 {ticket.resolutionNote && (
-                  <div className="rounded-2xl bg-[#D7FFB8]/40 border-2 border-[#58CC02] p-4 flex flex-col gap-1.5">
+                  <div className="rounded-2xl bg-[#D7FFB8]/40 border-2 border-[#58CC02] p-4 flex flex-col gap-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-black uppercase tracking-wider text-[#58A700] flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[16px]">verified</span>
@@ -837,6 +901,15 @@ export default function CustomerSupportPage() {
                     <p className="text-xs md:text-sm font-black text-[#4B4B4B] whitespace-pre-line">
                       {ticket.resolutionNote}
                     </p>
+                    {ticket.resolutionImages?.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-[#86EFAC] flex flex-col gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-[#15803D] flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[16px]">photo_library</span>
+                          Hình ảnh bằng chứng khắc phục / kiểm tra của nhân viên:
+                        </span>
+                        <PhotoGrid images={ticket.resolutionImages} />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -848,23 +921,32 @@ export default function CustomerSupportPage() {
                         <span className="material-symbols-outlined text-[18px]">help</span>
                         Nhân viên đã báo hoàn tất xử lý — Vấn đề của bạn đã được giải quyết ổn thỏa chưa?
                       </p>
-                      <p className="font-bold text-[#777777] mt-0.5">
-                        Nếu sau 3 ngày bạn không phản hồi, hệ thống sẽ tự động chuyển yêu cầu sang trạng thái Đã đóng (PR-52).
-                      </p>
+                      {ticket.claim && ['APPROVED', 'PAID'].includes(ticket.claim.status) ? (
+                        <p className="font-bold text-[#2E7D32] mt-1 bg-[#E8F5E9] p-2 rounded-xl border border-[#A5D6A7]">
+                          Hồ sơ bồi thường {ticket.claim.claimCode} đã được giải quyết ({ticket.claim.status === 'PAID' ? 'Đã chi trả' : 'Đã chấp thuận'}). Bạn chỉ cần xác nhận "Đã ổn" để đóng phiếu; nếu có vấn đề phát sinh khác vui lòng liên hệ Hotline cơ sở.
+                        </p>
+                      ) : (
+                        <p className="font-bold text-[#777777] mt-0.5">
+                          Nếu sau 3 ngày bạn không phản hồi, hệ thống sẽ tự động chuyển yêu cầu sang trạng thái Đã đóng (PR-52).
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReopenTarget(ticket);
-                          setReopenReason('');
-                          setReopenError('');
-                        }}
-                        className="duo-btn-red px-4 py-2.5 text-xs flex items-center gap-1.5"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">replay</span>
-                        Chưa xong (Yêu cầu xử lý lại)
-                      </button>
+                      {/* UX FIX: Không hiển thị nút Chưa xong nếu hồ sơ bồi thường đã APPROVED hoặc PAID */}
+                      {!(ticket.claim && ['APPROVED', 'PAID'].includes(ticket.claim.status)) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReopenTarget(ticket);
+                            setReopenReason('');
+                            setReopenError('');
+                          }}
+                          className="duo-btn-red px-4 py-2.5 text-xs flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">replay</span>
+                          Chưa xong (Yêu cầu xử lý lại)
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => setConfirmTarget(ticket)}
@@ -975,6 +1057,9 @@ export default function CustomerSupportPage() {
                       disabled={alreadyOpen}
                       onClick={() => {
                         setSelectedIssueType(key);
+                        setSubCategory(SUB_ISSUE_OPTIONS[key]?.[0]?.value || '');
+                        setLocationDetail('');
+                        setEvidencePhotos([]);
                         setCreateError('');
                       }}
                       className={`p-3 rounded-2xl border-2 border-b-4 text-left transition-all flex items-start gap-2.5 ${
@@ -1010,11 +1095,86 @@ export default function CustomerSupportPage() {
               </div>
             </div>
 
-            {/* 3. Mô tả chi tiết (10 - 1000 ký tự, PR-S1) */}
+            {/* 3. Chi tiết chuyên biệt theo luồng sự cố */}
+            {SUB_ISSUE_OPTIONS[selectedIssueType] && (
+              <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                    3. Phân loại cụ thể ({ISSUE_TYPE_META[selectedIssueType]?.label})
+                  </span>
+                  <span className="text-[11px] font-bold text-[#0284C7]">Quy trình xử lý chuyên biệt</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {SUB_ISSUE_OPTIONS[selectedIssueType].map((opt) => {
+                    const isPicked = subCategory === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSubCategory(opt.value)}
+                        className={`p-2.5 rounded-xl border-2 text-left transition-all flex flex-col gap-0.5 ${
+                          isPicked
+                            ? 'bg-white border-[#0284C7] shadow-sm'
+                            : 'bg-white/60 border-[#BAE6FD] hover:bg-white'
+                        }`}
+                      >
+                        <span className="text-xs font-black text-[#0F172A] flex items-center justify-between">
+                          {opt.label}
+                          {isPicked && <span className="material-symbols-outlined text-[16px] text-[#0284C7]">check_circle</span>}
+                        </span>
+                        <span className="text-[10px] font-bold text-[#64748B]">{opt.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Vị trí cụ thể (với An ninh / Vệ sinh) */}
+                {['SECURITY', 'CLEANING'].includes(selectedIssueType) && (
+                  <label className="flex flex-col gap-1 pt-1">
+                    <span className="text-[11px] font-black uppercase text-[#0F172A]">Vị trí phát hiện / cần xử lý:</span>
+                    <input
+                      type="text"
+                      value={locationDetail}
+                      onChange={(e) => setLocationDetail(e.target.value)}
+                      placeholder={selectedIssueType === 'SECURITY' ? 'VD: Trước cửa ô kho của tôi, cuối hành lang tầng 2...' : 'VD: Ngay trước cửa ô kho, lối đi chung dãy A...'}
+                      className="duo-input text-xs"
+                    />
+                  </label>
+                )}
+
+                {/* Ảnh hiện trường đính kèm (An ninh / Cơ sở vật chất / Vệ sinh) */}
+                {['SECURITY', 'FACILITY_DAMAGE', 'CLEANING'].includes(selectedIssueType) && (
+                  <HandoverPhotoPicker
+                    images={evidencePhotos}
+                    onChange={setEvidencePhotos}
+                    label="Ảnh chụp hiện trường / bằng chứng (khuyến khích)"
+                    hint="Chụp rõ vết hỏng, hiện trạng khu vực hoặc dấu vết để nhân viên chuẩn bị đúng công cụ xử lý."
+                    mockLabel={`Hiện trường ${selectedIssueType === 'CLEANING' ? 'vệ sinh' : selectedIssueType === 'FACILITY_DAMAGE' ? 'hư hỏng' : 'an ninh'} (demo)`}
+                  />
+                )}
+
+                {selectedIssueType === 'LOCK_ISSUE' && (
+                  <p className="text-[11px] font-bold text-[#0369A1] flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">info</span>
+                    Nhân viên cơ sở có thể cấp lại mã PIN 6 số mới ngay lập tức qua hệ thống hoặc kiểm tra pin khóa SmartLock tại chỗ.
+                  </p>
+                )}
+                {selectedIssueType === 'SECURITY' && (
+                  <p className="text-[11px] font-bold text-[#FF4B4B] flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">shield</span>
+                    Yêu cầu an ninh được xử lý ưu tiên khẩn cấp. Nhân viên sẽ tiến hành lập biên bản kiểm tra và trích xuất camera an ninh.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 4. Mô tả chi tiết (10 - 1000 ký tự, PR-S1) */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-black uppercase tracking-wider text-[#4B4B4B]">
-                  3. Mô tả chi tiết vấn đề <span className="text-[#FF4B4B]">*</span>
+                  {SUB_ISSUE_OPTIONS[selectedIssueType] ? '4.' : '3.'} Mô tả chi tiết vấn đề <span className="text-[#FF4B4B]">*</span>
                 </label>
                 <span
                   className={`text-xs font-black ${
@@ -1043,7 +1203,7 @@ export default function CustomerSupportPage() {
               <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#FFB8B8] bg-[#FFF5F5] p-4">
                 <p className="text-xs font-black uppercase text-[#FF4B4B] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[18px]">gavel</span>
-                  4. Hồ sơ đề nghị bồi thường
+                  5. Hồ sơ đề nghị bồi thường
                 </p>
                 <p className="text-[11px] font-bold text-[#777777]">
                   Nhân viên sẽ mở ô cùng bạn để kiểm tra, quản lý cơ sở đối chiếu ảnh lúc nhận kho và cảm biến nhiệt độ để xác định lỗi.

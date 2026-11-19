@@ -44,6 +44,7 @@ public class StaffTaskResponse {
     private Integer supportRequestId;
     private String ticketCode;
     private String issueType;
+    private String subCategory;
     private boolean urgent;
     private String ticketStatus;
     private String ticketDescription;

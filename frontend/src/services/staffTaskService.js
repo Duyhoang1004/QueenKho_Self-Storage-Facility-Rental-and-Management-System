@@ -57,6 +57,20 @@ export async function resolveSupportTask(taskId, staffId, resolutionNote) {
   return res.data
 }
 
+// PR-S5: Staff / Quản lý chỉnh sửa lại phản hồi hỗ trợ khi ticket đang RESOLVED (tránh nhầm lẫn)
+export async function updateSupportResolution(taskId, staffId, payload) {
+  const body = typeof payload === 'string' ? { resolutionNote: payload } : (payload || {})
+  const res = await api.put(`/staff-tasks/${taskId}/update-support-resolution`, body, { params: { staffId } })
+  return res.data
+}
+
+// PR-S5: Staff / Quản lý thu hồi kết quả và mở lại toàn bộ task hỗ trợ để xử lý lại từ đầu
+export async function reopenSupportTask(taskId, staffId, reason) {
+  const body = typeof reason === 'string' ? { reason } : (reason || {})
+  const res = await api.post(`/staff-tasks/${taskId}/reopen-support`, body, { params: { staffId } })
+  return res.data
+}
+
 // UC-27 / PR-S6: Staff cấp lại mã PIN 6 số cho ticket LOCK_ISSUE
 export async function resetSupportContractPin(taskId, staffId) {
   const res = await api.post(`/staff-tasks/${taskId}/reset-pin`, null, { params: { staffId } })

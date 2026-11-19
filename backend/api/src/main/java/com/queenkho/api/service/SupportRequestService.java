@@ -230,12 +230,19 @@ public class SupportRequestService {
             compensationClaimService.validateClaimInput(issueType, request, contract);
         }
 
+        String subCat = (request.getSubCategory() != null && !request.getSubCategory().isBlank())
+                ? request.getSubCategory().trim() : null;
+        List<String> cleanedImgs = cleanImages(request.getEvidenceImages());
+        String joinedImgs = cleanedImgs.isEmpty() ? null : String.join("\n|||\n", cleanedImgs);
+
         String ticketCode = generateUniqueTicketCode();
         SupportRequest ticket = SupportRequest.builder()
                 .ticketCode(ticketCode)
                 .contract(contract)
                 .customer(customer)
                 .issueType(issueType)
+                .subCategory(subCat)
+                .evidenceImages(joinedImgs)
                 .description(desc)
                 .status("OPEN")
                 .build();
@@ -435,7 +442,11 @@ public class SupportRequestService {
         StringBuilder noteBuilder = new StringBuilder();
         noteBuilder.append(prefix)
                 .append("[").append(ticket.getTicketCode()).append("] ")
-                .append(getIssueTypeLabel(ticket.getIssueType())).append(": ");
+                .append(getIssueTypeLabel(ticket.getIssueType()));
+        if (ticket.getSubCategory() != null && !ticket.getSubCategory().isBlank()) {
+            noteBuilder.append(" [").append(ticket.getSubCategory().trim()).append("]");
+        }
+        noteBuilder.append(": ");
 
         if (reopenReason != null && !reopenReason.isBlank()) {
             noteBuilder.append("[Yêu cầu xử lý lại] ").append(reopenReason.trim());
@@ -520,20 +531,40 @@ public class SupportRequestService {
         return "SR-" + (System.currentTimeMillis() % 1000000);
     }
 
+    private static List<String> cleanImages(List<String> list) {
+        if (list == null) return Collections.emptyList();
+        return list.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
     public SupportRequestResponse toResponse(SupportRequest sr, StaffTask latestTask) {
         RentalContract contract = sr.getContract();
         StorageUnit su = contract != null ? contract.getStorageUnit() : null;
         User customer = sr.getCustomer();
         User staff = latestTask != null ? latestTask.getStaff() : null;
 
+        List<String> evidenceImgs = (sr.getEvidenceImages() != null && !sr.getEvidenceImages().isBlank())
+                ? Arrays.stream(sr.getEvidenceImages().split("\n\\|\\|\\|\n")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                : Collections.emptyList();
+
+        List<String> resolutionImgs = (latestTask != null && latestTask.getEvidenceImageUrl() != null && !latestTask.getEvidenceImageUrl().isBlank())
+                ? Arrays.stream(latestTask.getEvidenceImageUrl().split("\n\\|\\|\\|\n")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                : Collections.emptyList();
+
         return SupportRequestResponse.builder()
                 .id(sr.getId())
                 .ticketCode(sr.getTicketCode())
                 .issueType(sr.getIssueType())
+                .subCategory(sr.getSubCategory())
                 .urgent(isUrgentIssue(sr.getIssueType()))
                 .description(sr.getDescription())
                 .status(sr.getStatus())
                 .resolutionNote(sr.getResolutionNote())
+                .evidenceImages(evidenceImgs)
+                .resolutionImages(resolutionImgs)
                 .createdAt(sr.getCreatedAt())
                 .resolvedAt(sr.getResolvedAt())
                 .closedAt(sr.getClosedAt())

@@ -47,7 +47,20 @@ public record CustomerPaymentsResponse(
             String insurancePlan,
             BigDecimal insuranceAmount,
             String voucherDiscountType,
-            Integer voucherDiscountPercent
+            Integer voucherDiscountPercent,
+            // --- CÁC TRƯỜNG BÓC TÁCH HOÀN TIỀN & BỒI THƯỜNG ---
+            BigDecimal goodsCompensation,
+            BigDecimal penaltyCompensation,
+            BigDecimal rentRefundCompensation,
+            Integer damagePercent,
+            String compensationReason,
+            BigDecimal refundDepositAmount,
+            BigDecimal earlyRentRefund,
+            BigDecimal damageDeduction,
+            BigDecimal lateFeeDeduction,
+            BigDecimal overstayDeduction,
+            BigDecimal breakFeeDeduction,
+            String refundDescription
     ) {
         public PaymentItem(
                 Integer id, String transactionCode, String bankTransactionCode, String paymentType,
@@ -57,7 +70,8 @@ public record CustomerPaymentsResponse(
         ) {
             this(id, transactionCode, bankTransactionCode, paymentType, paymentMethod, amount, status, paidAt,
                     renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
-                    null, null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
         }
 
         public PaymentItem(
@@ -74,7 +88,27 @@ public record CustomerPaymentsResponse(
                     renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
                     monthlyRentPrice, durationMonths, baseRentAmount, rentDiscountPercent, rentDiscountAmount,
                     voucherCode, voucherDiscount, actualRentPaid, depositAmount, insurancePlan, insuranceAmount,
-                    null, null);
+                    null, null,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        public PaymentItem(
+                Integer id, String transactionCode, String bankTransactionCode, String paymentType,
+                String paymentMethod, BigDecimal amount, String status, LocalDateTime paidAt,
+                Integer renewalMonths, Integer reservationId, String reservationCode,
+                Integer contractId, String contractCode, String facilityName, String unitTypeName,
+                BigDecimal monthlyRentPrice, Integer durationMonths, BigDecimal baseRentAmount,
+                Integer rentDiscountPercent, BigDecimal rentDiscountAmount, String voucherCode,
+                BigDecimal voucherDiscount, BigDecimal actualRentPaid, BigDecimal depositAmount,
+                String insurancePlan, BigDecimal insuranceAmount,
+                String voucherDiscountType, Integer voucherDiscountPercent
+        ) {
+            this(id, transactionCode, bankTransactionCode, paymentType, paymentMethod, amount, status, paidAt,
+                    renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
+                    monthlyRentPrice, durationMonths, baseRentAmount, rentDiscountPercent, rentDiscountAmount,
+                    voucherCode, voucherDiscount, actualRentPaid, depositAmount, insurancePlan, insuranceAmount,
+                    voucherDiscountType, voucherDiscountPercent,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 

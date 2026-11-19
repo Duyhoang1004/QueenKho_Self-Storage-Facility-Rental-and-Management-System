@@ -168,6 +168,8 @@ public class AccessPolicy {
         rule("POST", "/api/v1/contracts/{id}/waive-late-fee", "LATE_FEE_WAIVE");
         rule("GET", "/api/v1/contracts/overdue-all", "LATE_FEE_WAIVE");          // BOM: quá hạn toàn chuỗi
         rule("GET", "/api/v1/contracts/{id}/sensor-readings", "CONTRACT_VIEW"); // BR-129
+        rule("GET", "/api/v1/contracts/{id}/access-logs", "CONTRACT_VIEW");     // IoT Smartlock & RFID
+        rule("POST", "/api/v1/contracts/{id}/simulate-access", "CONTRACT_VIEW"); // IoT Simulation
 
         // Bồi thường hàng hư / mất (ticket hỗ trợ GOODS_DAMAGE / GOODS_LOSS)
         rule("GET", "/api/v1/claims", "CLAIM_VIEW");

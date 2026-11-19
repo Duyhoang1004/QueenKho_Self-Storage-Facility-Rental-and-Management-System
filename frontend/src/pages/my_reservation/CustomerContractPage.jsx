@@ -8,6 +8,7 @@ import UnitLocationMap from "../../components/UnitLocationMap";
 import SimulationButton from "../../components/SimulationButton";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
+import UnitAccessModal from "../../components/UnitAccessModal";
 import { simulateExpireSoon } from "../../services/simulationService";
 import { getOverdueFeeBreakdown } from "../../utils/overdueFee";
 
@@ -109,6 +110,7 @@ export default function CustomerContractPage() {
 
   const [toastMessage, setToastMessage] = useState("");
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false);
+  const [accessModalOpen, setAccessModalOpen] = useState(false);
   const [termsOpen, setTermsOpen] = useState(false);
   const [optionsModalTab, setOptionsModalTab] = useState('renew');
 
@@ -1332,6 +1334,14 @@ export default function CustomerContractPage() {
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => setAccessModalOpen(true)}
+              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border-2 border-slate-300 transition active:scale-98 cursor-pointer text-center"
+            >
+              LỊCH SỬ SỬ DỤNG
+            </button>
+
             {['ACTIVE', 'OVERDUE', 'TERMINATION_PENDING'].includes(contract.status) && (
               <button
                 type="button"
@@ -1366,6 +1376,17 @@ export default function CustomerContractPage() {
         onSuccess={handleModalSuccess}
         initialTab={optionsModalTab}
       />
+
+      {accessModalOpen && (
+        <UnitAccessModal
+          isOpen={accessModalOpen}
+          onClose={() => setAccessModalOpen(false)}
+          contractId={contract?.contractId || contract?.id}
+          contractCode={contract?.contractCode}
+          storageUnitId={contract?.storageUnitId}
+          roomNumber={contract?.roomNumber}
+        />
+      )}
 
       {/* Modal xác nhận Hủy chờ trả kho */}
       {isCancelCheckoutModalOpen && (

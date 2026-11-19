@@ -39,6 +39,25 @@ public class CustomerPaymentService {
             "LEFT JOIN facilities f ON f.id = r.facility_id " +
             "LEFT JOIN unit_types ut ON ut.id = r.unit_type_id " +
             "LEFT JOIN vouchers v ON v.id = r.voucher_id OR (r.voucher_id IS NULL AND v.code = r.voucher_code) " +
+            "LEFT JOIN compensation_claims cc ON cc.id = (" +
+            "    SELECT TOP 1 cc2.id FROM compensation_claims cc2 " +
+            "    WHERE p.payment_type = 'COMPENSATION' " +
+            "      AND (" +
+            "          (p.transaction_code LIKE 'BT-PAY-%-%' AND cc2.id = TRY_CAST(SUBSTRING(p.transaction_code, 8, CHARINDEX('-', p.transaction_code, 8) - 8) AS INT)) " +
+            "          OR cc2.contract_id = p.contract_id " +
+            "      ) " +
+            "    ORDER BY cc2.id DESC" +
+            ") " +
+            "LEFT JOIN facility_tasks t ON t.id = (" +
+            "    SELECT TOP 1 t2.id FROM facility_tasks t2 " +
+            "    WHERE p.payment_type = 'REFUND' " +
+            "      AND t2.task_type = 'REFUND' " +
+            "      AND (" +
+            "          (t2.contract_id IS NOT NULL AND t2.contract_id = p.contract_id) " +
+            "          OR (r.reservation_code IS NOT NULL AND t2.note LIKE '%' + r.reservation_code + '%') " +
+            "      ) " +
+            "    ORDER BY t2.id DESC" +
+            ") " +
             "WHERE p.user_id = ? OR r.customer_id = ? OR c.customer_id = ? ";
 
     @Transactional(readOnly = true)
@@ -52,11 +71,18 @@ public class CustomerPaymentService {
                         "f.name AS facility_name, ut.name AS unit_type_name, " +
                         "ut.base_price_monthly, r.duration_months, r.rent_discount_percent, r.voucher_code, r.voucher_discount, " +
                         "r.deposit_amount, r.insurance_plan, r.insurance_premium_monthly, " +
-                        "v.discount_type AS voucher_discount_type, v.discount_value AS voucher_discount_value " +
+                        "v.discount_type AS voucher_discount_type, v.discount_value AS voucher_discount_value, " +
+                        "cc.goods_compensation, cc.penalty_amount AS claim_penalty_amount, cc.rent_refund_amount AS claim_rent_refund, " +
+                        "cc.damage_percent, cc.decision_note, " +
+                        "t.note AS task_note, c.deposit_held_amount, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'DAMAGE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS damage_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'LATE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS late_fee_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'OVERSTAY_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS overstay_offset " +
                         MY_PAYMENTS + "ORDER BY p.id DESC",
                 (rs, i) -> {
                     Timestamp paidAt = rs.getTimestamp("paid_at");
                     String paymentType = rs.getString("payment_type");
+                    BigDecimal amount = rs.getBigDecimal("amount");
                     BigDecimal monthlyRentPrice = rs.getBigDecimal("base_price_monthly");
                     Integer durationMonths = (Integer) rs.getObject("duration_months");
                     Integer rentDiscountPercent = (Integer) rs.getObject("rent_discount_percent");
@@ -94,13 +120,74 @@ public class CustomerPaymentService {
                         }
                     }
 
+                    // Bóc tách chi tiết hoàn tiền & bồi thường
+                    BigDecimal goodsCompensation = null;
+                    BigDecimal penaltyCompensation = null;
+                    BigDecimal rentRefundCompensation = null;
+                    Integer damagePercent = null;
+                    String compensationReason = null;
+
+                    BigDecimal refundDepositAmount = null;
+                    BigDecimal earlyRentRefund = null;
+                    BigDecimal damageDeduction = null;
+                    BigDecimal lateFeeDeduction = null;
+                    BigDecimal overstayDeduction = null;
+                    BigDecimal breakFeeDeduction = null;
+                    String refundDescription = null;
+
+                    if ("COMPENSATION".equalsIgnoreCase(paymentType)) {
+                        goodsCompensation = rs.getBigDecimal("goods_compensation");
+                        penaltyCompensation = rs.getBigDecimal("claim_penalty_amount");
+                        rentRefundCompensation = rs.getBigDecimal("claim_rent_refund");
+                        damagePercent = (Integer) rs.getObject("damage_percent");
+                        compensationReason = rs.getString("decision_note");
+
+                        if (goodsCompensation == null) {
+                            goodsCompensation = amount != null ? amount : BigDecimal.ZERO;
+                        }
+                        if (penaltyCompensation == null) {
+                            penaltyCompensation = BigDecimal.ZERO;
+                        }
+                        if (rentRefundCompensation == null) {
+                            rentRefundCompensation = BigDecimal.ZERO;
+                        }
+                        if (damagePercent == null) {
+                            damagePercent = 100;
+                        }
+                    } else if ("REFUND".equalsIgnoreCase(paymentType)) {
+                        BigDecimal held = rs.getBigDecimal("deposit_held_amount");
+                        if (held == null || held.compareTo(BigDecimal.ZERO) <= 0) {
+                            held = depositAmount;
+                        }
+                        refundDepositAmount = held != null ? held : (amount != null ? amount : BigDecimal.ZERO);
+                        damageDeduction = rs.getBigDecimal("damage_offset") != null ? rs.getBigDecimal("damage_offset") : BigDecimal.ZERO;
+                        lateFeeDeduction = rs.getBigDecimal("late_fee_offset") != null ? rs.getBigDecimal("late_fee_offset") : BigDecimal.ZERO;
+                        overstayDeduction = rs.getBigDecimal("overstay_offset") != null ? rs.getBigDecimal("overstay_offset") : BigDecimal.ZERO;
+                        breakFeeDeduction = BigDecimal.ZERO;
+
+                        BigDecimal netDepositAfterOffsets = refundDepositAmount
+                                .subtract(damageDeduction)
+                                .subtract(lateFeeDeduction)
+                                .subtract(overstayDeduction);
+
+                        if (amount != null && amount.compareTo(netDepositAfterOffsets) > 0) {
+                            earlyRentRefund = amount.subtract(netDepositAfterOffsets);
+                        } else {
+                            earlyRentRefund = BigDecimal.ZERO;
+                            if (amount != null && netDepositAfterOffsets.compareTo(amount) > 0) {
+                                breakFeeDeduction = netDepositAfterOffsets.subtract(amount);
+                            }
+                        }
+                        refundDescription = rs.getString("task_note");
+                    }
+
                     return new CustomerPaymentsResponse.PaymentItem(
                             rs.getInt("id"),
                             rs.getString("transaction_code"),
                             rs.getString("bank_transaction_code"),
                             paymentType,
                             rs.getString("payment_method"),
-                            rs.getBigDecimal("amount"),
+                            amount,
                             rs.getString("status"),
                             paidAt != null ? paidAt.toLocalDateTime() : null,
                             (Integer) rs.getObject("renewal_months"),
@@ -122,7 +209,19 @@ public class CustomerPaymentService {
                             insurancePlan,
                             insuranceAmount,
                             voucherDiscountType,
-                            voucherDiscountPercent);
+                            voucherDiscountPercent,
+                            goodsCompensation,
+                            penaltyCompensation,
+                            rentRefundCompensation,
+                            damagePercent,
+                            compensationReason,
+                            refundDepositAmount,
+                            earlyRentRefund,
+                            damageDeduction,
+                            lateFeeDeduction,
+                            overstayDeduction,
+                            breakFeeDeduction,
+                            refundDescription);
                 },
                 customerId, customerId, customerId);
 
@@ -173,7 +272,7 @@ public class CustomerPaymentService {
     private CustomerPaymentsResponse.OverdueItem toOverdueItem(RentalContract c) {
         var late = lateFeeService.calculateLateFee(c);
         String facilityName = c.getStorageUnit() != null && c.getStorageUnit().getFacility() != null
-                ? c.getStorageUnit().getFacility().getName() : null;
+            ? c.getStorageUnit().getFacility().getName() : null;
         return new CustomerPaymentsResponse.OverdueItem(
                 c.getId(),
                 c.getContractCode(),

@@ -14,6 +14,8 @@ import com.queenkho.api.service.RenewalPolicyService;
 import com.queenkho.api.service.StaffTaskService;
 import com.queenkho.api.service.UnitSensorService;
 import com.queenkho.api.service.UnitTransferService;
+import com.queenkho.api.service.UnitAccessService;
+import com.queenkho.api.dto.SimulateAccessRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -61,6 +63,9 @@ public class ContractController {
 
     @Autowired
     private UnitSensorService unitSensorService;
+
+    @Autowired
+    private UnitAccessService unitAccessService;
 
     @ExceptionHandler(com.queenkho.api.exception.ContractException.class)
     public ResponseEntity<?> handleContractException(com.queenkho.api.exception.ContractException ex) {
@@ -297,6 +302,23 @@ public class ContractController {
             @RequestParam(required = false) Integer userId) {
         Integer effectiveManagerId = managerId != null ? managerId : userId;
         return ResponseEntity.ok(contractService.getOverdueContactLogs(id, effectiveManagerId));
+    }
+
+    // Lịch sử sử dụng / ra vào ô kho qua Smartlock & RFID (IoT Giả lập)
+    @GetMapping("/{id}/access-logs")
+    public ResponseEntity<?> getAccessLogs(@PathVariable Integer id) {
+        currentUser.require();
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(unitAccessService.getAccessSummary(id));
+    }
+
+    @PostMapping("/{id}/simulate-access")
+    public ResponseEntity<?> simulateAccess(
+            @PathVariable Integer id,
+            @RequestBody(required = false) SimulateAccessRequest request) {
+        currentUser.require();
+        ownershipGuard.checkContract(id);
+        return ResponseEntity.ok(unitAccessService.simulateAccess(id, request));
     }
 }
 

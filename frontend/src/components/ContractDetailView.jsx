@@ -6,6 +6,7 @@ import SimulationButton from './SimulationButton'
 import TransferUnitModal from './TransferUnitModal'
 import ContractHandoverSection from './ContractHandoverSection'
 import ContractProtectionPanel from './ContractProtectionPanel'
+import UnitAccessModal from './UnitAccessModal'
 import { simulateExpireSoon, simulateOverdue } from '../services/simulationService'
 import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
@@ -71,6 +72,7 @@ export default function ContractDetailView({ contractId, initialTransfer = false
   const [reloadTick, setReloadTick] = useState(0)
   // D-18: mở từ popup Lịch ô kho với transfer → bật luôn hộp chuyển ô
   const [transferOpen, setTransferOpen] = useState(initialTransfer)
+  const [accessModalOpen, setAccessModalOpen] = useState(false)
   const [notice, setNotice] = useState('')
   // D-18: ô cũ vào bảo trì nhưng còn khách khác đã gán trước → nhắc FM đổi ô tiếp cho họ
   const [affected, setAffected] = useState([])
@@ -330,6 +332,14 @@ export default function ContractDetailView({ contractId, initialTransfer = false
                 {contract.rfidCardCode || 'Chưa cấp phát'}
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setAccessModalOpen(true)}
+              className="w-full py-2.5 px-4 rounded-xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border-2 border-slate-300 transition active:scale-98 cursor-pointer text-center"
+            >
+              LỊCH SỬ SỬ DỤNG
+            </button>
           </div>
         </Section>
       </div>
@@ -392,6 +402,17 @@ export default function ContractDetailView({ contractId, initialTransfer = false
           setReloadTick((t) => t + 1)
         }}
       />
+
+      {accessModalOpen && (
+        <UnitAccessModal
+          isOpen={accessModalOpen}
+          onClose={() => setAccessModalOpen(false)}
+          contractId={contract.contractId || id}
+          contractCode={contract.contractCode}
+          storageUnitId={contract.storageUnitId}
+          roomNumber={contract.roomNumber}
+        />
+      )}
     </div>
   )
 }

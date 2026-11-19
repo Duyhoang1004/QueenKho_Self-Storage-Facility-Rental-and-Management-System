@@ -74,8 +74,10 @@ function PaymentReceiptModal({ transaction, onClose }) {
 
   const type = typeOf(transaction)
   const status = STATUS_STYLES[transaction.status] || STATUS_STYLES.PENDING
-  const isRefund = transaction.paymentType === 'REFUND' || transaction.paymentType === 'COMPENSATION'
-  const isDeposit = transaction.paymentType === 'DEPOSIT' || transaction.baseRentAmount != null
+  const isCompensation = transaction.paymentType === 'COMPENSATION'
+  const isRefund = transaction.paymentType === 'REFUND'
+  const isIncome = isRefund || isCompensation
+  const isDeposit = !isIncome && (transaction.paymentType === 'DEPOSIT' || transaction.baseRentAmount != null)
 
   const durationMonths = Number(transaction.durationMonths || (Number(transaction.amount) >= 5000000 ? 6 : 1))
   const monthlyRentPrice = Number(transaction.monthlyRentPrice || transaction.depositAmount || 750000)
@@ -127,6 +129,29 @@ function PaymentReceiptModal({ transaction, onClose }) {
         : transaction.insurancePlan === 'BASIC'
           ? 'Gói Cơ bản'
           : (transaction.insurancePlan || 'Gói Nâng cao')
+
+  // Bóc tách bồi thường (COMPENSATION)
+  const penaltyCompensation = Number(transaction.penaltyCompensation || 0)
+  const rentRefundCompensation = Number(transaction.rentRefundCompensation || 0)
+  const rawGoodsComp = transaction.goodsCompensation != null ? Number(transaction.goodsCompensation) : null
+  const goodsCompensation = rawGoodsComp != null
+    ? rawGoodsComp
+    : Math.max(0, Number(transaction.amount) - penaltyCompensation - rentRefundCompensation)
+  const damagePercent = transaction.damagePercent != null ? Number(transaction.damagePercent) : null
+  const compensationReason = transaction.compensationReason || 'Chi trả bồi thường theo biên bản kiểm tra sự cố & chính sách bảo hiểm QueenKho'
+
+  // Bóc tách hoàn tiền (REFUND)
+  const refundDepositAmount = Number(
+    transaction.refundDepositAmount != null
+      ? transaction.refundDepositAmount
+      : (transaction.depositAmount != null ? transaction.depositAmount : transaction.amount)
+  )
+  const earlyRentRefund = Number(transaction.earlyRentRefund || 0)
+  const damageDeduction = Number(transaction.damageDeduction || 0)
+  const lateFeeDeduction = Number(transaction.lateFeeDeduction || 0)
+  const overstayDeduction = Number(transaction.overstayDeduction || 0)
+  const breakFeeDeduction = Number(transaction.breakFeeDeduction || 0)
+  const refundDescription = transaction.refundDescription || 'Hoàn tất thủ tục quyết toán thanh lý hợp đồng & hoàn trả tiền cọc'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -316,11 +341,213 @@ function PaymentReceiptModal({ transaction, onClose }) {
             </div>
           )}
 
+          {/* Itemized breakdown for compensation */}
+          {isCompensation && (
+            <div className="flex flex-col gap-2.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
+                  Bóc tách chi tiết khoản bồi thường
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#EAF7EC] text-[#58A700] border border-[#58CC02]">
+                  BẢO HIỂM &amp; ĐỀN BÙ
+                </span>
+              </div>
+
+              {/* Tiền bồi thường thiệt hại hàng hóa */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">
+                    Bồi thường thiệt hại hàng hóa
+                  </span>
+                  <span className="text-[10px] text-[#AFAFAF]">
+                    {damagePercent != null ? `Tỷ lệ thiệt hại ghi nhận: ${damagePercent}%` : 'Theo biên bản thẩm định hiện trường'}
+                  </span>
+                </div>
+                <span className="font-black text-[#4B4B4B]">
+                  {formatVND(goodsCompensation)}
+                </span>
+              </div>
+
+              {/* Tiền phạt vi phạm cơ sở (1 tháng tiền thuê khi lỗi cơ sở) */}
+              {penaltyCompensation > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#58A700]">
+                      Tiền phạt vi phạm cơ sở (1 tháng tiền thuê)
+                    </span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Khoản đền bù thêm do lỗi từ phía cơ sở lưu trữ
+                    </span>
+                  </div>
+                  <span className="font-black text-[#58A700]">
+                    +{formatVND(penaltyCompensation)}
+                  </span>
+                </div>
+              )}
+
+              {/* Hoàn tiền thuê ô kho những ngày bị sự cố */}
+              {rentRefundCompensation > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#58A700]">
+                      Hoàn tiền thuê ngày ô bị sự cố
+                    </span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Hoàn lại tiền thuê những ngày ô kho không thể sử dụng
+                    </span>
+                  </div>
+                  <span className="font-black text-[#58A700]">
+                    +{formatVND(rentRefundCompensation)}
+                  </span>
+                </div>
+              )}
+
+              {/* Khấu trừ chi phí phát sinh */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">
+                    Khấu trừ chi phí phát sinh
+                  </span>
+                  <span className="text-[10px] text-[#16A34A] font-semibold">
+                    Không khấu trừ (Cơ sở &amp; bảo hiểm chi trả 100%)
+                  </span>
+                </div>
+                <span className="font-black text-[#16A34A]">
+                  0₫
+                </span>
+              </div>
+
+              {/* Tiền bồi thường thực nhận: NỔI BẬT & IN ĐẬM */}
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
+                <div className="flex flex-col pr-2">
+                  <span className="font-black text-[#15803D] uppercase text-[11px] tracking-wide">
+                    Tiền bồi thường thực nhận
+                  </span>
+                  <span className="text-[10px] text-[#16A34A] line-clamp-2">
+                    {compensationReason}
+                  </span>
+                </div>
+                <span className="text-base font-black text-[#16A34A] whitespace-nowrap">
+                  +{formatVND(transaction.amount)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Itemized breakdown for refund */}
+          {isRefund && (
+            <div className="flex flex-col gap-2.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
+                  Bóc tách chi tiết khoản hoàn tiền
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#EAF7EC] text-[#58A700] border border-[#58CC02]">
+                  QUYẾT TOÁN HOÀN TRẢ
+                </span>
+              </div>
+
+              {/* Tiền cọc giữ kho */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">Tiền cọc giữ kho ban đầu</span>
+                  <span className="text-[10px] text-[#AFAFAF]">Khoản tiền cọc bảo đảm theo hợp đồng</span>
+                </div>
+                <span className="font-black text-[#1CB0F6]">
+                  {formatVND(refundDepositAmount)}
+                </span>
+              </div>
+
+              {/* Hoàn tiền thuê trả sớm */}
+              {earlyRentRefund > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#58A700]">Hoàn tiền thuê trả sớm (PR-O2)</span>
+                    <span className="text-[10px] text-[#AFAFAF]">Hoàn tiền thuê cho các tháng chưa sử dụng</span>
+                  </div>
+                  <span className="font-black text-[#58A700]">
+                    +{formatVND(earlyRentRefund)}
+                  </span>
+                </div>
+              )}
+
+              {/* Khấu trừ chi phí hư hại ô kho */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">Khấu trừ hư hại / sửa chữa ô kho</span>
+                  <span className="text-[10px] text-[#AFAFAF]">
+                    {damageDeduction > 0
+                      ? 'Khấu trừ chi phí sửa chữa theo biên bản kiểm tra trả kho'
+                      : 'Bàn giao ô kho nguyên vẹn — không phát sinh chi phí'}
+                  </span>
+                </div>
+                <span className={`font-black ${damageDeduction > 0 ? 'text-[#FF4B4B]' : 'text-[#16A34A]'}`}>
+                  {damageDeduction > 0 ? `-${formatVND(damageDeduction)}` : '0₫'}
+                </span>
+              </div>
+
+              {/* Khấu trừ phí dọn đồ trễ hạn */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">Khấu trừ phí trễ hạn trả kho</span>
+                  <span className="text-[10px] text-[#AFAFAF]">
+                    {lateFeeDeduction > 0
+                      ? 'Phí trễ hạn theo quy định hợp đồng'
+                      : 'Trả kho đúng hạn — không bị phạt'}
+                  </span>
+                </div>
+                <span className={`font-black ${lateFeeDeduction > 0 ? 'text-[#FF4B4B]' : 'text-[#16A34A]'}`}>
+                  {lateFeeDeduction > 0 ? `-${formatVND(lateFeeDeduction)}` : '0₫'}
+                </span>
+              </div>
+
+              {/* Khấu trừ phí chiếm dụng kho */}
+              {overstayDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí chiếm dụng kho</span>
+                    <span className="text-[10px] text-[#AFAFAF]">Phí chiếm dụng kho sau thời gian ân hạn</span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(overstayDeduction)}
+                  </span>
+                </div>
+              )}
+
+              {/* Khấu trừ phí huỷ hợp đồng / huỷ đơn */}
+              {breakFeeDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Phí hủy đơn / chấm dứt sớm</span>
+                    <span className="text-[10px] text-[#AFAFAF]">Khấu trừ theo chính sách hủy cam kết</span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(breakFeeDeduction)}
+                  </span>
+                </div>
+              )}
+
+              {/* Tiền thực nhận hoàn lại: NỔI BẬT & IN ĐẬM */}
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
+                <div className="flex flex-col pr-2">
+                  <span className="font-black text-[#15803D] uppercase text-[11px] tracking-wide">
+                    Tổng tiền thực hoàn
+                  </span>
+                  <span className="text-[10px] text-[#16A34A] line-clamp-2">
+                    {refundDescription}
+                  </span>
+                </div>
+                <span className="text-base font-black text-[#16A34A] whitespace-nowrap">
+                  +{formatVND(transaction.amount)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Grand total */}
           <div className="flex items-center justify-between p-4 bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl">
             <span className="text-xs font-black uppercase text-[#4B4B4B]">Tổng tiền giao dịch</span>
-            <span className={`text-xl font-black ${isRefund ? 'text-[#58A700]' : 'text-[#58CC02]'}`}>
-              {isRefund ? '+' : ''}{formatVND(transaction.amount)}
+            <span className={`text-xl font-black ${isIncome ? 'text-[#58A700]' : 'text-[#58CC02]'}`}>
+              {isIncome ? '+' : ''}{formatVND(transaction.amount)}
             </span>
           </div>
         </div>

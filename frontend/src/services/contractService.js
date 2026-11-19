@@ -141,3 +141,15 @@ export async function getOverdueContractsChain(facilityId) {
   const res = await api.get('/contracts/overdue-all', { params: facilityId ? { facilityId } : {} })
   return res.data
 }
+
+// IoT Smartlock & RFID access logs (Lịch sử sử dụng / ra vào ô kho)
+export async function getUnitAccessLogs(contractId) {
+  const res = await api.get(`/contracts/${contractId}/access-logs`)
+  return res.data
+}
+
+export async function simulateUnitAccess(contractId, { accessMethod = 'PIN', isInvalid = false } = {}) {
+  const res = await api.post(`/contracts/${contractId}/simulate-access`, { accessMethod, isInvalid })
+  return res.data
+}
+

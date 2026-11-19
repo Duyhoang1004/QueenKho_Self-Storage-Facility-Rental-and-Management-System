@@ -10,6 +10,8 @@ import {
   getStaffTaskDetail,
   resetSupportContractPin,
   resolveSupportTask,
+  reopenSupportTask,
+  updateSupportResolution,
   suggestAccessPin,
   uploadImageFile,
 } from '../../services/staffTaskService';
@@ -48,6 +50,35 @@ const SUPPORT_TICKET_STATUS_META = {
   IN_PROGRESS: { label: 'Đang xử lý',         cls: 'bg-[#DDF4FF] text-[#1899D6] border border-[#84D8FF]' },
   RESOLVED:    { label: 'Chờ khách xác nhận', cls: 'bg-[#D7FFB8] text-[#58A700] border border-[#58CC02]' },
   CLOSED:      { label: 'Đã đóng',            cls: 'bg-[#F7F7F7] text-[#777777] border border-[#E5E5E5]' },
+};
+
+const SUPPORT_PRESETS_BY_TYPE = {
+  LOCK_ISSUE: [
+    'Đã cấp lại mã PIN 6 số mới cho khách hàng và kiểm tra đóng/mở khóa ổn định.',
+    'Đã kiểm tra SmartLock tại hiện trường, thay pin khóa và hướng dẫn khách mở cửa thành công.',
+    'Đã tra mỡ bôi trơn và cân chỉnh chốt khóa kẹt, khách mở khóa trơn tru.',
+  ],
+  SECURITY: [
+    'Đã tuần tra trực tiếp khu vực ô kho và đối chiếu camera an ninh; khu vực an toàn, không có dấu hiệu cạy phá.',
+    'Đã kiểm tra ổ khóa ô kho, phát hiện vết xước nhẹ bên ngoài nhưng chốt khóa còn nguyên vẹn; đã dặn bảo vệ tăng cường tuần tra.',
+    'Đã lập biên bản kiểm tra an ninh, niêm phong tạm thời và báo cáo Quản lý cơ sở để trích xuất dữ liệu camera chi tiết.',
+  ],
+  FACILITY_DAMAGE: [
+    'Đã thay mới bóng đèn chiếu sáng trước ô kho, thử bật/tắt hoạt động tốt.',
+    'Đã tra dầu mỡ bôi trơn ray cửa cuốn và chỉnh lại chốt khóa, đóng mở trơn tru.',
+    'Đã kiểm tra và xử lý tạm thời chống thấm; đã lên lịch bảo trì mái trần vào ngày mai.',
+    'Đã khảo sát hỏng hóc nặng tại cửa cuốn/motor, đã chuyển thông tin cho đội bảo trì kỹ thuật (MAINTENANCE) xử lý.',
+  ],
+  CLEANING: [
+    'Đã thu gom toàn bộ rác thải, thùng carton trước cửa ô và lau sạch hành lang.',
+    'Đã lau khô và khử khuẩn vệt nước tràn tại lối đi, trả lại mặt bằng sạch sẽ, khô ráo.',
+    'Đã quét dọn và hút bụi khu vực bốc xếp đồ quanh ô kho.',
+  ],
+  OTHER: [
+    'Đã giải thích chi tiết quy định và cước phí thuê kho cho khách hàng qua điện thoại / trực tiếp.',
+    'Đã hướng dẫn khách hàng thủ tục chuyển đổi ô kho và đặt lịch hỗ trợ.',
+    'Đã tiếp nhận yêu cầu và xử lý thỏa đáng cho khách hàng.',
+  ],
 };
 
 const SUPPORT_RESOLUTION_PRESETS = [
@@ -674,7 +705,19 @@ export default function StaffTaskDetailPage() {
   const [resolutionNote, setResolutionNote] = useState('');
   const [inspectionImages, setInspectionImages] = useState([]); // BR-126
   const [preliminaryCause, setPreliminaryCause] = useState('');
+  const [securityLockStatus, setSecurityLockStatus] = useState('INTACT');
+  const [securityImages, setSecurityImages] = useState([]);
+  const [repairStatus, setRepairStatus] = useState('FIXED');
+  const [repairImages, setRepairImages] = useState([]);
+  const [cleaningImages, setCleaningImages] = useState([]);
   const [confirmSupportOpen, setConfirmSupportOpen] = useState(false);
+  const [editResolutionOpen, setEditResolutionOpen] = useState(false);
+  const [editResolutionNote, setEditResolutionNote] = useState('');
+  const [editResolutionImages, setEditResolutionImages] = useState([]);
+  const [updatingResolution, setUpdatingResolution] = useState(false);
+  const [reopenSupportOpen, setReopenSupportOpen] = useState(false);
+  const [reopenSupportReason, setReopenSupportReason] = useState('');
+  const [reopeningSupport, setReopeningSupport] = useState(false);
   const [pinResetting, setPinResetting] = useState(false);
   const [extendDueDate, setExtendDueDate] = useState(() => {
     const d = new Date();
@@ -1059,13 +1102,29 @@ export default function StaffTaskDetailPage() {
   const isClaimInspection = isSupport && Boolean(claim);
   const canSubmitSupport =
     resolutionNote.trim().length >= (isClaimInspection ? 10 : 1) && resolutionNote.trim().length <= NOTES_MAX && !submitting
-    && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause)));
+    && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause)))
+    && (task?.issueType !== 'SECURITY' || (Boolean(securityLockStatus) && securityImages.length > 0))
+    && (task?.issueType !== 'FACILITY_DAMAGE' || Boolean(repairStatus))
+    && (task?.issueType !== 'CLEANING' || cleaningImages.length > 0);
 
   const handleResolveSupportSubmit = () => {
     setSubmitting(true);
+    const resolvedImages = isClaimInspection
+      ? inspectionImages
+      : task.issueType === 'SECURITY'
+      ? securityImages
+      : task.issueType === 'FACILITY_DAMAGE'
+      ? repairImages
+      : task.issueType === 'CLEANING'
+      ? cleaningImages
+      : [];
+
     resolveSupportTask(task.id, userId, {
       resolutionNote: resolutionNote.trim(),
-      ...(isClaimInspection ? { inspectionImages, preliminaryCause } : {}),
+      inspectionImages: resolvedImages,
+      ...(isClaimInspection ? { preliminaryCause } : {}),
+      ...(task.issueType === 'SECURITY' ? { securityLockStatus } : {}),
+      ...(task.issueType === 'FACILITY_DAMAGE' ? { repairStatus } : {}),
     })
       .then(data => {
         setTask(data);
@@ -1087,6 +1146,68 @@ export default function StaffTaskDetailPage() {
       .finally(() => {
         setSubmitting(false);
         setConfirmSupportOpen(false);
+      });
+  };
+
+  const resolvedImagesForPreview = isClaimInspection
+    ? inspectionImages
+    : task?.issueType === 'SECURITY'
+    ? securityImages
+    : task?.issueType === 'FACILITY_DAMAGE'
+    ? repairImages
+    : task?.issueType === 'CLEANING'
+    ? cleaningImages
+    : [];
+
+  const handleUpdateResolutionSubmit = () => {
+    if (!editResolutionNote.trim()) return;
+    setUpdatingResolution(true);
+    updateSupportResolution(task.id, userId, {
+      resolutionNote: editResolutionNote.trim(),
+      inspectionImages: editResolutionImages,
+    })
+      .then(data => {
+        setTask(data);
+        setEditResolutionOpen(false);
+        setToast({
+          type: 'success',
+          message: 'Đã cập nhật lại nội dung phản hồi cho khách hàng thành công!',
+        });
+      })
+      .catch(err => {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || 'Không thể cập nhật phản hồi.',
+        });
+      })
+      .finally(() => {
+        setUpdatingResolution(false);
+      });
+  };
+
+  const handleReopenSupportSubmit = () => {
+    setReopeningSupport(true);
+    reopenSupportTask(task.id, userId, reopenSupportReason.trim())
+      .then(data => {
+        setTask(data);
+        setReopenSupportOpen(false);
+        setJustCompleted(false);
+        if (data.resolutionNote) {
+          setResolutionNote(data.resolutionNote);
+        }
+        setToast({
+          type: 'success',
+          message: `Đã mở lại task #${task.id} thành công! Task quay về trạng thái Đang xử lý (IN_PROGRESS) để bạn thao tác lại.`,
+        });
+      })
+      .catch(err => {
+        setToast({
+          type: 'error',
+          message: err.response?.data?.message || 'Không thể mở lại task hỗ trợ.',
+        });
+      })
+      .finally(() => {
+        setReopeningSupport(false);
       });
   };
 
@@ -1826,11 +1947,16 @@ export default function StaffTaskDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  <div className="flex justify-between sm:justify-start sm:gap-2">
+                  <div className="flex justify-between sm:justify-start sm:gap-2 flex-wrap items-center">
                     <span className="font-bold text-[#92400E]">Phân loại sự cố:</span>
                     <span className="font-black text-[#4B4B4B]">
                       {SUPPORT_ISSUE_LABEL[task.issueType] || task.issueType || 'Hỗ trợ khách hàng'}
                     </span>
+                    {task.subCategory && (
+                      <span className="px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A] text-[10px] font-black">
+                        {task.subCategory}
+                      </span>
+                    )}
                   </div>
                   {task.ticketCreatedAt && (
                     <div className="flex justify-between sm:justify-end sm:gap-2">
@@ -1840,31 +1966,65 @@ export default function StaffTaskDetailPage() {
                   )}
                 </div>
 
-                <div className="rounded-xl bg-white p-3.5 border border-[#FDE68A] text-xs">
-                  <span className="text-[11px] font-black uppercase text-[#B45309] block mb-1">
+                <div className="rounded-xl bg-white p-3.5 border border-[#FDE68A] text-xs flex flex-col gap-2">
+                  <span className="text-[11px] font-black uppercase text-[#B45309]">
                     Nội dung phản ánh từ khách hàng:
                   </span>
                   <p className="font-bold text-[#4B4B4B] whitespace-pre-line leading-relaxed">
                     {task.ticketDescription || task.note || 'Khách hàng yêu cầu kiểm tra và hỗ trợ tại ô kho.'}
                   </p>
+                  {task.ticketEvidenceImages?.length > 0 && (
+                    <div className="mt-1 pt-2 border-t border-[#FDE68A] flex flex-col gap-1.5">
+                      <span className="text-[10px] font-black uppercase text-[#B45309] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">photo_camera</span>
+                        Hình ảnh hiện trường khách gửi:
+                      </span>
+                      <PhotoGrid images={task.ticketEvidenceImages} />
+                    </div>
+                  )}
                 </div>
 
                 {task.resolutionNote && (
-                  <div className="rounded-xl bg-[#D7FFB8]/60 p-3.5 border border-[#58CC02] text-xs">
-                    <div className="flex items-center justify-between mb-1">
+                  <div className="rounded-xl bg-[#D7FFB8]/60 p-3.5 border border-[#58CC02] text-xs flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                       <span className="text-[11px] font-black uppercase text-[#58A700] flex items-center gap-1">
                         <span className="material-symbols-outlined text-[15px]">check_circle</span>
                         Kết quả xử lý đã phản hồi cho khách (PR-S5):
                       </span>
-                      {task.ticketResolvedAt && (
-                        <span className="text-[10px] font-bold text-[#58A700]">
-                          {formatDateTime(task.ticketResolvedAt)}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {task.ticketResolvedAt && (
+                          <span className="text-[10px] font-bold text-[#58A700]">
+                            {formatDateTime(task.ticketResolvedAt)}
+                          </span>
+                        )}
+                        {task.ticketStatus === 'RESOLVED' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditResolutionNote(task.resolutionNote || '');
+                              setEditResolutionImages(task.resolutionImages || []);
+                              setEditResolutionOpen(true);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-white border border-[#58CC02] hover:bg-[#D7FFB8] text-[11px] font-black text-[#2B5300] cursor-pointer flex items-center gap-1 transition-colors shadow-2xs"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">edit</span>
+                            Sửa phản hồi
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <p className="font-bold text-[#2B5300] whitespace-pre-line leading-relaxed">
                       {task.resolutionNote}
                     </p>
+                    {task.resolutionImages?.length > 0 && (
+                      <div className="mt-1 pt-2 border-t border-[#86EFAC] flex flex-col gap-1.5">
+                        <span className="text-[10px] font-black uppercase text-[#15803D] flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[15px]">photo_library</span>
+                          Hình ảnh bằng chứng xử lý từ nhân viên:
+                        </span>
+                        <PhotoGrid images={task.resolutionImages} />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1885,12 +2045,46 @@ export default function StaffTaskDetailPage() {
                     <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
                   )}
 
-                  <Link
-                    to={isManager ? '/manager/tasks' : '/staff'}
-                    className="duo-btn-gray px-5 py-2.5 text-xs self-end"
-                  >
-                    Về bảng công việc
-                  </Link>
+                  {task.ticketStatus === 'RESOLVED' && (
+                    <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <span className="material-symbols-outlined text-[#0284C7] text-[24px]">replay_circle_filled</span>
+                        <div>
+                          <p className="text-xs font-black text-[#0369A1]">
+                            Cần điều chỉnh hoặc thao tác lại toàn bộ task này?
+                          </p>
+                          <p className="text-[11px] font-bold text-[#64748B]">
+                            Phiếu đang ở trạng thái Chờ khách xác nhận (RESOLVED). Bạn có thể thu hồi kết quả và mở lại task để làm lại từ đầu.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReopenSupportReason('');
+                          setReopenSupportOpen(true);
+                        }}
+                        className="duo-btn-blue px-4 py-2 text-xs flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                      >
+                        <span className="material-symbols-outlined text-[17px]">restart_alt</span>
+                        Mở lại nguyên task để làm lại
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    {task.ticketStatus === 'RESOLVED' ? (
+                      <span className="text-[11px] font-bold text-[#AFAFAF]">
+                        * Phiếu hỗ trợ vẫn có thể mở lại cho đến khi khách hàng xác nhận hoặc quá 3 ngày.
+                      </span>
+                    ) : <span />}
+                    <Link
+                      to={isManager ? '/manager/tasks' : '/staff'}
+                      className="duo-btn-gray px-5 py-2.5 text-xs self-end"
+                    >
+                      Về bảng công việc
+                    </Link>
+                  </div>
                 </div>
               ) : task.status === 'OVERDUE' && isManager ? (
                 /* Quản lý cơ sở gia hạn task SUPPORT quá hạn (PR-S4) */
@@ -2005,6 +2199,107 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
+                  {/* Xử lý sự cố AN NINH (SECURITY) */}
+                  {task.issueType === 'SECURITY' && (
+                    <div className="rounded-2xl border-2 border-[#EF4444] bg-[#FEF2F2] p-4 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-black uppercase text-[#B91C1C] flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[18px]">security</span>
+                          Biên bản kiểm tra an ninh hiện trường
+                        </h3>
+                        <span className="duo-badge bg-white text-[#B91C1C] border border-[#FCA5A5] text-[10px]">
+                          Khẩn cấp / An ninh
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-bold text-[#7F1D1D]">
+                        Kiểm tra trực tiếp tại ô kho: xem xét kỹ chốt khóa, tai khóa, tình trạng cửa và đối chiếu với camera giám sát hành lang.
+                      </p>
+
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-[#777777]">Tình trạng chốt khóa / cửa kho *</span>
+                        <select
+                          value={securityLockStatus}
+                          onChange={e => setSecurityLockStatus(e.target.value)}
+                          className="duo-input text-xs bg-white"
+                        >
+                          <option value="">— Chọn kết luận an ninh —</option>
+                          <option value="INTACT">Khóa và niêm phong nguyên vẹn (Không có dấu hiệu cạy phá / đột nhập)</option>
+                          <option value="TAMPERED">Phát hiện dấu hiệu bất thường / Cạy phá / Tác động ngoại lực</option>
+                        </select>
+                      </label>
+
+                      <HandoverPhotoPicker
+                        images={securityImages}
+                        onChange={setSecurityImages}
+                        label="Ảnh bằng chứng kiểm tra an ninh (Bắt buộc ít nhất 1 ảnh)"
+                        mockLabel={`Ảnh kiểm tra an ninh ô ${task.storageUnitId || ''}`}
+                      />
+                    </div>
+                  )}
+
+                  {/* Xử lý sự cố HƯ HỎNG HẠ TẦNG (FACILITY_DAMAGE) */}
+                  {task.issueType === 'FACILITY_DAMAGE' && (
+                    <div className="rounded-2xl border-2 border-[#F59E0B] bg-[#FFFBEB] p-4 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-black uppercase text-[#D97706] flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[18px]">handyman</span>
+                          Khắc phục sự cố cơ sở vật chất &amp; thiết bị
+                        </h3>
+                        <span className="duo-badge bg-white text-[#D97706] border border-[#FDE68A] text-[10px]">
+                          Bảo trì hạ tầng
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-bold text-[#92400E]">
+                        Kiểm tra thực tế hỏng hóc thiết bị tại hiện trường (cửa cuốn, đèn chiếu sáng, ổ điện, ray trượt, vách ngăn).
+                      </p>
+
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] font-black uppercase text-[#777777]">Biện pháp xử lý *</span>
+                        <select
+                          value={repairStatus}
+                          onChange={e => setRepairStatus(e.target.value)}
+                          className="duo-input text-xs bg-white"
+                        >
+                          <option value="">— Chọn biện pháp xử lý —</option>
+                          <option value="FIXED">Đã khắc phục / sửa chữa xong tại chỗ</option>
+                          <option value="ESCALATED_MAINTENANCE">Sự cố phức tạp, đã lập phiếu yêu cầu kỹ thuật bảo trì chuyên sâu</option>
+                        </select>
+                      </label>
+
+                      <HandoverPhotoPicker
+                        images={repairImages}
+                        onChange={setRepairImages}
+                        label="Ảnh hiện trạng hoặc kết quả sau khi khắc phục"
+                        mockLabel={`Ảnh bảo trì ô ${task.storageUnitId || ''}`}
+                      />
+                    </div>
+                  )}
+
+                  {/* Xử lý sự cố VỆ SINH (CLEANING) */}
+                  {task.issueType === 'CLEANING' && (
+                    <div className="rounded-2xl border-2 border-[#10B981] bg-[#ECFDF5] p-4 flex flex-col gap-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-black uppercase text-[#059669] flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[18px]">cleaning_services</span>
+                          Xử lý vệ sinh kho bãi &amp; môi trường
+                        </h3>
+                        <span className="duo-badge bg-white text-[#059669] border border-[#A7F3D0] text-[10px]">
+                          Vệ sinh cơ sở
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-bold text-[#065F46]">
+                        Nhân viên dọn dẹp rác thải, xử lý ẩm mốc, khử mùi hoặc lau dọn sàn/vách ngăn theo phản ánh của khách hàng.
+                      </p>
+
+                      <HandoverPhotoPicker
+                        images={cleaningImages}
+                        onChange={setCleaningImages}
+                        label="Ảnh bằng chứng khu vực sau khi đã được dọn sạch sẽ (Bắt buộc ít nhất 1 ảnh)"
+                        mockLabel={`Ảnh nghiệm thu vệ sinh ô ${task.storageUnitId || ''}`}
+                      />
+                    </div>
+                  )}
+
                   {/* BR-126: hồ sơ bồi thường khách gửi — nhân viên kiểm tra hiện trường */}
                   {isClaimInspection && (
                     <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#FFB8B8] bg-[#FFF5F5] p-4">
@@ -2024,7 +2319,7 @@ export default function StaffTaskDetailPage() {
                         images={inspectionImages}
                         onChange={setInspectionImages}
                         label="Ảnh kiểm tra hiện trường"
-                        mockLabel={`Hiện trường ô ${task.storageUnitId || ''} khi kiểm tra`}
+                        mockLabel={`Hiện trường ô ${task.storageUnitId || ''}`}
                       />
                       <label className="flex flex-col gap-1.5">
                         <span className="text-[11px] font-black uppercase text-[#777777]">Nguyên nhân sơ bộ *</span>
@@ -2054,7 +2349,7 @@ export default function StaffTaskDetailPage() {
 
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[10px] font-black uppercase text-[#AFAFAF] mr-1">Mẫu phản hồi nhanh:</span>
-                      {SUPPORT_RESOLUTION_PRESETS.map((preset, idx) => (
+                      {((task?.issueType && SUPPORT_PRESETS_BY_TYPE[task.issueType]) || SUPPORT_RESOLUTION_PRESETS).map((preset, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -3027,20 +3322,251 @@ export default function StaffTaskDetailPage() {
         onCancel={() => setConfirmRefundOpen(false)}
       />
 
-      {/* Dialog xác nhận hoàn tất xử lý Hỗ trợ KH (UC-27) */}
-      <TaskConfirmDialog
-        open={confirmSupportOpen}
-        icon="support_agent"
-        tone="green"
-        title={isClaimInspection ? 'Lưu biên bản kiểm tra hiện trường?' : 'Xác nhận đã xử lý xong yêu cầu hỗ trợ?'}
-        message={isClaimInspection
-          ? `Task #${task.id} hoàn thành, hồ sơ ${claim?.claimCode || ''} chuyển sang Chờ quản lý thẩm định kèm ${inspectionImages.length} ảnh. Phiếu hỗ trợ vẫn đang xử lý.`
-          : `Task hỗ trợ #${task.id} sẽ chuyển sang HOÀN THÀNH và phiếu #${task.ticketCode || ''} sẽ chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Khách hàng sẽ nhận được phản hồi: "${resolutionNote.trim()}".`}
-        confirmLabel="Xác nhận hoàn tất"
-        submitting={submitting}
-        onConfirm={handleResolveSupportSubmit}
-        onCancel={() => setConfirmSupportOpen(false)}
-      />
+      {/* ==================== MODAL XÁC NHẬN LẦN 2 CHO STAFF (DOUBLE CONFIRMATION) ==================== */}
+      {confirmSupportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="duo-card bg-white w-full max-w-[560px] max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] text-[#58A700] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">verified</span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#4B4B4B]">
+                  Xác nhận lần 2: Kiểm tra kết quả xử lý hỗ trợ
+                </h3>
+                <p className="text-[11px] font-bold text-[#AFAFAF]">
+                  Rà soát kỹ trước khi hệ thống gửi phản hồi chính thức cho khách hàng
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2.5 rounded-2xl bg-[#F7F7F7] border border-[#E5E5E5] p-4 text-xs font-bold text-[#4B4B4B]">
+              <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                <span className="text-[#777777]">Phiếu yêu cầu:</span>
+                <span className="font-black text-[#1CB0F6]">#{task.ticketCode || task.supportRequestId} · Ô {task.storageUnitId}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                <span className="text-[#777777]">Loại sự cố:</span>
+                <span className="font-black text-[#4B4B4B]">
+                  {SUPPORT_ISSUE_LABEL[task.issueType] || task.issueType}
+                  {task.subCategory ? ` — ${task.subCategory}` : ''}
+                </span>
+              </div>
+
+              {task.issueType === 'SECURITY' && (
+                <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                  <span className="text-[#777777]">Kết luận an ninh:</span>
+                  <span className={`px-2 py-0.5 rounded-md font-black text-[11px] ${
+                    securityLockStatus === 'TAMPERED'
+                      ? 'bg-[#FFDFDF] text-[#FF4B4B]'
+                      : 'bg-[#D7FFB8] text-[#58A700]'
+                  }`}>
+                    {securityLockStatus === 'TAMPERED' ? 'CÓ DẤU VẾT BẤT THƯỜNG / CẠY PHÁ' : 'Khóa & Niêm phong nguyên vẹn'}
+                  </span>
+                </div>
+              )}
+
+              {task.issueType === 'FACILITY_DAMAGE' && (
+                <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                  <span className="text-[#777777]">Biện pháp xử lý:</span>
+                  <span className="font-black text-[#E58800]">
+                    {repairStatus === 'ESCALATED_MAINTENANCE'
+                      ? 'Chuyển sang quy trình Bảo trì ô kho (Task MAINTENANCE)'
+                      : 'Đã khắc phục / sửa chữa xong tại chỗ'}
+                  </span>
+                </div>
+              )}
+
+              {isClaimInspection && preliminaryCause && (
+                <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                  <span className="text-[#777777]">Nguyên nhân sơ bộ:</span>
+                  <span className="font-black text-[#1CB0F6]">{preliminaryCause}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                <span className="text-[#777777]">Bằng chứng ảnh đính kèm:</span>
+                <span className="font-black text-[#4B4B4B]">{resolvedImagesForPreview.length} hình ảnh</span>
+              </div>
+
+              {resolvedImagesForPreview.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {resolvedImagesForPreview.slice(0, 4).map((url, i) => (
+                    <img key={i} src={url} alt={`Ảnh ${i + 1}`} className="w-12 h-12 rounded-lg object-cover border border-[#E5E5E5]" />
+                  ))}
+                  {resolvedImagesForPreview.length > 4 && (
+                    <div className="w-12 h-12 rounded-lg bg-[#E5E5E5] text-[#777777] font-black flex items-center justify-center text-xs">
+                      +{resolvedImagesForPreview.length - 4}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-black uppercase text-[#777777]">
+                Nội dung phản hồi gửi khách hàng:
+              </span>
+              <div className="p-3.5 rounded-xl bg-[#F0F9FF] border border-[#BAE6FD] text-xs font-bold text-[#0369A1] whitespace-pre-line leading-relaxed max-h-36 overflow-y-auto">
+                {resolutionNote.trim()}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setConfirmSupportOpen(false)}
+                className="duo-btn-gray px-4 py-2.5 text-xs flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[17px]">arrow_back</span>
+                Quay lại chỉnh sửa
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleResolveSupportSubmit}
+                className="duo-btn-green px-5 py-2.5 text-xs flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[18px]">send</span>
+                {submitting ? 'Đang gửi phản hồi...' : 'Xác nhận & Gửi phản hồi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL CHỈNH SỬA PHẢN HỒI KHI TICKET ĐANG RESOLVED ==================== */}
+      {editResolutionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="duo-card bg-white w-full max-w-[560px] max-h-[90vh] overflow-y-auto p-6 flex flex-col gap-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b-2 border-[#E5E5E5] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-[#1CB0F6] text-[24px]">edit_note</span>
+                <h3 className="text-base font-black text-[#4B4B4B]">Chỉnh sửa nội dung phản hồi</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditResolutionOpen(false)}
+                className="text-[#AFAFAF] hover:text-[#4B4B4B] font-black text-lg p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs font-bold text-[#777777]">
+              Phiếu đang ở trạng thái <b>Chờ khách xác nhận (RESOLVED)</b>. Bạn có thể đính chính lại câu chữ hoặc cập nhật ảnh nếu trước đó gõ nhầm.
+            </p>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Nội dung kết quả xử lý *</span>
+              <textarea
+                rows={4}
+                maxLength={NOTES_MAX}
+                value={editResolutionNote}
+                onChange={e => setEditResolutionNote(e.target.value)}
+                placeholder="Nhập nội dung đã chỉnh sửa..."
+                className="duo-input resize-none text-xs"
+              />
+              <span className="text-[11px] font-bold text-[#AFAFAF] self-end">
+                {editResolutionNote.length}/{NOTES_MAX} ký tự
+              </span>
+            </label>
+
+            <HandoverPhotoPicker
+              images={editResolutionImages}
+              onChange={setEditResolutionImages}
+              label="Ảnh bằng chứng xử lý (tùy chọn cập nhật)"
+              mockLabel={`Ảnh nghiệm thu cập nhật ô ${task.storageUnitId || ''}`}
+            />
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                disabled={updatingResolution}
+                onClick={() => setEditResolutionOpen(false)}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={updatingResolution || !editResolutionNote.trim()}
+                onClick={handleUpdateResolutionSubmit}
+                className="duo-btn-blue px-5 py-2.5 text-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[17px]">save</span>
+                {updatingResolution ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL XÁC NHẬN MỞ LẠI NGUYÊN TASK CHO STAFF ==================== */}
+      {reopenSupportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="duo-card bg-white w-full max-w-[500px] p-6 flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#FFE8CC] border-2 border-[#FF9600] text-[#E58800] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">restart_alt</span>
+              </div>
+              <div>
+                <h3 className="text-base font-black text-[#4B4B4B]">
+                  Thu hồi kết quả &amp; Mở lại task hỗ trợ?
+                </h3>
+                <p className="text-[11px] font-bold text-[#AFAFAF]">
+                  Cho phép nhân viên thao tác và phản hồi lại từ đầu
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-[#FFF8EE] border border-[#FFD8A8] p-3.5 text-xs font-bold text-[#92400E] flex flex-col gap-1.5">
+              <p className="flex items-center gap-1.5 font-black text-[#D97706]">
+                <span className="material-symbols-outlined text-[17px]">warning</span>
+                Các thay đổi sau khi mở lại:
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-[11px]">
+                <li>Task #{task.id} chuyển từ HOÀN THÀNH về <b>ĐANG XỬ LÝ (IN_PROGRESS)</b>.</li>
+                <li>Phiếu hỗ trợ #{task.ticketCode || ''} chuyển từ RESOLVED về <b>ĐANG XỬ LÝ</b>.</li>
+                <li>Bạn có thể chọn lại kết luận an ninh/bảo trì, chụp lại ảnh hoặc cấp lại PIN.</li>
+              </ul>
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Lý do mở lại task (Tùy chọn)</span>
+              <input
+                type="text"
+                maxLength={200}
+                value={reopenSupportReason}
+                onChange={e => setReopenSupportReason(e.target.value)}
+                placeholder="VD: Cần bổ sung kiểm tra lại khóa, chọn nhầm kết luận..."
+                className="duo-input text-xs"
+              />
+            </label>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t-2 border-[#E5E5E5]">
+              <button
+                type="button"
+                disabled={reopeningSupport}
+                onClick={() => setReopenSupportOpen(false)}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={reopeningSupport}
+                onClick={handleReopenSupportSubmit}
+                className="duo-btn-orange px-5 py-2.5 text-xs flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-[17px]">replay</span>
+                {reopeningSupport ? 'Đang mở lại...' : 'Xác nhận mở lại task'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TaskToast toast={toast} onClose={closeToast} />
     </div>

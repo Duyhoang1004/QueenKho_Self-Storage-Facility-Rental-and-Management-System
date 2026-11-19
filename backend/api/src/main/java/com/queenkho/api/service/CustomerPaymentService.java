@@ -272,7 +272,7 @@ public class CustomerPaymentService {
     private CustomerPaymentsResponse.OverdueItem toOverdueItem(RentalContract c) {
         var late = lateFeeService.calculateLateFee(c);
         String facilityName = c.getStorageUnit() != null && c.getStorageUnit().getFacility() != null
-                ? c.getStorageUnit().getFacility().getName() : null;
+            ? c.getStorageUnit().getFacility().getName() : null;
         return new CustomerPaymentsResponse.OverdueItem(
                 c.getId(),
                 c.getContractCode(),

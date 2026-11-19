@@ -152,7 +152,6 @@ function PaymentReceiptModal({ transaction, onClose }) {
   const overstayDeduction = Number(transaction.overstayDeduction || 0)
   const breakFeeDeduction = Number(transaction.breakFeeDeduction || 0)
   const refundDescription = transaction.refundDescription || 'Hoàn tất thủ tục quyết toán thanh lý hợp đồng & hoàn trả tiền cọc'
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="duo-card max-w-lg w-full bg-white overflow-hidden shadow-2xl border-2 border-[#E5E5E5] flex flex-col max-h-[90vh]">

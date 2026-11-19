@@ -219,9 +219,66 @@ function ClaimDetail({ claimId }) {
         </Card>
 
         <Card icon="verified_user" title="Bảo hiểm & trần bồi thường">
-          <Row label="Gói" value={`${claim.insurancePlanLabel}${claim.insured ? ' (có bảo hiểm)' : ' (cơ sở tự chịu)'}`} />
-          <Row label="Giá trị khai báo khi đặt" value={claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : 'Không khai báo'} />
-          <Row label="Trần bồi thường hàng" value={formatVND(claim.coverageCap)} />
+          <Row label="Gói bảo hiểm" value={`${claim.insurancePlanLabel}${claim.insured ? ' (có bảo hiểm đối tác)' : ' (cơ sở tự bảo trợ)'}`} />
+          <Row label="Hạn mức trần gói" value={formatVND(claim.planCoverageLimit)} />
+          <Row
+            label="Giá trị khai báo khi ký HĐ"
+            value={
+              claim.declaredGoodsValue
+                ? formatVND(claim.declaredGoodsValue)
+                : <span className="text-[#E58800]">Không khai báo (áp trần mặc định 5.000.000đ)</span>
+            }
+          />
+          <Row
+            label="Trần bồi thường áp dụng"
+            value={
+              <strong className="text-[#1CB0F6] text-sm">
+                {formatVND(claim.coverageCap)}
+              </strong>
+            }
+          />
+
+          <div className="rounded-xl bg-[#F0F8FF] border border-[#BAE3FF] p-3 text-xs flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 font-black text-[#006699]">
+              <span className="material-symbols-outlined text-[18px]">calculate</span>
+              Công thức xác định trần bồi thường hàng:
+            </div>
+            <div className="text-[#4B4B4B] font-mono text-[11px] bg-white rounded-lg p-2 border border-[#E0F0FF] leading-relaxed">
+              Trần = min(Giá trị khai báo, Hạn mức gói bảo hiểm)
+              <br />
+              = min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ (mức sàn không khai báo)'}, {formatVND(claim.planCoverageLimit)})
+              <br />
+              = <strong className="text-[#1CB0F6]">{formatVND(claim.coverageCap)}</strong>
+            </div>
+
+            {!claim.declaredGoodsValue && (
+              <div className="flex items-start gap-1.5 text-[11px] font-semibold text-[#D96B00] bg-[#FFF8E6] p-2 rounded-lg border border-[#FFE0A3]">
+                <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">warning</span>
+                <span>
+                  <strong>Không khai báo giá trị tài sản khi ký HĐ:</strong> Áp dụng mức trần bảo vệ sàn mặc định <strong>5.000.000đ</strong> (theo Điều khoản HĐ D-14 / Quy tắc BR-125) để phòng ngừa rủi ro gian lận & trục lợi.
+                </span>
+              </div>
+            )}
+
+            {claim.declaredGoodsValue && Number(claim.declaredGoodsValue) > Number(claim.planCoverageLimit || 0) && (
+              <div className="flex items-start gap-1.5 text-[11px] font-semibold text-[#D96B00] bg-[#FFF8E6] p-2 rounded-lg border border-[#FFE0A3]">
+                <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">warning</span>
+                <span>
+                  <strong>Giá trị khai báo ({formatVND(claim.declaredGoodsValue)}) vượt trần gói {claim.insurancePlanLabel} ({formatVND(claim.planCoverageLimit)}):</strong> Mức bồi thường hàng bị khống chế tối đa ở trần gói <strong>{formatVND(claim.coverageCap)}</strong>. Phần giá trị chênh lệch do khách tự chịu trách nhiệm vì không đăng ký gói bảo hiểm cao hơn khi ký HĐ.
+                </span>
+              </div>
+            )}
+
+            {claim.insured && (
+              <div className="flex items-start gap-1.5 text-[11px] font-semibold text-[#008040] bg-[#F0FFF4] p-2 rounded-lg border border-[#B7F4C8]">
+                <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#58A700]">verified_user</span>
+                <span>
+                  <strong>Gói có đối tác bảo hiểm liên kết:</strong> Cơ sở chi trả trước cho khách hàng, sau đó hệ thống tự động lập hồ sơ đòi lại tiền hàng từ đơn vị bảo hiểm.
+                </span>
+              </div>
+            )}
+          </div>
+
           <Row label="Giá thuê tháng" value={formatVND(claim.monthlyPrice)} />
           <div className="border-t-2 border-[#F0F0F0] pt-3 flex flex-col gap-1.5">
             <span className="text-[11px] font-black uppercase text-[#777777] flex items-center gap-1">
@@ -289,17 +346,44 @@ function ClaimDetail({ claimId }) {
 }
 
 function DecisionSummary({ claim }) {
+  const goodsLoss = Number(claim.assessedValue || 0) * (Number(claim.damagePercent ?? 100) / 100)
+  const isCapped = goodsLoss > Number(claim.coverageCap || 0)
+
   return (
     <Card icon="gavel" title="Kết luận thẩm định">
       <Row label="Bên chịu lỗi" value={LIABLE_LABELS[claim.liableParty]} />
-      <Row label="Giá trị thẩm định" value={`${formatVND(claim.assessedValue)} × ${claim.damagePercent ?? 100}%`} />
-      <Row label="Tiền hàng (≤ trần)" value={formatVND(claim.goodsCompensation)} />
+      <Row label="Giá trị thẩm định" value={`${formatVND(claim.assessedValue)} × ${claim.damagePercent ?? 100}% = ${formatVND(goodsLoss)}`} />
+      <Row
+        label="Trần bồi thường áp dụng"
+        value={
+          <span className="text-right">
+            <strong className="text-[#1CB0F6]">{formatVND(claim.coverageCap)}</strong>
+            <span className="text-[10px] text-[#777777] block font-normal">
+              min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
+            </span>
+          </span>
+        }
+      />
+      <Row label="Tiền hàng (≤ trần)" value={<strong className="text-[#4B4B4B]">{formatVND(claim.goodsCompensation)}</strong>} />
+      {isCapped && claim.liableParty === 'FACILITY' && (
+        <div className="p-2.5 rounded-xl bg-[#FFF8E6] border border-[#FFE0A3] text-[#D96B00] text-[11px] font-semibold leading-relaxed flex items-start gap-1.5">
+          <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">info</span>
+          <div>
+            <strong>Khống chế trần bồi thường:</strong> Thiệt hại hàng thực tế ({formatVND(goodsLoss)}) vượt quá trần bồi thường hợp đồng ({formatVND(claim.coverageCap)}) nên được chốt ở mức trần <strong>{formatVND(claim.goodsCompensation)}</strong>.
+          </div>
+        </div>
+      )}
       <Row label="Phạt vi phạm" value={formatVND(claim.penaltyAmount)} />
       <Row label={`Hoàn tiền thuê (${claim.unusableDays ?? 0} ngày)`} value={formatVND(claim.rentRefundAmount)} />
-      <Row label="Tổng bồi thường" value={<strong className="text-[#58A700]">{formatVND(claim.totalCompensation)}</strong>} />
+      <Row label="Tổng bồi thường" value={<strong className="text-[#58A700] text-sm">{formatVND(claim.totalCompensation)}</strong>} />
       <Row label="Hướng xử lý" value={claim.resolution === 'TERMINATE' ? 'Chấm dứt hợp đồng không phí phá HĐ' : 'Tiếp tục thuê (có thể chuyển ô cùng loại)'} />
       <Row label="Người chốt" value={`${claim.decidedByName || '—'} · ${formatDateTime(claim.decidedAt)}`} />
-      {claim.decisionNote && <p className="text-xs font-bold text-[#777777] bg-[#F7F7F7] rounded-xl p-3">{claim.decisionNote}</p>}
+      {claim.decisionNote && (
+        <div className="bg-[#F7F7F7] rounded-xl p-3 border border-[#EAEAEA] flex flex-col gap-1 text-xs">
+          <span className="text-[10px] font-black uppercase text-[#777777]">Ghi chú kết luận gửi khách:</span>
+          <p className="font-bold text-[#4B4B4B] whitespace-pre-line">{claim.decisionNote}</p>
+        </div>
+      )}
     </Card>
   )
 }
@@ -383,14 +467,60 @@ function DecisionForm({ claim, onDone }) {
           placeholder="VD: Ảnh nhận kho cho thấy trần ô khô ráo; cảm biến ghi nhận độ ẩm 88% ngày 03/11 do hỏng máy hút ẩm → lỗi cơ sở." />
       </label>
       {quote && (
-        <div className="rounded-2xl bg-[#F7F7F7] p-4 flex flex-col gap-1.5">
-          <Row label="Thiệt hại hàng" value={formatVND(quote.goodsLoss)} />
-          <Row label="Trần bồi thường" value={formatVND(quote.coverageCap)} />
-          <Row label="Tiền hàng được bồi thường" value={formatVND(quote.goodsCompensation)} />
-          <Row label="Phạt vi phạm" value={formatVND(quote.penaltyAmount)} />
-          <Row label="Hoàn tiền thuê" value={formatVND(quote.rentRefundAmount)} />
-          <Row label="Tổng" value={<strong className="text-[#58A700]">{formatVND(quote.totalCompensation)}</strong>} />
-          <p className="text-[11px] font-bold text-[#777777]">{quote.explanation}{quote.insuranceClaimable ? ' Sau khi chi trả, hệ thống tự gửi hồ sơ đòi lại tiền hàng từ bảo hiểm.' : ''}</p>
+        <div className="rounded-2xl bg-[#F7F7F7] p-4 flex flex-col gap-2.5 border border-[#E5E5E5]">
+          <div className="flex items-center justify-between pb-2 border-b border-[#EAEAEA]">
+            <span className="text-xs font-black uppercase text-[#4B4B4B] flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px] text-[#58A700]">receipt_long</span>
+              Bảng tính chi tiết bồi thường
+            </span>
+            <span className="text-[11px] font-bold text-[#777777]">
+              Bên chịu lỗi: <strong className="text-[#4B4B4B]">{LIABLE_LABELS[form.liableParty]}</strong>
+            </span>
+          </div>
+
+          <Row label="Thiệt hại hàng (thẩm định × % hư hại)" value={formatVND(quote.goodsLoss)} />
+          <Row
+            label="Trần bồi thường áp dụng"
+            value={
+              <span className="text-right">
+                <strong className="text-[#1CB0F6]">{formatVND(quote.coverageCap)}</strong>
+                <span className="text-[10px] text-[#888888] block font-normal">
+                  min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
+                </span>
+              </span>
+            }
+          />
+
+          {Number(quote.goodsLoss) > Number(quote.coverageCap) && form.liableParty === 'FACILITY' && (
+            <div className="p-2.5 rounded-xl bg-[#FFF8E6] border border-[#FFE0A3] text-[#D96B00] text-[11px] font-semibold leading-relaxed flex items-start gap-1.5">
+              <span className="material-symbols-outlined text-[18px] shrink-0 text-[#E58800]">info</span>
+              <div>
+                <strong>Khống chế trần bồi thường:</strong> Thiệt hại hàng ({formatVND(quote.goodsLoss)}) vượt trần bồi thường ({formatVND(quote.coverageCap)}). Mức bồi thường tiền hàng thực tế được chốt ở mức trần hợp đồng: <strong>{formatVND(quote.goodsCompensation)}</strong>.
+              </div>
+            </div>
+          )}
+
+          <Row label="Tiền hàng được bồi thường (≤ trần)" value={<strong className="text-[#4B4B4B]">{formatVND(quote.goodsCompensation)}</strong>} />
+          <Row label="Phạt vi phạm hợp đồng (1 tháng tiền thuê)" value={formatVND(quote.penaltyAmount)} />
+          <Row label={`Hoàn tiền thuê (${form.unusableDays || 0} ngày ô gián đoạn)`} value={formatVND(quote.rentRefundAmount)} />
+
+          <div className="pt-2 border-t-2 border-[#E5E5E5] flex justify-between items-center">
+            <span className="text-sm font-black uppercase text-[#4B4B4B]">Tổng cơ sở bồi thường</span>
+            <span className="text-base font-black text-[#58A700]">{formatVND(quote.totalCompensation)}</span>
+          </div>
+
+          <div className="mt-1 p-3 rounded-xl bg-[#F0F8FF] border border-[#BAE3FF] text-[11px] text-[#006699] flex flex-col gap-1">
+            <div className="flex items-center gap-1 font-black text-[#004B73]">
+              <span className="material-symbols-outlined text-[16px]">balance</span>
+              Giải trình căn cứ chốt bồi thường:
+            </div>
+            <p className="font-bold text-[#4B4B4B] leading-relaxed">{quote.explanation}</p>
+            {quote.insuranceClaimable && (
+              <p className="text-[10px] text-[#008040] font-bold mt-0.5">
+                🛡️ Sau khi cơ sở chi trả {formatVND(quote.totalCompensation)}, hệ thống tự động lập hồ sơ đòi lại {formatVND(quote.goodsCompensation)} từ công ty bảo hiểm đối tác.
+              </p>
+            )}
+          </div>
         </div>
       )}
       {error && <p className="text-xs font-bold text-[#FF4B4B]">{error}</p>}

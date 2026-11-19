@@ -197,6 +197,8 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-out", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-support", "TASK_EXECUTE");
+        rule("PUT", "/api/v1/staff-tasks/{id}/update-support-resolution", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/reopen-support", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/reset-pin", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/complete-maintenance", "TASK_MAINTENANCE");
         rule("GET", "/api/v1/staff-tasks", "TASK_BOARD");

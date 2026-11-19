@@ -52,6 +52,7 @@ import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -421,6 +422,7 @@ public class StaffTaskService {
                 .supportRequestId(task.getSupportRequestId())
                 .ticketCode(sr != null ? sr.getTicketCode() : null)
                 .issueType(sr != null ? sr.getIssueType() : null)
+                .subCategory(sr != null ? sr.getSubCategory() : null)
                 .urgent(urgent)
                 .ticketStatus(sr != null ? sr.getStatus() : null)
                 .ticketDescription(sr != null ? sr.getDescription() : null)
@@ -964,11 +966,28 @@ public class StaffTaskService {
 
         // Cập nhật note của task
         StaffTask updatedTask = staffTaskRepository.findById(taskId).orElseThrow();
-        String appendedNote = oldNote + " | [Kết quả xử lý: " + resolutionNote + "]";
+        StringBuilder fullResolution = new StringBuilder(resolutionNote);
+        if (request != null && request.getSecurityLockStatus() != null && !request.getSecurityLockStatus().isBlank()) {
+            fullResolution.append(" [Khóa: ")
+                    .append("TAMPERED".equalsIgnoreCase(request.getSecurityLockStatus()) ? "Có dấu vết can thiệp" : "Nguyên vẹn")
+                    .append("]");
+        }
+        if (request != null && request.getRepairStatus() != null && "ESCALATED_MAINTENANCE".equalsIgnoreCase(request.getRepairStatus())) {
+            fullResolution.append(" [Chuyển bảo trì chuyên sâu]");
+        }
+
+        String appendedNote = oldNote + " | [Kết quả xử lý: " + fullResolution + "]";
         if (appendedNote.length() > 1000) {
             appendedNote = appendedNote.substring(0, 997) + "...";
         }
         updatedTask.setNote(appendedNote);
+        if (request != null && request.getInspectionImages() != null && !request.getInspectionImages().isEmpty()) {
+            List<String> validImgs = request.getInspectionImages().stream()
+                    .filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty()).toList();
+            if (!validImgs.isEmpty()) {
+                updatedTask.setEvidenceImageUrl(String.join("\n|||\n", validImgs));
+            }
+        }
         staffTaskRepository.save(updatedTask);
 
         // Cập nhật ticket sang RESOLVED
@@ -985,7 +1004,7 @@ public class StaffTaskService {
                     .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND",
                             "Không tìm thấy ticket hỗ trợ liên kết"));
             sr.setStatus("RESOLVED");
-            sr.setResolutionNote(resolutionNote);
+            sr.setResolutionNote(fullResolution.toString());
             sr.setResolvedAt(now);
             supportRequestRepository.save(sr);
             ticketCode = sr.getTicketCode();
@@ -1005,6 +1024,161 @@ public class StaffTaskService {
                 "[SUPPORT_RESOLVE] Nhân viên " + staff.getFullName() + " hoàn tất xử lý ticket " + ticketCode + ": " + resolutionNote,
                 "support_requests",
                 String.valueOf(supportRequestId != null ? supportRequestId : taskId)
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * PR-S5: Chỉnh sửa lại kết quả xử lý hỗ trợ khi ticket đang ở trạng thái RESOLVED (Chờ khách xác nhận).
+     * Cho phép Staff / Quản lý cơ sở sửa lại nội dung hoặc cập nhật ảnh nếu phát hiện nhầm lẫn.
+     */
+    @Transactional
+    public StaffTaskDetailResponse updateSupportResolution(Integer taskId, Integer userId, ResolveSupportTaskRequest request) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy người dùng"));
+        String roleName = user.getRole() != null ? user.getRole().getName() : "";
+        if (!"STAFF".equals(roleName) && !"FACILITY_MANAGER".equals(roleName)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                    "Chỉ nhân viên hoặc quản lý cơ sở mới được cập nhật phản hồi");
+        }
+
+        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Task này không phải task hỗ trợ khách hàng (SUPPORT)");
+        }
+
+        String resolutionNote = (request != null && request.getResolutionNote() != null)
+                ? request.getResolutionNote().trim()
+                : "";
+        if (resolutionNote.isEmpty()) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Bắt buộc nhập nội dung kết quả xử lý");
+        }
+        if (resolutionNote.length() > 1000) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Nội dung kết quả xử lý tối đa 1000 ký tự");
+        }
+
+        Integer supportRequestId = task.getSupportRequestId();
+        if (supportRequestId == null) {
+            throw new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND", "Không tìm thấy ticket liên kết");
+        }
+
+        SupportRequest sr = supportRequestRepository.findById(supportRequestId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND", "Không tìm thấy ticket hỗ trợ liên kết"));
+
+        if (!"RESOLVED".equalsIgnoreCase(sr.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TICKET_NOT_RESOLVED",
+                    "Chỉ được chỉnh sửa phản hồi khi yêu cầu hỗ trợ đang ở trạng thái Chờ khách xác nhận (RESOLVED)");
+        }
+
+        StringBuilder fullResolution = new StringBuilder(resolutionNote);
+        if (request != null && request.getSecurityLockStatus() != null && !request.getSecurityLockStatus().isBlank()) {
+            fullResolution.append(" [Khóa: ")
+                    .append("TAMPERED".equalsIgnoreCase(request.getSecurityLockStatus()) ? "Có dấu vết can thiệp" : "Nguyên vẹn")
+                    .append("]");
+        }
+        if (request != null && request.getRepairStatus() != null && "ESCALATED_MAINTENANCE".equalsIgnoreCase(request.getRepairStatus())) {
+            fullResolution.append(" [Chuyển bảo trì chuyên sâu]");
+        }
+
+        sr.setResolutionNote(fullResolution.toString());
+        supportRequestRepository.save(sr);
+
+        if (request != null && request.getInspectionImages() != null && !request.getInspectionImages().isEmpty()) {
+            List<String> validImgs = request.getInspectionImages().stream()
+                    .filter(Objects::nonNull).map(String::trim).filter(s -> !s.isEmpty()).toList();
+            if (!validImgs.isEmpty()) {
+                task.setEvidenceImageUrl(String.join("\n|||\n", validImgs));
+                staffTaskRepository.save(task);
+            }
+        }
+
+        activityLogService.log(
+                user.getId(),
+                "[SUPPORT_RESOLVE_UPDATE] " + user.getFullName() + " chỉnh sửa lại phản hồi ticket #" + sr.getTicketCode() + ": " + resolutionNote,
+                "support_requests",
+                String.valueOf(supportRequestId)
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * PR-S5: Nhân viên / Quản lý cơ sở thu hồi kết quả và mở lại toàn bộ task SUPPORT để xử lý lại từ đầu.
+     * Áp dụng khi ticket đang ở trạng thái RESOLVED (Chờ khách xác nhận).
+     * Task chuyển về IN_PROGRESS, ticket chuyển về IN_PROGRESS.
+     */
+    @Transactional
+    public StaffTaskDetailResponse reopenSupportTask(Integer taskId, Integer userId, String reason) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy người dùng"));
+        String roleName = user.getRole() != null ? user.getRole().getName() : "";
+        if (!"STAFF".equals(roleName) && !"FACILITY_MANAGER".equals(roleName)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                    "Chỉ nhân viên hoặc quản lý cơ sở mới được mở lại task hỗ trợ");
+        }
+
+        StaffTask task = findTaskInFacility(taskId, user.getFacilityId());
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Task này không phải task hỗ trợ khách hàng (SUPPORT)");
+        }
+        if (!"COMPLETED".equalsIgnoreCase(task.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_COMPLETED",
+                    "Chỉ mở lại task đã hoàn tất");
+        }
+
+        Integer supportRequestId = task.getSupportRequestId();
+        if (supportRequestId == null) {
+            throw new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND", "Không tìm thấy ticket liên kết");
+        }
+
+        SupportRequest sr = supportRequestRepository.findById(supportRequestId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND", "Không tìm thấy ticket hỗ trợ liên kết"));
+
+        if (!"RESOLVED".equalsIgnoreCase(sr.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TICKET_NOT_RESOLVED",
+                    "Chỉ được mở lại task khi phiếu hỗ trợ đang ở trạng thái Chờ khách xác nhận (RESOLVED)");
+        }
+
+        if (compensationClaimService != null && CompensationClaimService.isClaimIssue(sr.getIssueType())) {
+            compensationClaimService.reopenForTicket(sr.getId());
+        }
+
+        task.setStatus("IN_PROGRESS");
+        task.setCompletedAt(null);
+        if (task.getStaff() == null && "STAFF".equals(roleName)) {
+            task.setStaff(user);
+        }
+        String reopenNote = reason != null && !reason.isBlank() ? reason.trim() : "Nhân viên mở lại để xử lý lại";
+        String oldNote = task.getNote() != null ? task.getNote() : "";
+        String appended = oldNote + " | [Mở lại: " + reopenNote + "]";
+        if (appended.length() > 1000) appended = appended.substring(0, 997) + "...";
+        task.setNote(appended);
+        staffTaskRepository.save(task);
+
+        sr.setStatus("IN_PROGRESS");
+        sr.setResolvedAt(null);
+        supportRequestRepository.save(sr);
+
+        activityLogService.log(
+                user.getId(),
+                "[SUPPORT_TASK_REOPEN] " + user.getFullName() + " đã thu hồi kết quả và mở lại task #" + taskId + " (ticket #" + sr.getTicketCode() + ") để xử lý lại: " + reopenNote,
+                "support_requests",
+                String.valueOf(supportRequestId)
         );
 
         entityManager.flush();
@@ -2129,9 +2303,16 @@ public class StaffTaskService {
                 .supportRequestId(task.getSupportRequestId())
                 .ticketCode(sr != null ? sr.getTicketCode() : null)
                 .issueType(sr != null ? sr.getIssueType() : null)
+                .subCategory(sr != null ? sr.getSubCategory() : null)
                 .urgent(urgent)
                 .ticketStatus(sr != null ? sr.getStatus() : null)
                 .ticketDescription(sr != null ? sr.getDescription() : null)
+                .ticketEvidenceImages(sr != null && sr.getEvidenceImages() != null && !sr.getEvidenceImages().isBlank()
+                        ? Arrays.stream(sr.getEvidenceImages().split("\n\\|\\|\\|\n")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                        : Collections.emptyList())
+                .resolutionImages(task.getEvidenceImageUrl() != null && !task.getEvidenceImageUrl().isBlank()
+                        ? Arrays.stream(task.getEvidenceImageUrl().split("\n\\|\\|\\|\n")).map(String::trim).filter(s -> !s.isEmpty()).toList()
+                        : Collections.emptyList())
                 .resolutionNote(sr != null ? sr.getResolutionNote() : null)
                 .ticketCreatedAt(sr != null ? sr.getCreatedAt() : null)
                 .ticketResolvedAt(sr != null ? sr.getResolvedAt() : null)

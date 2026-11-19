@@ -13,10 +13,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -302,6 +304,54 @@ public class ContractViewService {
         dto.setRelocationPending("LIQUIDATED".equals(status) && dto.getCentralStorage() == null);
         dto.setRefundEvidence(refundEvidenceService.findCompleted(
                 reservation.getId(), reservation.getReservationCode(), rc.getId()));
+
+        // Bóc tách chi tiết thanh toán ban đầu (tiền thuê gốc, giảm giá gói, voucher, bảo hiểm)
+        int cycleMonths = calc.getCycleMonths();
+        BigDecimal monthlyPrice = PricingService.contractMonthlyPrice(rc);
+        BigDecimal baseRentAmount = monthlyPrice.multiply(BigDecimal.valueOf(cycleMonths));
+
+        Integer discountPercent = reservation != null && reservation.getRentDiscountPercent() != null ? reservation.getRentDiscountPercent() : 0;
+        BigDecimal rentDiscountAmount = (discountPercent != null && discountPercent > 0)
+                ? baseRentAmount.multiply(BigDecimal.valueOf(discountPercent)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        String voucherCode = reservation != null ? reservation.getVoucherCode() : null;
+        BigDecimal voucherDiscount = (reservation != null && reservation.getVoucherDiscount() != null)
+                ? reservation.getVoucherDiscount()
+                : BigDecimal.ZERO;
+        String voucherDiscountType = null;
+        Integer voucherDiscountPercent = null;
+        if (reservation != null && (reservation.getVoucherId() != null || voucherCode != null)) {
+            List<Map<String, Object>> vRows = jdbcTemplate.queryForList(
+                    "SELECT TOP 1 discount_type, discount_value FROM vouchers WHERE id = ? OR code = ?",
+                    reservation.getVoucherId(), voucherCode);
+            if (!vRows.isEmpty()) {
+                voucherDiscountType = (String) vRows.get(0).get("discount_type");
+                BigDecimal dv = (BigDecimal) vRows.get(0).get("discount_value");
+                if ("PERCENT".equalsIgnoreCase(voucherDiscountType) && dv != null) {
+                    voucherDiscountPercent = dv.intValue();
+                }
+            }
+        }
+
+        BigDecimal actualRentPaid = baseRentAmount.subtract(rentDiscountAmount).subtract(voucherDiscount).max(BigDecimal.ZERO);
+
+        BigDecimal insuranceMonthly = (reservation != null && reservation.getInsurancePremiumMonthly() != null)
+                ? reservation.getInsurancePremiumMonthly()
+                : BigDecimal.ZERO;
+        BigDecimal insuranceTotalAmount = insuranceMonthly.multiply(BigDecimal.valueOf(cycleMonths));
+
+        dto.setBaseRentAmount(baseRentAmount);
+        dto.setRentDiscountPercent(discountPercent);
+        dto.setRentDiscountAmount(rentDiscountAmount);
+        dto.setVoucherCode(voucherCode);
+        dto.setVoucherDiscount(voucherDiscount);
+        dto.setVoucherDiscountType(voucherDiscountType);
+        dto.setVoucherDiscountPercent(voucherDiscountPercent);
+        dto.setActualRentPaid(actualRentPaid);
+        dto.setInsuranceTotalAmount(insuranceTotalAmount);
+        dto.setRentPaid(actualRentPaid); // Cập nhật đúng tiền thuê thực đóng (không bị lẫn bảo hiểm vào)
+
         return dto;
     }
 

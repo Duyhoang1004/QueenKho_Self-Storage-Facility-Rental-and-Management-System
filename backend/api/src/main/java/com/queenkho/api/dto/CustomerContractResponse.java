@@ -112,6 +112,17 @@ public class CustomerContractResponse {
     private Boolean noShow;
     private Boolean noShowWaived;
 
+    // === Bóc tách chi tiết thanh toán ban đầu (giá gốc, giảm giá gói, voucher, bảo hiểm) ===
+    private BigDecimal baseRentAmount;
+    private Integer rentDiscountPercent;
+    private BigDecimal rentDiscountAmount;
+    private String voucherCode;
+    private BigDecimal voucherDiscount;
+    private BigDecimal actualRentPaid;
+    private BigDecimal insuranceTotalAmount;
+    private String voucherDiscountType;
+    private Integer voucherDiscountPercent;
+
     public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
                                     String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
                                     String floor, String zone, String roomNumber, String status, LocalDate startDate,
@@ -131,15 +142,65 @@ public class CustomerContractResponse {
                                     String facilityHotline, String customerEmail, String customerCccd,
                                     BigDecimal overstayDailyAmount, BigDecimal overstayFeeAmount,
                                     BigDecimal totalOverdueCharge, BigDecimal amountBeyondDeposit, String refundStatus) {
-        this(contractId, contractCode, customerId, customerFullName, customerPhone, storageUnitId, unitTypeName, areaSqm,
-                floor, zone, roomNumber, status, startDate, endDate, billingCycleMonths, depositHeldAmount, reservationCode,
-                accessPinCode, rfidCardCode, basePriceMonthly, reservationId, totalPaid, rentPaid, scheduledCheckoutDate,
-                overdueDays, lateFeeAmount, estimatedDepositRefund, originalDeposit, refundAmount, damageFee,
-                isInspectionCompleted, depositRefund, earlyRentRefund, usedMonths, breakFee, maxLateFeeAmount,
-                isMaxLateFeeReached, isPinLocked, canLiquidate, liquidationDaysThreshold, estimatedOverdueDepositRefund,
-                facilityId, lateFeeWaived, lateFeeWaiverNote, facilityDamageFee, termsVersion, termsAcceptedAt,
-                heldGoodsStatus, heldGoodsHoldUntil, heldGoodsStorageLocation, facilityName, facilityAddress,
-                facilityHotline, customerEmail, customerCccd, overstayDailyAmount, overstayFeeAmount, totalOverdueCharge,
-                amountBeyondDeposit, refundStatus, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        this.contractId = contractId;
+        this.contractCode = contractCode;
+        this.customerId = customerId;
+        this.customerFullName = customerFullName;
+        this.customerPhone = customerPhone;
+        this.storageUnitId = storageUnitId;
+        this.unitTypeName = unitTypeName;
+        this.areaSqm = areaSqm;
+        this.floor = floor;
+        this.zone = zone;
+        this.roomNumber = roomNumber;
+        this.status = status;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.billingCycleMonths = billingCycleMonths;
+        this.depositHeldAmount = depositHeldAmount;
+        this.reservationCode = reservationCode;
+        this.accessPinCode = accessPinCode;
+        this.rfidCardCode = rfidCardCode;
+        this.basePriceMonthly = basePriceMonthly;
+        this.reservationId = reservationId;
+        this.totalPaid = totalPaid;
+        this.rentPaid = rentPaid;
+        this.scheduledCheckoutDate = scheduledCheckoutDate;
+        this.overdueDays = overdueDays;
+        this.lateFeeAmount = lateFeeAmount;
+        this.estimatedDepositRefund = estimatedDepositRefund;
+        this.originalDeposit = originalDeposit;
+        this.refundAmount = refundAmount;
+        this.damageFee = damageFee;
+        this.isInspectionCompleted = isInspectionCompleted;
+        this.depositRefund = depositRefund;
+        this.earlyRentRefund = earlyRentRefund;
+        this.usedMonths = usedMonths;
+        this.breakFee = breakFee;
+        this.maxLateFeeAmount = maxLateFeeAmount;
+        this.isMaxLateFeeReached = isMaxLateFeeReached;
+        this.isPinLocked = isPinLocked;
+        this.canLiquidate = canLiquidate;
+        this.liquidationDaysThreshold = liquidationDaysThreshold;
+        this.estimatedOverdueDepositRefund = estimatedOverdueDepositRefund;
+        this.facilityId = facilityId;
+        this.lateFeeWaived = lateFeeWaived;
+        this.lateFeeWaiverNote = lateFeeWaiverNote;
+        this.facilityDamageFee = facilityDamageFee;
+        this.termsVersion = termsVersion;
+        this.termsAcceptedAt = termsAcceptedAt;
+        this.heldGoodsStatus = heldGoodsStatus;
+        this.heldGoodsHoldUntil = heldGoodsHoldUntil;
+        this.heldGoodsLocation = heldGoodsStorageLocation;
+        this.facilityName = facilityName;
+        this.facilityAddress = facilityAddress;
+        this.facilityHotline = facilityHotline;
+        this.customerEmail = customerEmail;
+        this.customerCccd = customerCccd;
+        this.overstayDailyAmount = overstayDailyAmount;
+        this.overstayFeeAmount = overstayFeeAmount;
+        this.totalOverdueCharge = totalOverdueCharge;
+        this.amountBeyondDeposit = amountBeyondDeposit;
+        this.refundStatus = refundStatus;
     }
 }

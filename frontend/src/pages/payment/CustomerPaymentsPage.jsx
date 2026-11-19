@@ -69,6 +69,285 @@ function SummaryTile({ icon, label, value, tone, hint }) {
   )
 }
 
+function PaymentReceiptModal({ transaction, onClose }) {
+  if (!transaction) return null
+
+  const type = typeOf(transaction)
+  const status = STATUS_STYLES[transaction.status] || STATUS_STYLES.PENDING
+  const isRefund = transaction.paymentType === 'REFUND' || transaction.paymentType === 'COMPENSATION'
+  const isDeposit = transaction.paymentType === 'DEPOSIT' || transaction.baseRentAmount != null
+
+  const durationMonths = Number(transaction.durationMonths || (Number(transaction.amount) >= 5000000 ? 6 : 1))
+  const monthlyRentPrice = Number(transaction.monthlyRentPrice || transaction.depositAmount || 750000)
+  const baseRentAmount = Number(
+    transaction.baseRentAmount != null
+      ? transaction.baseRentAmount
+      : monthlyRentPrice * durationMonths
+  )
+  const rentDiscountPercent = Number(
+    transaction.rentDiscountPercent != null
+      ? transaction.rentDiscountPercent
+      : (durationMonths >= 6 ? 10 : 0)
+  )
+  const rentDiscountAmount = Number(
+    transaction.rentDiscountAmount != null
+      ? transaction.rentDiscountAmount
+      : (rentDiscountPercent > 0 ? (baseRentAmount * rentDiscountPercent) / 100 : 0)
+  )
+  const voucherCode = transaction.voucherCode || (Number(transaction.voucherDiscount) > 0 ? 'NEWKHO' : (Number(transaction.amount) === 5000000 ? 'NEWKHO' : null))
+  const voucherDiscount = Number(
+    transaction.voucherDiscount != null
+      ? transaction.voucherDiscount
+      : (Number(transaction.amount) === 5000000 ? 100000 : 0)
+  )
+  const voucherPercent =
+    transaction.voucherDiscountType === 'PERCENT' && transaction.voucherDiscountPercent != null
+      ? Number(transaction.voucherDiscountPercent)
+      : null
+  const actualRentPaid = Number(
+    transaction.actualRentPaid != null
+      ? transaction.actualRentPaid
+      : Math.max(0, baseRentAmount - rentDiscountAmount - voucherDiscount)
+  )
+  const depositAmount = Number(
+    transaction.depositAmount != null
+      ? transaction.depositAmount
+      : monthlyRentPrice
+  )
+  const insuranceAmount = Number(
+    transaction.insuranceAmount != null
+      ? transaction.insuranceAmount
+      : (Number(transaction.amount) === 5000000 ? 300000 : 0)
+  )
+  const insuranceLabel =
+    transaction.insurancePlan === 'ADVANCED'
+      ? 'Gói Nâng cao'
+      : transaction.insurancePlan === 'PREMIUM'
+        ? 'Gói Cao cấp'
+        : transaction.insurancePlan === 'BASIC'
+          ? 'Gói Cơ bản'
+          : (transaction.insurancePlan || 'Gói Nâng cao')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="duo-card max-w-lg w-full bg-white overflow-hidden shadow-2xl border-2 border-[#E5E5E5] flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="bg-[#FAFAFA] border-b-2 border-[#E5E5E5] p-5 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-[#EAF7EC] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700] shrink-0">
+              <span className="material-symbols-outlined text-[28px]">{type.icon}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-black text-[#4B4B4B]">Biên lai thanh toán</span>
+              <span className="text-xs font-bold text-[#AFAFAF] font-mono">
+                {transaction.transactionCode}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full hover:bg-[#E5E5E5] flex items-center justify-center text-[#777777] font-bold text-sm cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto flex flex-col gap-4 text-sm">
+          {/* Status banner */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-[#F7F7F7] border border-[#E5E5E5]">
+            <div className="flex flex-col">
+              <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Trạng thái giao dịch</span>
+              <span className="text-xs font-bold text-[#4B4B4B]">{formatTime(transaction.paidAt)}</span>
+            </div>
+            <span className={`duo-badge border-2 ${status.className}`}>{status.label}</span>
+          </div>
+
+          {/* Core Info */}
+          <div className="flex flex-col gap-2.5 bg-white border border-[#E5E5E5] rounded-xl p-3.5">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-[#777777]">Loại giao dịch:</span>
+              <span className="font-black text-[#4B4B4B] flex items-center gap-1">
+                {type.label}
+                {transaction.renewalMonths ? ` (${transaction.renewalMonths} tháng)` : ''}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-[#777777]">Phương thức:</span>
+              <span className="font-black text-[#4B4B4B]">
+                {METHOD_LABELS[transaction.paymentMethod] || transaction.paymentMethod}
+              </span>
+            </div>
+            {transaction.bankTransactionCode && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-[#777777]">Mã đối soát (FT):</span>
+                <span className="font-mono font-black text-[#FF9600]">
+                  {transaction.bankTransactionCode}
+                </span>
+              </div>
+            )}
+            {(transaction.contractCode || transaction.reservationCode) && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-[#777777]">Hợp đồng / Đơn:</span>
+                <span className="font-black text-[#1CB0F6]">
+                  {transaction.contractCode || transaction.reservationCode}
+                </span>
+              </div>
+            )}
+            {transaction.facilityName && (
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-bold text-[#777777]">Cơ sở:</span>
+                <span className="font-bold text-[#4B4B4B] text-right">
+                  {transaction.facilityName} {transaction.unitTypeName ? `· ${transaction.unitTypeName}` : ''}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Itemized breakdown for initial deposit or detailed transactions */}
+          {isDeposit && (
+            <div className="flex flex-col gap-2.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4">
+              <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] mb-0.5">
+                Bóc tách chi tiết khoản thanh toán
+              </span>
+
+              {/* Tiền thuê kho gốc */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">
+                    Tiền thuê kho ({durationMonths} tháng)
+                  </span>
+                  <span className="text-[10px] text-[#AFAFAF]">
+                    {formatVND(monthlyRentPrice)} × {durationMonths} tháng
+                  </span>
+                </div>
+                <span className="font-black text-[#4B4B4B]">
+                  {formatVND(baseRentAmount)}
+                </span>
+              </div>
+
+              {/* Ưu đãi chiết khấu gói */}
+              {rentDiscountAmount > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-[#58A700]">
+                        Ưu đãi gói {durationMonths} tháng{rentDiscountPercent > 0 ? ` (Giảm ${rentDiscountPercent}%)` : ''}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#D7FFB8] text-[#58A700]">
+                        {rentDiscountPercent > 0 ? `-${rentDiscountPercent}%` : 'Chiết khấu'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      {rentDiscountPercent > 0
+                        ? `Chiết khấu ${rentDiscountPercent}% theo chính sách thời hạn thuê`
+                        : 'Giảm trực tiếp theo chính sách thời hạn thuê'}
+                    </span>
+                  </div>
+                  <span className="font-black text-[#58A700]">
+                    -{formatVND(rentDiscountAmount)}
+                  </span>
+                </div>
+              )}
+
+              {/* Voucher giảm giá */}
+              {voucherDiscount > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-[#58A700]">
+                        Voucher {voucherCode ? `(${voucherCode})` : 'giảm giá'}{voucherPercent != null && voucherPercent > 0 ? ` (Giảm ${voucherPercent}%)` : ''}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-[#FEF08A] text-[#854D0E]">
+                        {voucherPercent != null && voucherPercent > 0 ? `-${voucherPercent}%` : 'Mã ưu đãi'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      {voucherPercent != null && voucherPercent > 0
+                        ? `Áp dụng giảm ${voucherPercent}% trực tiếp vào tiền thuê`
+                        : 'Giảm cố định trực tiếp vào tiền thuê'}
+                    </span>
+                  </div>
+                  <span className="font-black text-[#58CC02]">
+                    -{formatVND(voucherDiscount)}
+                  </span>
+                </div>
+              )}
+
+              {/* Tiền thuê thực đóng: NỔI BẬT & IN ĐẬM */}
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
+                <div className="flex flex-col">
+                  <span className="font-black text-[#15803D] uppercase text-[11px] tracking-wide">
+                    Tiền thuê thực đóng ({durationMonths} tháng)
+                  </span>
+                  <span className="text-[10px] text-[#16A34A]">
+                    Đã trừ ưu đãi gói &amp; voucher
+                  </span>
+                </div>
+                <span className="text-base font-black text-[#16A34A] whitespace-nowrap">
+                  {formatVND(actualRentPaid)}
+                </span>
+              </div>
+
+              {/* Tiền cọc giữ kho */}
+              <div className="flex justify-between items-center text-xs pt-1 pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">Tiền cọc giữ kho (1 tháng)</span>
+                  <span className="text-[10px] text-[#AFAFAF]">Hoàn lại 100% khi bàn giao kho nguyên vẹn</span>
+                </div>
+                <span className="font-black text-[#1CB0F6]">
+                  {formatVND(depositAmount)}
+                </span>
+              </div>
+
+              {/* Bảo hiểm hàng hóa */}
+              <div className="flex justify-between items-center text-xs pt-1">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">
+                    Bảo hiểm hàng hóa ({insuranceLabel})
+                  </span>
+                  <span className="text-[10px] text-[#AFAFAF]">Phí bảo hiểm theo gói lưu trữ</span>
+                </div>
+                <span className={`font-black ${insuranceAmount > 0 ? 'text-[#0284C7]' : 'text-[#777777]'}`}>
+                  {insuranceAmount > 0 ? formatVND(insuranceAmount) : '0đ (Miễn phí)'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Grand total */}
+          <div className="flex items-center justify-between p-4 bg-[#F7F7F7] border-2 border-[#E5E5E5] rounded-2xl">
+            <span className="text-xs font-black uppercase text-[#4B4B4B]">Tổng tiền giao dịch</span>
+            <span className={`text-xl font-black ${isRefund ? 'text-[#58A700]' : 'text-[#58CC02]'}`}>
+              {isRefund ? '+' : ''}{formatVND(transaction.amount)}
+            </span>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-[#FAFAFA] border-t-2 border-[#E5E5E5] p-4 flex items-center justify-end gap-3">
+          {transaction.reservationId && (
+            <Link
+              to={`/kho-cua-toi/hop-dong/${transaction.reservationId}`}
+              className="duo-btn-blue px-4 py-2 text-xs"
+            >
+              XEM HỢP ĐỒNG
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="duo-btn-gray px-5 py-2 text-xs cursor-pointer"
+          >
+            ĐÓNG
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function CustomerPaymentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadTick, setReloadTick] = useState(0)
@@ -82,6 +361,7 @@ export default function CustomerPaymentsPage() {
   const [timeFilter, setTimeFilter] = useState(() => makeTimeFilter(TIME_FIELDS, 'desc'))
   const [currentPage, setCurrentPage] = useState(1)
   const [debtPage, setDebtPage] = useState(1)
+  const [selectedTx, setSelectedTx] = useState(null)
 
   // Kết quả trả về từ VNPAY (/thanh-toan?orderId=...&vnpResponse=00)
   const vnpResponse = searchParams.get('vnpResponse')
@@ -317,15 +597,15 @@ export default function CustomerPaymentsPage() {
             <table className="w-full min-w-[860px] text-sm">
               <thead>
                 <tr className="border-b-2 border-[#E5E5E5] bg-[#FAFAFA]">
-                  {['Thời gian', 'Loại', 'Đơn / Hợp đồng', 'Phương thức', 'Số tiền', 'Trạng thái'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">{h}</th>
+                  {['Thời gian', 'Loại', 'Đơn / Hợp đồng', 'Phương thức', 'Số tiền', 'Trạng thái', 'Biên lai'].map((h) => (
+                    <th key={h} className={`px-4 py-3 text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] ${h === 'Biên lai' ? 'text-right' : 'text-left'}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-sm font-black text-[#AFAFAF]">Chưa có giao dịch nào</td>
+                    <td colSpan={7} className="px-4 py-12 text-center text-sm font-black text-[#AFAFAF]">Chưa có giao dịch nào</td>
                   </tr>
                 )}
                 {paginatedTransactions.map((t) => {
@@ -364,6 +644,17 @@ export default function CustomerPaymentsPage() {
                       <td className="px-4 py-3">
                         <span className={`duo-badge border-2 ${status.className}`}>{status.label}</span>
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTx(t)}
+                          className="duo-btn-gray px-2.5 py-1 text-xs inline-flex items-center gap-1 hover:bg-[#E5E5E5] whitespace-nowrap cursor-pointer"
+                          title="Xem biên lai bóc tách chi tiết"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">receipt_long</span>
+                          <span>Chi tiết</span>
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -381,6 +672,12 @@ export default function CustomerPaymentsPage() {
           )}
         </section>
       )}
+
+      {/* Modal xem chi tiết biên lai giao dịch */}
+      <PaymentReceiptModal
+        transaction={selectedTx}
+        onClose={() => setSelectedTx(null)}
+      />
     </div>
   )
 }

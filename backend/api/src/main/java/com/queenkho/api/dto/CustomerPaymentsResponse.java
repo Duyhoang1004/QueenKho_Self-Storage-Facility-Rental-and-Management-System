@@ -34,8 +34,49 @@ public record CustomerPaymentsResponse(
             Integer contractId,
             String contractCode,
             String facilityName,
-            String unitTypeName
-    ) {}
+            String unitTypeName,
+            BigDecimal monthlyRentPrice,
+            Integer durationMonths,
+            BigDecimal baseRentAmount,
+            Integer rentDiscountPercent,
+            BigDecimal rentDiscountAmount,
+            String voucherCode,
+            BigDecimal voucherDiscount,
+            BigDecimal actualRentPaid,
+            BigDecimal depositAmount,
+            String insurancePlan,
+            BigDecimal insuranceAmount,
+            String voucherDiscountType,
+            Integer voucherDiscountPercent
+    ) {
+        public PaymentItem(
+                Integer id, String transactionCode, String bankTransactionCode, String paymentType,
+                String paymentMethod, BigDecimal amount, String status, LocalDateTime paidAt,
+                Integer renewalMonths, Integer reservationId, String reservationCode,
+                Integer contractId, String contractCode, String facilityName, String unitTypeName
+        ) {
+            this(id, transactionCode, bankTransactionCode, paymentType, paymentMethod, amount, status, paidAt,
+                    renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
+                    null, null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        public PaymentItem(
+                Integer id, String transactionCode, String bankTransactionCode, String paymentType,
+                String paymentMethod, BigDecimal amount, String status, LocalDateTime paidAt,
+                Integer renewalMonths, Integer reservationId, String reservationCode,
+                Integer contractId, String contractCode, String facilityName, String unitTypeName,
+                BigDecimal monthlyRentPrice, Integer durationMonths, BigDecimal baseRentAmount,
+                Integer rentDiscountPercent, BigDecimal rentDiscountAmount, String voucherCode,
+                BigDecimal voucherDiscount, BigDecimal actualRentPaid, BigDecimal depositAmount,
+                String insurancePlan, BigDecimal insuranceAmount
+        ) {
+            this(id, transactionCode, bankTransactionCode, paymentType, paymentMethod, amount, status, paidAt,
+                    renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
+                    monthlyRentPrice, durationMonths, baseRentAmount, rentDiscountPercent, rentDiscountAmount,
+                    voucherCode, voucherDiscount, actualRentPaid, depositAmount, insurancePlan, insuranceAmount,
+                    null, null);
+        }
+    }
 
     public record OverdueItem(
             Integer contractId,

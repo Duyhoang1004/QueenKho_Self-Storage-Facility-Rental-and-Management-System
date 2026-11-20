@@ -17,6 +17,7 @@ import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import DateInput from '../../components/DateInput';
 import { formatDateTimeVN } from '../../utils/date';
+import IncidentReportModal from '../../components/IncidentReportModal';
 
 const PAGE_SIZE = 5;
 // (10/11/2026) Lọc / sắp ticket theo thời gian — mặc định gửi gần nhất trước
@@ -277,6 +278,10 @@ export default function CustomerSupportPage() {
   const [reopenTarget, setReopenTarget] = useState(null);
   const [reopenReason, setReopenReason] = useState('');
   const [reopenError, setReopenError] = useState('');
+
+  // Modal xem biên bản sự cố A4 cho khách hàng (Góp ý Hội đồng)
+  const [incidentReportModalOpen, setIncidentReportModalOpen] = useState(false);
+  const [selectedReportTicket, setSelectedReportTicket] = useState(null);
 
   const [toast, setToast] = useState(null);
 
@@ -887,16 +892,29 @@ export default function CustomerSupportPage() {
                 {/* Hiển thị Kết quả xử lý từ Nhân viên (khi RESOLVED hoặc CLOSED có resolutionNote) */}
                 {ticket.resolutionNote && (
                   <div className="rounded-2xl bg-[#D7FFB8]/40 border-2 border-[#58CC02] p-4 flex flex-col gap-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-black uppercase tracking-wider text-[#58A700] flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-[16px]">verified</span>
                         Kết quả xử lý từ nhân viên cơ sở
                       </span>
-                      {ticket.resolvedAt && (
-                        <span className="text-[11px] font-bold text-[#58A700]">
-                          Hoàn tất lúc: {formatDateTime(ticket.resolvedAt)}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {ticket.resolvedAt && (
+                          <span className="text-[11px] font-bold text-[#58A700]">
+                            Hoàn tất lúc: {formatDateTime(ticket.resolvedAt)}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReportTicket(ticket);
+                            setIncidentReportModalOpen(true);
+                          }}
+                          className="px-3 py-1 rounded-xl bg-white border border-[#58CC02] hover:bg-[#D7FFB8] text-[11px] font-black text-[#2B5300] cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">description</span>
+                          Xem &amp; In biên bản A4
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs md:text-sm font-black text-[#4B4B4B] whitespace-pre-line">
                       {ticket.resolutionNote}
@@ -932,6 +950,18 @@ export default function CustomerSupportPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedReportTicket(ticket);
+                          setIncidentReportModalOpen(true);
+                        }}
+                        className="px-3.5 py-2.5 rounded-xl bg-white border-2 border-[#006699] hover:bg-[#E0F2FE] text-xs font-black text-[#006699] flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">assignment</span>
+                        Xem biên bản sự cố (A4)
+                      </button>
+
                       {/* UX FIX: Không hiển thị nút Chưa xong nếu hồ sơ bồi thường đã APPROVED hoặc PAID */}
                       {!(ticket.claim && ['APPROVED', 'PAID'].includes(ticket.claim.status)) && (
                         <button
@@ -1378,6 +1408,24 @@ export default function CustomerSupportPage() {
         submitting={submitting}
         onConfirm={handleConfirmTicket}
         onCancel={() => setConfirmTarget(null)}
+      />
+
+      {/* Modal Xem & In biên bản sự cố A4 cho khách hàng (Góp ý Hội đồng) */}
+      <IncidentReportModal
+        isOpen={incidentReportModalOpen}
+        onClose={() => {
+          setIncidentReportModalOpen(false);
+          setSelectedReportTicket(null);
+        }}
+        task={selectedReportTicket ? {
+          ...selectedReportTicket,
+          ticketDescription: selectedReportTicket.description,
+          staffName: selectedReportTicket.assignedStaffName || selectedReportTicket.staffName || 'Nhân viên cơ sở',
+          resolutionImages: selectedReportTicket.resolutionImages || []
+        } : null}
+        resolutionNote={selectedReportTicket?.resolutionNote}
+        evidenceImages={selectedReportTicket?.resolutionImages || []}
+        readOnly={true}
       />
 
       <TaskToast toast={toast} onClose={() => setToast(null)} />

@@ -23,6 +23,8 @@ import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos'
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
 import { getCentralWarehouses } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
+import IncidentReportModal from '../../components/IncidentReportModal';
+import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport } from '../../utils/incidentTemplates';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -711,6 +713,8 @@ export default function StaffTaskDetailPage() {
   const [repairImages, setRepairImages] = useState([]);
   const [cleaningImages, setCleaningImages] = useState([]);
   const [confirmSupportOpen, setConfirmSupportOpen] = useState(false);
+  const [incidentReportModalOpen, setIncidentReportModalOpen] = useState(false);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState('');
   const [editResolutionOpen, setEditResolutionOpen] = useState(false);
   const [editResolutionNote, setEditResolutionNote] = useState('');
   const [editResolutionImages, setEditResolutionImages] = useState([]);
@@ -1997,6 +2001,14 @@ export default function StaffTaskDetailPage() {
                             {formatDateTime(task.ticketResolvedAt)}
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setIncidentReportModalOpen(true)}
+                          className="px-2.5 py-1 rounded-xl bg-white border border-[#58CC02] hover:bg-[#D7FFB8] text-[11px] font-black text-[#2B5300] cursor-pointer flex items-center gap-1 transition-colors shadow-2xs"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">print</span>
+                          In biên bản sự cố A4
+                        </button>
                         {task.ticketStatus === 'RESOLVED' && (
                           <button
                             type="button"
@@ -2347,8 +2359,58 @@ export default function StaffTaskDetailPage() {
                       </p>
                     </div>
 
+                    {/* Hộp công cụ Biên bản xử lý sự cố chuẩn hóa (Góp ý Hội đồng) */}
+                    <div className="rounded-2xl bg-[#F0F8FF] border border-[#BAE3FF] p-3.5 flex flex-col gap-2.5 min-w-0 w-full overflow-hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="material-symbols-outlined text-[20px] text-[#006699] shrink-0">assignment</span>
+                          <span className="text-xs font-black uppercase text-[#004B73] truncate">
+                            Biên bản xử lý sự cố chuẩn hóa (Hội đồng)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResolutionNote(buildBlankIncidentReport(task));
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-white border border-[#006699] hover:bg-[#E0F2FE] text-[11px] font-black text-[#006699] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
+                            title="Tạo khung biên bản trống chuẩn để nhân viên tự điền"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                            + Chèn khung biên bản (tự điền)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIncidentReportModalOpen(true)}
+                            className="px-3 py-1.5 rounded-xl bg-[#006699] hover:bg-[#004B73] text-[11px] font-black text-white flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">print</span>
+                            Xem &amp; In biên bản A4
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#5588A3] pt-0.5">
+                        <p className="font-medium leading-relaxed">
+                          💡 <em>Hệ thống chỉ điền sẵn thông tin hành chính (Thời gian, Ô kho, Cán bộ xử lý, Mã phiếu). Các mục Hiện trạng, Nguyên nhân, Biện pháp &amp; Nghiệm thu để trống để nhân viên tự nhập theo hiện trường.</em>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sampleTemplate = (task?.issueType && INCIDENT_REPORT_TEMPLATES[task.issueType]?.[0]) || INCIDENT_REPORT_TEMPLATES.OTHER[0];
+                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate));
+                          }}
+                          className="text-[10px] font-bold text-[#006699] hover:underline cursor-pointer shrink-0"
+                          title="Điền dữ liệu mẫu đầy đủ để thử nghiệm nhanh khi demo"
+                        >
+                          + Điền mẫu tham khảo (demo)
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-black uppercase text-[#AFAFAF] mr-1">Mẫu phản hồi nhanh:</span>
+                      <span className="text-[10px] font-black uppercase text-[#AFAFAF] mr-1">Mẫu phản hồi nhanh (câu ngắn):</span>
                       {((task?.issueType && SUPPORT_PRESETS_BY_TYPE[task.issueType]) || SUPPORT_RESOLUTION_PRESETS).map((preset, idx) => (
                         <button
                           key={idx}
@@ -3567,6 +3629,49 @@ export default function StaffTaskDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Modal In biên bản xử lý sự cố chuẩn khổ A4 (Góp ý Hội đồng) */}
+      <IncidentReportModal
+        isOpen={incidentReportModalOpen}
+        onClose={() => setIncidentReportModalOpen(false)}
+        task={task}
+        resolutionNote={editResolutionOpen ? editResolutionNote : (resolutionNote || task?.resolutionNote)}
+        evidenceImages={
+          editResolutionOpen
+            ? editResolutionImages
+            : (task?.status === 'COMPLETED'
+                ? (task?.resolutionImages || [])
+                : (isClaimInspection
+                    ? inspectionImages
+                    : task?.issueType === 'SECURITY'
+                    ? securityImages
+                    : task?.issueType === 'FACILITY_DAMAGE'
+                    ? repairImages
+                    : task?.issueType === 'CLEANING'
+                    ? cleaningImages
+                    : (task?.resolutionImages || [])))
+        }
+        onUpdateResolutionNote={(newNote) => {
+          if (editResolutionOpen) {
+            setEditResolutionNote(newNote);
+          } else {
+            setResolutionNote(newNote);
+          }
+        }}
+        onUpdateImages={(newImages) => {
+          if (editResolutionOpen) {
+            setEditResolutionImages(newImages);
+          } else if (isClaimInspection) {
+            setInspectionImages(newImages);
+          } else if (task?.issueType === 'SECURITY') {
+            setSecurityImages(newImages);
+          } else if (task?.issueType === 'FACILITY_DAMAGE') {
+            setRepairImages(newImages);
+          } else if (task?.issueType === 'CLEANING') {
+            setCleaningImages(newImages);
+          }
+        }}
+      />
 
       <TaskToast toast={toast} onClose={closeToast} />
     </div>

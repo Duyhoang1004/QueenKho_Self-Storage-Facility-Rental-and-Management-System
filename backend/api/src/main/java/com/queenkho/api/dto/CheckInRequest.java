@@ -5,6 +5,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Map;
 
 // UC-18: nội dung biên bản bàn giao khi Staff check-in cho khách
 @Getter
@@ -26,4 +27,10 @@ public class CheckInRequest {
 
     // BR-121: ảnh hiện trạng ô lúc bàn giao (≥ 1, tối đa 10) — căn cứ khi có tranh chấp lúc trả kho
     private List<String> evidenceImages;
+
+    // One photo for each of the five staff inspection items, keyed by checklist field.
+    private Map<String, String> checklistEvidence;
+
+    // Server sets this only while completing a customer-approved draft.
+    private Integer approvalId;
 }

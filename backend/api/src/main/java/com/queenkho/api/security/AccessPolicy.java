@@ -165,6 +165,9 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id:\\d+}", "CONTRACT_VIEW");
         rule("GET", "/api/v1/contracts/{id}/unit-location", "CONTRACT_VIEW"); // UC-06: bản đồ chỉ xem
         rule("GET", "/api/v1/contracts/{id}/handover-records", "CONTRACT_VIEW"); // BR-121: biên bản + ảnh
+        rule("GET", "/api/v1/contracts/{id}/check-in-handover", "CONTRACT_VIEW");
+        rule("GET", "/api/v1/contracts/{id}/check-in-handover/history", "CONTRACT_VIEW");
+        rule("POST", "/api/v1/contracts/{id}/check-in-handover/{attemptId}/decision", "CUSTOMER_BOOKING");
         rule("GET", "/api/v1/contracts/{id}/unit-transfers", "CONTRACT_VIEW");   // BR-122: lịch sử chuyển ô
         rule("GET", "/api/v1/contracts/{id}/transfer-options", "RESERVATION_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/transfer-unit", "RESERVATION_MANAGE");
@@ -217,6 +220,9 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/complete-refund", "TASK_MANAGE");
         rule("GET", "/api/v1/staff-tasks/pin-suggestion", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/prepare-check-in", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/reopen-check-in", "TASK_MANAGE");
+        rule("POST", "/api/v1/staff-tasks/{id}/confirm-unit-issue", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-out", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-support", "TASK_EXECUTE");
         rule("PUT", "/api/v1/staff-tasks/{id}/update-support-resolution", "TASK_EXECUTE");

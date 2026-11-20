@@ -44,6 +44,21 @@ export async function checkInStaffTask(taskId, staffId, payload) {
   return res.data
 }
 
+export async function prepareCheckInHandover(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/prepare-check-in`, payload)
+  return res.data
+}
+
+export async function reopenCheckInHandover(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/reopen-check-in`, payload)
+  return res.data
+}
+
+export async function confirmCheckInUnitIssue(taskId, note) {
+  const res = await api.post(`/staff-tasks/${taskId}/confirm-unit-issue`, { note })
+  return res.data
+}
+
 // UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có) → trả chi tiết task đã COMPLETED
 export async function checkOutStaffTask(taskId, staffId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })

@@ -108,6 +108,21 @@ public class StaffTaskController {
         }
     }
 
+    @PostMapping("/{id}/prepare-check-in")
+    public ResponseEntity<?> prepareCheckIn(@PathVariable Integer id, @RequestBody CheckInRequest request) {
+        return ResponseEntity.ok(staffTaskService.prepareCheckIn(id, currentUser.require(), request));
+    }
+
+    @PostMapping("/{id}/confirm-unit-issue")
+    public ResponseEntity<?> confirmCheckInIssue(@PathVariable Integer id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(staffTaskService.confirmCheckInIssue(id, currentUser.require(), body.get("note")));
+    }
+
+    @PostMapping("/{id}/reopen-check-in")
+    public ResponseEntity<?> reopenCheckIn(@PathVariable Integer id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(staffTaskService.reopenCheckIn(id, currentUser.require(), body.get("note"), body.get("evidenceImageUrl")));
+    }
+
     // UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có)
     // POST /api/v1/staff-tasks/12/check-out?staffId=5   body: CheckOutRequest
     @PostMapping("/{id}/check-out")

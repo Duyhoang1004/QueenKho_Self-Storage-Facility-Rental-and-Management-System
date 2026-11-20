@@ -18,6 +18,21 @@ export async function getContractByReservation(reservationId) {
   return res.data
 }
 
+export async function getCheckInHandover(contractId) {
+  const res = await api.get(`/contracts/${contractId}/check-in-handover`)
+  return res.data
+}
+
+export async function getCheckInHandoverHistory(contractId) {
+  const res = await api.get(`/contracts/${contractId}/check-in-handover/history`)
+  return res.data
+}
+
+export async function decideCheckInHandover(contractId, attemptId, accepted, reason, evidenceImages = []) {
+  const res = await api.post(`/contracts/${contractId}/check-in-handover/${attemptId}/decision`, { accepted, reason, evidenceImages })
+  return res.data
+}
+
 // Flow 6: báo giá gia hạn 1/3/6/12 tháng (đúng số VNPAY sẽ thu)
 // trả [{ months, discountPercent, subtotal, discountAmount, rentAmount, lateFeeAmount, lateFeeWaived, overstayFeeAmount, totalAmount }]
 // UC-22: xem trước tiền hoàn theo ngày hẹn trả kho (BE dùng đúng công thức lúc nghiệm thu)

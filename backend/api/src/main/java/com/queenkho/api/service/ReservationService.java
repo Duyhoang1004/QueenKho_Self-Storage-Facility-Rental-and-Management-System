@@ -209,8 +209,7 @@ public class ReservationService {
                             RefundStatusService.COMPLETED.equals(refundStatus)
                                     ? refundEvidenceService.findCompleted(r.getId(), r.getReservationCode(), contractId)
                                     : null,
-                            "PENDING_CHECK_IN".equals(contractStatus) && assignedUnit != null
-                                    && "MAINTENANCE".equalsIgnoreCase(assignedUnit.getStatus()),
+                            hasUnitIssue(r),
                             assignedUnit != null && assignedUnit.isEmergencyUnit());
                 })
                 .toList();
@@ -224,7 +223,11 @@ public class ReservationService {
         if (reservation == null || !"UNIT_ASSIGNED".equals(reservation.getStatus())) return false;
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM rental_contracts c JOIN storage_units su ON su.id = c.storage_unit_id " +
-                        "WHERE c.reservation_id = ? AND c.status = 'PENDING_CHECK_IN' AND su.status = 'MAINTENANCE'",
+                        "WHERE c.reservation_id = ? AND c.status = 'PENDING_CHECK_IN' " +
+                        "AND (su.status = 'MAINTENANCE' OR EXISTS (SELECT 1 FROM handover_records a " +
+                        "WHERE a.contract_id = c.id AND a.record_type = 'CI_FAULT' " +
+                        "AND NOT EXISTS (SELECT 1 FROM handover_records x WHERE x.contract_id = c.id " +
+                        "AND x.record_type IN ('CI_REOPEN','CHECK_IN') AND x.id > a.id)))",
                 Integer.class, reservation.getId());
         return count != null && count > 0;
     }
@@ -251,6 +254,16 @@ public class ReservationService {
             throw new IllegalArgumentException("Ngày nhận kho mới phải từ ngày mai trở đi");
         }
         assertWithinBookingLead(newStartDate);
+        RentalContract assigned = rentalContractRepository.findByReservationId(reservation.getId()).orElse(null);
+        if (assigned != null && assigned.getStorageUnit() != null) {
+            LocalDate until = UnitScheduleService.rangeEnd(newStartDate, durationOf(reservation));
+            List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(
+                    assigned.getStorageUnit(), newStartDate, until, assigned.getId());
+            if (!clashes.isEmpty()) {
+                throw new ReservationException(HttpStatus.CONFLICT, "UNIT_SCHEDULE_CONFLICT",
+                        "Ô đã gán có lịch trùng vào ngày mới; quản lý cần đổi ô cho khách trước khi xác nhận dời lịch");
+            }
+        }
         LocalDate oldDate = reservation.getStartDate();
         applyNewStartDate(reservation, newStartDate);
         String code = reservation.getReservationCode();
@@ -366,6 +379,7 @@ public class ReservationService {
         return reservationRepository
                 .findOverdueNoShowByFacility(targetFacilityId, LocalDate.now())
                 .stream()
+                .filter(r -> !wasPresentForCheckIn(r))
                 .map(r -> {
                     String staffNote = null;
                     String staffName = null;
@@ -1131,6 +1145,9 @@ public class ReservationService {
         if (reservation == null) {
             return new NoShowEligibility(false, 0, "Đơn đặt chỗ không tồn tại");
         }
+        if (wasPresentForCheckIn(reservation)) {
+            return new NoShowEligibility(false, 0, "Khách đã đến nhận kho; không áp dụng No-Show");
+        }
 
         // 1. Mốc giờ hẹn: expectedAppointmentTime, nếu null lấy 09:00 ngày startDate, fallback createdAt
         LocalDateTime appointmentTime = reservation.getExpectedAppointmentTime();
@@ -1209,6 +1226,22 @@ public class ReservationService {
         }
 
         return new NoShowEligibility(eligible, failedCount, reason);
+    }
+
+    private boolean wasPresentForCheckIn(Reservation reservation) {
+        if (reservation == null) return false;
+        // An acknowledged facility fault remains the facility's responsibility until handover or full refund.
+        if (hasUnitIssue(reservation)) return true;
+        Integer appeared = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM handover_records a JOIN rental_contracts c ON c.id = a.contract_id " +
+                "WHERE c.reservation_id = ? AND a.record_type = 'CI_DRAFT' " +
+                "AND a.created_at >= CAST(COALESCE((SELECT expected_appointment_time FROM reservations WHERE id = ?), " +
+                "(SELECT start_date FROM reservations WHERE id = ?)) AS DATE)",
+                Integer.class, reservation.getId(), reservation.getId(), reservation.getId());
+        if (appeared != null && appeared > 0) {
+            return true;
+        }
+        return false;
     }
 
     // PR-X1: số tiền No-Show — dùng chung cho màn danh sách (xem trước) và lúc FM xác nhận

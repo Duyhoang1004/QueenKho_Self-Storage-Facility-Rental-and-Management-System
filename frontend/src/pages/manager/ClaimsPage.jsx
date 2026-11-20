@@ -322,7 +322,16 @@ function ClaimDetail({ claimId }) {
 
       {claim.status === 'INSPECTED' && !bom && <DecisionForm claim={claim} onDone={refresh} />}
       {['APPROVED', 'PAID', 'REJECTED'].includes(claim.status) && <DecisionSummary claim={claim} />}
-      {claim.status === 'APPROVED' && !bom && <PaymentForm claim={claim} onDone={refresh} />}
+      {claim.status === 'APPROVED' && !bom && (claim.settlementId || claim.contractStatus === 'SETTLEMENT_PENDING') ? (
+        /* D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường gộp vào quyết toán, không chi riêng */
+        <Card icon="receipt_long" title="Chi trả qua quyết toán trả kho">
+          <p className="text-xs font-bold text-[#4B4B4B] leading-relaxed">
+            Hợp đồng {claim.contractCode} đã nghiệm thu trả kho. {formatVND(claim.totalCompensation)} bồi thường được cộng vào bảng quyết toán;
+            khách xác nhận xong, khoản này nằm trong task hoàn tiền (hoặc cấn trừ vào phần khách phải trả).
+          </p>
+          <a href="/manager/settlements?tab=ALL" className="duo-btn-blue px-4 py-2 text-xs self-start">Mở quyết toán trả kho</a>
+        </Card>
+      ) : claim.status === 'APPROVED' && !bom && <PaymentForm claim={claim} onDone={refresh} />}
       {claim.status === 'PAID' && (
         <Card icon="health_and_safety" title="Chi trả & đòi bảo hiểm">
           <Row label="Đã chi" value={`${formatVND(claim.totalCompensation)} · ${claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'} · ${formatDateTime(claim.paidAt)}`} />

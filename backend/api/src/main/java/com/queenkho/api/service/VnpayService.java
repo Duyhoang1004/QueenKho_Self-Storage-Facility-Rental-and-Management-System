@@ -3,6 +3,7 @@ package com.queenkho.api.service;
 import com.queenkho.api.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,8 @@ public class VnpayService {
     private final RenewalPolicyService renewalPolicy;
     @Autowired private NotificationService notificationService;
     @Autowired(required = false) private VoucherService voucherService;
+    // D-21 / PR-O21: trả xong phần âm của quyết toán trả kho → kết thúc hợp đồng (2 service gọi nhau → @Lazy)
+    @Autowired @Lazy private CheckoutSettlementService settlementService;
 
     public VnpayService(PaymentRepository payments, RentalContractRepository contracts,
                         ReservationRepository reservations, StaffTaskService staffTasks,
@@ -360,6 +363,8 @@ public class VnpayService {
             updatePaymentGroup(ref, "SUCCESS", bankTranCode);
             String paid = ((BigDecimal) db.get("amount")).setScale(0, RoundingMode.HALF_UP).toPlainString();
             logPayment(db, "[DEBT_PAID] Khách thanh toán phí sự cố " + paid + "đ qua VNPAY (" + ref + ")");
+            // D-21 / PR-O21: khoản này là phần âm của quyết toán trả kho → hợp đồng kết thúc
+            if (settlementService != null && db.get("id") instanceof Number paymentId) settlementService.onDebtPaid(paymentId.intValue());
             // BR-117 (06/11/2026): email biên nhận trả nợ, giống đặt cọc / gia hạn
             if (notificationService != null && db.get("user_id") != null) {
                 String feeName = "OVERSTAY_FEE".equals(db.get("payment_type")) ? "phí trễ hạn / phí chiếm dụng" : "phí sự cố";

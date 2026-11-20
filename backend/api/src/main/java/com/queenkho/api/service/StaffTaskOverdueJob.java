@@ -15,6 +15,12 @@ public class StaffTaskOverdueJob {
     @Autowired
     private SupportRequestService supportRequestService;
 
+    @Autowired
+    private CheckoutSettlementService settlementService;
+
+    @Autowired
+    private RefundReceiptService refundReceiptService;
+
     @Scheduled(fixedRate = 60000)
     public void markOverdue() {
         int updated = staffTaskService.markOverdueTasks();
@@ -29,6 +35,26 @@ public class StaffTaskOverdueJob {
             }
         } catch (Exception e) {
             System.err.println("[QueenKho Support] Warning auto-closing resolved tickets: " + e.getMessage());
+        }
+
+        // D-21 / PR-O23: quyết toán trả kho dương, khách không xác nhận quá 3 ngày → tự xác nhận
+        try {
+            int confirmed = settlementService.autoConfirmDue();
+            if (confirmed > 0) {
+                System.out.println("[QueenKho Settlement] Da tu xac nhan " + confirmed + " quyet toan tra kho qua 3 ngay.");
+            }
+        } catch (Exception e) {
+            System.err.println("[QueenKho Settlement] Warning auto-confirming settlements: " + e.getMessage());
+        }
+
+        // D-22 / PR-O27: khoản hoàn chuyển khoản khách không phản hồi quá 3 ngày → tự xác nhận đã nhận
+        try {
+            int receipts = refundReceiptService.autoConfirmDue();
+            if (receipts > 0) {
+                System.out.println("[QueenKho Refund] Da tu xac nhan " + receipts + " khoan hoan tien qua 3 ngay.");
+            }
+        } catch (Exception e) {
+            System.err.println("[QueenKho Refund] Warning auto-confirming refund receipts: " + e.getMessage());
         }
     }
 }

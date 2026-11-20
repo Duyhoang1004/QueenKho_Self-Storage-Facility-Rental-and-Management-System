@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { getCheckoutRefundPreview, getRenewalEligibility, getRenewalQuote, requestCheckout } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
+import { getCustomerSupportTickets } from '../services/supportService'
 import DateInput from './DateInput'
+import MoneyBreakdownTable from './MoneyBreakdownTable'
 import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
 function formatVND(v) {
@@ -142,6 +144,20 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   }, [isOpen, contractId, activeTab, checkoutDate])
   const preview = refundPreview?.forDate === checkoutDate ? refundPreview : null
 
+  // D-21 / PR-O24: ticket hỗ trợ / hồ sơ bồi thường còn mở → cảnh báo (không chặn hẹn trả kho)
+  const [openTickets, setOpenTickets] = useState([])
+  useEffect(() => {
+    if (!isOpen || !contractId || activeTab !== 'checkout') return undefined
+    let cancelled = false
+    const customerId = JSON.parse(sessionStorage.getItem('user') || '{}').id
+    getCustomerSupportTickets(customerId, { contractId })
+      .then((list) => {
+        if (!cancelled) setOpenTickets((list || []).filter((t) => ['OPEN', 'IN_PROGRESS', 'RESOLVED'].includes(t.status)))
+      })
+      .catch(() => { if (!cancelled) setOpenTickets([]) })
+    return () => { cancelled = true }
+  }, [isOpen, contractId, activeTab])
+
   // Dự phòng khi chưa tải được báo giá (bảng mặc định 0/0/5/10%)
   const getPricing = (months) => {
     const quote = quoteOf(months)
@@ -263,92 +279,13 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     }
   }
 
-  // Bảng tính dự kiến trả sớm (PR-O2) và phí quá hạn (HĐ đã quá hạn — điều khoản cũ)
+  // Trả sớm / quá hạn — chỉ để gắn nhãn; mọi số tiền lấy từ API xem trước (cùng công thức lúc nghiệm thu)
   const isEarlyCheckout = checkoutDate && contract?.endDate && checkoutDate < contract.endDate
   const isGraceOrOverdue = checkoutDate && contract?.endDate && checkoutDate > contract.endDate
 
-  let earlyRefundCalc = null
-  if (isEarlyCheckout) {
-    const sDate = new Date(contract.startDate || today)
-    const cDate = new Date(checkoutDate)
-    let usedMonths = 1
-    if (cDate > sDate) {
-      let months = (cDate.getFullYear() - sDate.getFullYear()) * 12 + (cDate.getMonth() - sDate.getMonth())
-      if (cDate.getDate() > sDate.getDate()) {
-        months += 1
-      }
-      usedMonths = Math.max(1, months)
-    }
-
-    let monthsFromDates = 1
-    if (contract.startDate && contract.endDate) {
-      const [y1, m1] = String(contract.startDate).split('-').map(Number)
-      const [y2, m2] = String(contract.endDate).split('-').map(Number)
-      const diff = (y2 - y1) * 12 + (m2 - m1)
-      if (diff > 0) monthsFromDates = diff
-    }
-    const cycleMonths = Math.max(Number(contract.billingCycleMonths) || 1, monthsFromDates)
-
-    let discountRate = 0
-    if (cycleMonths >= 12) discountRate = 0.15
-    else if (cycleMonths >= 6) discountRate = 0.10
-    else if (cycleMonths >= 3) discountRate = 0.05
-
-    const formulaRentPaid = Math.round(basePrice * cycleMonths * (1 - discountRate))
-    const rentPaid = Number(contract.rentPaid) > 0 ? Number(contract.rentPaid) : formulaRentPaid
-    const breakFee = basePrice
-    const usedCost = basePrice * usedMonths
-    const earlyRentRefund = Math.max(0, rentPaid - usedCost - breakFee)
-
-    earlyRefundCalc = preview?.earlyCheckout
-      ? {
-          usedMonths: Number(preview.usedMonths || 0),
-          cycleMonths: Number(preview.cycleMonths || cycleMonths),
-          rentPaid: Number(preview.rentPaid || 0),
-          usedCost: Number(preview.baseMonthlyPrice || basePrice) * Number(preview.usedMonths || 0),
-          breakFee: Number(preview.breakFee || 0),
-          earlyRentRefund: Number(preview.earlyRentRefund || 0),
-        }
-      : {
-          usedMonths,
-          cycleMonths,
-          rentPaid,
-          usedCost,
-          breakFee,
-          earlyRentRefund,
-        }
-  }
-
-  // Tổng tiền dự kiến hoàn cho khách (cọc còn lại + tiền thuê trả sớm) — một con số dùng chung cho cả modal
-  const depositHeldNum = Number(contract?.depositHeldAmount || 0)
-  const expectedDepositRefund = preview ? Number(preview.depositRefund || 0) : depositHeldNum
-  const expectedEarlyRefund = earlyRefundCalc ? earlyRefundCalc.earlyRentRefund : 0
-  const expectedTotalRefund = preview
-    ? Number(preview.totalRefundAmount || 0)
-    : depositHeldNum + expectedEarlyRefund
-
-  // D-15: không còn ân hạn — chỉ HĐ đã quá hạn mới có ngày trả sau end_date
-  let graceCalc = null
-  if (isGraceOrOverdue) {
-    const eDate = new Date(contract.endDate)
-    const cDate = new Date(checkoutDate)
-    const diffDays = Math.ceil(Math.abs(cDate - eDate) / (1000 * 60 * 60 * 24))
-    // PR-Q14: phí trễ (trần 50% cọc) + phí chiếm dụng mỗi ngày quá hạn (không trần)
-    // Góp ý test 12/11: đã miễn phí trễ → phí trễ = 0; miễn luôn phí chiếm dụng → 0 (BE trả overstayDailyAmount theo đúng mức)
-    const deposit = Number(contract.depositHeldAmount || basePrice)
-    const rawFee = Math.round(deposit * Math.min(diffDays, 5) * 0.10)
-    const cap = Number(contract.maxLateFeeAmount) > 0 ? Number(contract.maxLateFeeAmount) : deposit * 0.5
-    const latePart = contract.lateFeeWaived ? 0 : Math.min(rawFee, cap)
-    const overstayPart = contract.overstayFeeWaived ? 0 : Number(contract.overstayDailyAmount || 0) * diffDays
-    graceCalc = {
-      days: diffDays,
-      fee: latePart,
-      overstay: overstayPart,
-      total: latePart + overstayPart,
-      lateFeeWaived: Boolean(contract.lateFeeWaived),
-      overstayFeeWaived: Boolean(contract.overstayFeeWaived),
-    }
-  }
+  // D-22: số tiền dự kiến (> 0 hoàn khách, < 0 khách trả thêm) — một con số dùng chung cho cả modal
+  const expectedNet = preview ? Number(preview.netAmount ?? preview.totalRefundAmount ?? 0) : null
+  const expectedTotalRefund = expectedNet != null ? Math.max(0, expectedNet) : null
 
   if (!isOpen || !contract) return null
 
@@ -638,6 +575,26 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             )}
 
+            {/* D-21 / PR-O24: còn yêu cầu hỗ trợ chưa xong — phải xử lý xong trước buổi nghiệm thu */}
+            {openTickets.length > 0 && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex flex-col gap-1.5">
+                <span className="font-bold flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[18px]">support_agent</span>
+                  Hợp đồng còn {openTickets.length} yêu cầu hỗ trợ chưa đóng
+                </span>
+                <ul className="list-disc pl-5">
+                  {openTickets.map((t) => (
+                    <li key={t.id}>
+                      <span className="font-mono">{t.ticketCode}</span> — {t.status === 'RESOLVED' ? 'đã xử lý, chờ bạn xác nhận' : 'đang xử lý'}
+                    </li>
+                  ))}
+                </ul>
+                <span>
+                  Các yêu cầu này phải xử lý xong trước buổi nghiệm thu. Tiền bồi thường hàng (nếu có) sẽ được cộng vào quyết toán trả kho.
+                </span>
+              </div>
+            )}
+
             {/* Date Selection Section */}
             <label className="text-xs sm:text-sm text-slate-800 font-semibold mb-2 block" htmlFor="checkoutDateInput">
               {isOverdue
@@ -676,62 +633,27 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               )}
             </div>
 
-            {/* Bảng tính dự kiến trả sớm (PR-O2) */}
-            {isEarlyCheckout && earlyRefundCalc && (
-              <div className="bg-[#EAFBE0] border border-[#D0F8AB] rounded-xl p-3.5 my-3 flex flex-col gap-1.5 text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-[#2B5300]">
-                  <span className="material-symbols-outlined text-[#58A700] text-[20px]">savings</span>
-                  <span className="text-sm font-black text-[#58A700]">Chính sách hoàn tiền thuê trả sớm (PR-O2)</span>
+            {/* D-22: bảng "Bạn đã đóng − Cơ sở giữ lại = Dự kiến hoàn" — backend tính bằng đúng công thức lúc nghiệm thu,
+                dòng "Đã đóng" khớp màn hợp đồng (cọc + tiền thuê kỳ hiện tại + bảo hiểm) */}
+            {checkoutDate && (
+              <div className="my-3 flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider text-[#4B4B4B] flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">calculate</span>
+                    Dự kiến quyết toán nếu trả ngày {formatDate(checkoutDate)}
+                  </span>
+                  {isEarlyCheckout && <span className="text-[10px] font-black uppercase text-[#58A700]">Trả sớm (PR-O2)</span>}
+                  {isGraceOrOverdue && <span className="text-[10px] font-black uppercase text-[#E58800]">Quá hạn</span>}
                 </div>
-                <p className="text-[#2B5300]/90 leading-relaxed text-[11px]">
-                  Hợp đồng gói {earlyRefundCalc.cycleMonths} tháng (tiền thuê thực đóng: {formatVND(earlyRefundCalc.rentPaid)}). Quý khách đã sử dụng {earlyRefundCalc.usedMonths} tháng (làm tròn lên).
-                </p>
-                <div className="bg-white/80 p-2.5 rounded-lg border border-[#D0F8AB] flex flex-col gap-1 text-[11px] font-semibold text-[#4B4B4B]">
-                  <div className="flex justify-between">
-                    <span>Tiền thuê thực tế ({earlyRefundCalc.usedMonths} tháng × {formatVND(basePrice)}):</span>
-                    <span className="font-bold text-red-600">- {formatVND(earlyRefundCalc.usedCost)}</span>
+                {preview?.lines ? (
+                  <MoneyBreakdownTable lines={preview.lines} viewer="CUSTOMER" estimate />
+                ) : (
+                  <div className="text-xs font-bold text-[#AFAFAF] border-2 border-dashed border-[#E5E5E5] rounded-xl p-3">
+                    Đang tính số tiền theo ngày bạn chọn...
                   </div>
-                  {earlyRefundCalc.breakFee > 0 ? (
-                    <div className="flex justify-between">
-                      <span>Phí phá vỡ hợp đồng sớm (1 tháng giá gốc):</span>
-                      <span className="font-bold text-red-600">- {formatVND(earlyRefundCalc.breakFee)}</span>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between text-[#777777]">
-                      <span>Trả trong tháng cuối của kỳ (PR-O2a):</span>
-                      <span className="font-bold">không phí phá HĐ</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between border-t border-[#D0F8AB] pt-1 text-xs">
-                    <span className="font-black text-[#2B5300]">Tiền thuê còn lại hoàn trả:</span>
-                    <span className="font-black text-sm text-[#58A700]">+{formatVND(earlyRefundCalc.earlyRentRefund)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs pt-0.5">
-                    <span className="font-black text-[#2B5300]">Tiền cọc giữ kho hoàn lại (dự kiến):</span>
-                    <span className="font-black text-sm text-[#1899D6]">+{formatVND(expectedDepositRefund)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-[#D0F8AB] pt-1 text-xs">
-                    <span className="font-black uppercase text-[#2B5300]">Tổng dự kiến hoàn trả khách:</span>
-                    <span className="font-black text-base text-[#58A700]">
-                      {formatVND(expectedTotalRefund)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Phí quá hạn dự kiến (HĐ đã quá hạn) — D-15 đã bỏ ân hạn 5 ngày */}
-            {isGraceOrOverdue && graceCalc && (
-              <div className="p-3.5 rounded-xl border my-3 text-xs flex flex-col gap-1.5 bg-amber-50 border-amber-200 text-amber-900">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <span className="material-symbols-outlined text-[20px]">warning</span>
-                    <span className="font-black text-sm">Tổng tiền phạt dự kiến ({graceCalc.days} ngày)</span>
-                  </div>
-                  <span className="font-black text-sm text-red-700">{formatVND(graceCalc.total)}</span>
-                </div>
-                <p className="leading-relaxed text-[11px]">
-                  {`Phí phạt trễ: ${graceCalc.lateFeeWaived ? '0₫ (đã được miễn)' : formatVND(graceCalc.fee)} · Phí chiếm dụng ô: ${graceCalc.overstayFeeWaived ? '0₫ (đã được miễn)' : `${formatVND(graceCalc.overstay)}${graceCalc.lateFeeWaived && graceCalc.overstay > 0 ? ' (chỉ tính tiền thuê theo ngày, không phạt)' : ''}`} (trừ vào cọc khi nghiệm thu; vượt cọc sẽ thành khoản nợ cần thanh toán).`}
+                )}
+                <p className="text-[11px] font-semibold text-[#777777] leading-relaxed">
+                  Số chốt cuối cùng theo biên bản nghiệm thu (phí sự cố lỗi khách nếu có). Sau nghiệm thu bạn nhận bảng quyết toán cùng bố cục này và xác nhận để kết thúc hợp đồng.
                 </p>
               </div>
             )}
@@ -757,12 +679,12 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                     payments
                   </span>
                   <span className="text-xs font-black uppercase tracking-wider">
-                    Hình thức nhận tiền hoàn ({formatVND(expectedTotalRefund)}) *
+                    Hình thức nhận tiền hoàn{expectedTotalRefund != null ? ` (dự kiến ${formatVND(expectedTotalRefund)})` : ''} *
                   </span>
                 </div>
-                {expectedEarlyRefund > 0 && (
-                  <p className="-mt-1.5 text-[11px] font-semibold text-[#1899D6]">
-                    Gồm tiền cọc {formatVND(expectedDepositRefund)} + tiền thuê trả sớm {formatVND(expectedEarlyRefund)}. Số chốt cuối cùng theo biên bản nghiệm thu.
+                {expectedNet != null && expectedNet < 0 && (
+                  <p className="-mt-1.5 text-[11px] font-semibold text-[#FF4B4B]">
+                    Theo ngày bạn chọn, phí vượt tiền cọc: bạn cần trả thêm {formatVND(Math.abs(expectedNet))} khi xác nhận quyết toán.
                   </p>
                 )}
 

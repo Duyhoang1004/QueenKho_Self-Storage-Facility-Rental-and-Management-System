@@ -1,5 +1,7 @@
 package com.queenkho.api.dto;
 
+import java.math.BigDecimal;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,6 +26,11 @@ public class StaffTaskResponse {
     private LocalDateTime completedAt;   // Thời điểm hoàn thành
     private String note;                 // Chi tiết STK, số tiền hoàn, lý do hủy...
     private String evidenceImageUrl;     // Link ảnh bill chuyển khoản bằng chứng
+    // D-22 / PR-O25: khách xác nhận đã nhận tiền hoàn (task REFUND)
+    private String receiptStatus;
+    private String receiptDisputeReason;
+    private Integer receiptRound;
+    private BigDecimal refundAmount;
 
     // 2. Thông tin Nhân viên được giao / nhận việc (nếu có)
     private Integer staffId;

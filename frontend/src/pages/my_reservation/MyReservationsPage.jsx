@@ -39,6 +39,11 @@ const STATUS_META = {
     label: "Chờ trả kho",
     className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
   },
+  // D-21: nghiệm thu xong, chờ khách xác nhận quyết toán
+  SETTLEMENT_PENDING: {
+    label: "Chờ xác nhận kết thúc",
+    className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
+  },
   CANCELLED: {
     label: "Đã hủy",
     className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]",
@@ -68,7 +73,7 @@ const FILTERS = [
   {
     key: "UNIT_ASSIGNED",
     label: "Đã gán ô",
-    statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"],
+    statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING", "SETTLEMENT_PENDING"],
   },
   // HĐ còn hiệu lực hết hạn trong 15 ngày tới hoặc đã quá hạn (khớp ô "HĐ sắp hết hạn" ở trang chủ)
   { key: "EXPIRING", label: "Sắp hết hạn", statuses: ["UNIT_ASSIGNED"], expiringOnly: true },
@@ -249,8 +254,8 @@ export default function MyReservationsPage() {
             return {
               ...r,
               status:
-                c.status === "TERMINATION_PENDING"
-                  ? "TERMINATION_PENDING"
+                c.status === "TERMINATION_PENDING" || c.status === "SETTLEMENT_PENDING"
+                  ? c.status
                   : r.status,
               endDate: c.endDate,
               contractId: c.contractId,
@@ -367,7 +372,7 @@ export default function MyReservationsPage() {
     {
       icon: "inventory_2",
       label: "Đã gán ô kho",
-      value: countBy(["UNIT_ASSIGNED", "TERMINATION_PENDING"]),
+      value: countBy(["UNIT_ASSIGNED", "TERMINATION_PENDING", "SETTLEMENT_PENDING"]),
       iconColor: "text-[#58A700]",
       iconBg: "bg-[#D7FFB8]",
       cardBorder: "hover:border-[#58CC02]",
@@ -808,7 +813,7 @@ export default function MyReservationsPage() {
                       {/* Cột 10: Thao tác (Đứng đúng cột Thao tác ngoài cùng bên phải) */}
                       <td className="px-3 py-3 text-center align-middle">
                         <div className={`flex items-center justify-center whitespace-nowrap ${r.status === "PENDING" ? "flex-col gap-2" : "gap-1.5"}`}>
-                          {(Boolean(r.contractId) || Boolean(r.storageUnitId) || ["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status)) && (
+                          {(Boolean(r.contractId) || Boolean(r.storageUnitId) || ["UNIT_ASSIGNED", "TERMINATION_PENDING", "SETTLEMENT_PENDING"].includes(r.status)) && (
                             <button
                               onClick={() =>
                                 navigate(`/kho-cua-toi/hop-dong/${r.id}`)

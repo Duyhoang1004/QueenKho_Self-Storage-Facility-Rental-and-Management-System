@@ -4,6 +4,8 @@ import { checkRangeAvailability, createReservation } from '../../services/reserv
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
 import AssetTermsModal from '../../components/AssetTermsModal'
+import PolicySummary from '../../components/PolicySummary'
+import { getQuotePolicySummary } from '../../services/policySummaryService'
 import { validateVoucher } from '../../services/voucherService'
 import { CCCD_ERROR, digitsOnly, isValidCccd, isValidPhone, PHONE_ERROR } from '../../utils/validators'
 import { getInsurancePlans } from '../../services/claimService'
@@ -181,6 +183,20 @@ export default function CreateReservationPage() {
     if (!hasParams) return
     getFacilityPricing(facilityId).then(setPricing).catch(() => setPricing(null))
   }, [hasParams, facilityId])
+
+  // D-22: bảng phí & hoàn tiền bằng số của đơn đang chọn (gói tháng, bảo hiểm, voucher)
+  const [policySummary, setPolicySummary] = useState(null)
+  const voucherDiscountValue = Number(voucherApplied?.discount || 0)
+  useEffect(() => {
+    if (!hasParams) return undefined
+    let cancelled = false
+    const timer = setTimeout(() => {
+      getQuotePolicySummary(facilityId, { unitTypeId, months: selectedMonths, insurancePlan, voucherDiscount: voucherDiscountValue })
+        .then((data) => { if (!cancelled) setPolicySummary(data) })
+        .catch(() => { if (!cancelled) setPolicySummary(null) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [hasParams, facilityId, unitTypeId, selectedMonths, insurancePlan, voucherDiscountValue])
   useEffect(() => {
     getGoodsCategories().then((list) => setGoodsCategories(Array.isArray(list) ? list : [])).catch(() => setGoodsCategories([]))
   }, [])
@@ -833,7 +849,7 @@ export default function CreateReservationPage() {
               </label>
             </div>
 
-            {/* Checkbox điều khoản xử lý tài sản khi không trả kho (v5) */}
+            {/* Checkbox điều khoản thuê kho & xử lý tài sản (v6 — D-22) */}
             <div className="flex items-start gap-3 mt-3">
               <input
                 type="checkbox"
@@ -849,18 +865,20 @@ export default function CreateReservationPage() {
                   onClick={(e) => { e.preventDefault(); setTermsOpen(true) }}
                   className="font-black text-[#1CB0F6] underline cursor-pointer"
                 >
-                  Điều khoản xử lý tài sản khi không trả kho (v5)
+                  Điều khoản thuê kho & xử lý tài sản (v6)
                 </button>
                 .
                 <details className="mt-1 text-[11px] text-[#777777]">
-                  <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt điều khoản v5</summary>
-                  Hết hạn mà không gia hạn / không trả kho, hợp đồng chuyển quá hạn và chỉ tự động cưỡng chế dọn kho{' '}
+                  <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt điều khoản v6</summary>
+                  Trả sớm mất ưu đãi và chịu phí phá hợp đồng 1 tháng giá niêm yết, phí bảo hiểm không hoàn; trả kho là tất toán — bạn xác nhận bảng
+                  quyết toán thì hợp đồng mới kết thúc. Hết hạn mà không gia hạn / không trả kho, hợp đồng quá hạn và tự động cưỡng chế dọn kho{' '}
                   <span className="font-black text-[#FF4B4B]">sau 5 ngày quá hạn (hoặc sớm hơn sau 2 lần liên lạc không thành công / có khách đặt mới)</span>;
-                  hàng được chuyển vào kho tổng, tính phí lưu giữ mỗi ngày (QueenKho không bán hàng của bạn).
+                  hàng vào kho tổng, tính phí lưu giữ mỗi ngày (QueenKho không bán hàng của bạn). Số tiền cụ thể xem ở "Bảng phí & hoàn tiền của đơn này".
                 </details>
               </label>
             </div>
             <AssetTermsModal
+              summary={policySummary}
               open={termsOpen}
               onClose={() => setTermsOpen(false)}
               onAccept={() => { setTermsAccepted(true); setTermsOpen(false) }}
@@ -980,13 +998,19 @@ export default function CreateReservationPage() {
                 </div>
               </div>
 
-              <details className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[10px] font-bold leading-relaxed text-[#4B4B4B]">
-                <summary className="cursor-pointer text-[11px] font-black uppercase text-[#1899D6]">Chính sách hủy trước check-in</summary>
-                <p>• Còn từ 48 giờ: hoàn 100%.</p>
-                <p>• Còn từ 24 đến dưới 48 giờ: giữ 50% cọc.</p>
-                <p>• Còn dưới 24 giờ: giữ 100% cọc.</p>
-                <p>• Đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê.</p>
-                <p className="mt-1 text-[#777777]">Hủy trong 30 phút sau khi thanh toán (và vẫn trước giờ hẹn) luôn được hoàn 100%.</p>
+              {/* D-22: chính sách bằng số tiền của chính đơn này (thay mục "Chính sách hủy" chỉ ghi %) */}
+              <details className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[#4B4B4B]" open>
+                <summary className="cursor-pointer text-[11px] font-black uppercase text-[#1899D6]">Bảng phí & hoàn tiền của đơn này</summary>
+                <div className="mt-2">
+                  {policySummary ? (
+                    <PolicySummary summary={policySummary} compact sectionKeys={['CANCEL', 'EARLY', 'ON_TIME', 'OVERDUE', 'REFUND']} />
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold">• Còn từ 48 giờ: hoàn 100%. · Còn 24–48 giờ: giữ 50% cọc. · Dưới 24 giờ: giữ 100% cọc.</p>
+                      <p className="text-[10px] font-bold">• Đã qua giờ hẹn mà chưa nhận kho: giữ cọc + 1 tháng tiền thuê. · Huỷ trong 30 phút sau thanh toán: hoàn 100%.</p>
+                    </>
+                  )}
+                </div>
               </details>
 
               {/* (08/11/2026, góp ý test) lỗi hiện ngay trên nút thanh toán, không phải cuộn xuống cuối trang */}

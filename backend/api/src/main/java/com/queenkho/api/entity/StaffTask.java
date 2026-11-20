@@ -3,6 +3,7 @@ package com.queenkho.api.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -57,4 +58,34 @@ public class StaffTask {
     // Task MAINTENANCE: DAMAGE (sự cố sau trả kho) / LIQUIDATION (dọn kho sau thanh lý)
     @Column(name = "maintenance_reason", length = 20)
     private String maintenanceReason;
+
+    // ===== D-22 / PR-O25 → PR-O27: khách xác nhận đã nhận tiền hoàn (task REFUND) =====
+    public static final String RECEIPT_WAITING = "WAITING_CUSTOMER";
+    public static final String RECEIPT_CONFIRMED = "CONFIRMED";
+    public static final String RECEIPT_AUTO_CONFIRMED = "AUTO_CONFIRMED";
+    public static final String RECEIPT_DISPUTED = "DISPUTED";
+
+    @Column(name = "customer_id")
+    private Integer customerId;
+
+    @Column(name = "refund_amount", precision = 15, scale = 2)
+    private BigDecimal refundAmount;
+
+    @Column(name = "receipt_status", length = 20)
+    private String receiptStatus;
+
+    @Column(name = "receipt_confirmed_at")
+    private LocalDateTime receiptConfirmedAt;
+
+    @Column(name = "receipt_auto_confirmed", nullable = false)
+    private Boolean receiptAutoConfirmed = false;
+
+    @Column(name = "receipt_dispute_reason", length = 500)
+    private String receiptDisputeReason;
+
+    @Column(name = "receipt_disputed_at")
+    private LocalDateTime receiptDisputedAt;
+
+    @Column(name = "receipt_round", nullable = false)
+    private Integer receiptRound = 0;
 }

@@ -238,11 +238,18 @@ class IsolatedRentalFlowTest {
                 {"identityVerified":true,"unitEmpty":true,"unitClean":true,"lockIntact":true,
                  "customerSignatureConfirmed":true,"evidenceImages":["%s"]}
                 """.formatted(EVIDENCE), "staff", 200);
-        assertEquals("TERMINATED", scalar("SELECT status FROM rental_contracts WHERE id=" + r.contract));
+        // D-21 / PR-O18: nghiệm thu xong ô được trả, hợp đồng chờ khách xác nhận quyết toán, chưa có task hoàn
+        assertEquals("SETTLEMENT_PENDING", scalar("SELECT status FROM rental_contracts WHERE id=" + r.contract));
         assertEquals("AVAILABLE", scalar("SELECT status FROM storage_units WHERE id='" + r.unit + "'"));
+        assertEquals("0", scalar("SELECT COUNT(*) FROM facility_tasks WHERE contract_id=" + r.contract + " AND task_type='REFUND'"));
+        post("/api/v1/contracts/" + r.contract + "/settlement/confirm", "{}", "other", 403);
+        post("/api/v1/contracts/" + r.contract + "/settlement/confirm", "{}", "customer", 200);
+        // PR-O20: khách xác nhận → hợp đồng kết thúc + 1 task REFUND cho FM
+        assertEquals("TERMINATED", scalar("SELECT status FROM rental_contracts WHERE id=" + r.contract));
+        assertEquals("COMPLETED", scalar("SELECT status FROM checkout_settlements WHERE contract_id=" + r.contract));
         String refund = scalar("SELECT id FROM facility_tasks WHERE contract_id=" + r.contract + " AND task_type='REFUND'");
         post("/api/v1/staff-tasks/" + refund + "/complete-refund",
-                "{\"paymentMethod\":\"CASH\",\"cashReceiptConfirmed\":true}", "manager", 200);
+                "{\"paymentMethod\":\"CASH\",\"cashReceiptConfirmed\":true,\"evidenceImageUrl\":\"" + EVIDENCE + "\"}", "manager", 200);
         assertEquals("0", scalar("SELECT COUNT(*) FROM payment_transactions WHERE contract_id=" + r.contract + " AND payment_type='REFUND' AND status='PENDING'"));
     }
 

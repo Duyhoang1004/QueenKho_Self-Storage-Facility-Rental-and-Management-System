@@ -16,6 +16,7 @@ import {
   uploadImageFile,
 } from '../../services/staffTaskService';
 import SimulationButton from '../../components/SimulationButton';
+import SettlementPanel from '../../components/SettlementPanel';
 import UnitLocationMap from '../../components/UnitLocationMap';
 import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 import { assignLockedUntil } from '../../utils/taskWindow';
@@ -104,6 +105,7 @@ const CONTRACT_STATUS_LABEL = {
   ACTIVE: 'Đang hoạt động',
   OVERDUE: 'Quá hạn thanh toán',
   TERMINATION_PENDING: 'Chờ trả kho',
+  SETTLEMENT_PENDING: 'Chờ khách xác nhận quyết toán', // D-21
   TERMINATED: 'Đã chấm dứt',
   LIQUIDATED: 'Đã cưỡng chế dọn kho',
 };
@@ -225,7 +227,8 @@ function blockedReason(task, userId) {
       if (task.staffId !== userId) return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
       if (new Date(task.dueAt) <= new Date()) return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản.';
       // UC-23 (góp ý test 13/11): chưa tới ngày khách hẹn trả kho thì chưa nghiệm thu (BE chặn CHECK_OUT_TOO_EARLY)
-      if (task.taskType === 'CHECK_OUT' && task.dueAt) {
+      // D-21: task kiểm tra lại quyết toán ([RECHECK]) làm được ngay, không theo ngày hẹn
+      if (task.taskType === 'CHECK_OUT' && task.dueAt && !String(task.note || '').startsWith('[RECHECK]')) {
         const appointment = String(task.dueAt).slice(0, 10);
         if (localTodayIso() < appointment) {
           const [y, m, d] = appointment.split('-');
@@ -795,9 +798,11 @@ export default function StaffTaskDetailPage() {
   };
 
   // ================== LOGIC CHECK-OUT & DAMAGE CASES (UC-23 & UC-24) ==================
-  const blockingPassed =
-    coChecks.identityVerified && coChecks.unitEmpty && coChecks.customerSignatureConfirmed;
-  const conditionFailed = !coChecks.unitClean || !coChecks.lockIntact;
+  // D-21 / PR-O22: task kiểm tra lại theo khiếu nại quyết toán — chỉ lập lại danh sách sự cố + kết quả kiểm tra
+  const isRecheckTask = task?.taskType === 'CHECK_OUT' && String(task?.note || '').startsWith('[RECHECK]');
+  const blockingPassed = isRecheckTask ||
+    (coChecks.identityVerified && coChecks.unitEmpty && coChecks.customerSignatureConfirmed);
+  const conditionFailed = !isRecheckTask && (!coChecks.unitClean || !coChecks.lockIntact);
   const showDamageSection = conditionFailed || damageCases.length > 0;
 
   // Khi bỏ chọn "Ô sạch" hoặc "Khoá nguyên vẹn", nếu chưa có mục sự cố nào thì tự tạo sẵn 1 mục gợi ý
@@ -995,8 +1000,9 @@ export default function StaffTaskDetailPage() {
     }
   }
 
-  const canSubmitCheckOut =
-    blockingPassed && !damageValidationError && coNotes.length <= NOTES_MAX && checkOutPhotos.length > 0 && !submitting;
+  const canSubmitCheckOut = isRecheckTask
+    ? !damageValidationError && coNotes.trim().length >= 10 && coNotes.length <= NOTES_MAX && !submitting
+    : blockingPassed && !damageValidationError && coNotes.length <= NOTES_MAX && checkOutPhotos.length > 0 && !submitting;
 
   const handleCheckOutSubmit = () => {
     setSubmitting(true);
@@ -1019,7 +1025,9 @@ export default function StaffTaskDetailPage() {
         setJustCompleted(true);
         setToast({
           type: 'success',
-          message: `Nghiệm thu trả kho thành công! Hợp đồng ${data.contractCode} đã chấm dứt.`,
+          message: isRecheckTask
+            ? `Đã gửi kết quả kiểm tra lại. Khách sẽ nhận bảng quyết toán mới của hợp đồng ${data.contractCode}.`
+            : `Nghiệm thu xong! Hợp đồng ${data.contractCode} chờ khách xác nhận quyết toán để kết thúc.`,
         });
       })
       .catch(err => {
@@ -1056,8 +1064,14 @@ export default function StaffTaskDetailPage() {
 
   // Submit Refund (UC-25)
   const handleSubmitRefund = () => {
-    if (!parsedRefund?.isCash && !evidenceImageUrl.trim()) {
-      setToast({ type: 'error', message: 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.' });
+    if (!evidenceImageUrl.trim()) {
+      setToast({ type: 'error', message: parsedRefund?.isCash
+        ? 'Vui lòng tải ảnh phiếu chi có chữ ký nhận tiền của khách.'
+        : 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.' });
+      return;
+    }
+    if (task.receiptStatus === 'DISPUTED') {
+      setToast({ type: 'error', message: 'Khách báo chưa nhận tiền — xử lý ở Bảng hoàn tiền (giao dịch đúng / chuyển bổ sung).' });
       return;
     }
     setSubmitting(true);
@@ -1292,7 +1306,9 @@ export default function StaffTaskDetailPage() {
     );
   }
 
-  const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' };
+  const type = isRecheckTask
+    ? { label: 'Kiểm tra lại', icon: 'manage_search', cls: 'bg-[#F3E8FF] text-[#9333EA] border-[#CE82FF]' } // D-21 / PR-O22
+    : TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' };
   const status = isRefund && task.status === 'OPEN'
     ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
     : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
@@ -1822,7 +1838,9 @@ export default function StaffTaskDetailPage() {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
-                        Ảnh biên lai chuyển khoản / Chứng từ (Tuỳ chọn)
+                        {parsedRefund?.isCash
+                          ? 'Ảnh phiếu chi có chữ ký nhận tiền của khách *'
+                          : 'Ảnh biên lai chuyển khoản / ủy nhiệm chi *'}
                       </span>
                       <label className="duo-btn-white px-3 py-1 text-xs gap-1 cursor-pointer">
                         <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">upload_file</span>
@@ -1878,6 +1896,14 @@ export default function StaffTaskDetailPage() {
                     )}
                   </div>
 
+                  {/* D-22 / PR-O26: khách báo chưa nhận → xử lý ở modal Bảng hoàn tiền */}
+                  {task.receiptStatus === 'DISPUTED' && (
+                    <div className="rounded-xl border-2 border-[#FFB8B8] bg-[#FFF2F2] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
+                      <span className="font-black text-[#FF4B4B]">Khách báo chưa nhận được tiền: “{task.receiptDisputeReason}”</span>
+                      <span>Mở <Link to="/manager/refunds" className="text-[#1CB0F6] underline">Bảng hoàn tiền</Link> → “Xử lý: khách báo chưa nhận” để chọn giao dịch đúng hoặc chuyển bổ sung.</span>
+                    </div>
+                  )}
+
                   {/* Ghi chú xác nhận hoàn tiền */}
                   <label className="flex flex-col gap-1.5">
                     <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú xác nhận hoàn tiền</span>
@@ -1890,21 +1916,21 @@ export default function StaffTaskDetailPage() {
                     />
                   </label>
 
-                  {!parsedRefund?.isCash && !evidenceImageUrl.trim() && (
+                  {!evidenceImageUrl.trim() && (
                     <p className="text-[11px] font-bold text-[#FF4B4B]">
-                      * Bắt buộc tải lên ảnh biên lai chuyển tiền trước khi xác nhận
+                      * Bắt buộc tải {parsedRefund?.isCash ? 'ảnh phiếu chi có chữ ký khách (chữ ký = khách xác nhận đã nhận tiền)' : 'ảnh biên lai chuyển tiền'} trước khi xác nhận
                     </p>
                   )}
                   <button
                     type="button"
                     onClick={() => {
-                      if (!parsedRefund?.isCash && !evidenceImageUrl.trim()) {
+                      if (!evidenceImageUrl.trim()) {
                         setToast({ type: 'error', message: 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.' });
                         return;
                       }
                       setConfirmRefundOpen(true);
                     }}
-                    disabled={submitting || (!parsedRefund?.isCash && !evidenceImageUrl.trim())}
+                    disabled={submitting || !evidenceImageUrl.trim() || task.receiptStatus === 'DISPUTED'}
                     className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <span className="material-symbols-outlined text-[20px]">payments</span>
@@ -2463,18 +2489,24 @@ export default function StaffTaskDetailPage() {
                   <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
                     <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
                     <div>
-                      <p className="text-sm font-black text-[#58A700]">Đã hoàn tất nghiệm thu trả kho!</p>
+                      <p className="text-sm font-black text-[#58A700]">
+                        {isRecheckTask ? 'Đã gửi kết quả kiểm tra lại!' : 'Đã hoàn tất nghiệm thu trả kho!'}
+                      </p>
                       <p className="text-xs font-bold text-[#58A700]">
-                        Hợp đồng đã chấm dứt, mã PIN/RFID đã bị thu hồi.
-                        {effectiveRefundAmount > 0
-                          ? ` Đã tự động tạo task hoàn tiền (${formatCurrency(effectiveRefundAmount)}) cho Quản lý cơ sở.`
-                          : ''}
+                        {isRecheckTask
+                          ? 'Bảng quyết toán mới đã gửi khách xác nhận.'
+                          : 'Mã PIN/RFID đã bị thu hồi. Khách xem bảng quyết toán trên tài khoản và xác nhận mới kết thúc hợp đồng (D-21).'}
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Tóm tắt quyết toán tài chính hoàn tiền (PR-O2, PR-O11) */}
+                {/* D-21: bảng quyết toán trả kho (Staff thu tiền mặt phần âm). Hợp đồng trả kho trước D-21 → bảng tóm tắt cũ */}
+                <SettlementPanel
+                  contractId={task.contractId}
+                  viewer={isManager ? 'FACILITY_MANAGER' : 'STAFF'}
+                  onChanged={() => loadTask()}
+                  fallback={(
                 <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF]/50 p-4 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black uppercase text-[#1899D6] flex items-center gap-1.5">
@@ -2547,6 +2579,8 @@ export default function StaffTaskDetailPage() {
                     </p>
                   )}
                 </div>
+                  )}
+                />
 
                 {/* Biên bản nghiệm thu */}
                 <div>
@@ -2663,11 +2697,16 @@ export default function StaffTaskDetailPage() {
             <div className="duo-card p-6 flex flex-col gap-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản nghiệm thu trả kho</h2>
+                  <h2 className="text-lg font-black text-[#4B4B4B]">
+                    {isRecheckTask ? 'Kiểm tra lại ô theo khiếu nại quyết toán' : 'Biên bản nghiệm thu trả kho'}
+                  </h2>
                   <p className="text-xs font-bold text-[#AFAFAF]">
-                    Kiểm tra hiện trạng ô kho, thu hồi quyền truy cập và lập biên bản sự cố nếu có hư hại.
+                    {isRecheckTask
+                      ? 'Mở ô, đối chiếu ảnh lúc nhận / trả kho, lập lại danh sách sự cố. Kết quả tạo bảng quyết toán mới gửi khách xác nhận.'
+                      : 'Kiểm tra hiện trạng ô kho, thu hồi quyền truy cập và lập biên bản sự cố nếu có hư hại.'}
                   </p>
                 </div>
+                {!isRecheckTask && (
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -2748,9 +2787,19 @@ export default function StaffTaskDetailPage() {
                     Giả lập lỗi cơ sở
                   </button>
                 </div>
+                )}
               </div>
 
+              {isRecheckTask && (
+                <div className="rounded-2xl border-2 border-[#CE82FF] bg-[#F3E8FF] p-4 text-xs font-bold text-[#4B4B4B] leading-relaxed">
+                  <p className="font-black text-[#9333EA] mb-1">Yêu cầu kiểm tra lại</p>
+                  <p className="whitespace-pre-line">{String(task.note || '').replace('[RECHECK]', '').trim()}</p>
+                  <p className="mt-2 text-[#777777]">Danh sách sự cố bạn lập dưới đây sẽ <strong>thay</strong> danh sách lúc nghiệm thu. Ô không có sự cố lỗi khách thì để trống danh sách.</p>
+                </div>
+              )}
+
               {/* Bước 1: Điều kiện bắt buộc (Blocking) */}
+              {!isRecheckTask && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-black uppercase text-[#4B4B4B] flex items-center gap-1">
@@ -2781,8 +2830,10 @@ export default function StaffTaskDetailPage() {
                   </label>
                 ))}
               </div>
+              )}
 
               {/* Bước 2: Kiểm tra tình trạng vệ sinh & khoá (Non-blocking -> Kích hoạt UC-24) */}
+              {!isRecheckTask && (
               <div className="flex flex-col gap-2">
                 <span className="text-[11px] font-black uppercase text-[#4B4B4B] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[16px] text-[#FF9600]">fact_check</span>
@@ -2818,6 +2869,7 @@ export default function StaffTaskDetailPage() {
                   );
                 })}
               </div>
+              )}
 
               {/* Bước 3: Ghi nhận sự cố hư hỏng & Ảnh bằng chứng (UC-24) */}
               <div className="rounded-2xl border-2 border-[#E5E5E5] bg-[#FAFAFA] p-4 flex flex-col gap-4">
@@ -3034,6 +3086,7 @@ export default function StaffTaskDetailPage() {
               </div>
 
               {/* Bước 4: Bảng đối soát & Quyết toán tài chính hoàn tiền (PR-O2, PR-O11, PR-O14) */}
+              {!isRecheckTask && (
               <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF]/50 p-4 flex flex-col gap-2">
                 <span className="text-xs font-black uppercase text-[#1899D6] flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px]">calculate</span>
@@ -3115,14 +3168,15 @@ export default function StaffTaskDetailPage() {
                   </div>
                 ) : (
                   <span className="text-[11px] font-bold text-[#1899D6]">
-                    {estimatedTotalRefund > 0
-                      ? 'Sau khi xác nhận, hệ thống tự động tạo task REFUND để Quản lý cơ sở chuyển khoản / tất toán hoàn tiền cho khách.'
-                      : 'Hồ sơ trả kho sẽ được Quản lý đóng lại sau khi đối soát xong.'}
+                    Bảng tính dự kiến. Sau khi xác nhận nghiệm thu, khách nhận bảng quyết toán trên tài khoản và phải xác nhận mới kết thúc hợp đồng
+                    (dương → Quản lý hoàn tiền; âm → khách thanh toán thêm — D-21).
                   </span>
                 )}
               </div>
+              )}
 
               {/* BR-121: ảnh hiện trạng ô lúc trả — so với ảnh lúc nhận kho để biết hư hỏng phát sinh khi nào */}
+              {!isRecheckTask && (
               <HandoverPhotoPicker
                 images={checkOutPhotos}
                 onChange={setCheckOutPhotos}
@@ -3130,15 +3184,20 @@ export default function StaffTaskDetailPage() {
                 hint="Chụp toàn cảnh bên trong ô, cửa và khoá. Ảnh lưu vào biên bản, khách xem lại được — là căn cứ khi có tranh chấp."
                 mockLabel={`Hiện trạng ô ${task.storageUnitId || ''} lúc trả kho`}
               />
+              )}
 
               {/* Ghi chú biên bản */}
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú biên bản nghiệm thu</span>
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
+                  {isRecheckTask ? 'Kết quả kiểm tra lại (gửi khách và quản lý, tối thiểu 10 ký tự) *' : 'Ghi chú biên bản nghiệm thu'}
+                </span>
                 <textarea
                   value={coNotes}
                   onChange={e => setCoNotes(e.target.value)}
                   rows={2}
-                  placeholder="Ghi chú thêm về quá trình trả kho, bàn giao chìa khoá/thẻ từ..."
+                  placeholder={isRecheckTask
+                    ? 'Ví dụ: đối chiếu ảnh nhận kho, vết trầy vách đã có từ trước → bỏ phí; khoá hỏng do khách → giữ nguyên'
+                    : 'Ghi chú thêm về quá trình trả kho, bàn giao chìa khoá/thẻ từ...'}
                   className="duo-input resize-none text-xs"
                 />
                 <span className={`text-[11px] font-bold self-end ${coNotes.length > NOTES_MAX ? 'text-[#FF4B4B]' : 'text-[#AFAFAF]'}`}>
@@ -3153,11 +3212,13 @@ export default function StaffTaskDetailPage() {
                 className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[20px]">task_alt</span>
-                Xác nhận hoàn tất nghiệm thu trả kho
+                {isRecheckTask ? 'Gửi kết quả kiểm tra lại' : 'Xác nhận hoàn tất nghiệm thu trả kho'}
               </button>
               {!canSubmitCheckOut && !submitting && (
                 <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">
-                  {!blockingPassed
+                  {isRecheckTask
+                    ? (damageValidationError || 'Ghi kết quả kiểm tra lại (tối thiểu 10 ký tự).')
+                    : !blockingPassed
                     ? 'Vui lòng hoàn thành đủ 3 mục Điều kiện bắt buộc (CCCD, Ô trống, Chữ ký khách).'
                     : damageValidationError
                       || (checkOutPhotos.length === 0 ? 'Cần ít nhất 1 ảnh hiện trạng ô lúc trả kho.' : 'Vui lòng kiểm tra lại thông tin biên bản.')}

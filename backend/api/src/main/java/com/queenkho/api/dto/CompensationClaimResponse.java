@@ -29,6 +29,7 @@ public class CompensationClaimResponse {
     private Integer contractId;
     private String contractCode;
     private String contractStatus;
+    private Integer settlementId;      // D-21: chi trả qua quyết toán trả kho (NULL = chi trả riêng)
     private Integer reservationId;
     private String storageUnitId;
     private String unitTypeName;

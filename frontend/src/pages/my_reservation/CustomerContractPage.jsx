@@ -9,6 +9,9 @@ import SimulationButton from "../../components/SimulationButton";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
 import UnitAccessModal from "../../components/UnitAccessModal";
+import SettlementPanel from "../../components/SettlementPanel";
+import RefundReceiptList from "../../components/RefundReceiptList";
+import ContractPolicyPanel from "../../components/ContractPolicyPanel";
 import { simulateExpireSoon } from "../../services/simulationService";
 import { getOverdueFeeBreakdown } from "../../utils/overdueFee";
 
@@ -72,6 +75,12 @@ const STATUS_MAP = {
     label: "Quá hạn thanh toán",
     cls: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
     icon: "warning",
+  },
+  // D-21: nghiệm thu xong, chờ khách xác nhận quyết toán
+  SETTLEMENT_PENDING: {
+    label: "Chờ xác nhận kết thúc",
+    cls: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
+    icon: "how_to_reg",
   },
   TERMINATED: {
     label: "Đã kết thúc",
@@ -548,6 +557,22 @@ export default function CustomerContractPage() {
           {statusInfo.label}
         </span>
       </div>
+
+      {/* D-21 (PR-O19 → PR-O22): nghiệm thu xong → khách xem quyết toán, xác nhận / thanh toán / không đồng ý */}
+      {["SETTLEMENT_PENDING", "TERMINATED"].includes(contract.status) && !isNoShow && (
+        <SettlementPanel
+          contractId={contract.contractId || contract.id}
+          viewer="CUSTOMER"
+          highlight={contract.status === "SETTLEMENT_PENDING"}
+          onChanged={() => fetchContract()}
+        />
+      )}
+
+      {/* D-22 / PR-O25: khoản hoàn cơ sở đã chi — bấm "Đã nhận được" / "Chưa nhận được" */}
+      <RefundReceiptList contractId={contract.contractId || contract.id} title="Tiền hoàn của hợp đồng" />
+
+      {/* D-22: chính sách đã chốt lúc đặt, hiện bằng số tiền của hợp đồng này */}
+      <ContractPolicyPanel contractId={contract.contractId || contract.id} />
 
       {/* Demo PR-R9: tua hợp đồng về còn 15 / 10 / 7 / 3 / 1 ngày → job nhắc gia hạn chạy ngay (chuông + email) */}
       {contract.status === "ACTIVE" && (

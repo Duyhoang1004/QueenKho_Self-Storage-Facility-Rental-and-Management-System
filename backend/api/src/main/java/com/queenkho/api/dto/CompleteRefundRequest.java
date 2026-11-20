@@ -20,4 +20,7 @@ public class CompleteRefundRequest {
     private String note; // Ghi chú thêm
     private String notes; // Alias tương thích ngược
     private java.math.BigDecimal refundAmount; // Số tiền hoàn tùy chỉnh (nếu có)
+    // D-22 / PR-O26: xử lý khi khách báo "Chưa nhận được" — VERIFIED (giao dịch đúng, kèm giải thích) / ADDITIONAL (chuyển bổ sung)
+    private String resolution;
+    private java.math.BigDecimal additionalAmount;
 }

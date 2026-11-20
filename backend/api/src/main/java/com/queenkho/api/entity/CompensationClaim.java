@@ -144,6 +144,10 @@ public class CompensationClaim {
     @Column(name = "insurance_updated_at")
     private LocalDateTime insuranceUpdatedAt;
 
+    // D-21 / PR-O20: hồ sơ được chi trả qua bảng quyết toán trả kho (NULL = chi trả riêng như BR-128)
+    @Column(name = "settlement_id")
+    private Integer settlementId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

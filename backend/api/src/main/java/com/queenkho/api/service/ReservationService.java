@@ -46,7 +46,9 @@ public class ReservationService {
     // không bán; khai báo loại hàng, thực phẩm chỉ gửi kho lạnh / đông
     // v5 (18/11/2026): cưỡng chế dọn kho tự động sau khi đã quá hạn 5 ngày; cưỡng chế sớm hơn (1–4 ngày) cần tối thiểu 2 lần liên hệ thất bại,
     // hoặc cưỡng chế ngay trong ngày nếu có khách mới đặt đơn trúng ô quá hạn
-    public static final String ASSET_TERMS_VERSION = "v5";
+    // v6 (20/11/2026, D-22): thêm bảng phí & hoàn tiền bằng số, trả sớm mất ưu đãi + phí phá HĐ, bảo hiểm không hoàn khi tự trả sớm,
+    // hoàn tiền trong 24h, khách xác nhận đã nhận tiền (tự xác nhận sau 3 ngày), trả kho phải tất toán (D-21)
+    public static final String ASSET_TERMS_VERSION = "v6";
     // PR-X3 (08/11/2026): Staff liên hệ khách trong 48h sau giờ hẹn; ≥ 2 lần thất bại thì FM được xử lý No-Show
     public static final int NO_SHOW_WAIT_HOURS = 48;
     public static final int NO_SHOW_MIN_FAILED_CONTACTS = 2;
@@ -472,6 +474,14 @@ public class ReservationService {
         );
         int overdueCount = ((Number) debtCheck.get("overdue_count")).intValue();
         int damageCount = ((Number) debtCheck.get("damage_count")).intValue();
+        // D-21 / PR-Q12: quyết toán trả kho âm chưa trả (kể cả khi khách chưa bấm đồng ý) cũng là khoản nợ
+        Integer unpaidSettlements = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM checkout_settlements s JOIN rental_contracts rc ON rc.id = s.contract_id " +
+                        "WHERE rc.customer_id = ? AND s.net_amount < 0 AND s.status NOT IN ('SUPERSEDED', 'COMPLETED')",
+                Integer.class, customer.getId());
+        if (unpaidSettlements != null) {
+            damageCount += unpaidSettlements;
+        }
 
         if (overdueCount > 0 || damageCount > 0) {
             throw new com.queenkho.api.exception.ReservationException(

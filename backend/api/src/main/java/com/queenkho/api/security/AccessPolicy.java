@@ -82,6 +82,9 @@ public class AccessPolicy {
         group("CLAIM_MANAGE", "Chốt và chi trả bồi thường",
                 "BR-127 / BR-128: xác định lỗi, mức bồi thường, chi trả có bằng chứng, gửi hồ sơ bảo hiểm",
                 scopes("FACILITY_MANAGER", FACILITY));
+        group("SETTLEMENT_MANAGE", "Quyết toán trả kho",
+                "D-21: Staff / FM thu tiền mặt phần khách trả thêm; FM xử lý khiếu nại (sửa tiền, giữ nguyên, giao kiểm tra lại)",
+                scopes("STAFF", FACILITY, "FACILITY_MANAGER", FACILITY));
         group("STORAGE_MANAGE", "Danh mục ô kho",
                 "Flow 5: loại, kích thước, vị trí, giá, trạng thái ô", scopes("FACILITY_MANAGER", FACILITY));
         group("STAFF_MANAGE", "Quản lý nhân viên cơ sở",
@@ -149,6 +152,9 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id}/renewal-eligibility", "CUSTOMER_RENTAL"); // PR-R10 / PR-R11
         rule("POST", "/api/payments/vnpay/create-renewal", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/payments/my", "CUSTOMER_PAYMENT");
+        rule("GET", "/api/v1/refunds/my", "CUSTOMER_PAYMENT");                 // D-22: khoản hoàn chờ xác nhận
+        rule("POST", "/api/v1/refunds/{id}/confirm", "CUSTOMER_PAYMENT");
+        rule("POST", "/api/v1/refunds/{id}/dispute", "CUSTOMER_PAYMENT");
         rule("POST", "/api/payments/vnpay/create-debt", "CUSTOMER_PAYMENT");
         rule("GET", "/api/payments/vnpay/status/**", "CUSTOMER_PAYMENT");
         rule(null, "/api/v1/support-requests/**", "CUSTOMER_SUPPORT");
@@ -173,6 +179,22 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id}/sensor-readings", "CONTRACT_VIEW"); // BR-129
         rule("GET", "/api/v1/contracts/{id}/access-logs", "CONTRACT_VIEW");     // IoT Smartlock & RFID
         rule("POST", "/api/v1/contracts/{id}/simulate-access", "CONTRACT_VIEW"); // IoT Simulation
+
+        // D-22: bảng phí & hoàn tiền bằng số (đơn mới / hợp đồng đã ký)
+        rule("GET", "/api/v1/facilities/{id:\\d+}/policy-summary", PUBLIC);   // cùng mức công khai với bảng giá
+        rule("GET", "/api/v1/contracts/{id}/policy-summary", "CONTRACT_VIEW");
+
+        // D-21: quyết toán trả kho
+        rule("GET", "/api/v1/contracts/{id}/settlement", "CONTRACT_VIEW");
+        rule("POST", "/api/v1/contracts/{id}/settlement/confirm", "CUSTOMER_RENTAL");
+        rule("POST", "/api/v1/contracts/{id}/settlement/dispute", "CUSTOMER_RENTAL");
+        rule("POST", "/api/v1/contracts/{id}/settlement/pay", "CUSTOMER_RENTAL");
+        rule("POST", "/api/v1/contracts/{id}/settlement/cash-payment", "SETTLEMENT_MANAGE");
+        rule("GET", "/api/v1/settlements", "SETTLEMENT_MANAGE");
+        rule("POST", "/api/v1/settlements/{id}/adjust", "SETTLEMENT_MANAGE");
+        rule("POST", "/api/v1/settlements/{id}/keep", "SETTLEMENT_MANAGE");
+        rule("POST", "/api/v1/settlements/{id}/recheck", "SETTLEMENT_MANAGE");
+        rule("POST", "/api/v1/dev/simulation/contracts/{id}/settlement-auto-confirm", "DEV_SIM_CUSTOMER");
 
         // Bồi thường hàng hư / mất (ticket hỗ trợ GOODS_DAMAGE / GOODS_LOSS)
         rule("GET", "/api/v1/claims", "CLAIM_VIEW");

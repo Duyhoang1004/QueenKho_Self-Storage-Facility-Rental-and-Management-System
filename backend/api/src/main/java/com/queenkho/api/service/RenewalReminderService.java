@@ -3,6 +3,7 @@ package com.queenkho.api.service;
 import com.queenkho.api.dto.LateFeeCalculationResult;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.repository.RentalContractRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,10 @@ public class RenewalReminderService {
     private final RentalContractRepository contractRepository;
     private final LateFeeService lateFeeService;
 
+    // D-21: nhắc quyết toán trả kho âm chưa thanh toán (field để giữ nguyên constructor đang dùng trong test)
+    @Autowired(required = false)
+    private CheckoutSettlementService settlementService;
+
     public RenewalReminderService(JdbcTemplate jdbcTemplate, NotificationService notificationService,
                                   RentalContractRepository contractRepository, LateFeeService lateFeeService) {
         this.jdbcTemplate = jdbcTemplate;
@@ -56,6 +61,13 @@ public class RenewalReminderService {
         int warned = warnLiquidationAll();
         if (warned > 0) {
             System.out.println("[QueenKho Renewal] Đã gửi " + warned + " cảnh báo cưỡng chế dọn kho.");
+        }
+        // D-21 / PR-O23: quyết toán trả kho âm chưa trả → nhắc ngày 1 / 3 / 7
+        if (settlementService != null) {
+            int reminded = settlementService.remindUnpaid();
+            if (reminded > 0) {
+                System.out.println("[QueenKho Settlement] Đã nhắc " + reminded + " quyết toán trả kho chưa thanh toán.");
+            }
         }
     }
 

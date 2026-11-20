@@ -318,7 +318,7 @@ CREATE TABLE rental_contracts (
     storage_unit_id         NVARCHAR(20) NOT NULL,
     rental_policy_id        INT NOT NULL,
     status                  NVARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
-                            -- PENDING_CHECK_IN / ACTIVE / OVERDUE / TERMINATION_PENDING / TERMINATED / LIQUIDATED
+                            -- PENDING_CHECK_IN / ACTIVE / OVERDUE / TERMINATION_PENDING / SETTLEMENT_PENDING (D-21) / TERMINATED / LIQUIDATED
     start_date              DATE NOT NULL,
     end_date                DATE NULL,
     billing_cycle_months    INT NOT NULL DEFAULT 1,
@@ -527,6 +527,16 @@ CREATE TABLE facility_tasks (
     created_at          DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
     claimed_at          DATETIME2 NULL,
     completed_at        DATETIME2 NULL,
+    customer_id         INT NULL,                             -- D-22 / PR-O25: khách nhận tiền hoàn (task REFUND)
+    refund_amount       DECIMAL(15, 2) NULL,                  -- số tiền đã chi cho khách khi hoàn tất task REFUND
+    receipt_status      NVARCHAR(20) NULL,                    -- WAITING_CUSTOMER / CONFIRMED / AUTO_CONFIRMED / DISPUTED
+    receipt_confirmed_at DATETIME2 NULL,
+    receipt_auto_confirmed BIT NOT NULL CONSTRAINT DF_facilitytasks_receipt_auto DEFAULT 0,
+    receipt_dispute_reason NVARCHAR(500) NULL,
+    receipt_disputed_at DATETIME2 NULL,
+    receipt_round       INT NOT NULL CONSTRAINT DF_facilitytasks_receipt_round DEFAULT 0,
+    CONSTRAINT FK_facilitytasks_customer FOREIGN KEY (customer_id) REFERENCES users(id),
+    CONSTRAINT CK_facilitytasks_receipt CHECK (receipt_status IS NULL OR receipt_status IN ('WAITING_CUSTOMER', 'CONFIRMED', 'AUTO_CONFIRMED', 'DISPUTED')),
     CONSTRAINT FK_facilitytasks_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),
     CONSTRAINT FK_facilitytasks_contract FOREIGN KEY (contract_id)        REFERENCES rental_contracts(id),
     CONSTRAINT FK_facilitytasks_support  FOREIGN KEY (support_request_id) REFERENCES support_requests(id),
@@ -633,6 +643,50 @@ CREATE TABLE login_history (
 GO
 CREATE INDEX IX_loginhistory_created_at ON login_history(created_at DESC);
 CREATE INDEX IX_loginhistory_user ON login_history(user_id);
+GO
+
+/* ---------- checkout_settlements (D-21, PR-O19: quyết toán trả kho, mỗi vòng 1 dòng) ---------- */
+CREATE TABLE checkout_settlements (
+    id                    INT IDENTITY(1,1) PRIMARY KEY,
+    contract_id           INT            NOT NULL,
+    round_no              INT            NOT NULL DEFAULT 1,
+    check_out_task_id     INT            NULL,
+    status                NVARCHAR(30)   NOT NULL,
+    checkout_date         DATE           NOT NULL,
+    deposit_held          DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    damage_fee            DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    late_fee              DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    overstay_fee          DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    rent_refund           DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    compensation_amount   DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    net_amount            DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    breakdown_note        NVARCHAR(2000) NULL,
+    staff_note            NVARCHAR(1000) NULL,
+    manager_note          NVARCHAR(1000) NULL,
+    dispute_reason        NVARCHAR(500)  NULL,
+    disputed_at           DATETIME2      NULL,
+    customer_confirmed_at DATETIME2      NULL,
+    auto_confirmed        BIT            NOT NULL DEFAULT 0,
+    refund_method         NVARCHAR(20)   NULL,
+    debt_transaction_id   INT            NULL,
+    refund_task_id        INT            NULL,
+    created_by            INT            NULL,
+    created_at            DATETIME2      NOT NULL DEFAULT SYSDATETIME(),
+    updated_at            DATETIME2      NULL,
+    rent_basis            NVARCHAR(1000) NULL,                  -- D-22: JSON tiền thuê / bảo hiểm kỳ hiện tại lúc nghiệm thu
+    CONSTRAINT FK_settlements_contract FOREIGN KEY (contract_id)         REFERENCES rental_contracts(id),
+    CONSTRAINT FK_settlements_task     FOREIGN KEY (check_out_task_id)   REFERENCES facility_tasks(id),
+    CONSTRAINT FK_settlements_refund   FOREIGN KEY (refund_task_id)      REFERENCES facility_tasks(id),
+    CONSTRAINT FK_settlements_debt     FOREIGN KEY (debt_transaction_id) REFERENCES payment_transactions(id),
+    CONSTRAINT FK_settlements_creator  FOREIGN KEY (created_by)          REFERENCES users(id),
+    CONSTRAINT CK_settlements_status   CHECK (status IN ('WAITING_CLAIM', 'WAITING_CUSTOMER', 'DISPUTED', 'RECHECKING',
+                                                         'AWAITING_PAYMENT', 'COMPLETED', 'SUPERSEDED'))
+);
+GO
+CREATE INDEX IX_settlements_contract_status ON checkout_settlements(contract_id, status);
+ALTER TABLE compensation_claims ADD settlement_id INT NULL;
+GO
+ALTER TABLE compensation_claims ADD CONSTRAINT FK_claims_settlement FOREIGN KEY (settlement_id) REFERENCES checkout_settlements(id);
 GO
 
 /* ---------- 15. notifications (thông báo trong chuông, lưu DB) ---------- */
@@ -925,14 +979,14 @@ AS
 BEGIN
     SET NOCOUNT ON;
     
-    -- 1. Khi task REFUND chuyển sang COMPLETED gắn với hợp đồng: cập nhật contract = TERMINATED
+    -- 1. Hoàn tiền gắn hợp đồng: cọc giữ về 0; LIQUIDATED / SETTLEMENT_PENDING giữ nguyên (L-44, D-21), còn lại → TERMINATED
     UPDATE c
-    SET c.status = 'TERMINATED', c.deposit_held_amount = 0
+    SET c.status = CASE WHEN c.status IN ('LIQUIDATED', 'SETTLEMENT_PENDING') THEN c.status ELSE 'TERMINATED' END,
+        c.deposit_held_amount = 0
     FROM rental_contracts c
     INNER JOIN inserted i ON c.id = i.contract_id
-    WHERE i.task_type = 'REFUND' 
-      AND i.status = 'COMPLETED'
-      AND c.status <> 'TERMINATED';
+    WHERE i.task_type = 'REFUND'
+      AND i.status = 'COMPLETED';
       
     -- 2. Khi task REFUND chuyển sang COMPLETED (hủy đơn đặt chỗ): tìm reservation từ note và update REFUNDED
     UPDATE r

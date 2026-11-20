@@ -1148,3 +1148,61 @@ Không đổi schema.
   - Với hợp đồng `v5`: mốc `1` và `3` ngày giữ hợp đồng ở `OVERDUE` (tính phí trễ + phí chiếm dụng); mốc `5` ngày tự động kích hoạt cưỡng chế dọn kho (`LIQUIDATED`) và sinh task dọn kho.
 - `POST /api/v1/dev/simulation/contracts/{id}/add-failed-contacts`:
   - Với hợp đồng `v5`: ghi `2` lần liên hệ thất bại (`[OVERDUE_CONTACT]`) để mở khóa ngay nút **Cưỡng chế dọn kho sớm** (khi đang quá hạn 1–4 ngày). Với hợp đồng cũ (`v3`): giữ nguyên `3` lần.
+
+## Cập nhật 19/11/2026 — Trả kho = tất toán, khách xác nhận kết thúc hợp đồng (D-21)
+
+> Rule: `docs/business-rules.md` PR-O17 → PR-O24. Schema: `sql_script/Update_tat_toan_tra_kho.sql` (bảng `checkout_settlements`, `compensation_claims.settlement_id`). Trạng thái hợp đồng mới: **`SETTLEMENT_PENDING`**.
+
+### Thay đổi API cũ
+- `POST /api/v1/staff-tasks/{id}/check-out` (UC-23):
+  - Chặn **409 `OPEN_TICKETS_PENDING`** khi hợp đồng còn ticket hỗ trợ `OPEN` / `IN_PROGRESS` (trừ ticket hàng hư / mất); **409 `CLAIM_INSPECTION_PENDING`** khi còn hồ sơ bồi thường `SUBMITTED`.
+  - Thành công: hợp đồng → `SETTLEMENT_PENDING` (không còn `TERMINATED`), đơn giữ `TERMINATION_PENDING`; PIN/RFID thu hồi; **không** ghi giao dịch trừ cọc / nợ, **không** tạo task `REFUND` — tạo bảng quyết toán vòng 1.
+  - Task `CHECK_OUT` có ghi chú bắt đầu `[RECHECK]` (FM giao kiểm tra lại) dùng chung endpoint này: chỉ cần `notes` (≥ 10 ký tự) + `damageCases` (mỗi sự cố ≥ 1 ảnh), bỏ qua checklist bàn giao → sinh bảng quyết toán vòng mới.
+- `POST /api/v1/staff-tasks/{id}/complete-maintenance` và "Mở lại kho": **409 `SETTLEMENT_DISPUTED`** khi khách đang khiếu nại quyết toán của ô.
+- `POST /api/v1/claims/{id}/pay`: **409 `CLAIM_IN_SETTLEMENT`** khi hợp đồng đã nghiệm thu trả kho (tiền bồi thường đi theo quyết toán). `GET /claims*` trả thêm `settlementId`.
+- `POST /api/v1/staff-tasks/{id}/extend`: gia hạn được cả task `CHECK_OUT` `[RECHECK]` quá hạn.
+- `POST /api/v1/reservations`: **409 `CUSTOMER_HAS_DEBT`** cả khi khách còn quyết toán trả kho **âm** chưa xong.
+- IPN VNPAY trả nợ (`DEBT`): khoản nợ là phần âm của quyết toán → hợp đồng `TERMINATED`.
+
+### API mới
+| Method | Path | Ai | Mô tả |
+|---|---|---|---|
+| GET | `/api/v1/contracts/{id}/settlement` | Khách (của mình), Staff / FM (cơ sở mình) | Bảng quyết toán mới nhất: `status`, `roundNo`, `depositHeld`, `damageFee`, `lateFee`, `overstayFee`, `rentRefund`, `compensationAmount`, `netAmount` (âm = khách trả), `direction`, `damages[]`, `claims[]`, `history[]`, `canConfirm`, `canDispute`, `canPay`, `autoConfirmAt`. Chưa có → 404 `SETTLEMENT_NOT_FOUND` |
+| POST | `/api/v1/contracts/{id}/settlement/confirm` | Khách | `WAITING_CUSTOMER` → ≥ 0: hợp đồng `TERMINATED` + 1 task `REFUND`; < 0: `AWAITING_PAYMENT` + trả `{ payUrl, amount }` VNPAY. Chưa chốt bồi thường / đang xem lại → 409 `SETTLEMENT_NOT_READY` |
+| POST | `/api/v1/contracts/{id}/settlement/dispute` | Khách | Body `{ reason }` (10–500) → `DISPUTED`, báo FM. Thiếu lý do → 400 `DISPUTE_REASON_REQUIRED` |
+| POST | `/api/v1/contracts/{id}/settlement/pay` | Khách | Tạo lại link VNPAY khi `AWAITING_PAYMENT` |
+| POST | `/api/v1/contracts/{id}/settlement/cash-payment` | Staff / FM | Body `{ cashReceiptConfirmed, evidenceImageUrl?, note? }` → thu tiền mặt phần âm, hợp đồng `TERMINATED` |
+| GET | `/api/v1/settlements?group=` | FM | `ACTION` (mặc định: `DISPUTED`, `WAITING_CLAIM`) / `CUSTOMER` / `PAYMENT` / `DONE` / `ALL` |
+| POST | `/api/v1/settlements/{id}/adjust` | FM | Body `{ damages: [{ damageCaseId, estimatedCost, liableParty }], waiveLateFee, waiveOverstayFee, note }` — **chỉ giảm** → vòng mới |
+| POST | `/api/v1/settlements/{id}/keep` | FM | Body `{ note }` — giữ nguyên kèm giải thích → vòng mới |
+| POST | `/api/v1/settlements/{id}/recheck` | FM | Body `{ note, staffId? }` — sinh task `CHECK_OUT` `[RECHECK]`, bảng → `RECHECKING` |
+| POST | `/api/v1/dev/simulation/contracts/{id}/settlement-auto-confirm` | Demo | Quyết toán dương chờ khách → tự xác nhận như job 3 ngày |
+
+### Job
+- Mỗi phút (`StaffTaskOverdueJob`): quyết toán ≥ 0 ở `WAITING_CUSTOMER` quá 3 ngày → tự xác nhận (`auto_confirmed = 1`).
+- 08:00 (`RenewalReminderService`): quyết toán âm chưa trả → nhắc ngày 1 / 3 / 7.
+
+## Cập nhật 20/11/2026 — Số tiền rõ ràng, khách xác nhận đã nhận tiền hoàn, chính sách bằng số (D-22)
+
+> Rule: `docs/business-rules.md` PR-O15, PR-O25 → PR-O28, BR-142. Schema: `sql_script/Update_hoan_tien_chinh_sach_v6.sql`. Điều khoản đơn mới: `v6`.
+
+### Thay đổi API cũ
+- `GET /api/v1/contracts/{id}/checkout-refund-preview` trả thêm `lines` (`[{ group: PAID | KEPT | ADDED, label, amount, note }]`), `paidTotal`, `keptTotal`, `netAmount`, `rentPaidNet`, `insurancePaid`, `periodMonths`, `periodStart` — bảng "Bạn đã đóng − Cơ sở giữ lại = Dự kiến hoàn" (PR-O28).
+- `GET /api/v1/contracts/{id}/settlement` trả thêm `lines`, `paidTotal`, `keptTotal`, `addedTotal` (cùng bố cục, gồm dòng bồi thường).
+- `POST /api/v1/staff-tasks/{id}/complete-refund`:
+  - Tiền mặt bắt buộc `evidenceImageUrl` (ảnh phiếu chi có chữ ký khách) → 400 `REFUND_EVIDENCE_REQUIRED`; có ảnh thì `receiptStatus = CONFIRMED`.
+  - Chuyển khoản → `receiptStatus = WAITING_CUSTOMER`; hoàn 0đ → `AUTO_CONFIRMED`.
+  - Task khách báo chưa nhận (`receiptStatus = DISPUTED`): body thêm `resolution` (`VERIFIED` / `ADDITIONAL`), `additionalAmount` (bắt buộc khi `ADDITIONAL`), `note` ≥ 10 ký tự (thiếu → 400 `REFUND_NOTE_REQUIRED`).
+- `GET /api/v1/staff-tasks*` (task REFUND) trả thêm `receiptStatus`, `receiptDisputeReason`, `receiptRound`, `refundAmount`.
+
+### API mới
+| Method | Path | Ai | Mô tả |
+|---|---|---|---|
+| GET | `/api/v1/refunds/my?contractId=` | Khách | Khoản hoàn của mình: `amount`, `paymentMethod`, `bankTransactionCode`, `evidenceImageUrl`, `receiptStatus`, `autoConfirmAt`, `managerNote`, `canConfirm`, `canDispute` |
+| POST | `/api/v1/refunds/{taskId}/confirm` | Khách | "Đã nhận được" → `CONFIRMED`. Sai bước → 409 `RECEIPT_STATUS_INVALID`; không phải của mình → 403 `FORBIDDEN_REFUND` |
+| POST | `/api/v1/refunds/{taskId}/dispute` | Khách | Body `{ reason }` (10–500) → `DISPUTED`, task mở lại `IN_PROGRESS` hạn 24h, báo FM |
+| GET | `/api/v1/facilities/{id}/policy-summary?unitTypeId=&months=&insurancePlan=&voucherDiscount=` | Công khai | Bảng phí & hoàn tiền bằng số cho đơn đang chọn: `sections[{ key, title, subtitle, rows[{ label, amount, note, tone, total }] }]` |
+| GET | `/api/v1/contracts/{id}/policy-summary` | Khách (của mình), Staff / FM (cơ sở mình), BOM / Admin | Bảng phí theo chính sách đã chốt của hợp đồng (`policyFrozenAt`, `termsVersion`) |
+
+### Job
+- Mỗi phút (`StaffTaskOverdueJob`): khoản hoàn chuyển khoản `WAITING_CUSTOMER` quá 3 ngày → `AUTO_CONFIRMED`.

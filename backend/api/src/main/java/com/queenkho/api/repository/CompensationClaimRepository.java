@@ -27,4 +27,8 @@ public interface CompensationClaimRepository extends JpaRepository<CompensationC
     @Query("SELECT c FROM CompensationClaim c JOIN FETCH c.contract ct JOIN FETCH c.customer " +
             "WHERE (:facilityId IS NULL OR c.facilityId = :facilityId) ORDER BY c.id DESC")
     List<CompensationClaim> findForFacility(@Param("facilityId") Integer facilityId);
+
+    // D-21 / PR-O19: hồ sơ của 1 hợp đồng — tính tiền bồi thường vào quyết toán trả kho
+    @Query("SELECT c FROM CompensationClaim c JOIN FETCH c.customer JOIN FETCH c.supportRequest WHERE c.contract.id = :contractId ORDER BY c.id")
+    List<CompensationClaim> findForContract(@Param("contractId") Integer contractId);
 }

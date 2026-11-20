@@ -63,12 +63,12 @@ export function PhotoGrid({ images, onRemove }) {
 }
 
 // Ô chọn ảnh: tải lên server, lỗi thì nén thành data URL lưu thẳng (giống ảnh sự cố UC-24)
-export function HandoverPhotoPicker({ images, onChange, label, hint, mockLabel, required = true }) {
+export function HandoverPhotoPicker({ images, onChange, label, hint, mockLabel, required = true, maxPhotos = MAX_HANDOVER_PHOTOS }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
   const addFiles = async fileList => {
-    const files = Array.from(fileList || []).slice(0, MAX_HANDOVER_PHOTOS - images.length)
+    const files = Array.from(fileList || []).slice(0, maxPhotos - images.length)
     if (files.length === 0) return
     setUploading(true)
     setError('')
@@ -93,26 +93,26 @@ export function HandoverPhotoPicker({ images, onChange, label, hint, mockLabel, 
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-black uppercase text-[#AFAFAF]">
-          {label}{required ? ' *' : ''} ({images.length}/{MAX_HANDOVER_PHOTOS})
+          {label}{required ? ' *' : ''} ({images.length}/{maxPhotos})
         </span>
         <div className="flex items-center gap-2">
           {mockLabel && (
             <button
               type="button"
-              onClick={() => onChange([...images, createMockEvidenceDataUrl(mockLabel, 'ẢNH HIỆN TRẠNG Ô KHO')].slice(0, MAX_HANDOVER_PHOTOS))}
+              onClick={() => onChange([...images, createMockEvidenceDataUrl(mockLabel, 'ẢNH HIỆN TRẠNG Ô KHO')].slice(0, maxPhotos))}
               className="text-[11px] font-black text-[#FF9600] hover:underline cursor-pointer"
             >
               + Ảnh mẫu (demo)
             </button>
           )}
-          <label className={`duo-btn-white px-3 py-1.5 text-xs gap-1 ${uploading || images.length >= MAX_HANDOVER_PHOTOS ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+          <label className={`duo-btn-white px-3 py-1.5 text-xs gap-1 ${uploading || images.length >= maxPhotos ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
             <span className="material-symbols-outlined text-[16px] text-[#1CB0F6]">{uploading ? 'hourglass_top' : 'add_a_photo'}</span>
             {uploading ? 'Đang tải...' : 'Chụp / tải ảnh'}
             <input
               type="file"
               accept="image/*"
               capture="environment"
-              multiple
+              multiple={maxPhotos > 1}
               className="hidden"
               onChange={e => { addFiles(e.target.files); e.target.value = '' }}
             />

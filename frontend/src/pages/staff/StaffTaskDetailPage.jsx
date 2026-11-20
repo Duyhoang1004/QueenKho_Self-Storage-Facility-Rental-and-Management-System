@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import {
+  prepareCheckInHandover,
   checkInStaffTask,
+  reopenCheckInHandover,
+  confirmCheckInUnitIssue,
   checkOutStaffTask,
   completeMaintenanceTask,
   completeRefundTask,
@@ -15,6 +18,7 @@ import {
   suggestAccessPin,
   uploadImageFile,
 } from '../../services/staffTaskService';
+import { getCheckInHandover } from '../../services/contractService';
 import SimulationButton from '../../components/SimulationButton';
 import UnitLocationMap from '../../components/UnitLocationMap';
 import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
@@ -94,6 +98,8 @@ const SUPPORT_RESOLUTION_PRESETS = [
 const STATUS_META = {
   OPEN:        { label: 'Chờ nhận',   cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
   IN_PROGRESS: { label: 'Đang xử lý', cls: 'bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]' },
+  AWAITING_CUSTOMER: { label: 'Chờ khách xác nhận', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' },
+  BLOCKED_UNIT_ISSUE: { label: 'Ô không đạt', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
   OVERDUE:     { label: 'Quá hạn',    cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' },
   COMPLETED:   { label: 'Hoàn thành', cls: 'bg-[#D7FFB8] text-[#58A700] border-2 border-[#58CC02]' },
   CANCELLED:   { label: 'Đã huỷ',     cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' },
@@ -115,14 +121,13 @@ const UNIT_STATUS_LABEL = {
   RESERVED: 'Đã giữ chỗ',
 };
 
-// 6 mục kiểm tra của biên bản Check-in (UC-18) — cả 6 mục phải đạt
+// Staff kiểm 5 mục; khách xác nhận độc lập trên tài khoản sau khi xem ô thực tế.
 // Mục 6 (họp nhóm 05/11/2026, PR-C7 / BR-132): kiểm tra hàng khách mang vào; biên bản lưu ở prohibitedGoodsCommitted
 const CHECKIN_CHECKLIST = [
   { key: 'identityVerified',           label: 'Đã xác minh CCCD của khách',     hint: 'Đối chiếu CCCD với thông tin đặt chỗ' },
   { key: 'unitEmpty',                  label: 'Ô kho trống',                    hint: 'Không còn đồ của người thuê trước' },
   { key: 'unitClean',                  label: 'Ô kho sạch sẽ',                  hint: 'Sàn, tường, cửa đã vệ sinh' },
   { key: 'lockIntact',                 label: 'Khoá SmartLock nguyên vẹn',      hint: 'Khoá hoạt động, không trầy xước' },
-  { key: 'customerSignatureConfirmed', label: 'Khách đã ký biên bản bàn giao',  hint: 'Khách ký xác nhận trên biên bản giấy' },
   { key: 'goodsChecked', recordKey: 'prohibitedGoodsCommitted', label: 'Đã kiểm tra hàng mang vào',
     hint: 'Hàng khớp loại khách khai báo, không có chất dễ cháy nổ / hàng cấm' },
 ];
@@ -679,6 +684,7 @@ export default function StaffTaskDetailPage() {
   const isManager = ['FACILITY_MANAGER', 'MANAGER', 'ADMIN'].includes(user.role);
 
   const [task, setTask] = useState(null);
+  const [handover, setHandover] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
@@ -688,7 +694,10 @@ export default function StaffTaskDetailPage() {
   const [pinLoading, setPinLoading] = useState(false);
   const [rfid, setRfid] = useState('');
   const [notes, setNotes] = useState('');
-  const [checkInPhotos, setCheckInPhotos] = useState([]); // BR-121
+  const [checkInEvidence, setCheckInEvidence] = useState({}); // one photo per check-in item
+  const [reopenNote, setReopenNote] = useState('');
+  const [issueNote, setIssueNote] = useState('');
+  const [reopenPhotos, setReopenPhotos] = useState([]);
 
   // State cho Check-out & Damage Cases (UC-23 & UC-24)
   const [coChecks, setCoChecks] = useState(INITIAL_CHECKOUT_CHECKS);
@@ -748,9 +757,12 @@ export default function StaffTaskDetailPage() {
 
   const loadTask = useCallback(() => {
     return getStaffTaskDetail(id, userId)
-      .then(data => {
+      .then(async data => {
         setTask(data);
         setLoadError('');
+        if (data.taskType === 'CHECK_IN' && data.contractId) {
+          setHandover(await getCheckInHandover(data.contractId));
+        } else setHandover(null);
         if (data.taskType === 'CHECK_IN' && !blockedReason(data, userId) && data.status !== 'COMPLETED') {
           fetchPin();
         }
@@ -765,19 +777,21 @@ export default function StaffTaskDetailPage() {
 
   // ================== LOGIC CHECK-IN (UC-18) ==================
   const allCheckInChecked = CHECKIN_CHECKLIST.every(item => checks[item.key]);
-  const canSubmitCheckIn =
-    allCheckInChecked && /^\d{6}$/.test(pin) && rfid.trim() !== '' && notes.length <= NOTES_MAX
-    && checkInPhotos.length > 0 && !submitting;
+  const allCheckInPhotos = CHECKIN_CHECKLIST.every(item => Boolean(checkInEvidence[item.key]));
+  const canSubmitCheckIn = handover?.status === 'ACCEPTED'
+    ? /^\d{6}$/.test(pin) && /^RFID-\d{5}$/.test(rfid) && !submitting
+    : allCheckInChecked && allCheckInPhotos && notes.length <= NOTES_MAX && !submitting;
 
   const handleCheckInSubmit = () => {
     setSubmitting(true);
-    checkInStaffTask(task.id, userId, {
-      ...checks, accessPinCode: pin, rfidCardCode: rfid.trim(), notes, evidenceImages: checkInPhotos,
-    })
-      .then(data => {
-        setTask(data);
-        setJustCompleted(true);
-        setToast({ type: 'success', message: `Check-in thành công. Hợp đồng ${data.contractCode} đã kích hoạt.` });
+    (handover?.status === 'ACCEPTED'
+      ? checkInStaffTask(task.id, userId, { approvalId: handover.id, accessPinCode: pin, rfidCardCode: rfid.trim() })
+      : prepareCheckInHandover(task.id, { ...checks, notes, checklistEvidence: checkInEvidence }))
+      .then(() => {
+        loadTask();
+        setToast({ type: 'success', message: handover?.status === 'ACCEPTED'
+          ? 'Đã bàn giao ô và kích hoạt hợp đồng.'
+          : 'Đã gửi biên bản nháp. Khách cần kiểm tra ô và xác nhận trên tài khoản của mình.' });
       })
       .catch(err => {
         const code = err.response?.data?.error;
@@ -1293,10 +1307,17 @@ export default function StaffTaskDetailPage() {
   }
 
   const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' };
+  const checkInDisplayStatus = task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
+    ? handover?.status === 'PENDING_CUSTOMER' ? 'AWAITING_CUSTOMER'
+      : handover?.status === 'REJECTED' ? 'BLOCKED_UNIT_ISSUE' : task.status
+    : task.status;
   const status = isRefund && task.status === 'OPEN'
     ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
-    : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
-  const reason = blockedReason(task, userId);
+    : (STATUS_META[checkInDisplayStatus] || { label: checkInDisplayStatus, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
+  const reason = blockedReason(task, userId) || (task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
+    ? handover?.status === 'PENDING_CUSTOMER' ? 'Đã gửi biên bản. Khách cần kiểm tra ô và xác nhận trên tài khoản.'
+      : handover?.status === 'REJECTED' ? 'Khách từ chối ô. Quản lý xử lý, đổi ô hoặc dời lịch rồi mở lại để kiểm tra cùng khách.' : null
+    : null);
   const record = task.handoverRecord;
   const isCheckOut = task.taskType === 'CHECK_OUT';
 
@@ -2657,6 +2678,57 @@ export default function StaffTaskDetailPage() {
               <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
               <p className="text-sm font-black text-[#4B4B4B]">Không thể lập biên bản</p>
               <p className="text-xs font-bold text-[#777777] max-w-[360px]">{reason}</p>
+              {isManager && task.taskType === 'CHECK_IN' && ['PENDING_CUSTOMER', 'REJECTED'].includes(handover?.status) && (
+                <div className="w-full max-w-md flex flex-col gap-3 text-left mt-2">
+                  {handover?.status === 'REJECTED' && <div className="rounded-2xl border-2 border-[#FFB4B4] bg-[#FFF4F4] p-4 flex flex-col gap-2">
+                    <p className="text-xs font-black text-[#B42318]">Khách từ chối ô {handover.storage_unit_id}</p>
+                    <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">Lý do: {handover.rejection_reason || 'Không có lý do'}</p>
+                    {handover.customerEvidenceImages?.length > 0 ? <>
+                      <p className="text-xs font-black text-[#777777]">Ảnh khách cung cấp</p>
+                      <PhotoGrid images={handover.customerEvidenceImages} />
+                    </> : <p className="text-xs text-[#777777]">Khách không gửi ảnh bổ sung.</p>}
+                  </div>}
+                  {handover?.status === 'REJECTED' && <div className="rounded-2xl border border-[#E5E5E5] p-4 flex flex-col gap-3">
+                    <p className="text-xs font-black text-[#4B4B4B]">Bước 1 · FM kiểm tra lý do từ chối</p>
+                    {handover?.facility_fault_confirmed ? (
+                      <p className="text-xs font-bold text-[#B42318]">Đã xác nhận lỗi cơ sở. {handover.faultNote && `Ghi nhận: ${handover.faultNote}`}</p>
+                    ) : <>
+                    <p className="text-xs text-[#777777]">Xem lý do và ảnh khách cung cấp ở trên, kiểm tra ô thực tế rồi ghi nhận nếu đúng là lỗi cơ sở. Chưa cần ảnh sau xử lý ở bước này.</p>
+                    <textarea className="duo-input text-xs" value={issueNote} onChange={e => setIssueNote(e.target.value)}
+                      placeholder="Ghi lỗi cơ sở sau khi xác minh (10–500 ký tự)" maxLength={500} />
+                    <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={issueNote.trim().length < 10}
+                      onClick={async () => {
+                        try {
+                          await confirmCheckInUnitIssue(task.id, issueNote.trim());
+                          await loadTask();
+                          setToast({ type: 'success', message: 'Đã xác nhận lỗi cơ sở. Khách có thể dời lịch hoặc hủy hoàn 100%.' });
+                        } catch (err) {
+                          setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' });
+                        }
+                      }}>Xác nhận ô không đạt do lỗi cơ sở</button>
+                    </>}
+                  </div>}
+                  <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                    <p className="text-xs font-black text-[#0369A1]">Bước 2 · Mở lại sau khi xử lý hoặc kiểm tra lại ô</p>
+                    <p className="text-xs text-[#4B4B4B]">Chỉ thực hiện khi ô đã đạt, hoặc đã đổi sang ô phù hợp. Ảnh ở đây là hiện trạng <b>sau xử lý</b>; khách sẽ xem được trong lịch sử.</p>
+                    <textarea className="duo-input text-xs" value={reopenNote} onChange={e => setReopenNote(e.target.value)}
+                      placeholder="Ghi cách xử lý hoặc lý do kết luận ô đạt (10–500 ký tự)" maxLength={500} />
+                    {handover?.status === 'REJECTED' && <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos}
+                      label="Ảnh ô sau xử lý hoặc ô thay thế" hint="Chụp ảnh mới sau khi dọn/sửa/đổi ô, hoặc ảnh đối chiếu nếu ô vốn đã đạt." maxPhotos={1} />}
+                  <button type="button" className="duo-btn-blue px-4 py-2 text-xs"
+                    disabled={reopenNote.trim().length < 10 || (handover?.status === 'REJECTED' && reopenPhotos.length === 0)}
+                    onClick={async () => {
+                  try {
+                    await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null });
+                    await loadTask();
+                    setToast({ type: 'success', message: 'Đã mở lại task. Nhân viên cần kiểm tra ô và lập biên bản mới.' });
+                  } catch (err) {
+                    setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được task.' });
+                  }
+                }}>Mở lại check-in sau khi xử lý</button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : isCheckOut ? (
             /* ================== FORM NGHIỆM THU TRẢ KHO & SỰ CỐ (UC-23 & UC-24) ================== */
@@ -3169,23 +3241,34 @@ export default function StaffTaskDetailPage() {
             <div className="duo-card p-6 flex flex-col gap-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#4B4B4B]">Biên bản bàn giao</h2>
-                  <p className="text-xs font-bold text-[#AFAFAF]">Kiểm tra đủ 6 mục (gồm kiểm tra hàng), cấp mã PIN + thẻ RFID rồi xác nhận.</p>
+                  <h2 className="text-lg font-black text-[#4B4B4B]">{handover?.status === 'ACCEPTED' ? 'Hoàn tất bàn giao' : 'Biên bản bàn giao'}</h2>
+                  <p className="text-xs font-bold text-[#AFAFAF]">{handover?.status === 'ACCEPTED'
+                    ? `Khách đã đồng ý nhận ô ${handover.storage_unit_id}. Cấp PIN/RFID để kích hoạt hợp đồng.`
+                    : 'Dẫn khách đến ô, kiểm tra hiện trạng và gửi biên bản nháp để khách tự xác nhận.'}</p>
                 </div>
-                <button
+                {handover?.status !== 'ACCEPTED' && <button
                   type="button"
                   onClick={() => {
                     setChecks(CHECKIN_CHECKLIST.reduce((acc, item) => ({ ...acc, [item.key]: true }), {}));
-                    setCheckInPhotos(prev => withMockHandoverPhoto(prev, task, 'nhận kho'));
+                    setCheckInEvidence(Object.fromEntries(CHECKIN_CHECKLIST.map(item => [item.key,
+                      createMockEvidenceDataUrl(`${item.label} - ô ${task.storageUnitId || ''}`, 'ẢNH MINH CHỨNG CHECK-IN')])));
                   }}
                   className="duo-btn-white px-4 py-2 text-xs gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[18px]">auto_fix_high</span>
                   Giả lập hoàn thiện
-                </button>
+                </button>}
               </div>
 
+              {handover?.resolutionNote && <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-2">
+                <p className="text-xs font-black text-[#0369A1]">FM đã mở lại check-in · ô {handover.resolvedUnitId || task.storageUnitId}</p>
+                <p className="text-xs text-[#4B4B4B]">{handover.resolutionNote}</p>
+                {handover.resolutionEvidenceImages?.length > 0 && <PhotoGrid images={handover.resolutionEvidenceImages} />}
+                <p className="text-xs font-bold text-[#777777]">Staff cần cùng khách kiểm tra lại và lập biên bản mới.</p>
+              </div>}
+
               {/* BR-131: loại hàng khách khai báo khi đặt kho — đối chiếu với mục 6 */}
+              {handover?.status !== 'ACCEPTED' && <>
               <div className="rounded-2xl border-2 border-[#FFC800] bg-[#FFFBEA] px-4 py-3">
                 <p className="text-[11px] font-black uppercase text-[#B78900] mb-1.5">Hàng khách khai báo</p>
                 {task.goodsCategories?.length ? (
@@ -3206,8 +3289,8 @@ export default function StaffTaskDetailPage() {
               {/* Checklist 6 mục */}
               <div className="flex flex-col gap-2">
                 {CHECKIN_CHECKLIST.map(item => (
+                  <div key={item.key} className="flex flex-col gap-2 rounded-2xl border-2 border-[#E5E5E5] p-3">
                   <label
-                    key={item.key}
                     className={`flex items-start gap-3 rounded-2xl border-2 px-4 py-3 cursor-pointer select-none transition-colors ${
                       checks[item.key] ? 'bg-[#D7FFB8] border-[#58CC02]' : 'bg-white border-[#E5E5E5] hover:bg-[#F7F7F7]'
                     }`}
@@ -3223,13 +3306,25 @@ export default function StaffTaskDetailPage() {
                       <span className="text-[11px] font-bold text-[#AFAFAF]">{item.hint}</span>
                     </span>
                   </label>
+                  <HandoverPhotoPicker
+                    images={checkInEvidence[item.key] ? [checkInEvidence[item.key]] : []}
+                    onChange={images => setCheckInEvidence(prev => ({ ...prev, [item.key]: images[0] || undefined }))}
+                    label={`Ảnh minh chứng: ${item.label}`}
+                    hint={item.key === 'identityVerified' ? 'Nếu chụp CCCD, che bớt số và thông tin không cần thiết.' : 'Chụp đúng mục này tại ô kho đang bàn giao.'}
+                    mockLabel={`${item.label} - ô ${task.storageUnitId || ''}`}
+                    maxPhotos={1}
+                  />
+                  </div>
                 ))}
                 <p className={`text-[11px] font-black ${allCheckInChecked ? 'text-[#58A700]' : 'text-[#AFAFAF]'}`}>
-                  Đã kiểm tra {CHECKIN_CHECKLIST.filter(item => checks[item.key]).length}/{CHECKIN_CHECKLIST.length} mục
+                  Đã kiểm tra {CHECKIN_CHECKLIST.filter(item => checks[item.key]).length}/{CHECKIN_CHECKLIST.length} mục · Có ảnh {CHECKIN_CHECKLIST.filter(item => checkInEvidence[item.key]).length}/{CHECKIN_CHECKLIST.length}
                 </p>
               </div>
 
+              </>}
+
               {/* Cấp mã PIN & thẻ RFID */}
+              {handover?.status === 'ACCEPTED' &&
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF]/50 p-4 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
@@ -3256,23 +3351,17 @@ export default function StaffTaskDetailPage() {
                   <input
                     type="text"
                     value={rfid}
-                    onChange={e => setRfid(e.target.value)}
-                    placeholder="VD: RFID-001234"
+                    onChange={e => setRfid(e.target.value.toUpperCase())}
+                    placeholder="RFID-12345"
+                    maxLength={10}
+                    pattern="RFID-[0-9]{5}"
                     className="duo-input font-mono font-bold"
                   />
-                  <span className="text-[10px] font-bold text-[#AFAFAF]">Quẹt thẻ lên đầu đọc hoặc nhập mã in trên thẻ.</span>
+                  <span className="text-[10px] font-bold text-[#AFAFAF]">Định dạng bắt buộc: RFID- và đúng 5 chữ số, ví dụ RFID-12345.</span>
                 </label>
-              </div>
+              </div>}
 
-              {/* BR-121: ảnh hiện trạng ô lúc bàn giao */}
-              <HandoverPhotoPicker
-                images={checkInPhotos}
-                onChange={setCheckInPhotos}
-                label="Ảnh hiện trạng ô lúc bàn giao"
-                hint="Chụp ô trống, sạch, khoá nguyên vẹn trước khi giao — lúc trả kho sẽ đối chiếu với ảnh này."
-                mockLabel={`Hiện trạng ô ${task.storageUnitId || ''} lúc nhận kho`}
-              />
-
+              {handover?.status !== 'ACCEPTED' && <>
               {/* Ghi chú */}
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Ghi chú</span>
@@ -3288,6 +3377,8 @@ export default function StaffTaskDetailPage() {
                 </span>
               </label>
 
+              </>}
+
               <button
                 type="button"
                 onClick={() => setConfirmOpen(true)}
@@ -3295,14 +3386,14 @@ export default function StaffTaskDetailPage() {
                 className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[20px]">how_to_reg</span>
-                Xác nhận bàn giao
+                {handover?.status === 'ACCEPTED' ? 'Hoàn tất check-in và cấp quyền truy cập' : 'Gửi biên bản cho khách xác nhận'}
               </button>
               {!canSubmitCheckIn && !submitting && (
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">
-                  {!allCheckInChecked ? 'Cần tick đủ 6 mục kiểm tra.'
-                    : rfid.trim() === '' ? 'Cần nhập mã thẻ RFID.'
-                    : checkInPhotos.length === 0 ? 'Cần ít nhất 1 ảnh hiện trạng ô.'
-                    : 'Đang chờ mã PIN...'}
+                  {handover?.status === 'ACCEPTED'
+                    ? (!/^\d{6}$/.test(pin) ? 'Cần mã PIN 6 số.' : 'Mã thẻ phải có dạng RFID-12345.')
+                    : (!allCheckInChecked ? 'Cần tick đủ 5 mục kiểm tra.'
+                      : !allCheckInPhotos ? 'Mỗi mục kiểm tra cần một ảnh minh chứng riêng.' : 'Kiểm tra lại biên bản.')}
                 </p>
               )}
             </div>
@@ -3343,7 +3434,7 @@ export default function StaffTaskDetailPage() {
       <TaskConfirmDialog
         open={confirmOpen}
         icon={isCheckOut ? 'fact_check' : 'how_to_reg'}
-        title={isCheckOut ? 'Xác nhận hoàn tất nghiệm thu trả kho?' : 'Xác nhận bàn giao ô kho?'}
+        title={isCheckOut ? 'Xác nhận hoàn tất nghiệm thu trả kho?' : handover?.status === 'ACCEPTED' ? 'Hoàn tất check-in?' : 'Gửi biên bản cho khách xác nhận?'}
         message={
           isCheckOut
             ? `Hợp đồng ${task.contractCode} sẽ chuyển sang "Đã chấm dứt", thu hồi mã PIN/RFID. ${
@@ -3359,7 +3450,9 @@ export default function StaffTaskDetailPage() {
               }${
                 estimatedExcessDebt > 0 ? ` (Khách nợ vượt cọc: ${formatCurrency(estimatedExcessDebt)})` : ''
               }.`
-            : `Hợp đồng ${task.contractCode} sẽ chuyển sang "Đang hoạt động" và khách nhận mã PIN ${pin}, thẻ RFID ${rfid.trim()}. Biên bản đã lưu không thể sửa.`
+            : handover?.status === 'ACCEPTED'
+              ? `Khách đã đồng ý ô ${handover.storage_unit_id}. Hệ thống sẽ kích hoạt hợp đồng ${task.contractCode} và cấp PIN/RFID.`
+              : `Khách sẽ thấy mã ô và ảnh hiện trạng để tự đồng ý hoặc từ chối. Hợp đồng ${task.contractCode} chưa kích hoạt ở bước này.`
         }
         confirmLabel="Xác nhận"
         submitting={submitting}

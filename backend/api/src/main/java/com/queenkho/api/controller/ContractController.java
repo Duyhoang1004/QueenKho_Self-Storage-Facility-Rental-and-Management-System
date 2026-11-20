@@ -229,6 +229,26 @@ public class ContractController {
         return ResponseEntity.ok(staffTaskService.getHandoverRecords(id));
     }
 
+    @GetMapping("/{id}/check-in-handover")
+    public ResponseEntity<?> latestCheckInHandover(@PathVariable Integer id) {
+        return ResponseEntity.ok(staffTaskService.latestCheckInHandover(id, currentUser.require()));
+    }
+
+    @GetMapping("/{id}/check-in-handover/history")
+    public ResponseEntity<?> checkInHandoverHistory(@PathVariable Integer id) {
+        return ResponseEntity.ok(staffTaskService.checkInHandoverHistory(id, currentUser.require()));
+    }
+
+    @PostMapping("/{id}/check-in-handover/{draftId}/decision")
+    public ResponseEntity<?> decideCheckInHandover(@PathVariable Integer id, @PathVariable Integer draftId,
+                                                   @RequestBody Map<String, Object> body) {
+        boolean accepted = Boolean.TRUE.equals(body.get("accepted"));
+        String reason = body.get("reason") instanceof String s ? s : null;
+        java.util.List<String> images = body.get("evidenceImages") instanceof java.util.List<?> list
+                ? list.stream().filter(String.class::isInstance).map(String.class::cast).toList() : java.util.List.of();
+        return ResponseEntity.ok(staffTaskService.decideCheckIn(id, draftId, currentUser.require(), accepted, reason, images));
+    }
+
     // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang
     @GetMapping("/{id}/transfer-options")
     public ResponseEntity<?> getTransferOptions(@PathVariable Integer id) {

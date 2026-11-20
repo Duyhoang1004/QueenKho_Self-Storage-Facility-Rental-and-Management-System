@@ -736,7 +736,8 @@ export default function CustomerContractPage() {
 
           {/* BR-121 / BR-122: biên bản nhận / trả kho kèm ảnh + lịch sử chuyển ô */}
           <div className="mt-6 pt-5 border-t-2 border-[#E5E5E5]">
-            <ContractHandoverSection contractId={contract.contractId || contract.id} />
+            <ContractHandoverSection contractId={contract.contractId || contract.id}
+              customerCanDecide={contract.status === 'PENDING_CHECK_IN'} onDecision={fetchContract} />
           </div>
         </div>
 

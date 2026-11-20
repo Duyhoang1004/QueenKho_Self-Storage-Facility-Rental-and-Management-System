@@ -79,6 +79,13 @@ public class ContractService {
 
         String title = (rescheduled ? "Khách dời lịch trả kho" : "Khách hẹn trả kho") + " — HĐ " + contract.getContractCode();
         String message = customerName + " hẹn trả ô " + unitId + " ngày " + date + ". Nhận lại cọc: " + refundMethodLabel + ".";
+        // D-21 / PR-O24: còn ticket hỗ trợ / hồ sơ bồi thường chưa xong → nhắc FM xử lý trước buổi nghiệm thu
+        Integer openTickets = jdbcTemplate.queryForObject(
+                "SELECT COUNT(1) FROM support_requests WHERE contract_id = ? AND status IN ('OPEN', 'IN_PROGRESS')",
+                Integer.class, contract.getId());
+        if (openTickets != null && openTickets > 0) {
+            message += " Còn " + openTickets + " yêu cầu hỗ trợ / hồ sơ bồi thường chưa xong — cần xử lý trước buổi nghiệm thu.";
+        }
         notificationService.notifyFacilityManagers(facilityId, title, message, "CHECKOUT",
                 taskId != null ? "/manager/tasks?highlightTaskId=" + taskId : "/manager/tasks");
         if (staffId instanceof Number n && taskId != null) {

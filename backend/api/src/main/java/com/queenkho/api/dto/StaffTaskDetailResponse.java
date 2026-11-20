@@ -23,6 +23,10 @@ public class StaffTaskDetailResponse {
     private LocalDateTime completedAt;
     private Integer facilityId;
     private String evidenceImageUrl;
+    // D-22 / PR-O25: khách xác nhận đã nhận tiền hoàn (task REFUND)
+    private String receiptStatus;
+    private String receiptDisputeReason;
+    private Integer receiptRound;
     private String note;
 
     private Integer staffId;

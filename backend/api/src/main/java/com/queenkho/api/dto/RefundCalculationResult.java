@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Kết quả tính toán quyết toán hoàn tiền trả kho theo bộ Business Rules mới:
@@ -48,4 +50,15 @@ public class RefundCalculationResult {
     private BigDecimal excessDebtAmount;
 
     private String breakdownDescription;
+
+    // D-22: bảng "Bạn đã đóng − Cơ sở giữ lại = Hoàn" (khớp màn hợp đồng)
+    private BigDecimal rentPaidNet;        // tiền thuê kỳ hiện tại, không gồm bảo hiểm
+    private BigDecimal insurancePaid;      // phí bảo hiểm kỳ hiện tại
+    private int periodMonths;
+    private LocalDate periodStart;
+    private boolean faultTermination;
+    private List<MoneyLine> lines;
+    private BigDecimal paidTotal;
+    private BigDecimal keptTotal;
+    private BigDecimal netAmount;          // > 0 hoàn khách, < 0 khách trả thêm
 }

@@ -63,6 +63,7 @@ import BomVouchersPage from './pages/bom/BomVouchersPage';
 import BomOverduePage from './pages/bom/BomOverduePage';
 import BomCatalogPage from './pages/bom/BomCatalogPage';
 import ClaimsPage from './pages/manager/ClaimsPage';
+import ManagerSettlementsPage from './pages/manager/ManagerSettlementsPage';
 
 /**
  * Điều hướng thông minh cho trang chủ:
@@ -161,6 +162,7 @@ export default function App() {
         <Route path="/manager/pending" element={<PendingReservationsPage />} />
         <Route path="/manager/overdue" element={<OverdueContractsPage />} />
         <Route path="/manager/held-goods" element={<HeldGoodsPage />} />
+        <Route path="/manager/settlements" element={<ManagerSettlementsPage />} />
         <Route path="/manager/claims" element={<ClaimsPage />} />
         <Route path="/manager/claims/:id" element={<ClaimsPage />} />
         <Route path="/manager/customers" element={<CustomerContractsPage />} />

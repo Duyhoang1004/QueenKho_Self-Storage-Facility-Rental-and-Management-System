@@ -105,7 +105,7 @@ class BookingBusinessTest {
                 () -> assertNull(saved.getStorageUnitId()),
                 () -> assertEquals(plan, saved.getInsurancePlan()),
                 () -> assertEquals(0, money(premium).compareTo(saved.getInsurancePremiumMonthly())),
-                () -> assertEquals("v4", saved.getTermsVersion()),
+                () -> assertEquals(ReservationService.ASSET_TERMS_VERSION, saved.getTermsVersion()),
                 () -> assertNotNull(saved.getTermsAcceptedAt()),
                 () -> assertEquals(0, saved.getTotalDepositPaid().signum()));
     }

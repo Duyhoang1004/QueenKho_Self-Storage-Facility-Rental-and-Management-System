@@ -16,6 +16,7 @@ import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.SupportRequestRepository;
 import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -71,6 +72,11 @@ public class CompensationClaimService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    // D-21: quyết toán trả kho (2 service gọi nhau → @Lazy)
+    @Autowired(required = false)
+    @Lazy
+    private CheckoutSettlementService settlementService;
 
     public static boolean isClaimIssue(String issueType) {
         return issueType != null && CLAIM_ISSUE_TYPES.contains(issueType.trim().toUpperCase());
@@ -339,6 +345,11 @@ public class CompensationClaimService {
                             : "Hồ sơ bồi thường " + claim.getClaimCode() + " được chấp nhận"),
                     body, "SUPPORT", "/ho-tro");
         }
+
+        // D-21 / PR-O19: hợp đồng đã nghiệm thu đang chờ chốt hồ sơ → tính lại bảng quyết toán
+        if (settlementService != null && "SETTLEMENT_PENDING".equals(contract.getStatus())) {
+            settlementService.onClaimDecided(claim, managerId);
+        }
         return toResponse(claim);
     }
 
@@ -350,6 +361,12 @@ public class CompensationClaimService {
         if (!"APPROVED".equals(claim.getStatus())) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
                     "Chỉ chi trả hồ sơ đã được chấp nhận (hiện tại: " + claim.getStatus() + ")");
+        }
+        // D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường đi theo bảng quyết toán, không chi riêng
+        if (claim.getSettlementId() != null || "SETTLEMENT_PENDING".equals(claim.getContract().getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_IN_SETTLEMENT",
+                    "Hợp đồng đã nghiệm thu trả kho — hồ sơ " + claim.getClaimCode()
+                            + " được chi trả qua quyết toán trả kho, không chi riêng");
         }
         String method = request != null && request.getPaymentMethod() != null ? request.getPaymentMethod().trim().toUpperCase() : "";
         if (!List.of("BANK_TRANSFER", "CASH").contains(method)) {
@@ -368,8 +385,6 @@ public class CompensationClaimService {
         }
         String ft = request.getBankTransactionCode() != null && !request.getBankTransactionCode().isBlank()
                 ? request.getBankTransactionCode().trim() : null;
-        User manager = userRepository.findById(managerId).orElseThrow();
-        LocalDateTime now = LocalDateTime.now();
         RentalContract contract = claim.getContract();
 
         jdbcTemplate.update(
@@ -379,6 +394,20 @@ public class CompensationClaimService {
                 claim.getCustomer().getId(),
                 contract.getReservation() != null ? contract.getReservation().getId() : null,
                 contract.getId(), method, claim.getTotalCompensation(), ft);
+
+        markPaid(claim, method, evidence, ft, managerId);
+        return toResponse(claim);
+    }
+
+    /**
+     * BR-128: ghi hồ sơ đã chi trả (+ đòi bảo hiểm, đóng ticket, log, báo khách) — KHÔNG ghi giao dịch.
+     * Dùng chung cho chi trả riêng (pay) và chi trả qua quyết toán trả kho (D-21, PR-O20 / PR-O21).
+     */
+    @Transactional
+    public void markPaid(CompensationClaim claim, String method, String evidence, String ft, Integer actorId) {
+        User manager = userRepository.findById(actorId).orElseThrow();
+        LocalDateTime now = LocalDateTime.now();
+        RentalContract contract = claim.getContract();
 
         claim.setPaymentMethod(method);
         claim.setPaymentEvidence(evidence);
@@ -404,20 +433,23 @@ public class CompensationClaimService {
         resolveTicket(claim.getSupportRequest(), "Đã bồi thường " + formatVnd(claim.getTotalCompensation())
                 + " cho hồ sơ " + claim.getClaimCode() + ". " + claim.getDecisionNote(), now);
 
-        activityLogService.log(managerId,
+        activityLogService.log(actorId,
                 "[CLAIM_PAY] " + manager.getFullName() + " chi trả " + claim.getTotalCompensation().toPlainString() + "đ hồ sơ "
                         + claim.getClaimCode() + " (" + method + ")"
                         + (claim.getInsuranceRef() != null ? ", gửi bảo hiểm " + claim.getInsuranceRef() : ""),
                 "compensation_claims", String.valueOf(claim.getId()));
         if (notificationService != null) {
+            String how = switch (method) {
+                case "BANK_TRANSFER" -> " qua chuyển khoản";
+                case "SETTLEMENT_OFFSET" -> " bằng cách cấn trừ vào quyết toán trả kho";
+                default -> " tiền mặt tại quầy";
+            };
             notificationService.notifyCustomer(claim.getCustomer().getId(),
                     "Đã chi trả bồi thường hồ sơ " + claim.getClaimCode(),
-                    "QueenKho đã chi trả " + formatVnd(claim.getTotalCompensation())
-                            + ("BANK_TRANSFER".equals(method) ? " qua chuyển khoản" : " tiền mặt tại quầy")
-                            + ". Vui lòng xác nhận trong mục Hỗ trợ.",
+                    "QueenKho đã chi trả " + formatVnd(claim.getTotalCompensation()) + how
+                            + (claim.getSettlementId() == null ? ". Vui lòng xác nhận trong mục Hỗ trợ." : "."),
                     "REFUND", "/ho-tro");
         }
-        return toResponse(claim);
     }
 
     /** 🔸 Giả lập phản hồi của bên bảo hiểm: duyệt và chuyển tiền hàng cho cơ sở */
@@ -576,6 +608,7 @@ public class CompensationClaimService {
                 .contractId(contract != null ? contract.getId() : null)
                 .contractCode(contract != null ? contract.getContractCode() : null)
                 .contractStatus(contract != null ? contract.getStatus() : null)
+                .settlementId(c.getSettlementId())
                 .reservationId(r != null ? r.getId() : null)
                 .storageUnitId(su != null ? su.getId() : null)
                 .unitTypeName(su != null && su.getUnitType() != null ? su.getUnitType().getName() : null)

@@ -8,6 +8,13 @@ import { assignLockedUntil } from '../../utils/taskWindow'
 import DateInput from '../../components/DateInput'
 import { parseRefundNote } from '../../utils/refundParser'
 
+// D-22 / PR-O25: khách xác nhận đã nhận tiền hoàn
+const RECEIPT_LABELS = {
+  WAITING_CUSTOMER: { label: 'Chờ khách xác nhận', cls: 'bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]' },
+  CONFIRMED: { label: 'Khách đã nhận', cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
+  AUTO_CONFIRMED: { label: 'Tự xác nhận', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' },
+  DISPUTED: { label: 'Khách báo chưa nhận', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FFB8B8]' },
+}
 const TASK_TYPE_LABELS = { CHECK_IN: 'Bàn giao (check-in)', CHECK_OUT: 'Nghiệm thu trả kho', SUPPORT: 'Hỗ trợ khách', MAINTENANCE: 'Bảo trì ô kho' }
 
 const vnd = n => `${Number(n || 0).toLocaleString('vi-VN')} ₫`
@@ -152,7 +159,7 @@ function AssignTaskModal({ task, facilityId, onClose, onAssigned }) {
           <div className="min-w-0">
             <h3 className="text-lg font-black text-[#4B4B4B]">Giao việc task #{task.id}</h3>
             <p className="text-xs font-bold text-[#AFAFAF] truncate">
-              {TASK_TYPE_LABELS[task.taskType] || task.taskType} · {task.customerName || task.contractCode || ''}
+              {String(task.note || '').startsWith('[RECHECK]') ? 'Kiểm tra lại quyết toán' : (TASK_TYPE_LABELS[task.taskType] || task.taskType)} · {task.customerName || task.contractCode || ''}
               {task.staffName ? ` · đang do ${task.staffName} làm` : ''}
             </p>
           </div>
@@ -260,9 +267,12 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
   const [bankTransactionCode, setBankTransactionCode] = useState('')
   const [evidenceImageUrl, setEvidenceImageUrl] = useState('')
-  const [cashReceiptConfirmed, setCashReceiptConfirmed] = useState(false)
   const [refundNote, setRefundNote] = useState('')
   const [refundError, setRefundError] = useState(null)
+  // D-22 / PR-O26: khách báo "Chưa nhận được" → FM chọn giao dịch đúng / chuyển bổ sung
+  const [refundResolution, setRefundResolution] = useState('VERIFIED')
+  const [additionalAmount, setAdditionalAmount] = useState('')
+  const refundReopened = refundTask?.receiptStatus === 'DISPUTED'
 
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -335,23 +345,38 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     setRefundMethod(isCash ? 'CASH' : 'BANK_TRANSFER')
     setBankTransactionCode('')
     setEvidenceImageUrl('')
-    setCashReceiptConfirmed(false)
     setRefundNote('')
     setRefundError(null)
+    setRefundResolution('VERIFIED')
+    setAdditionalAmount('')
+  }
+
+  // Thiếu bằng chứng gì (null = đủ) — PR-O15; D-22: tiền mặt bắt buộc ảnh phiếu chi có chữ ký khách
+  const refundMissing = () => {
+    if (refundReopened) {
+      if (refundNote.trim().length < 10) return 'Ghi giải thích gửi khách (tối thiểu 10 ký tự).'
+      if (refundResolution === 'ADDITIONAL') {
+        if (!(Number(additionalAmount) > 0)) return 'Nhập số tiền chuyển bổ sung lớn hơn 0.'
+        if (!evidenceImageUrl.trim()) return 'Tải ảnh bằng chứng của lần chuyển bổ sung.'
+      }
+      return null
+    }
+    if (refundMethod === 'BANK_TRANSFER' && !bankTransactionCode.trim()) {
+      return 'Bắt buộc nhập mã giao dịch ngân hàng (mã FT) khi chuyển khoản hoàn tiền.'
+    }
+    if (refundMethod === 'BANK_TRANSFER' && !evidenceImageUrl.trim()) {
+      return 'Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.'
+    }
+    if (refundMethod === 'CASH' && !evidenceImageUrl.trim()) {
+      return 'Bắt buộc tải ảnh phiếu chi có chữ ký nhận tiền của khách.'
+    }
+    return null
   }
 
   const handleCompleteRefund = () => {
-    // PR-O15: Bắt buộc bằng chứng trước khi hoàn tất
-    if (refundMethod === 'BANK_TRANSFER' && !bankTransactionCode.trim()) {
-      setRefundError('Bắt buộc nhập mã giao dịch ngân hàng (mã FT) khi chuyển khoản hoàn tiền.')
-      return
-    }
-    if (refundMethod === 'BANK_TRANSFER' && !evidenceImageUrl.trim()) {
-      setRefundError('Vui lòng tải lên ảnh chụp biên lai chuyển tiền trước khi xác nhận hoàn tiền.')
-      return
-    }
-    if (refundMethod === 'CASH' && !cashReceiptConfirmed) {
-      setRefundError('Bắt buộc xác nhận khách hàng đã ký nhận tiền mặt tại quầy.')
+    const missing = refundMissing()
+    if (missing) {
+      setRefundError(missing)
       return
     }
 
@@ -362,12 +387,19 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       paymentMethod: refundMethod,
       bankTransactionCode: bankTransactionCode.trim(),
       evidenceImageUrl: evidenceImageUrl.trim(),
-      cashReceiptConfirmed,
-      note: refundNote.trim()
+      cashReceiptConfirmed: refundMethod === 'CASH' ? true : undefined,
+      note: refundNote.trim(),
+      resolution: refundReopened ? refundResolution : undefined,
+      additionalAmount: refundReopened && refundResolution === 'ADDITIONAL' ? Number(additionalAmount) : undefined,
     }
 
     completeRefundTask(refundTask.id, user.userId, payload)
-      .then(task => setToast({ type: 'success', message: `Đã hoàn tất thanh toán hoàn tiền cho task #${task.id} thành công!` }))
+      .then(task => setToast({
+        type: 'success',
+        message: task.receiptStatus === 'WAITING_CUSTOMER'
+          ? `Đã ghi nhận hoàn tiền task #${task.id}. Chờ khách xác nhận đã nhận tiền (tự xác nhận sau 3 ngày).`
+          : `Đã hoàn tất thanh toán hoàn tiền cho task #${task.id} thành công!`,
+      }))
       .catch(err => {
         const msg = err.response?.data?.message || 'Không thể cập nhật trạng thái hoàn tiền, vui lòng thử lại.'
         setRefundError(msg)
@@ -400,22 +432,31 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <button
               type="button"
               onClick={() => openRefundModal(task)}
-              className="duo-btn-green w-full py-1.5 px-2.5 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+              className={`${task.receiptStatus === 'DISPUTED' ? 'duo-btn-red' : 'duo-btn-green'} w-full py-1.5 px-2.5 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer`}
             >
-              <span className="material-symbols-outlined text-[17px]">payments</span>
-              Xác nhận đã hoàn tiền
+              <span className="material-symbols-outlined text-[17px]">{task.receiptStatus === 'DISPUTED' ? 'report' : 'payments'}</span>
+              {task.receiptStatus === 'DISPUTED' ? 'Xử lý: khách báo chưa nhận' : 'Xác nhận đã hoàn tiền'}
             </button>
           </>
         )
       }
+      // D-22 / PR-O25: hoàn xong → khách xác nhận đã nhận tiền
+      const receipt = RECEIPT_LABELS[task.receiptStatus]
       return (
-        <Link
-          to={detailUrl}
-          className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-[17px]">visibility</span>
-          Xem chi tiết
-        </Link>
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
+            Xem chi tiết
+          </Link>
+          {receipt && (
+            <span className={`w-full text-center text-[10px] font-black uppercase px-2 py-1 rounded-lg border ${receipt.cls}`}>
+              {receipt.label}
+            </span>
+          )}
+        </>
       )
     }
 
@@ -746,6 +787,35 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
 
             <RefundBreakdown note={refundTask.note} />
 
+            {/* D-22 / PR-O26: khách báo "Chưa nhận được" → giải thích hoặc chuyển bổ sung */}
+            {refundReopened && (
+              <div className="flex flex-col gap-2 bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-xl p-3">
+                <p className="text-xs font-black text-[#FF4B4B] flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[18px]">report</span>
+                  Khách báo chưa nhận được tiền (lần {refundTask.receiptRound || 1})
+                </p>
+                <p className="text-xs font-bold text-[#4B4B4B]">“{refundTask.receiptDisputeReason}”</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[['VERIFIED', 'Giao dịch đúng', 'fact_check'], ['ADDITIONAL', 'Chuyển bổ sung', 'add_card']].map(([key, label, icon]) => (
+                    <button key={key} type="button" onClick={() => { setRefundResolution(key); setRefundError(null) }}
+                      className={`py-2 px-3 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer ${
+                        refundResolution === key ? 'border-[#1CB0F6] bg-[#DDF4FF] text-[#1899D6]' : 'border-[#E5E5E5] bg-white text-[#777777]'}`}>
+                      <span className="material-symbols-outlined text-[18px]">{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+                {refundResolution === 'ADDITIONAL' && (
+                  <input type="number" min={1} placeholder="Số tiền chuyển bổ sung (đ)" value={additionalAmount}
+                    onChange={e => setAdditionalAmount(e.target.value)} className="duo-input w-full text-xs bg-white" />
+                )}
+                <span className="text-[10px] font-bold text-[#777777]">
+                  {refundResolution === 'VERIFIED'
+                    ? 'Ghi giải thích + đính kèm sao kê (nếu có). Khách sẽ xác nhận lại.'
+                    : 'Ghi lý do, mã FT và ảnh của lần chuyển bổ sung. Khách sẽ xác nhận lại.'}
+                </span>
+              </div>
+            )}
+
             {/* Chọn hình thức hoàn tiền (PR-O15) */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-black uppercase text-[#777777]">
@@ -847,19 +917,44 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </div>
             ) : (
               <div className="flex flex-col gap-2 bg-[#F3FEE7] p-3 rounded-xl border border-[#D0F8AB]">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={cashReceiptConfirmed}
-                    onChange={e => setCashReceiptConfirmed(e.target.checked)}
-                    className="w-4 h-4 mt-0.5 rounded text-[#58CC02] focus:ring-[#58CC02] cursor-pointer"
-                  />
-                  <span className="text-xs font-black text-[#2B5300] leading-snug">
-                    Xác nhận khách hàng đã nhận đủ tiền mặt và ký phiếu biên nhận tại quầy cơ sở <span className="text-[#FF4B4B]">*</span>
-                  </span>
-                </label>
+                {/* D-22 / PR-O27: ảnh phiếu chi có chữ ký khách thay dấu tick — chữ ký = khách xác nhận đã nhận tiền */}
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-black uppercase text-[#2B5300]">
+                    Ảnh phiếu chi có chữ ký nhận tiền của khách {!(refundReopened && refundResolution === 'VERIFIED') && <span className="text-[#FF4B4B]">*</span>}:
+                  </label>
+                  <label className="duo-btn-white px-3 py-1 text-xs gap-1 cursor-pointer flex items-center">
+                    <span className="material-symbols-outlined text-[16px] text-[#58CC02]">upload_file</span>
+                    Tải ảnh phiếu chi
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const res = await uploadImageFile(file);
+                          if (res?.url) setEvidenceImageUrl(res.url);
+                        } catch {
+                          setRefundError('Không thể tải file ảnh lên máy chủ, vui lòng thử lại.');
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Hoặc dán link URL ảnh phiếu chi..."
+                  value={evidenceImageUrl}
+                  onChange={e => setEvidenceImageUrl(e.target.value)}
+                  className="duo-input w-full text-xs bg-white"
+                />
+                {evidenceImageUrl && (
+                  <img src={evidenceImageUrl} alt="Phiếu chi" className="w-24 h-24 rounded-xl border-2 border-[#D0F8AB] object-cover bg-white" />
+                )}
                 <span className="text-[10px] font-bold text-[#2B5300]/80 block">
-                  Bắt buộc theo PR-O15 để hoàn tất task hoàn tiền mặt.
+                  Có chữ ký khách thì khoản hoàn được ghi là khách đã nhận, không cần khách bấm xác nhận.
                 </span>
               </div>
             )}
@@ -887,7 +982,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </button>
               <button
                 onClick={handleCompleteRefund}
-                disabled={submitting || (refundMethod === 'BANK_TRANSFER' && (!bankTransactionCode.trim() || !evidenceImageUrl.trim())) || (refundMethod === 'CASH' && !cashReceiptConfirmed)}
+                disabled={submitting || Boolean(refundMissing())}
                 className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">check_circle</span>

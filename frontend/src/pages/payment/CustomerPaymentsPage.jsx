@@ -4,6 +4,7 @@ import { getMyPayments } from '../../services/paymentService'
 import { createVnpayDebt } from '../../services/vnpayService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import TimeFilterBar from '../../components/TimeFilterBar'
+import RefundReceiptList from '../../components/RefundReceiptList'
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
@@ -676,6 +677,9 @@ export default function CustomerPaymentsPage() {
           <button onClick={() => setSearchParams({}, { replace: true })} className="text-xs font-black underline">Đóng</button>
         </div>
       )}
+
+      {/* D-22 / PR-O25: mọi khoản hoàn (huỷ đơn, trả kho, No-Show...) đang chờ bạn xác nhận đã nhận tiền */}
+      <RefundReceiptList onlyPending title="Tiền hoàn chờ bạn xác nhận" />
 
       {state.error && (
         <div className="duo-card border-[#FFDFDF] bg-[#FFF5F5] p-6 flex items-center gap-4">

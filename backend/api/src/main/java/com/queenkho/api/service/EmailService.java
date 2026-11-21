@@ -22,6 +22,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Service
 public class EmailService {
 
+    // Cấu hình email nhận thử nghiệm demo (để bạn không cần chỉnh sửa file application.yaml)
+    // Khi cần đổi sang email khác, bạn chỉ cần sửa địa chỉ ở dòng dưới này:
+    public static final String DEMO_TEST_EMAIL = "thanhsonnguyen1235@gmail.com";
+
     private final ObjectProvider<JavaMailSender> mailSender;
     private final boolean enabled;
     private final String from;
@@ -47,7 +51,9 @@ public class EmailService {
         // Gmail chỉ cho gửi bằng chính tài khoản đăng nhập → dùng MAIL_USERNAME làm From khi chưa đặt MAIL_FROM riêng
         this.from = from.contains("no-reply@queenkho.local") && this.enabled ? "QueenKho <" + smtpUsername + ">" : from;
         this.frontendUrl = frontendUrl;
-        this.redirectTo = redirectTo != null ? redirectTo.trim() : "";
+        // Ưu tiên: nếu có biến cấu hình thì lấy biến cấu hình, nếu không có thì mặc định dồn về DEMO_TEST_EMAIL
+        String resolvedRedirect = (redirectTo != null && !redirectTo.trim().isEmpty()) ? redirectTo.trim() : DEMO_TEST_EMAIL;
+        this.redirectTo = resolvedRedirect != null ? resolvedRedirect.trim() : "";
         System.out.println(this.enabled
                 ? "[Email] Gửi email thật qua SMTP, tài khoản " + smtpUsername
                     + (this.redirectTo.isEmpty() ? "" : " — MAIL_REDIRECT_TO: mọi email chuyển tới " + this.redirectTo)

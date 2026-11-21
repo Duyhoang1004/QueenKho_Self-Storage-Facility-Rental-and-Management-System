@@ -434,6 +434,74 @@ export default function MyReservationsPage() {
     safePage * PAGE_SIZE,
   );
 
+  // Điều hướng và highlight đơn đặt / hợp đồng khi bấm từ thông báo chuông
+  const highlightParam = searchParams.get('highlightCode') || searchParams.get('highlightReservationId') || searchParams.get('reservationId') || searchParams.get('contractCode') || searchParams.get('highlight');
+  const [activeHighlightCode, setActiveHighlightCode] = useState(null);
+
+  // Tự động tìm đơn/hợp đồng, đổi tab khi bấm từ thông báo
+  useEffect(() => {
+    if (!highlightParam || reservations.length === 0) return;
+
+    const target = reservations.find(
+      (r) =>
+        r.reservationCode === highlightParam ||
+        r.contractCode === highlightParam ||
+        String(r.id) === String(highlightParam) ||
+        String(r.contractId) === String(highlightParam)
+    );
+    if (!target) return;
+
+    // 1. Chuyển tab phù hợp nếu tab hiện tại không chứa trạng thái của đơn này
+    const currentTabObj = FILTERS.find((f) => f.key === filter);
+    if (currentTabObj && currentTabObj.statuses && !currentTabObj.statuses.includes(target.status)) {
+      const properTab = FILTERS.find((f) => f.statuses?.includes(target.status));
+      if (properTab) {
+        setFilter(properTab.key);
+      } else {
+        setFilter('ALL');
+      }
+    }
+
+    // 2. Đánh dấu highlight
+    setActiveHighlightCode(target.reservationCode || target.contractCode || String(target.id));
+  }, [highlightParam, reservations]);
+
+  // Tự động lật đúng trang phân trang chứa đơn cần highlight
+  useEffect(() => {
+    if (!highlightParam || visibleReservations.length === 0) return;
+    const targetIdx = visibleReservations.findIndex(
+      (r) =>
+        r.reservationCode === highlightParam ||
+        r.contractCode === highlightParam ||
+        String(r.id) === String(highlightParam) ||
+        String(r.contractId) === String(highlightParam)
+    );
+    if (targetIdx !== -1) {
+      const targetPage = Math.floor(targetIdx / PAGE_SIZE) + 1;
+      if (currentPage !== targetPage) {
+        setCurrentPage(targetPage);
+      }
+    }
+  }, [highlightParam, visibleReservations]);
+
+  // Cuộn mượt đến hàng/card và giữ highlight nổi bật 8 giây
+  useEffect(() => {
+    if (!activeHighlightCode) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById("res-row-" + activeHighlightCode);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+    const clearTimer = setTimeout(() => {
+      setActiveHighlightCode(null);
+    }, 8000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(clearTimer);
+    };
+  }, [activeHighlightCode, currentPage, filter]);
+
   return (
     <div className="max-w-[1240px] w-full mx-auto px-6 py-6 flex flex-col gap-6">
       {/* Breadcrumb */}
@@ -670,10 +738,19 @@ export default function MyReservationsPage() {
                   const rentTotal = deposit * actualMonths;
                   const totalPaid = deposit + rentTotal;
 
+                  const isHighlighted = Boolean(
+                    activeHighlightCode &&
+                    (r.reservationCode === activeHighlightCode ||
+                     r.contractCode === activeHighlightCode ||
+                     String(r.id) === String(activeHighlightCode) ||
+                     String(r.contractId) === String(activeHighlightCode))
+                  );
+
                   return (
                     <tr
                       key={r.id}
-                      className={`transition-colors hover:bg-[#F7F7F7] ${!isLast ? "border-b-2 border-[#F0F0F0]" : ""} ${isExpiringSoon ? "bg-[#FFFBEB] hover:bg-[#FFF3C7]" : ""}`}
+                      id={`res-row-${r.reservationCode || r.id}`}
+                      className={`transition-all ${isHighlighted ? "ring-4 ring-[#58CC02] ring-offset-2 bg-[#F0FDF4] animate-pulse border-[#58CC02] shadow-md " : "hover:bg-[#F7F7F7] "} ${!isLast ? "border-b-2 border-[#F0F0F0]" : ""} ${isExpiringSoon && !isHighlighted ? "bg-[#FFFBEB] hover:bg-[#FFF3C7]" : ""}`}
                     >
                       {/* Cột 1: Mã đơn */}
                       <td className="px-3 py-3 whitespace-nowrap">

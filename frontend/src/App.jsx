@@ -145,6 +145,7 @@ export default function App() {
 
         {/* UC-26: Gửi yêu cầu hỗ trợ */}
         <Route path="/ho-tro" element={<CustomerSupportPage />} />
+        <Route path="/hotro" element={<CustomerSupportPage />} />
 
         {/* UC-20: Thanh toán (lịch sử giao dịch, khoản cần trả) */}
         <Route path="/thanh-toan" element={<CustomerPaymentsPage />} />

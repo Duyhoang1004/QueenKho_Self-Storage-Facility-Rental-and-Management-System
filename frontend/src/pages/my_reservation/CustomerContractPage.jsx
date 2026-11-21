@@ -142,6 +142,19 @@ export default function CustomerContractPage() {
     fetchContract();
   }, [reservationId]);
 
+  // Highlight hiệu ứng khi được điều hướng từ thông báo chuông
+  const [highlightActive, setHighlightActive] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("highlight") === "1" || params.get("highlightContract") === "1") {
+      setHighlightActive(true);
+      const timer = setTimeout(() => {
+        setHighlightActive(false);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   // Xử lý callback sau khi khách thanh toán gia hạn từ VNPAY quay về
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -530,7 +543,14 @@ export default function CustomerContractPage() {
       })()}
 
       {/* Banner HD */}
-      <div className="bg-[#1CB0F6] border-b-4 border-[#1899D6] rounded-2xl p-6 text-white flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+      <div
+        id="contract-header-banner"
+        className={`bg-[#1CB0F6] border-b-4 border-[#1899D6] rounded-2xl p-6 text-white flex flex-col sm:flex-row sm:items-start justify-between gap-4 transition-all ${
+          highlightActive
+            ? "ring-4 ring-[#58CC02] ring-offset-2 animate-pulse shadow-2xl scale-[1.01]"
+            : ""
+        }`}
+      >
         <div className="flex flex-col">
           <p className="text-[11px] font-black uppercase tracking-wider text-white/80 mb-1">
             Hợp đồng thuê kho

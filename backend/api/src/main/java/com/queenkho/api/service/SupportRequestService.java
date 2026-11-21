@@ -469,17 +469,33 @@ public class SupportRequestService {
         task.setNote(taskNote);
         StaffTask saved = staffTaskRepository.save(task);
 
-        // BR-111: FM nhận thông báo khi khách gửi / mở lại yêu cầu hỗ trợ (loại khẩn ghi rõ [KHẨN])
+        // BR-111: FM và Staff nhận thông báo khi khách gửi / mở lại yêu cầu hỗ trợ (loại khẩn ghi rõ [KHẨN] và gửi email)
         if (notificationService != null) {
             String customerName = ticket.getCustomer() != null ? ticket.getCustomer().getFullName() : "Khách hàng";
             boolean reopened = reopenReason != null && !reopenReason.isBlank();
+            String title = prefix + (reopened ? "Khách yêu cầu xử lý lại " : "Yêu cầu hỗ trợ mới ") + ticket.getTicketCode();
+            String message = customerName + " — HĐ " + contract.getContractCode() + " — " + getIssueTypeLabel(ticket.getIssueType())
+                    + (reopened ? ". Lý do: " + reopenReason.trim() : "") + ". Task hỗ trợ #" + saved.getId() + " đang chờ giao / nhận việc.";
+
+            // 1. Thông báo cho Quản lý cơ sở (FM)
             notificationService.notifyFacilityManagers(
                     facilityId,
-                    prefix + (reopened ? "Khách yêu cầu xử lý lại " : "Yêu cầu hỗ trợ mới ") + ticket.getTicketCode(),
-                    customerName + " — HĐ " + contract.getContractCode() + " — " + getIssueTypeLabel(ticket.getIssueType())
-                            + (reopened ? ". Lý do: " + reopenReason.trim() : "") + ". Task hỗ trợ #" + saved.getId() + " đang chờ giao việc.",
+                    title,
+                    message,
                     "SUPPORT",
-                    "/manager/tasks?highlightTaskId=" + saved.getId());
+                    "/manager/tasks?highlightTaskId=" + saved.getId(),
+                    urgent
+            );
+
+            // 2. Thông báo cho toàn bộ Nhân viên trực cơ sở (Staff)
+            notificationService.notifyFacilityStaff(
+                    facilityId,
+                    title,
+                    message,
+                    "SUPPORT",
+                    "/staff?highlightTaskId=" + saved.getId(),
+                    urgent
+            );
 
             // BR-117: xác nhận cho khách đã nhận yêu cầu (chuông + email)
             if (ticket.getCustomer() != null) {

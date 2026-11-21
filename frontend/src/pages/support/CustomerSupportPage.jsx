@@ -238,12 +238,12 @@ export default function CustomerSupportPage() {
     }
   }, []);
 
-  const customerId = currentUser.userId;
+  const customerId = currentUser.userId || currentUser.id;
 
   const [tickets, setTickets] = useState([]);
   const [eligibleContracts, setEligibleContracts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(Boolean(customerId));
+  const [error, setError] = useState(customerId ? '' : 'Vui lòng đăng nhập để xem yêu cầu hỗ trợ.');
 
   // Bộ lọc
   const [activeTab, setActiveTab] = useState('ALL');
@@ -286,7 +286,10 @@ export default function CustomerSupportPage() {
   const [toast, setToast] = useState(null);
 
   const fetchData = useCallback(() => {
-    if (!customerId) return Promise.resolve();
+    if (!customerId) {
+      setLoading(false);
+      return Promise.resolve();
+    }
     setLoading(true);
     return Promise.all([
       getCustomerSupportTickets(customerId),
@@ -548,6 +551,78 @@ export default function CustomerSupportPage() {
     safePage * PAGE_SIZE
   );
 
+  // Điều hướng và highlight ticket / hồ sơ bồi thường khi bấm từ thông báo chuông
+  const highlightParam = searchParams.get('highlightTicketCode') ||
+    searchParams.get('highlightClaimCode') ||
+    searchParams.get('highlightTicketId') ||
+    searchParams.get('ticketCode') ||
+    searchParams.get('ticketId') ||
+    searchParams.get('claimCode');
+  const [activeHighlightKey, setActiveHighlightKey] = useState(null);
+
+  // 1. Tự động tìm ticket / claim, đổi tab và tắt bộ lọc cản trở
+  useEffect(() => {
+    if (!highlightParam || tickets.length === 0) return;
+
+    const target = tickets.find(
+      (t) =>
+        t.ticketCode === highlightParam ||
+        t.claim?.claimCode === highlightParam ||
+        String(t.id) === String(highlightParam)
+    );
+    if (!target) return;
+
+    // Chuyển tab phù hợp nếu tab hiện tại không chứa trạng thái của ticket này
+    if (activeTab !== 'ALL' && activeTab !== target.status) {
+      setActiveTab('ALL');
+    }
+
+    // Tắt bộ lọc cản trở
+    if (contractFilter && Number(contractFilter) !== target.contractId) {
+      setContractFilter('');
+    }
+    if (keyword) {
+      setKeyword('');
+    }
+
+    setActiveHighlightKey(target.ticketCode || target.claim?.claimCode || String(target.id));
+  }, [highlightParam, tickets]);
+
+  // 2. Tự động lật đúng trang phân trang chứa ticket cần highlight
+  useEffect(() => {
+    if (!highlightParam || visibleTickets.length === 0) return;
+    const targetIdx = visibleTickets.findIndex(
+      (t) =>
+        t.ticketCode === highlightParam ||
+        t.claim?.claimCode === highlightParam ||
+        String(t.id) === String(highlightParam)
+    );
+    if (targetIdx !== -1) {
+      const targetPage = Math.floor(targetIdx / PAGE_SIZE) + 1;
+      if (currentPage !== targetPage) {
+        setCurrentPage(targetPage);
+      }
+    }
+  }, [highlightParam, visibleTickets]);
+
+  // 3. Cuộn mượt đến ticket card và nhấp nháy highlight 8 giây
+  useEffect(() => {
+    if (!activeHighlightKey) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById("ticket-card-" + activeHighlightKey);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+    const clearTimer = setTimeout(() => {
+      setActiveHighlightKey(null);
+    }, 8000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(clearTimer);
+    };
+  }, [activeHighlightKey, currentPage, activeTab]);
+
   return (
     <div className="max-w-[1200px] mx-auto px-6 md:px-8 py-8 flex flex-col gap-6">
       {/* Header */}
@@ -776,12 +851,21 @@ export default function CustomerSupportPage() {
               const status = TICKET_STATUS_META[ticket.status] || TICKET_STATUS_META.OPEN;
               const isResolved = ticket.status === 'RESOLVED';
               const isOpen = ticket.status === 'OPEN';
+              const isHighlighted = Boolean(
+                activeHighlightKey &&
+                (ticket.ticketCode === activeHighlightKey ||
+                 ticket.claim?.claimCode === activeHighlightKey ||
+                 String(ticket.id) === String(activeHighlightKey))
+              );
 
               return (
                 <div
                   key={ticket.id}
+                  id={`ticket-card-${ticket.ticketCode || ticket.claim?.claimCode || ticket.id}`}
                   className={`rounded-2xl border-2 border-b-4 bg-white p-4 md:p-5 flex flex-col gap-3.5 transition-all ${
-                    isResolved
+                    isHighlighted
+                      ? 'ring-4 ring-[#58CC02] ring-offset-2 animate-pulse border-[#58CC02] shadow-xl scale-[1.01] bg-[#F7FFF0]'
+                      : isResolved
                       ? 'border-[#FF9600] bg-[#FFFDF9]'
                       : ticket.urgent && ticket.status !== 'CLOSED'
                       ? 'border-[#FF4B4B]'

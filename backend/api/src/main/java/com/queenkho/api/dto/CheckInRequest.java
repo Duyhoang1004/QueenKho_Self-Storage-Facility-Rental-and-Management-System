@@ -13,8 +13,9 @@ import java.util.Map;
 @Setter
 @NoArgsConstructor
 public class CheckInRequest {
-    // Checklist — cả 5 mục phải true
+    // Checklist bàn giao.
     private Boolean identityVerified;            // đã xác minh CCCD
+    private Boolean unitChecked;                 // ô kho đã kiểm tra: trống và sạch
     private Boolean unitEmpty;                   // ô kho trống
     private Boolean unitClean;                   // ô kho sạch
     private Boolean lockIntact;                  // khoá nguyên vẹn
@@ -35,8 +36,8 @@ public class CheckInRequest {
     // BR-121: ảnh hiện trạng ô lúc bàn giao (≥ 1, tối đa 10) — căn cứ khi có tranh chấp lúc trả kho
     private List<String> evidenceImages;
 
-    // One photo for each of the five staff inspection items, keyed by checklist field.
-    private Map<String, String> checklistEvidence;
+    // Mỗi mục có ít nhất một ảnh; tổng ảnh của biên bản không quá 10.
+    private Map<String, List<String>> checklistEvidence;
 
     // Server sets this only while completing a customer-approved draft.
     private Integer approvalId;

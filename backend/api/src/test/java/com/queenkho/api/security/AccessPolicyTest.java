@@ -106,6 +106,7 @@ class AccessPolicyTest {
     void staffScope() {
         assertTrue(allowed("STAFF", "GET", "/api/v1/staff-tasks"));
         assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/check-in"));
+        assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/withdraw-check-in"));
         assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/claim"));
         assertFalse(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/assign"));
         assertFalse(allowed("STAFF", "POST", "/api/v1/reservations/3/assign"));
@@ -124,6 +125,7 @@ class AccessPolicyTest {
         assertFalse(allowed("FACILITY_MANAGER", "GET", "/api/v1/bom/revenue/by-facility"));
         assertFalse(allowed("FACILITY_MANAGER", "POST", "/api/v1/rental-policies/facilities/1"));
         assertFalse(allowed("FACILITY_MANAGER", "POST", "/api/v1/staff-tasks/3/check-in"));
+        assertFalse(allowed("FACILITY_MANAGER", "POST", "/api/v1/staff-tasks/3/withdraw-check-in"));
         assertFalse(allowed("FACILITY_MANAGER", "PUT", "/api/v1/unit-types/bom/1"));
     }
 

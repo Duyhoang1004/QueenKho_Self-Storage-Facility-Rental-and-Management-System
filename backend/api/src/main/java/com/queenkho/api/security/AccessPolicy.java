@@ -221,6 +221,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/staff-tasks/pin-suggestion", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/prepare-check-in", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/withdraw-check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-check-in-issues", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/reopen-check-in", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/confirm-unit-issue", "TASK_MANAGE");

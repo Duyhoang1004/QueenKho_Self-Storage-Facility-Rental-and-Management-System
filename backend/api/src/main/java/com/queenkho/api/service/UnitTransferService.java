@@ -286,6 +286,18 @@ public class UnitTransferService {
                     reservation != null ? "/kho-cua-toi/hop-dong/" + reservation.getId() : "/kho-cua-toi");
         }
 
+        if ("PENDING_CHECK_IN".equals(contract.getStatus())) {
+            jdbcTemplate.queryForList(
+                    "SELECT staff_id, id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' " +
+                    "AND status IN ('OPEN','IN_PROGRESS','OVERDUE') AND staff_id IS NOT NULL",
+                    contract.getId()).forEach(row -> notificationService.notifyStaff(
+                    ((Number) row.get("staff_id")).intValue(),
+                    "Ô bàn giao đã đổi cho task check-in",
+                    "Hợp đồng " + contract.getContractCode() + " chuyển từ ô " + oldUnit.getId() + " sang ô " + newUnit.getId()
+                            + ". Hãy kiểm tra ô mới trước khi lập biên bản.",
+                    "ASSIGNED", "/staff/tasks/" + row.get("id")));
+        }
+
         return toResponse(transfer, affected);
     }
 

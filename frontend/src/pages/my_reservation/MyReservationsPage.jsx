@@ -654,17 +654,17 @@ export default function MyReservationsPage() {
             </p>
           )}
 
-        {/* BR-141 (12/11/2026): ô đã gán đang bảo trì trước ngày nhận kho → khách chọn dời lịch hoặc huỷ hoàn 100% */}
-        {!loading && !error && reservations.filter((r) => r.unitIssue).map((r) => (
+        {/* Sự cố ô: sau khi khách đã dời lịch, hiển thị lịch mới thay cho cảnh báo chưa xử lý. */}
+        {!loading && !error && reservations.filter((r) => r.unitIssue && !r.unitIssueRescheduled).map((r) => (
           <div key={`issue-${r.id}`} className="mx-4 my-3 rounded-2xl bg-[#FFF4CC] border-2 border-[#FFC800] px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
             <span className="material-symbols-outlined text-[#B58900] text-[28px] shrink-0">construction</span>
             <div className="flex-1 text-xs font-bold text-[#777777] leading-relaxed">
               <span className="block text-sm font-black text-[#B58900]">
                 Ô kho của đơn {r.reservationCode} đang gặp sự cố
               </span>
-              Ô {r.storageUnitId} (nhận kho ngày {formatDateVN(r.startDate)}) đang bảo trì và cơ sở chưa có ô cùng loại để đổi.
-              Bạn có thể dời ngày nhận kho (không mất phí) hoặc huỷ đơn và được hoàn 100% số tiền đã thanh toán.
-              Nếu đã mang hàng tới, cơ sở sẽ xếp tạm vào ô kho khẩn cấp — vui lòng liên hệ hotline {r.facilityHotline || "của cơ sở"}.
+              Ô {r.storageUnitId} chưa thể bàn giao theo lịch ngày {formatDateVN(r.startDate)}. Cơ sở đang xem xét xử lý hoặc đổi ô phù hợp.
+              Bạn có thể dời ngày nhận kho hoặc huỷ đơn để được hoàn 100% số tiền đã thanh toán.
+              Nếu đã mang hàng tới, vui lòng liên hệ cơ sở qua hotline {r.facilityHotline || "được cung cấp"} để được hỗ trợ.
             </div>
             <div className="flex flex-col sm:flex-row gap-2 shrink-0">
               <button type="button" onClick={() => setUnitIssueTarget(r)} className="duo-btn-blue px-4 py-2 text-xs">
@@ -678,6 +678,14 @@ export default function MyReservationsPage() {
                 Huỷ & hoàn 100%
               </button>
             </div>
+          </div>
+        ))}
+        {!loading && !error && reservations.filter((r) => r.unitIssue && r.unitIssueRescheduled).map((r) => (
+          <div key={`rescheduled-issue-${r.id}`} className="mx-4 my-3 rounded-2xl bg-[#F0F9FF] border-2 border-[#84D8FF] px-4 py-3 flex items-center gap-3">
+            <span className="material-symbols-outlined text-[#0284C7] text-[28px]">event_available</span>
+            <p className="text-xs font-bold text-[#4B4B4B]">
+              Đơn {r.reservationCode} đã dời ngày nhận kho sang <b>{formatDateVN(r.startDate)}</b>. Cơ sở sẽ chuẩn bị hoặc bố trí ô phù hợp trước lịch mới. Nếu cần thay đổi phương án, vui lòng liên hệ cơ sở.
+            </p>
           </div>
         ))}
 

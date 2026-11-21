@@ -247,6 +247,7 @@ export default function CustomerContractPage() {
 
   const isTerminated = contract.status === "TERMINATED";
   const isNoShow = isTerminated && Boolean(contract.noShow);
+  const isCancelledBeforeHandover = isTerminated && !isNoShow && Boolean(contract.cancellationTier);
   const isNoShowWithoutRefund = isNoShow && contract.refundStatus === "NONE";
   // PR-O12: "đã hoàn" chỉ khi FM đã xác nhận task REFUND (BE trả refundStatus, cùng nguồn với danh sách đơn)
   const hasRefunded = contract.refundStatus
@@ -254,7 +255,13 @@ export default function CustomerContractPage() {
     : isTerminated;
   const isRefundPending = isTerminated && !hasRefunded;
 
-  const statusInfo = isNoShow
+  const statusInfo = isCancelledBeforeHandover
+    ? {
+        label: hasRefunded ? "Đơn đã hủy trước bàn giao (Đã hoàn tiền)" : "Đơn đã hủy trước bàn giao (Chờ hoàn tiền)",
+        cls: hasRefunded ? "bg-[#F3E8FF] text-[#A560E8] border-2 border-[#CE82FF]" : "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
+        icon: hasRefunded ? "payments" : "hourglass_top",
+      }
+    : isNoShow
     ? {
         label: `Đã kết thúc (No-Show, ${isNoShowWithoutRefund ? "không hoàn tiền" : hasRefunded ? "đã hoàn tiền" : "chờ hoàn tiền"})`,
         cls: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
@@ -365,8 +372,18 @@ export default function CustomerContractPage() {
         </div>
       )}
 
-      {/* Thông báo hợp đồng đã thanh lý & hoàn tiền nếu TERMINATED */}
-      {isNoShow ? (
+      {/* Đơn hủy trước bàn giao dùng quyết định hủy đặt chỗ, không dùng quyết toán trả kho. */}
+      {isCancelledBeforeHandover ? (
+        <div className={`border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm ${isRefundPending ? "bg-[#FFF8EE] border-[#FF9600]" : "bg-[#FAF5FF] border-[#CE82FF]"}`}>
+          <span className="material-symbols-outlined text-[28px] text-[#A560E8]">payments</span>
+          <div className="flex flex-col gap-1 text-xs font-bold text-[#4B4B4B]">
+            <strong className="text-base">Đơn đã hủy trước khi nhận kho{contract.cancellationTier === "FACILITY_FAULT" ? " do lỗi cơ sở" : ""}</strong>
+            <span>Khách chưa nhận và chưa sử dụng ô kho. Không phát sinh phí trả kho sớm.</span>
+            <span>Tổng đã thanh toán: <b>{formatVND(contract.totalPaid || 0)}</b> · Phí hủy theo chính sách: <b>{formatVND(contract.cancellationPenaltyAmount || 0)}</b></span>
+            <span>{hasRefunded ? "Số tiền đã hoàn" : "Số tiền chờ hoàn"}: <b className="text-[#A560E8]">{formatVND(contract.cancellationRefundAmount || 0)}</b></span>
+          </div>
+        </div>
+      ) : isNoShow ? (
         <div className="border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm bg-[#F7F7F7] border-[#E5E5E5]">
           <span className="material-symbols-outlined text-[28px] text-[#777777]">event_busy</span>
           <div className="flex flex-col gap-1">
@@ -1075,6 +1092,15 @@ export default function CustomerContractPage() {
                   </span>
                 </div>
 
+                {isCancelledBeforeHandover && (
+                  <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] flex flex-col gap-2 text-xs font-bold text-[#4B4B4B]">
+                    <span className="font-black uppercase text-[#A560E8]">Quyết toán hủy trước bàn giao</span>
+                    <div className="flex justify-between"><span>Tiền đã thanh toán:</span><span>{formatVND(contract.totalPaid || 0)}</span></div>
+                    <div className="flex justify-between"><span>Phí hủy theo chính sách:</span><span>{formatVND(contract.cancellationPenaltyAmount || 0)}</span></div>
+                    <div className="flex justify-between border-t border-[#CE82FF] pt-2"><span>{hasRefunded ? "Tiền đã hoàn:" : "Tiền chờ hoàn:"}</span><span>{formatVND(contract.cancellationRefundAmount || 0)}</span></div>
+                  </div>
+                )}
+
                 {isNoShow && (
                   <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] flex flex-col gap-2 text-xs font-bold text-[#4B4B4B]">
                     <span className="font-black uppercase text-[#A560E8]">Quyết toán No-Show</span>
@@ -1084,7 +1110,7 @@ export default function CustomerContractPage() {
                 )}
 
                 {/* 4. Bảng quyết toán hoàn trả (gồm cả hoàn cọc + hoàn tiền thuê trả sớm PR-O2) */}
-                {!isNoShow && (hasRefunded || isInspectionDone) && (
+                {!isNoShow && !isCancelledBeforeHandover && (hasRefunded || isInspectionDone) && (
                   <div className="mt-1 pt-3 border-t-2 border-dashed border-[#CE82FF] bg-[#FAF5FF] -mx-4 -mb-4 p-4 rounded-b-2xl flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-[#A560E8]">
@@ -1219,7 +1245,9 @@ export default function CustomerContractPage() {
                   </span>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs font-bold text-[#4B4B4B]">
-                      {isNoShow
+                      {isCancelledBeforeHandover
+                        ? <>Đơn đã hủy trước khi bàn giao. {hasRefunded ? "Đã hoàn" : "Đang chờ hoàn"} <strong className="text-[#A560E8]">{formatVND(contract.cancellationRefundAmount || 0)}</strong> theo chính sách hủy đặt chỗ.</>
+                        : isNoShow
                         ? isNoShowWithoutRefund
                           ? "Khách không đến nhận kho. Theo chính sách No-Show, cọc và tiền thuê 1 tháng được giữ lại; không có khoản hoàn tiền."
                           : <>Khách không đến nhận kho. {hasRefunded ? "Đã hoàn" : "Đang chờ hoàn"} <strong className="text-[#A560E8]">{formatVND(contract.refundAmount)}</strong> theo chính sách No-Show.</>
@@ -1328,7 +1356,7 @@ export default function CustomerContractPage() {
               </span>
               {isTerminated ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
-                  {isNoShow ? "Đã vô hiệu hoá (Không đến nhận kho)" : "Đã vô hiệu hoá (Đã trả kho)"}
+                  {isCancelledBeforeHandover ? "Chưa cấp (Đơn đã hủy)" : isNoShow ? "Đã vô hiệu hoá (Không đến nhận kho)" : "Đã vô hiệu hoá (Đã trả kho)"}
                 </span>
               ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
@@ -1363,7 +1391,7 @@ export default function CustomerContractPage() {
               </span>
               {isTerminated ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">
-                  {isNoShow ? "Chưa cấp thẻ (Không đến nhận kho)" : "Đã thu hồi thẻ"}
+                  {isCancelledBeforeHandover ? "Chưa cấp thẻ (Đơn đã hủy)" : isNoShow ? "Chưa cấp thẻ (Không đến nhận kho)" : "Đã thu hồi thẻ"}
                 </span>
               ) : contract.status === "LIQUIDATED" ? (
                 <span className="text-xs font-black uppercase tracking-wider text-[#AFAFAF] bg-[#F0F0F0] px-3 py-1.5 rounded-lg border border-[#E5E5E5]">

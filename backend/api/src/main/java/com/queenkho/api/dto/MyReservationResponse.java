@@ -38,6 +38,8 @@ public class MyReservationResponse {
     private boolean unitIssue;
     // BR-140: đang tạm ở ô kho khẩn cấp
     private boolean emergencyUnit;
+    // Đã chọn ngày nhận mới sau sự cố; vẫn giữ quyền hủy theo lỗi cơ sở.
+    private boolean unitIssueRescheduled;
 
     // Constructor cũ (trước 12/11/2026) — 2 cờ BR-140/141 mặc định false
     public MyReservationResponse(Integer id, String reservationCode, String customerName, String customerPhone,
@@ -50,6 +52,6 @@ public class MyReservationResponse {
         this(id, reservationCode, customerName, customerPhone, facilityName, facilityAddress, unitTypeName, areaSqm,
                 dimensions, storageUnitId, startDate, durationMonths, depositAmount, status, createdAt, endDate, totalPaid,
                 contractId, customerEmail, customerCccd, facilityHotline, storageUnitFloor, storageUnitZone,
-                storageUnitRoomNumber, refundEvidence, false, false);
+                storageUnitRoomNumber, refundEvidence, false, false, false);
     }
 }

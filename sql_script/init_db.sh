@@ -49,7 +49,8 @@ for script in \
     Create_unit_access_history.sql \
     Update_tat_toan_tra_kho.sql \
     Update_hoan_tien_chinh_sach_v6.sql \
-    Update_checkin_goods_value_flow.sql; do
+    Update_checkin_goods_value_flow.sql \
+    Update_them_o_kho_21_11.sql; do
     APPLIED=$("${SQLCMD[@]}" -d QueenKhoDB -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.docker_schema_history WHERE script_name = '$script'")
     if [[ "$APPLIED" == *1* ]]; then
         echo "[DB-INIT] Already applied: $script"
@@ -60,7 +61,8 @@ for script in \
     # vì QueenKho_full.sql chưa có bảng unit_access_history.
     if [[ "$FRESH_DATABASE" == false || "$script" == UC28_setup.sql || "$script" == Update_admin_accounts.sql || "$script" == Update_gop_y_product_12_11.sql \
           || "$script" == Create_unit_access_history.sql || "$script" == Update_tat_toan_tra_kho.sql \
-          || "$script" == Update_hoan_tien_chinh_sach_v6.sql || "$script" == Update_checkin_goods_value_flow.sql ]]; then
+          || "$script" == Update_hoan_tien_chinh_sach_v6.sql || "$script" == Update_checkin_goods_value_flow.sql \
+          || "$script" == Update_them_o_kho_21_11.sql ]]; then
         echo "[DB-INIT] Applying $script..."
         "${SQLCMD[@]}" -d QueenKhoDB -i "/scripts/$script"
     fi

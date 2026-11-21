@@ -45,6 +45,7 @@ public class CompensationClaimResponse {
     private String insurancePlanLabel;
     private boolean insured;
     private BigDecimal declaredGoodsValue;
+    private BigDecimal agreedGoodsValue;
     private BigDecimal planCoverageLimit;
 
     // Kiểm tra hiện trường

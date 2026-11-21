@@ -12,6 +12,7 @@ import com.queenkho.api.entity.SupportRequest;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.CompensationClaimRepository;
+import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.repository.SupportRequestRepository;
 import com.queenkho.api.repository.UserRepository;
@@ -72,6 +73,9 @@ public class CompensationClaimService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired(required = false)
+    private HandoverRecordRepository handoverRecordRepository;
 
     // D-21: quyết toán trả kho (2 service gọi nhau → @Lazy)
     @Autowired(required = false)
@@ -221,7 +225,7 @@ public class CompensationClaimService {
     /**
      * BR-127: bảng tính bồi thường (hàm thuần — dùng chung cho xem trước và lúc chốt).
      *  - Thiệt hại hàng = giá trị thẩm định × % hư hại (mất hàng = 100%).
-     *  - Trần = min(giá trị khai báo lúc đặt, trần gói); không khai báo → 5 triệu.
+     *  - Trần = min(giá trị hàng đã chốt khi check-in, trần gói).
      *  - Lỗi cơ sở (FACILITY): tiền hàng (≤ trần) + phạt vi phạm 1 tháng giá thuê + hoàn tiền thuê những ngày ô không dùng được.
      *  - Bất khả kháng (FORCE_MAJEURE): chỉ gói có bảo hiểm mới được bồi thường tiền hàng (≤ trần); + hoàn tiền thuê ngày không dùng được; không phạt.
      *  - Lỗi khách (CUSTOMER): 0.
@@ -255,7 +259,7 @@ public class CompensationClaimService {
                     } else if (declaredValue.compareTo(plan.coverageLimit()) > 0) {
                         capDetail = " (khống chế theo trần tối đa gói " + plan.label() + " " + formatVnd(cap) + " do giá trị hàng vượt trần gói bảo hiểm, thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
                     } else {
-                        capDetail = " (khống chế theo giá trị khai báo trong HĐ " + formatVnd(cap) + ", thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
+                        capDetail = " (khống chế theo giá trị hàng hai bên đã xác nhận khi check-in " + formatVnd(cap) + ", thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
                     }
                 }
                 explanation = "Lỗi cơ sở: bồi thường tiền hàng " + formatVnd(goods) + capDetail + " + phạt vi phạm 1 tháng tiền thuê (" + formatVnd(penalty) + ")"
@@ -566,11 +570,28 @@ public class CompensationClaimService {
 
     private CompensationQuoteResponse computeFor(CompensationClaim claim, ClaimDecisionRequest request) {
         RentalContract contract = claim.getContract();
-        Reservation r = contract.getReservation();
         BigDecimal price = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
         return compute(request.getLiableParty().trim().toUpperCase(), claim.getClaimType(), request.getAssessedValue(),
                 request.getDamagePercent(), request.getUnusableDays(), planOf(contract),
-                r != null ? r.getDeclaredGoodsValue() : null, price);
+                agreedGoodsValue(contract), price);
+    }
+
+    /**
+     * Giá trị dùng làm trần bồi thường là số tiền trong biên bản CHECK_IN cuối cùng
+     * mà khách đã đồng ý. Dữ liệu cũ chưa có biên bản giá trị thì mới dùng số khách
+     * khai lúc đặt kho để tương thích ngược.
+     */
+    private BigDecimal agreedGoodsValue(RentalContract contract) {
+        if (contract == null || contract.getId() == null) return null;
+        if (handoverRecordRepository != null) {
+            BigDecimal agreed = handoverRecordRepository
+                    .findFirstByContractIdAndRecordTypeOrderByIdDesc(contract.getId(), "CHECK_IN")
+                    .map(record -> record.getAssessedGoodsValue())
+                    .orElse(null);
+            if (agreed != null && agreed.signum() > 0) return agreed;
+        }
+        Reservation reservation = contract.getReservation();
+        return reservation != null ? reservation.getDeclaredGoodsValue() : null;
     }
 
     private void resolveTicket(SupportRequest ticket, String note, LocalDateTime now) {
@@ -588,6 +609,7 @@ public class CompensationClaimService {
     public CompensationClaimResponse toResponse(CompensationClaim c) {
         RentalContract contract = c.getContract();
         Reservation r = contract != null ? contract.getReservation() : null;
+        BigDecimal agreedValue = agreedGoodsValue(contract);
         InsurancePlan plan = contract != null ? planOf(contract) : InsurancePlan.BASIC;
         var su = contract != null ? contract.getStorageUnit() : null;
         SupportRequest ticket = c.getSupportRequest();
@@ -622,6 +644,7 @@ public class CompensationClaimService {
                 .insurancePlanLabel(plan.label())
                 .insured(plan.insured())
                 .declaredGoodsValue(r != null ? r.getDeclaredGoodsValue() : null)
+                .agreedGoodsValue(agreedValue)
                 .planCoverageLimit(plan.coverageLimit())
                 .inspectedByName(c.getInspectedBy() != null ? c.getInspectedBy().getFullName() : null)
                 .inspectedAt(c.getInspectedAt())
@@ -632,7 +655,7 @@ public class CompensationClaimService {
                 .assessedValue(c.getAssessedValue())
                 .damagePercent(c.getDamagePercent())
                 .unusableDays(c.getUnusableDays())
-                .coverageCap(c.getCoverageCap() != null ? c.getCoverageCap() : plan.coverageCap(r != null ? r.getDeclaredGoodsValue() : null))
+                .coverageCap(c.getCoverageCap() != null ? c.getCoverageCap() : plan.coverageCap(agreedValue))
                 .goodsCompensation(c.getGoodsCompensation())
                 .penaltyAmount(c.getPenaltyAmount())
                 .rentRefundAmount(c.getRentRefundAmount())

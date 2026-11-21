@@ -185,6 +185,7 @@ function ClaimDetail({ claimId }) {
 
   if (error) return <div className="p-8 text-sm font-black text-[#FF4B4B]">{error}</div>
   if (!claim) return <div className="p-8 text-xs font-bold text-[#AFAFAF]">Đang tải hồ sơ...</div>
+  const agreedGoodsValue = claim.agreedGoodsValue ?? claim.declaredGoodsValue
 
   const refresh = (message) => {
     if (message) setToast(message)
@@ -222,11 +223,11 @@ function ClaimDetail({ claimId }) {
           <Row label="Gói bảo hiểm" value={`${claim.insurancePlanLabel}${claim.insured ? ' (có bảo hiểm đối tác)' : ' (cơ sở tự bảo trợ)'}`} />
           <Row label="Hạn mức trần gói" value={formatVND(claim.planCoverageLimit)} />
           <Row
-            label="Giá trị khai báo khi ký HĐ"
+             label="Giá trị hàng đã chốt khi check-in"
             value={
-              claim.declaredGoodsValue
-                ? formatVND(claim.declaredGoodsValue)
-                : <span className="text-[#E58800]">Không khai báo (áp trần mặc định 5.000.000đ)</span>
+               agreedGoodsValue
+                 ? <>{formatVND(agreedGoodsValue)}{claim.agreedGoodsValue ? <span className="block text-[10px] text-[#58A700]">FM đã thẩm định và chốt</span> : null}</>
+                 : <span className="text-[#E58800]">Không có giá trị đã chốt (áp trần mặc định 5.000.000đ)</span>
             }
           />
           <Row
@@ -244,14 +245,14 @@ function ClaimDetail({ claimId }) {
               Công thức xác định trần bồi thường hàng:
             </div>
             <div className="text-[#4B4B4B] font-mono text-[11px] bg-white rounded-lg p-2 border border-[#E0F0FF] leading-relaxed">
-              Trần = min(Giá trị khai báo, Hạn mức gói bảo hiểm)
+               Trần = min(Giá trị đã chốt khi check-in, Hạn mức gói bảo hiểm)
               <br />
-              = min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ (mức sàn không khai báo)'}, {formatVND(claim.planCoverageLimit)})
+               = min({agreedGoodsValue ? formatVND(agreedGoodsValue) : '5.000.000đ (mức sàn không có giá trị)'}, {formatVND(claim.planCoverageLimit)})
               <br />
               = <strong className="text-[#1CB0F6]">{formatVND(claim.coverageCap)}</strong>
             </div>
 
-            {!claim.declaredGoodsValue && (
+            {!agreedGoodsValue && (
               <div className="flex items-start gap-1.5 text-[11px] font-semibold text-[#D96B00] bg-[#FFF8E6] p-2 rounded-lg border border-[#FFE0A3]">
                 <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">warning</span>
                 <span>
@@ -260,11 +261,11 @@ function ClaimDetail({ claimId }) {
               </div>
             )}
 
-            {claim.declaredGoodsValue && Number(claim.declaredGoodsValue) > Number(claim.planCoverageLimit || 0) && (
+            {agreedGoodsValue && Number(agreedGoodsValue) > Number(claim.planCoverageLimit || 0) && (
               <div className="flex items-start gap-1.5 text-[11px] font-semibold text-[#D96B00] bg-[#FFF8E6] p-2 rounded-lg border border-[#FFE0A3]">
                 <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">warning</span>
                 <span>
-                  <strong>Giá trị khai báo ({formatVND(claim.declaredGoodsValue)}) vượt trần gói {claim.insurancePlanLabel} ({formatVND(claim.planCoverageLimit)}):</strong> Mức bồi thường hàng bị khống chế tối đa ở trần gói <strong>{formatVND(claim.coverageCap)}</strong>. Phần giá trị chênh lệch do khách tự chịu trách nhiệm vì không đăng ký gói bảo hiểm cao hơn khi ký HĐ.
+                   <strong>Giá trị hàng đã chốt ({formatVND(agreedGoodsValue)}) vượt trần gói {claim.insurancePlanLabel} ({formatVND(claim.planCoverageLimit)}):</strong> Mức bồi thường hàng bị khống chế tối đa ở trần gói <strong>{formatVND(claim.coverageCap)}</strong>.
                 </span>
               </div>
             )}
@@ -355,6 +356,7 @@ function ClaimDetail({ claimId }) {
 }
 
 function DecisionSummary({ claim }) {
+  const agreedGoodsValue = claim.agreedGoodsValue ?? claim.declaredGoodsValue
   const goodsLoss = Number(claim.assessedValue || 0) * (Number(claim.damagePercent ?? 100) / 100)
   const isCapped = goodsLoss > Number(claim.coverageCap || 0)
 
@@ -368,7 +370,7 @@ function DecisionSummary({ claim }) {
           <span className="text-right">
             <strong className="text-[#1CB0F6]">{formatVND(claim.coverageCap)}</strong>
             <span className="text-[10px] text-[#777777] block font-normal">
-              min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
+               min({agreedGoodsValue ? formatVND(agreedGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
             </span>
           </span>
         }
@@ -398,6 +400,7 @@ function DecisionSummary({ claim }) {
 }
 
 function DecisionForm({ claim, onDone }) {
+  const agreedGoodsValue = claim.agreedGoodsValue ?? claim.declaredGoodsValue
   const isLoss = claim.claimType === 'GOODS_LOSS'
   const [form, setForm] = useState({
     liableParty: ['CUSTOMER', 'FACILITY', 'FORCE_MAJEURE'].includes(claim.preliminaryCause) ? claim.preliminaryCause : 'FACILITY',
@@ -494,7 +497,7 @@ function DecisionForm({ claim, onDone }) {
               <span className="text-right">
                 <strong className="text-[#1CB0F6]">{formatVND(quote.coverageCap)}</strong>
                 <span className="text-[10px] text-[#888888] block font-normal">
-                  min({claim.declaredGoodsValue ? formatVND(claim.declaredGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
+                   min({agreedGoodsValue ? formatVND(agreedGoodsValue) : '5.000.000đ mặc định'}, trần gói {formatVND(claim.planCoverageLimit)})
                 </span>
               </span>
             }

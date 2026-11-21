@@ -178,7 +178,48 @@ export default function NotificationDropdown() {
     setIsOpen(false);
 
     if (item.targetUrl) {
-      navigate(item.targetUrl);
+      let target = item.targetUrl;
+      try {
+        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+        if (user?.role === 'STAFF' && target.startsWith('/manager/tasks')) {
+          target = target.replace('/manager/tasks', '/staff');
+        } else if (user?.role === 'FACILITY_MANAGER' && (target.startsWith('/staff?') || target === '/staff')) {
+          target = target.replace('/staff', '/manager/tasks');
+        } else if (user?.role === 'CUSTOMER' || !user?.role) {
+          const fullText = (item.title || '') + ' ' + (item.message || '');
+          const srMatch = fullText.match(/(SR-\d+)/);
+          const btMatch = fullText.match(/(BT-\d+)/);
+          const hdMatch = fullText.match(/(HD-[A-Z0-9-]+)/);
+          const resMatch = fullText.match(/(RES-\d+)/);
+
+          // 1. Nếu là thông báo bồi thường
+          if (btMatch) {
+            if (item.type === 'REFUND' || fullText.toLowerCase().includes('chi trả') || fullText.toLowerCase().includes('tiền')) {
+              target = `/thanh-toan?highlightClaim=${btMatch[1]}&highlightType=COMPENSATION`;
+            } else {
+              target = `/ho-tro?highlightClaimCode=${btMatch[1]}`;
+            }
+          }
+          // 2. Nếu là thông báo ticket hỗ trợ
+          else if (srMatch) {
+            target = `/ho-tro?highlightTicketCode=${srMatch[1]}`;
+          }
+          // 3. Nếu là thông báo chi tiết hợp đồng
+          else if (target.startsWith('/kho-cua-toi/hop-dong/')) {
+            target += (target.includes('?') ? '&' : '?') + 'highlight=1';
+          }
+          // 4. Nếu là thông báo danh sách hợp đồng / đặt kho
+          else if (target === '/kho-cua-toi' || target.startsWith('/kho-cua-toi?')) {
+            const code = hdMatch?.[1] || resMatch?.[1];
+            if (code) {
+              target = `/kho-cua-toi?highlightCode=${code}`;
+            }
+          }
+        }
+      } catch {
+        // ignore json parse error
+      }
+      navigate(target);
     }
   };
 

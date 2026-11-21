@@ -99,14 +99,28 @@ public class NotificationService {
 
     @Transactional
     public void notifyFacilityManagers(Integer facilityId, String title, String message, String type, String targetUrl) {
+        notifyFacilityManagers(facilityId, title, message, type, targetUrl, false);
+    }
+
+    @Transactional
+    public void notifyFacilityManagers(Integer facilityId, String title, String message, String type, String targetUrl, boolean sendEmail) {
         if (facilityId == null) return;
-        List<Integer> managerIds = jdbcTemplate.query(
-                "SELECT u.id FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'FACILITY_MANAGER' AND u.facility_id = ?",
-                (rs, rowNum) -> rs.getInt("id"),
+        List<User> managers = jdbcTemplate.query(
+                "SELECT u.id, u.full_name, u.email FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'FACILITY_MANAGER' AND u.facility_id = ?",
+                (rs, rowNum) -> {
+                    User u = new User();
+                    u.setId(rs.getInt("id"));
+                    u.setFullName(rs.getString("full_name"));
+                    u.setEmail(rs.getString("email"));
+                    return u;
+                },
                 facilityId
         );
-        for (Integer mId : managerIds) {
-            sendNotification(mId, title, message, type, targetUrl);
+        for (User m : managers) {
+            sendNotification(m.getId(), title, message, type, targetUrl);
+            if (sendEmail && eventPublisher != null && m.getEmail() != null && !m.getEmail().isBlank()) {
+                eventPublisher.publishEvent(new CustomerEmailEvent(m.getEmail(), m.getFullName(), title, message, targetUrl));
+            }
         }
     }
 
@@ -125,8 +139,45 @@ public class NotificationService {
     }
 
     @Transactional
+    public void notifyFacilityStaff(Integer facilityId, String title, String message, String type, String targetUrl) {
+        notifyFacilityStaff(facilityId, title, message, type, targetUrl, false);
+    }
+
+    @Transactional
+    public void notifyFacilityStaff(Integer facilityId, String title, String message, String type, String targetUrl, boolean sendEmail) {
+        if (facilityId == null) return;
+        List<User> staffList = jdbcTemplate.query(
+                "SELECT u.id, u.full_name, u.email FROM users u JOIN roles r ON u.role_id = r.id WHERE r.name = 'STAFF' AND u.facility_id = ?",
+                (rs, rowNum) -> {
+                    User u = new User();
+                    u.setId(rs.getInt("id"));
+                    u.setFullName(rs.getString("full_name"));
+                    u.setEmail(rs.getString("email"));
+                    return u;
+                },
+                facilityId
+        );
+        for (User s : staffList) {
+            sendNotification(s.getId(), title, message, type, targetUrl);
+            if (sendEmail && eventPublisher != null && s.getEmail() != null && !s.getEmail().isBlank()) {
+                eventPublisher.publishEvent(new CustomerEmailEvent(s.getEmail(), s.getFullName(), title, message, targetUrl));
+            }
+        }
+    }
+
+    @Transactional
     public void notifyStaff(Integer staffId, String title, String message, String type, String targetUrl) {
+        notifyStaff(staffId, title, message, type, targetUrl, false);
+    }
+
+    @Transactional
+    public void notifyStaff(Integer staffId, String title, String message, String type, String targetUrl, boolean sendEmail) {
         sendNotification(staffId, title, message, type, targetUrl);
+        if (sendEmail && eventPublisher != null && staffId != null) {
+            userRepository.findById(staffId)
+                    .filter(u -> u.getEmail() != null && !u.getEmail().isBlank())
+                    .ifPresent(u -> eventPublisher.publishEvent(new CustomerEmailEvent(u.getEmail(), u.getFullName(), title, message, targetUrl)));
+        }
     }
 
     @Transactional

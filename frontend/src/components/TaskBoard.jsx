@@ -141,23 +141,37 @@ export default function TaskBoard({
   const highlightParam = searchParams.get('highlightTaskId')
   const [activeHighlightId, setActiveHighlightId] = useState(null)
 
+  // Tự động tìm task, đổi tab và tắt bộ lọc cản trở khi bấm từ thông báo
   useEffect(() => {
-    if (!highlightParam) return
-    setActiveHighlightId(String(highlightParam))
-    const timer = setTimeout(() => {
-      const el = document.getElementById("task-card-" + highlightParam)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (!highlightParam || tasks.length === 0) return
+
+    const target = tasks.find(t => String(t.id) === String(highlightParam))
+    if (!target) return
+
+    // 1. Chuyển tab phù hợp nếu tab hiện tại không chứa trạng thái của task này
+    const currentTabObj = activeTabs.find(t => t.key === tab)
+    if (!currentTabObj?.statuses?.includes(target.status)) {
+      const properTab = activeTabs.find(t => t.statuses?.includes(target.status))
+      if (properTab) {
+        setTab(properTab.key)
       }
-    }, 350)
-    const clearTimer = setTimeout(() => {
-      setActiveHighlightId(null)
-    }, 5000)
-    return () => {
-      clearTimeout(timer)
-      clearTimeout(clearTimer)
     }
+
+    // 2. Tắt các bộ lọc gây ẩn task
+    if (typeFilter !== 'ALL' && typeFilter !== target.taskType) {
+      setTypeFilter('ALL')
+    }
+    if (mineOnly && target.staffId !== currentStaffId) {
+      setMineOnly(false)
+    }
+    if (search) {
+      setSearch('')
+    }
+
+    // 3. Đánh dấu highlight
+    setActiveHighlightId(String(highlightParam))
   }, [highlightParam, tasks])
+
   const listRef = useRef(null)
 
   // Cập nhật khi defaultLayout thay đổi
@@ -279,6 +293,36 @@ export default function TaskBoard({
   const paginatedTasks = useMemo(() => {
     return visibleTasks.slice(startIndex, startIndex + PAGE_SIZE)
   }, [visibleTasks, startIndex])
+
+  // Tự động nhảy đúng trang phân trang chứa task cần highlight
+  useEffect(() => {
+    if (!highlightParam || visibleTasks.length === 0) return
+    const targetIdx = visibleTasks.findIndex(t => String(t.id) === String(highlightParam))
+    if (targetIdx !== -1) {
+      const targetPage = Math.floor(targetIdx / PAGE_SIZE) + 1
+      if (currentPage !== targetPage) {
+        setCurrentPage(targetPage)
+      }
+    }
+  }, [highlightParam, visibleTasks])
+
+  // Cuộn mượt đến task card và giữ highlight nổi bật 8 giây
+  useEffect(() => {
+    if (!activeHighlightId) return
+    const timer = setTimeout(() => {
+      const el = document.getElementById("task-card-" + activeHighlightId)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 300)
+    const clearTimer = setTimeout(() => {
+      setActiveHighlightId(null)
+    }, 8000)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(clearTimer)
+    }
+  }, [activeHighlightId, currentPage, tab])
 
   const handlePageChange = (newPage) => {
     setCurrentPage(newPage)

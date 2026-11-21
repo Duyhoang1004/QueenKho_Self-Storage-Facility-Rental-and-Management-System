@@ -590,6 +590,25 @@ export default function CustomerPaymentsPage() {
   const [debtPage, setDebtPage] = useState(1)
   const [selectedTx, setSelectedTx] = useState(null)
 
+  const highlightType = searchParams.get('highlightType')
+  const highlightClaim = searchParams.get('highlightClaim')
+  const [activeHighlightTx, setActiveHighlightTx] = useState(null)
+
+  useEffect(() => {
+    if (highlightType && (TYPE_LABELS[highlightType] || highlightType === 'COMPENSATION' || highlightType === 'REFUND')) {
+      setTypeFilter(highlightType)
+    }
+    if (highlightClaim) {
+      setActiveHighlightTx(highlightClaim)
+      const timer = setTimeout(() => {
+        const el = document.getElementById("tx-history-section")
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 350)
+      const clearTimer = setTimeout(() => setActiveHighlightTx(null), 8000)
+      return () => { clearTimeout(timer); clearTimeout(clearTimer); }
+    }
+  }, [highlightType, highlightClaim])
+
   // Kết quả trả về từ VNPAY (/thanh-toan?orderId=...&vnpResponse=00)
   const vnpResponse = searchParams.get('vnpResponse')
   const returnNotice = vnpResponse == null ? null
@@ -781,7 +800,12 @@ export default function CustomerPaymentsPage() {
 
       {/* Lịch sử giao dịch */}
       {state.data && (
-        <section className="duo-card overflow-hidden">
+        <section
+          id="tx-history-section"
+          className={`duo-card overflow-hidden transition-all ${
+            activeHighlightTx ? 'ring-4 ring-[#58CC02] ring-offset-2 animate-pulse border-[#58CC02] shadow-xl' : ''
+          }`}
+        >
           <ListBoxHeader
             icon="receipt_long"
             title="Lịch sử giao dịch"

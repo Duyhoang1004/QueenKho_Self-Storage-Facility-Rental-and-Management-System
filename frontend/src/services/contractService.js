@@ -28,8 +28,8 @@ export async function getCheckInHandoverHistory(contractId) {
   return res.data
 }
 
-export async function decideCheckInHandover(contractId, attemptId, accepted, reason, evidenceImages = []) {
-  const res = await api.post(`/contracts/${contractId}/check-in-handover/${attemptId}/decision`, { accepted, reason, evidenceImages })
+export async function decideCheckInHandover(contractId, attemptId, accepted, reason, evidenceImages = [], rejectionTypes = []) {
+  const res = await api.post(`/contracts/${contractId}/check-in-handover/${attemptId}/decision`, { accepted, reason, evidenceImages, rejectionTypes })
   return res.data
 }
 

@@ -4,6 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +21,12 @@ public class CheckInRequest {
     private Boolean customerSignatureConfirmed;  // khách đã ký biên bản
     // PR-C7 / BR-132 (05/11/2026): mục 6 — đã kiểm tra hàng mang vào khớp loại hàng khai báo, không có hàng cấm
     private Boolean goodsChecked;
+    // Đã đối chiếu hàng thực tế với giá trị/chứng từ khách khai lúc đặt kho.
+    private Boolean goodsValueVerified;
+    // MATCHED = khớp khai báo; ADJUSTED = staff đề xuất giá trị khác để khách xác nhận trong CI_DRAFT.
+    private String goodsValueAssessment;
+    private BigDecimal assessedGoodsValue;
+    private String goodsValueAssessmentNote;
 
     private String accessPinCode;  // 6 chữ số, lấy từ GET /staff-tasks/pin-suggestion
     private String rfidCardCode;   // mã in trên thẻ từ phát cho khách

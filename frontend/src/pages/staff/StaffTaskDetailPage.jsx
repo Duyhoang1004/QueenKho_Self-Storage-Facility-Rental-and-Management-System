@@ -5,7 +5,7 @@ import {
   prepareCheckInHandover,
   checkInStaffTask,
   reopenCheckInHandover,
-  confirmCheckInUnitIssue,
+  resolveCheckInIssues,
   checkOutStaffTask,
   completeMaintenanceTask,
   completeRefundTask,
@@ -132,6 +132,8 @@ const CHECKIN_CHECKLIST = [
   { key: 'lockIntact',                 label: 'Khoá SmartLock nguyên vẹn',      hint: 'Khoá hoạt động, không trầy xước' },
   { key: 'goodsChecked', recordKey: 'prohibitedGoodsCommitted', label: 'Đã kiểm tra hàng mang vào',
     hint: 'Hàng khớp loại khách khai báo, không có chất dễ cháy nổ / hàng cấm' },
+  { key: 'goodsValueVerified', label: 'Đã đối chiếu giá trị và chứng từ hàng',
+    hint: 'So hàng thực tế với hoá đơn/biên lai và giá trị khách khai lúc đặt kho' },
 ];
 
 // 5 mục kiểm tra của biên bản Nghiệm thu trả kho (UC-23) — chia nhóm bắt buộc vs hiện trạng
@@ -701,6 +703,15 @@ export default function StaffTaskDetailPage() {
   const [reopenNote, setReopenNote] = useState('');
   const [issueNote, setIssueNote] = useState('');
   const [reopenPhotos, setReopenPhotos] = useState([]);
+  const [goodsValueAssessment, setGoodsValueAssessment] = useState('MATCHED');
+  const [assessedGoodsValue, setAssessedGoodsValue] = useState('');
+  const [goodsValueAssessmentNote, setGoodsValueAssessmentNote] = useState('');
+  const [fmResolvedGoodsValue, setFmResolvedGoodsValue] = useState('');
+  const [fmResolvedGoodsValueNote, setFmResolvedGoodsValueNote] = useState('');
+  const [goodsResolutionValue, setGoodsResolutionValue] = useState('');
+  const [goodsResolutionNote, setGoodsResolutionNote] = useState('');
+  const [otherResolutionNote, setOtherResolutionNote] = useState('');
+  const [resolvingCheckIn, setResolvingCheckIn] = useState(false);
 
   // State cho Check-out & Damage Cases (UC-23 & UC-24)
   const [coChecks, setCoChecks] = useState(INITIAL_CHECKOUT_CHECKS);
@@ -764,7 +775,19 @@ export default function StaffTaskDetailPage() {
         setTask(data);
         setLoadError('');
         if (data.taskType === 'CHECK_IN' && data.contractId) {
-          setHandover(await getCheckInHandover(data.contractId));
+          const latestHandover = await getCheckInHandover(data.contractId);
+          setHandover(latestHandover);
+          const resolvedValue = latestHandover?.issueResolution?.resolvedGoodsValue;
+          if (Number(resolvedValue) > 0) {
+            setFmResolvedGoodsValue(String(resolvedValue));
+            setFmResolvedGoodsValueNote(latestHandover.issueResolution.goodsValueResolutionNote || 'Giá trị đã được FM kết luận sau khi đối chiếu.');
+            setGoodsValueAssessment('ADJUSTED');
+            setAssessedGoodsValue(String(resolvedValue));
+            setGoodsValueAssessmentNote(latestHandover.issueResolution.goodsValueResolutionNote || 'Giá trị đã được FM kết luận sau khi đối chiếu.');
+          } else {
+            setFmResolvedGoodsValue('');
+            setFmResolvedGoodsValueNote('');
+          }
         } else setHandover(null);
         if (data.taskType === 'CHECK_IN' && !blockedReason(data, userId) && data.status !== 'COMPLETED') {
           fetchPin();
@@ -781,15 +804,26 @@ export default function StaffTaskDetailPage() {
   // ================== LOGIC CHECK-IN (UC-18) ==================
   const allCheckInChecked = CHECKIN_CHECKLIST.every(item => checks[item.key]);
   const allCheckInPhotos = CHECKIN_CHECKLIST.every(item => Boolean(checkInEvidence[item.key]));
+  const goodsValueAssessmentValid = goodsValueAssessment === 'MATCHED'
+    ? Number(task?.declaredGoodsValue) > 0
+    : Number(assessedGoodsValue) > 0 && Number(assessedGoodsValue) <= 10000000000
+      && goodsValueAssessmentNote.trim().length >= 5;
   const canSubmitCheckIn = handover?.status === 'ACCEPTED'
     ? /^\d{6}$/.test(pin) && /^RFID-\d{5}$/.test(rfid) && !submitting
-    : allCheckInChecked && allCheckInPhotos && notes.length <= NOTES_MAX && !submitting;
+    : allCheckInChecked && allCheckInPhotos && goodsValueAssessmentValid && notes.length <= NOTES_MAX && !submitting;
 
   const handleCheckInSubmit = () => {
     setSubmitting(true);
     (handover?.status === 'ACCEPTED'
       ? checkInStaffTask(task.id, userId, { approvalId: handover.id, accessPinCode: pin, rfidCardCode: rfid.trim() })
-      : prepareCheckInHandover(task.id, { ...checks, notes, checklistEvidence: checkInEvidence }))
+      : prepareCheckInHandover(task.id, {
+          ...checks,
+          notes,
+          checklistEvidence: checkInEvidence,
+          goodsValueAssessment,
+          assessedGoodsValue: goodsValueAssessment === 'MATCHED' ? Number(task.declaredGoodsValue) : Number(assessedGoodsValue),
+          goodsValueAssessmentNote: goodsValueAssessment === 'ADJUSTED' ? goodsValueAssessmentNote.trim() : undefined,
+        }))
       .then(() => {
         loadTask();
         setToast({ type: 'success', message: handover?.status === 'ACCEPTED'
@@ -1336,6 +1370,10 @@ export default function StaffTaskDetailPage() {
     : null);
   const record = task.handoverRecord;
   const isCheckOut = task.taskType === 'CHECK_OUT';
+  const rejectedIssueTypes = handover?.rejectionTypes?.length ? handover.rejectionTypes : ['UNIT_CONDITION'];
+  const needsUnitResolution = rejectedIssueTypes.includes('UNIT_CONDITION');
+  const needsGoodsValueResolution = rejectedIssueTypes.includes('GOODS_VALUE');
+  const needsOtherResolution = rejectedIssueTypes.some(type => ['GOODS_INFORMATION', 'OTHER'].includes(type));
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8">
@@ -2715,42 +2753,68 @@ export default function StaffTaskDetailPage() {
               {isManager && task.taskType === 'CHECK_IN' && ['PENDING_CUSTOMER', 'REJECTED'].includes(handover?.status) && (
                 <div className="w-full max-w-md flex flex-col gap-3 text-left mt-2">
                   {handover?.status === 'REJECTED' && <div className="rounded-2xl border-2 border-[#FFB4B4] bg-[#FFF4F4] p-4 flex flex-col gap-2">
-                    <p className="text-xs font-black text-[#B42318]">Khách từ chối ô {handover.storage_unit_id}</p>
+                    <p className="text-xs font-black text-[#B42318]">Khách không đồng ý biên bản ô {handover.storage_unit_id}</p>
                     <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">Lý do: {handover.rejection_reason || 'Không có lý do'}</p>
+                    <p className="text-xs font-black text-[#B42318]">Nội dung cần xử lý: {rejectedIssueTypes.map(type => ({ UNIT_CONDITION: 'Ô kho/cơ sở', GOODS_VALUE: 'Giá trị hàng', GOODS_INFORMATION: 'Hàng/chứng từ', OTHER: 'Khác' }[type] || type)).join(', ')}</p>
                     {handover.customerEvidenceImages?.length > 0 ? <>
                       <p className="text-xs font-black text-[#777777]">Ảnh khách cung cấp</p>
                       <PhotoGrid images={handover.customerEvidenceImages} />
                     </> : <p className="text-xs text-[#777777]">Khách không gửi ảnh bổ sung.</p>}
                   </div>}
                   {handover?.status === 'REJECTED' && <div className="rounded-2xl border border-[#E5E5E5] p-4 flex flex-col gap-3">
-                    <p className="text-xs font-black text-[#4B4B4B]">Bước 1 · FM kiểm tra lý do từ chối</p>
-                    {handover?.facility_fault_confirmed ? (
-                      <p className="text-xs font-bold text-[#B42318]">Đã xác nhận lỗi cơ sở. {handover.faultNote && `Ghi nhận: ${handover.faultNote}`}</p>
-                    ) : <>
-                    <p className="text-xs text-[#777777]">Xem lý do và ảnh khách cung cấp ở trên, kiểm tra ô thực tế rồi ghi nhận nếu đúng là lỗi cơ sở. Chưa cần ảnh sau xử lý ở bước này.</p>
-                    <textarea className="duo-input text-xs" value={issueNote} onChange={e => setIssueNote(e.target.value)}
-                      placeholder="Ghi lỗi cơ sở sau khi xác minh (10–500 ký tự)" maxLength={500} />
-                    <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={issueNote.trim().length < 10}
-                      onClick={async () => {
-                        try {
-                          await confirmCheckInUnitIssue(task.id, issueNote.trim());
-                          await loadTask();
-                          setToast({ type: 'success', message: 'Đã xác nhận lỗi cơ sở. Khách có thể dời lịch hoặc hủy hoàn 100%.' });
-                        } catch (err) {
-                          setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' });
-                        }
-                      }}>Xác nhận ô không đạt do lỗi cơ sở</button>
+                    <p className="text-xs font-black text-[#4B4B4B]">Bước 1 · FM xử lý toàn bộ nội dung khách từ chối</p>
+                    {handover?.issuesResolved ? <div className="rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] p-3 text-xs font-bold text-[#58A700]">
+                      Đã ghi nhận xử lý đầy đủ. Có thể mở lại check-in để staff lập biên bản mới.
+                    </div> : <>
+                      {needsUnitResolution && <label className="flex flex-col gap-1">
+                        <span className="text-[11px] font-black uppercase text-[#777777]">Cách xử lý ô kho *</span>
+                        <textarea className="duo-input text-xs" value={issueNote} onChange={e => setIssueNote(e.target.value)}
+                          placeholder="Đã sửa, vệ sinh hoặc đổi sang ô phù hợp... (10–500 ký tự)" maxLength={500} />
+                      </label>}
+                      {needsGoodsValueResolution && <div className="rounded-xl border-2 border-[#FFC800] bg-[#FFFBEA] p-3 flex flex-col gap-2">
+                        <p className="text-xs font-black text-[#4B4B4B]">Đối chiếu giá trị hàng</p>
+                        <p className="text-xs">Khách khai: <b>{formatCurrency(handover.declaredGoodsValue || task.declaredGoodsValue || 0)}</b> · Staff đề xuất: <b className="text-[#1CB0F6]">{formatCurrency(handover.assessedGoodsValue || 0)}</b></p>
+                        <input type="number" min="1" max="10000000000" step="100000" className="duo-input text-xs"
+                          value={goodsResolutionValue} onChange={e => setGoodsResolutionValue(e.target.value)} placeholder="Giá trị FM kết luận / đề xuất mới" />
+                        <textarea className="duo-input text-xs" value={goodsResolutionNote} onChange={e => setGoodsResolutionNote(e.target.value)}
+                          placeholder="Căn cứ kết luận giá trị (10–1000 ký tự)" maxLength={1000} />
+                      </div>}
+                      {needsOtherResolution && <textarea className="duo-input text-xs" value={otherResolutionNote}
+                        onChange={e => setOtherResolutionNote(e.target.value)} placeholder="Cách xử lý thông tin/chứng từ hoặc lý do khác (10–500 ký tự)" maxLength={500} />}
+                      <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos}
+                        label="Ảnh/chứng từ sau xử lý" hint="Ảnh ô sau sửa/đổi hoặc chứng từ dùng để kết luận giá trị." maxPhotos={10} />
+                      <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={resolvingCheckIn || reopenPhotos.length === 0
+                        || (needsUnitResolution && issueNote.trim().length < 10)
+                        || (needsGoodsValueResolution && (Number(goodsResolutionValue) <= 0 || goodsResolutionNote.trim().length < 10))
+                        || (needsOtherResolution && otherResolutionNote.trim().length < 10)}
+                        onClick={async () => {
+                          try {
+                            setResolvingCheckIn(true);
+                            await resolveCheckInIssues(task.id, {
+                              resolvedIssueTypes: rejectedIssueTypes,
+                              unitResolutionNote: issueNote.trim(),
+                              resolvedGoodsValue: needsGoodsValueResolution ? Number(goodsResolutionValue) : undefined,
+                              goodsValueResolutionNote: goodsResolutionNote.trim(),
+                              otherResolutionNote: otherResolutionNote.trim(),
+                              evidenceImages: reopenPhotos,
+                            });
+                            await loadTask();
+                            setToast({ type: 'success', message: 'Đã xử lý đầy đủ các nội dung khách từ chối.' });
+                          } catch (err) {
+                            setToast({ type: 'error', message: err.response?.data?.message || 'Không lưu được kết quả xử lý.' });
+                          } finally {
+                            setResolvingCheckIn(false);
+                          }
+                        }}>Lưu kết quả xử lý</button>
                     </>}
                   </div>}
                   <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
-                    <p className="text-xs font-black text-[#0369A1]">Bước 2 · Mở lại sau khi xử lý hoặc kiểm tra lại ô</p>
-                    <p className="text-xs text-[#4B4B4B]">Chỉ thực hiện khi ô đã đạt, hoặc đã đổi sang ô phù hợp. Ảnh ở đây là hiện trạng <b>sau xử lý</b>; khách sẽ xem được trong lịch sử.</p>
+                    <p className="text-xs font-black text-[#0369A1]">Bước 2 · Mở lại sau khi tất cả vấn đề đã xử lý</p>
+                    <p className="text-xs text-[#4B4B4B]">Staff sẽ kiểm tra lại ô, hàng và giá trị rồi lập biên bản mới để khách xác nhận lần nữa.</p>
                     <textarea className="duo-input text-xs" value={reopenNote} onChange={e => setReopenNote(e.target.value)}
-                      placeholder="Ghi cách xử lý hoặc lý do kết luận ô đạt (10–500 ký tự)" maxLength={500} />
-                    {handover?.status === 'REJECTED' && <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos}
-                      label="Ảnh ô sau xử lý hoặc ô thay thế" hint="Chụp ảnh mới sau khi dọn/sửa/đổi ô, hoặc ảnh đối chiếu nếu ô vốn đã đạt." maxPhotos={1} />}
+                      placeholder="Tóm tắt kết quả để staff kiểm tra lại (10–500 ký tự)" maxLength={500} />
                   <button type="button" className="duo-btn-blue px-4 py-2 text-xs"
-                    disabled={reopenNote.trim().length < 10 || (handover?.status === 'REJECTED' && reopenPhotos.length === 0)}
+                    disabled={reopenNote.trim().length < 10 || (handover?.status === 'REJECTED' && (!handover?.issuesResolved || reopenPhotos.length === 0))}
                     onClick={async () => {
                   try {
                     await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null });
@@ -3342,9 +3406,44 @@ export default function StaffTaskDetailPage() {
                   <p className="text-xs font-bold text-[#777777]">Đơn đặt trước 05/11/2026 — chưa khai báo loại hàng, hỏi trực tiếp khách.</p>
                 )}
                 {task.goodsDescription && <p className="text-xs font-bold text-[#4B4B4B] mt-1.5">Mô tả: {task.goodsDescription}</p>}
+                <p className="mt-2 text-xs font-black text-[#4B4B4B]">
+                  Giá trị khách khai: <span className="text-[#1CB0F6]">{formatCurrency(task.declaredGoodsValue || 0)}</span>
+                </p>
+                {task.goodsValueEvidenceImages?.length > 0 ? <div className="mt-2">
+                  <p className="mb-1 text-[11px] font-black uppercase text-[#B78900]">Chứng từ khách tải lên</p>
+                  <PhotoGrid images={task.goodsValueEvidenceImages} />
+                </div> : <p className="mt-1 text-[11px] font-bold text-[#FF4B4B]">Đơn cũ chưa có chứng từ; staff phải ghi nhận giá trị thực tế.</p>}
                 <p className="text-[11px] font-bold text-[#777777] mt-1.5">
                   Không bàn giao nếu hàng không khớp khai báo hoặc có chất dễ cháy nổ, hàng cấm.
                 </p>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className={`rounded-xl border-2 p-3 cursor-pointer ${goodsValueAssessment === 'MATCHED' ? 'border-[#58CC02] bg-[#D7FFB8]' : 'border-[#E5E5E5] bg-white'}`}>
+                    <input type="radio" name="goodsValueAssessment" value="MATCHED"
+                      checked={goodsValueAssessment === 'MATCHED'} disabled={Boolean(fmResolvedGoodsValue) || !Number(task.declaredGoodsValue)}
+                      onChange={() => setGoodsValueAssessment('MATCHED')} className="mr-2 accent-[#58CC02]" />
+                    <span className="text-xs font-black text-[#4B4B4B]">Khớp giá trị khách khai</span>
+                    <span className="mt-1 block text-[10px] font-bold text-[#777777]">Xác nhận {formatCurrency(task.declaredGoodsValue || 0)}</span>
+                  </label>
+                  <label className={`rounded-xl border-2 p-3 cursor-pointer ${goodsValueAssessment === 'ADJUSTED' ? 'border-[#1CB0F6] bg-[#DDF4FF]' : 'border-[#E5E5E5] bg-white'}`}>
+                    <input type="radio" name="goodsValueAssessment" value="ADJUSTED"
+                      checked={goodsValueAssessment === 'ADJUSTED'} disabled={Boolean(fmResolvedGoodsValue)} onChange={() => setGoodsValueAssessment('ADJUSTED')}
+                      className="mr-2 accent-[#1CB0F6]" />
+                    <span className="text-xs font-black text-[#4B4B4B]">Đề xuất giá trị khác</span>
+                    <span className="mt-1 block text-[10px] font-bold text-[#777777]">Khách sẽ xác nhận trong cùng biên bản.</span>
+                  </label>
+                </div>
+                {goodsValueAssessment === 'ADJUSTED' && <div className="mt-2 grid grid-cols-1 gap-2">
+                  {fmResolvedGoodsValue ? <div className="rounded-xl border-2 border-[#58CC02] bg-[#F1FFE8] px-3 py-2">
+                    <p className="text-[10px] font-black uppercase text-[#4B8F00]">Giá trị FM đã thẩm định · không được sửa</p>
+                    <p className="mt-1 text-lg font-black text-[#168A00]">{formatCurrency(fmResolvedGoodsValue)}</p>
+                    <p className="mt-1 text-[11px] font-bold text-[#777777]">{fmResolvedGoodsValueNote}</p>
+                  </div> : <>
+                    <input type="number" min="1" max="10000000000" step="100000" value={assessedGoodsValue}
+                      onChange={e => setAssessedGoodsValue(e.target.value)} placeholder="Giá trị staff đề xuất" className="duo-input" />
+                    <textarea value={goodsValueAssessmentNote} onChange={e => setGoodsValueAssessmentNote(e.target.value)}
+                      maxLength={1000} rows={2} placeholder="Lý do điều chỉnh (ít nhất 5 ký tự)" className="duo-input resize-none" />
+                  </>}
+                </div>}
               </div>
 
               {/* Checklist 6 mục */}
@@ -3409,16 +3508,24 @@ export default function StaffTaskDetailPage() {
 
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Mã thẻ từ RFID *</span>
-                  <input
-                    type="text"
-                    value={rfid}
-                    onChange={e => setRfid(e.target.value.toUpperCase())}
-                    placeholder="RFID-12345"
-                    maxLength={10}
-                    pattern="RFID-[0-9]{5}"
-                    className="duo-input font-mono font-bold"
-                  />
-                  <span className="text-[10px] font-bold text-[#AFAFAF]">Định dạng bắt buộc: RFID- và đúng 5 chữ số, ví dụ RFID-12345.</span>
+                  <div className="duo-input flex items-center gap-1 font-mono font-bold">
+                    <span className="text-[#1CB0F6] select-none">RFID-</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={rfid.startsWith('RFID-') ? rfid.slice(5) : ''}
+                      onChange={e => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 5);
+                        setRfid(`RFID-${digits}`);
+                      }}
+                      placeholder="12345"
+                      maxLength={5}
+                      pattern="[0-9]{5}"
+                      className="min-w-0 flex-1 bg-transparent outline-none font-mono font-bold"
+                      aria-label="5 chữ số mã thẻ RFID"
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-[#AFAFAF]">Tiền tố RFID- được cố định, nhân viên chỉ nhập đúng 5 chữ số.</span>
                 </label>
               </div>}
 
@@ -3453,8 +3560,9 @@ export default function StaffTaskDetailPage() {
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">
                   {handover?.status === 'ACCEPTED'
                     ? (!/^\d{6}$/.test(pin) ? 'Cần mã PIN 6 số.' : 'Mã thẻ phải có dạng RFID-12345.')
-                    : (!allCheckInChecked ? 'Cần tick đủ 5 mục kiểm tra.'
-                      : !allCheckInPhotos ? 'Mỗi mục kiểm tra cần một ảnh minh chứng riêng.' : 'Kiểm tra lại biên bản.')}
+                    : (!allCheckInChecked ? `Cần tick đủ ${CHECKIN_CHECKLIST.length} mục kiểm tra.`
+                      : !allCheckInPhotos ? 'Mỗi mục kiểm tra cần một ảnh minh chứng riêng.'
+                        : !goodsValueAssessmentValid ? 'Cần ghi nhận giá trị hàng hợp lệ và lý do điều chỉnh.' : 'Kiểm tra lại biên bản.')}
                 </p>
               )}
             </div>

@@ -30,6 +30,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -92,7 +93,13 @@ class ReservationServiceTest {
         request.setUnitTypeId(1);
         request.setDurationMonths(months);
         request.setStartDate(LocalDate.now().plusDays(2));
+        addRequiredGoodsDeclaration(request);
         return request;
+    }
+
+    private void addRequiredGoodsDeclaration(CreateReservationRequest request) {
+        request.setDeclaredGoodsValue(new BigDecimal("30000000"));
+        request.setGoodsValueEvidenceImages(List.of("http://localhost/uploads/proof.jpg"));
     }
 
     private void mockCustomerWithoutDebt() {
@@ -138,6 +145,7 @@ class ReservationServiceTest {
         request.setUnitTypeId(1);
         request.setDurationMonths(3);
         request.setStartDate(LocalDate.now().plusDays(2));
+        addRequiredGoodsDeclaration(request);
 
         when(userRepository.findById(1)).thenReturn(Optional.of(testCustomer));
 
@@ -205,6 +213,7 @@ class ReservationServiceTest {
         request.setCustomerId(1);
         request.setStartDate(LocalDate.now().plusDays(1));
         request.setDurationMonths(2);
+        addRequiredGoodsDeclaration(request);
 
         when(userRepository.findById(1)).thenReturn(Optional.of(testCustomer));
 
@@ -231,6 +240,7 @@ class ReservationServiceTest {
         request.setUnitTypeId(1);
         request.setStartDate(LocalDate.now().plusDays(1));
         request.setDurationMonths(1);
+        addRequiredGoodsDeclaration(request);
 
         when(userRepository.findById(1)).thenReturn(Optional.of(testCustomer));
         Map<String, Object> noDebtMap = new HashMap<>();

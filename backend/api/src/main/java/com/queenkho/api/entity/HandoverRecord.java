@@ -3,6 +3,7 @@ package com.queenkho.api.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 @Setter
 @Getter
@@ -45,6 +46,18 @@ public class HandoverRecord {
     // PR-C7 / BR-132 (05/11/2026): đã kiểm tra hàng mang vào khớp loại hàng khai báo, không có hàng cấm
     @Column(name = "is_prohibited_goods_committed", nullable = false)
     private Boolean prohibitedGoodsCommitted = false;
+
+    @Column(name = "is_goods_value_verified", nullable = false)
+    private Boolean goodsValueVerified = false;
+
+    @Column(name = "goods_value_assessment", length = 20)
+    private String goodsValueAssessment;
+
+    @Column(name = "assessed_goods_value", precision = 18, scale = 2)
+    private BigDecimal assessedGoodsValue;
+
+    @Column(name = "goods_value_assessment_note", length = 1000)
+    private String goodsValueAssessmentNote;
 
     @Column
     private String notes;

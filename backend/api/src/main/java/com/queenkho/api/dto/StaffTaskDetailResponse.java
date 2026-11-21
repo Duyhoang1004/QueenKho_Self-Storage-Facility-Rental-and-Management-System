@@ -109,4 +109,6 @@ public class StaffTaskDetailResponse {
     // BR-131 / BR-132: loại hàng khách khai báo khi đặt kho — Staff đối chiếu lúc check-in
     private java.util.List<String> goodsCategories;
     private String goodsDescription;
+    private BigDecimal declaredGoodsValue;
+    private java.util.List<String> goodsValueEvidenceImages;
 }

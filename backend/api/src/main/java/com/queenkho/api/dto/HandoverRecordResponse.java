@@ -3,6 +3,7 @@ package com.queenkho.api.dto;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -18,6 +19,10 @@ public class HandoverRecordResponse {
     private Boolean lockIntact;
     private Boolean customerSignatureConfirmed;
     private Boolean prohibitedGoodsCommitted; // PR-C7 / BR-132
+    private Boolean goodsValueVerified;
+    private String goodsValueAssessment;
+    private BigDecimal assessedGoodsValue;
+    private String goodsValueAssessmentNote;
     private String notes;
     private Integer staffId;     // null ở biên bản check-in online cũ (đã bỏ, D-16)
     private String staffName;

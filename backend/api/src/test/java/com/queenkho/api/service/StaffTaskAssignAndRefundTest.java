@@ -237,7 +237,7 @@ class StaffTaskAssignAndRefundTest {
     // ---------- BR-121 ----------
 
     @Test
-    @DisplayName("BR-121: biên bản check-in không có ảnh hiện trạng ô → 400 HANDOVER_PHOTO_REQUIRED, chưa đóng task")
+    @DisplayName("Check-in cuối không có biên bản khách đã duyệt → chặn trước khi đóng task")
     void checkInWithoutPhotoRejected() {
         CheckInRequest request = new CheckInRequest();
         request.setIdentityVerified(true);
@@ -250,7 +250,7 @@ class StaffTaskAssignAndRefundTest {
         request.setRfidCardCode("RFID-1");
 
         StaffTaskException ex = assertThrows(StaffTaskException.class, () -> service.checkIn(50, 12, request));
-        assertEquals("HANDOVER_PHOTO_REQUIRED", ex.getCode());
+        assertEquals("CUSTOMER_CONFIRMATION_REQUIRED", ex.getCode());
         verify(staffTaskRepository, never()).completeCheckIn(anyInt(), anyInt(), any());
     }
 

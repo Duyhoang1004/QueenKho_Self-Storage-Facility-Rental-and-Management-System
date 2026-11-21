@@ -294,6 +294,7 @@ CREATE TABLE reservations (
     insurance_plan              NVARCHAR(20) NOT NULL DEFAULT 'BASIC', -- BR-125: BASIC / ADVANCED / PREMIUM
     insurance_premium_monthly   DECIMAL(15,2) NOT NULL DEFAULT 0,       -- phí bảo hiểm / tháng chốt lúc đặt
     declared_goods_value        DECIMAL(15,2) NULL,                     -- giá trị hàng khách khai báo (trần bồi thường)
+    goods_value_evidence_images NVARCHAR(MAX) NULL,                     -- ảnh hoá đơn/biên lai, ngăn bởi |||
     goods_category_codes        NVARCHAR(300) NULL,                     -- BR-131: mã loại hàng khai báo, ngăn bởi dấu phẩy
     goods_description           NVARCHAR(500) NULL,                     -- mô tả hàng (bắt buộc khi chọn \"Khác\")
     voucher_id                  INT NULL,            -- BR-25: voucher áp cho đơn (chốt lúc tạo đơn)
@@ -389,6 +390,10 @@ CREATE TABLE handover_records (
     is_lock_intact                  BIT NOT NULL DEFAULT 1,
     customer_signature_confirmed    BIT NOT NULL DEFAULT 0,
     is_prohibited_goods_committed   BIT NOT NULL DEFAULT 0,  -- PR-C7 / BR-132: đã kiểm tra hàng khớp khai báo, không có hàng cấm
+    is_goods_value_verified         BIT NOT NULL DEFAULT 0,
+    goods_value_assessment          NVARCHAR(20) NULL,       -- MATCHED / ADJUSTED
+    assessed_goods_value            DECIMAL(18,2) NULL,
+    goods_value_assessment_note     NVARCHAR(1000) NULL,
     notes                           NVARCHAR(MAX) NULL,
     evidence_image_urls             NVARCHAR(MAX) NULL,     -- BR-121: ảnh hiện trạng ô lúc bàn giao, ngăn bởi |||
     check_in_method                 NVARCHAR(10) NOT NULL DEFAULT 'COUNTER', -- BR-124: COUNTER (Staff) / ONLINE (khách)

@@ -14,6 +14,14 @@ const CHECKIN_EVIDENCE_LABELS = {
   unitClean: 'Ô sạch',
   lockIntact: 'Khóa nguyên vẹn',
   goodsChecked: 'Hàng mang vào phù hợp',
+  goodsValueVerified: 'Đối chiếu giá trị hàng',
+}
+
+const REJECTION_TYPE_LABELS = {
+  UNIT_CONDITION: 'Ô kho / cơ sở không đạt',
+  GOODS_VALUE: 'Không đồng ý giá trị hàng',
+  GOODS_INFORMATION: 'Hàng hoặc chứng từ ghi nhận chưa đúng',
+  OTHER: 'Lý do khác',
 }
 
 function formatDateTime(value) {
@@ -31,6 +39,7 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
   const [attempts, setAttempts] = useState([])
   const [rejectionReason, setRejectionReason] = useState('')
   const [customerPhotos, setCustomerPhotos] = useState([])
+  const [rejectionTypes, setRejectionTypes] = useState([])
   const [decisionError, setDecisionError] = useState('')
   const [deciding, setDeciding] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -57,10 +66,11 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
     setDeciding(true)
     setDecisionError('')
     try {
-      await decideCheckInHandover(contractId, attempt.id, accepted, rejectionReason.trim(), accepted ? [] : customerPhotos)
+      await decideCheckInHandover(contractId, attempt.id, accepted, rejectionReason.trim(), accepted ? [] : customerPhotos, accepted ? [] : rejectionTypes)
       setAttempts(await getCheckInHandoverHistory(contractId))
       setRejectionReason('')
       setCustomerPhotos([])
+      setRejectionTypes([])
       onDecision?.()
     } catch (err) {
       setDecisionError(err.response?.data?.message || 'Không ghi nhận được xác nhận. Vui lòng thử lại.')
@@ -103,16 +113,34 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
           {!pending.checklistEvidence && pending.evidenceImages?.length > 0 && <div className="flex flex-wrap gap-2">
             {pending.evidenceImages.map((src, i) => <img key={i} src={src} alt={`Ảnh biên bản cũ ${i + 1}`} className="w-24 h-24 rounded-xl object-cover border" />)}
           </div>}
+          <div className="rounded-xl border-2 border-[#FFC800] bg-[#FFFBEA] p-3 text-xs text-[#4B4B4B]">
+            <p className="font-black">Đối chiếu giá trị hàng</p>
+            <p className="mt-1">Khách khai: <b>{Number(pending.declaredGoodsValue || 0).toLocaleString('vi-VN')}đ</b></p>
+            <p>Staff ghi nhận: <b className="text-[#1CB0F6]">{Number(pending.assessedGoodsValue || 0).toLocaleString('vi-VN')}đ</b>
+              {' '}({pending.goodsValueAssessment === 'ADJUSTED' ? 'đề xuất điều chỉnh' : 'khớp khai báo'})</p>
+            {pending.goodsValueAssessmentNote && <p className="mt-1">Lý do: {pending.goodsValueAssessmentNote}</p>}
+            {pending.goodsValueEvidenceImages?.length > 0 && <div className="mt-2 flex flex-wrap gap-2">
+              {pending.goodsValueEvidenceImages.map((src, i) => <img key={i} src={src} alt={`Chứng từ ${i + 1}`} className="h-16 w-16 rounded-lg border object-cover" />)}
+            </div>}
+          </div>
           <p className="text-xs font-bold text-[#4B4B4B]">Sau khi bạn đồng ý, nhân viên sẽ hoàn tất bàn giao và cấp PIN/RFID. Hợp đồng chưa kích hoạt ở bước xác nhận này.</p>
           {pending.acceptAllowed === false && <p className="text-xs font-bold text-[#D97706]">Biên bản chưa đủ điều kiện đồng ý (quá hạn hoặc thiếu ảnh từng mục). Bạn vẫn có thể từ chối và ghi lý do; quản lý sẽ hướng dẫn kiểm tra lại.</p>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {Object.entries(REJECTION_TYPE_LABELS).map(([key, label]) => <label key={key}
+              className={`rounded-xl border-2 px-3 py-2 text-xs font-bold cursor-pointer ${rejectionTypes.includes(key) ? 'border-[#FF4B4B] bg-[#FFF4F4]' : 'border-[#E5E5E5] bg-white'}`}>
+              <input type="checkbox" className="mr-2 accent-[#FF4B4B]" checked={rejectionTypes.includes(key)}
+                onChange={e => setRejectionTypes(prev => e.target.checked ? [...prev, key] : prev.filter(value => value !== key))} />
+              {label}
+            </label>)}
+          </div>
           <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} maxLength={1000}
-            placeholder="Nếu ô không đạt, nhập lý do từ chối (ít nhất 5 ký tự)" className="duo-input text-xs" />
+            placeholder="Nếu không đồng ý, nhập lý do cụ thể (ít nhất 5 ký tự)" className="duo-input text-xs" />
           <HandoverPhotoPicker images={customerPhotos} onChange={setCustomerPhotos}
             label="Ảnh khách ghi nhận (nếu từ chối)" hint="Có thể chụp chỗ còn đồ, bẩn hoặc hư hỏng." required={false} />
           {decisionError && <p className="text-xs font-bold text-[#FF4B4B]">{decisionError}</p>}
           <div className="flex flex-wrap gap-2">
             <button type="button" disabled={deciding || pending.acceptAllowed === false} onClick={() => decide(pending, true)} className="duo-btn-green px-4 py-2 text-xs">Tôi đã kiểm tra và đồng ý nhận ô này</button>
-            <button type="button" disabled={deciding || rejectionReason.trim().length < 5} onClick={() => decide(pending, false)} className="duo-btn-gray px-4 py-2 text-xs">Từ chối nhận ô</button>
+            <button type="button" disabled={deciding || rejectionReason.trim().length < 5 || rejectionTypes.length === 0} onClick={() => decide(pending, false)} className="duo-btn-gray px-4 py-2 text-xs">Không đồng ý biên bản</button>
           </div>
         </div>
       )}
@@ -132,6 +160,7 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
               {a.decided_at && <span> · {formatDateTime(a.decided_at)}</span>}
               {a.notes && <p className="mt-1">Ghi chú biên bản: {a.notes}</p>}
               {a.rejection_reason && <p className="mt-1">Lý do: {a.rejection_reason}</p>}
+              {a.rejectionTypes?.length > 0 && <p className="mt-1">Nội dung từ chối: {a.rejectionTypes.map(type => REJECTION_TYPE_LABELS[type] || type).join(', ')}</p>}
               {a.faultNote && <p className="mt-1">FM xác nhận lỗi cơ sở: {a.faultNote}{a.faultConfirmedAt && ` · ${formatDateTime(a.faultConfirmedAt)}`}</p>}
               {a.evidenceImages?.length > 0 && <div className="flex flex-wrap gap-2 mt-2">
                 {a.evidenceImages.map((src, i) => <div key={i} className="flex flex-col gap-1">

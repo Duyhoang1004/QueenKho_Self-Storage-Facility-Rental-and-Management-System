@@ -59,6 +59,11 @@ export async function confirmCheckInUnitIssue(taskId, note) {
   return res.data
 }
 
+export async function resolveCheckInIssues(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/resolve-check-in-issues`, payload)
+  return res.data
+}
+
 // UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có) → trả chi tiết task đã COMPLETED
 export async function checkOutStaffTask(taskId, staffId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/check-out`, payload, { params: { staffId } })

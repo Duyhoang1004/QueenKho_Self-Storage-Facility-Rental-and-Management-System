@@ -118,6 +118,13 @@ public class StaffTaskController {
         return ResponseEntity.ok(staffTaskService.confirmCheckInIssue(id, currentUser.require(), body.get("note")));
     }
 
+    @PostMapping("/{id}/resolve-check-in-issues")
+    public ResponseEntity<?> resolveCheckInIssues(@PathVariable Integer id,
+                                                   @RequestBody(required = false) Map<String, Object> body) {
+        return ResponseEntity.ok(staffTaskService.resolveCheckInIssues(
+                id, currentUser.require(), body != null ? body : Map.of()));
+    }
+
     @PostMapping("/{id}/reopen-check-in")
     public ResponseEntity<?> reopenCheckIn(@PathVariable Integer id, @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(staffTaskService.reopenCheckIn(id, currentUser.require(), body.get("note"), body.get("evidenceImageUrl")));

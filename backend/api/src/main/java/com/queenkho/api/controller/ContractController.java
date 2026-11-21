@@ -246,7 +246,9 @@ public class ContractController {
         String reason = body.get("reason") instanceof String s ? s : null;
         java.util.List<String> images = body.get("evidenceImages") instanceof java.util.List<?> list
                 ? list.stream().filter(String.class::isInstance).map(String.class::cast).toList() : java.util.List.of();
-        return ResponseEntity.ok(staffTaskService.decideCheckIn(id, draftId, currentUser.require(), accepted, reason, images));
+        java.util.List<String> rejectionTypes = body.get("rejectionTypes") instanceof java.util.List<?> list
+                ? list.stream().filter(String.class::isInstance).map(String.class::cast).toList() : java.util.List.of();
+        return ResponseEntity.ok(staffTaskService.decideCheckIn(id, draftId, currentUser.require(), accepted, reason, images, rejectionTypes));
     }
 
     // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang

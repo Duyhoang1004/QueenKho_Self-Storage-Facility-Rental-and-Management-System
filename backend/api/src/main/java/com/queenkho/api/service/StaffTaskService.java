@@ -62,6 +62,7 @@ import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -70,6 +71,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class StaffTaskService {
@@ -88,7 +90,7 @@ public class StaffTaskService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String IMG_DELIMITER = "\n|||\n";
     private static final List<String> CHECK_IN_PHOTO_KEYS = List.of(
-            "identityVerified", "unitEmpty", "unitClean", "lockIntact", "goodsChecked");
+            "identityVerified", "unitEmpty", "unitClean", "lockIntact", "goodsChecked", "goodsValueVerified");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
     // UC-24: ai chịu lỗi sự cố — CUSTOMER trừ cọc, FACILITY cơ sở tự chịu
@@ -201,7 +203,7 @@ public class StaffTaskService {
                 task.setStatus(task.getStaff() == null ? "OPEN" : "IN_PROGRESS");
             }
             if ("CHECK_IN".equals(task.getTaskType())) {
-                Map<String, Object> latest = checkInEvent(contractId, "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+                Map<String, Object> latest = checkInEvent(contractId, "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
                 if (latest != null && !"CI_REOPEN".equals(latest.get("record_type"))
                         && !"CI_RESCHEDULE".equals(latest.get("record_type"))) {
                     int draftId = "CI_DRAFT".equals(latest.get("record_type")) ? eventId(latest) : eventDraftId(latest);
@@ -763,7 +765,8 @@ public class StaffTaskService {
         System.arraycopy(types, 0, args, 1, types.length);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT TOP 1 id, contract_id, staff_id, record_type, is_identity_verified, is_empty, is_clean, " +
-                "is_lock_intact, is_prohibited_goods_committed, notes, evidence_image_urls, created_at " +
+                "is_lock_intact, is_prohibited_goods_committed, is_goods_value_verified, goods_value_assessment, " +
+                "assessed_goods_value, goods_value_assessment_note, notes, evidence_image_urls, created_at " +
                 "FROM handover_records WHERE contract_id = ? AND record_type IN (" + placeholders + ") ORDER BY id DESC", args);
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -778,6 +781,33 @@ public class StaffTaskService {
     private String eventJson(Map<String, Object> data) {
         try { return objectMapper.writeValueAsString(data); }
         catch (JacksonException e) { throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Không lưu được biên bản"); }
+    }
+
+    private static List<String> asStringList(Object value) {
+        if (!(value instanceof Collection<?> values)) return List.of();
+        return values.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+    }
+
+    private static List<String> normalizeRejectionTypes(List<String> values) {
+        if (values == null) return List.of();
+        Set<String> allowed = Set.of("UNIT_CONDITION", "GOODS_VALUE", "GOODS_INFORMATION", "OTHER");
+        return values.stream().filter(Objects::nonNull).map(String::trim).map(String::toUpperCase)
+                .filter(allowed::contains).distinct().toList();
+    }
+
+    private static String text(Map<String, Object> body, String key) {
+        Object value = body != null ? body.get(key) : null;
+        return value instanceof String text ? text.trim() : "";
+    }
+
+    private static boolean validLength(String value, int min, int max) {
+        return value != null && value.trim().length() >= min && value.trim().length() <= max;
+    }
+
+    private static BigDecimal decimal(Object value) {
+        if (value == null) return null;
+        try { return new BigDecimal(String.valueOf(value)); }
+        catch (NumberFormatException ignored) { return null; }
     }
 
     private int eventId(Map<String, Object> row) { return ((Number) row.get("id")).intValue(); }
@@ -797,6 +827,10 @@ public class StaffTaskService {
         record.setUnitClean(draft != null ? draft.getUnitClean() : false);
         record.setLockIntact(draft != null ? draft.getLockIntact() : false);
         record.setProhibitedGoodsCommitted(draft != null && Boolean.TRUE.equals(draft.getGoodsChecked()));
+        record.setGoodsValueVerified(draft != null && Boolean.TRUE.equals(draft.getGoodsValueVerified()));
+        record.setGoodsValueAssessment(draft != null ? draft.getGoodsValueAssessment() : null);
+        record.setAssessedGoodsValue(draft != null ? draft.getAssessedGoodsValue() : null);
+        record.setGoodsValueAssessmentNote(draft != null ? draft.getGoodsValueAssessmentNote() : null);
         record.setCustomerSignatureConfirmed("CI_ACCEPT".equals(type));
         record.setNotes(eventJson(data));
         record.setEvidenceImageUrls(photos);
@@ -831,11 +865,21 @@ public class StaffTaskService {
         LocalDate appointment = contract.getReservation() != null && contract.getReservation().getExpectedAppointmentTime() != null
                 ? contract.getReservation().getExpectedAppointmentTime().toLocalDate() : contract.getStartDate();
         if (appointment != null && LocalDate.now().isBefore(appointment)) throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY", "Chưa đến ngày hẹn bàn giao");
+        normalizeGoodsValueAssessment(contract, request);
         validateCheckInRequest(request, false);
         assertUnitReadyForCheckIn(contract);
-        Map<String, Object> latest = checkInEvent(contract.getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+        Map<String, Object> latest = checkInEvent(contract.getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
+        if (latest != null && "CI_REOPEN".equals(latest.get("record_type"))) {
+            BigDecimal fmValue = decimal(eventData(latest).get("resolvedGoodsValue"));
+            if (fmValue != null && fmValue.signum() > 0) {
+                request.setGoodsValueAssessment("ADJUSTED");
+                request.setAssessedGoodsValue(fmValue);
+                request.setGoodsValueAssessmentNote(text(eventData(latest), "goodsValueResolutionNote"));
+            }
+        }
         if (latest != null && ("CI_DRAFT".equals(latest.get("record_type")) || "CI_ACCEPT".equals(latest.get("record_type"))
-                || "CI_REJECT".equals(latest.get("record_type")) || "CI_FAULT".equals(latest.get("record_type")))) {
+                || "CI_REJECT".equals(latest.get("record_type")) || "CI_FAULT".equals(latest.get("record_type"))
+                || "CI_RESOLUTION".equals(latest.get("record_type")))) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_PENDING", "Biên bản trước đang chờ xử lý; quản lý cần mở lại trước khi lập biên bản mới");
         }
         Map<String, Object> data = new LinkedHashMap<>();
@@ -843,6 +887,9 @@ public class StaffTaskService {
         data.put("unitId", contract.getStorageUnit().getId());
         data.put("notes", request.getNotes());
         data.put("checklistEvidence", request.getChecklistEvidence());
+        data.put("declaredGoodsValue", contract.getReservation() != null ? contract.getReservation().getDeclaredGoodsValue() : null);
+        data.put("goodsValueEvidenceImages", contract.getReservation() != null
+                ? parseEvidenceImages(contract.getReservation().getGoodsValueEvidenceImages()) : List.of());
         addCheckInEvent(contract, actor.id(), "CI_DRAFT", data, serializeEvidenceImages(request.getEvidenceImages()), request);
         if (notificationService != null) notificationService.notifyCustomer(contract.getCustomer().getId(),
                 "Biên bản nhận kho chờ bạn xác nhận", "Hãy kiểm tra ô " + contract.getStorageUnit().getId() + " và ảnh rồi xác nhận trong hợp đồng.",
@@ -861,8 +908,9 @@ public class StaffTaskService {
         RentalContract contract = checkInContract(contractId, actor);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT id, staff_id, record_type, is_identity_verified, is_empty, is_clean, is_lock_intact, " +
-                "is_prohibited_goods_committed, notes, evidence_image_urls, created_at FROM handover_records " +
-                "WHERE contract_id = ? AND record_type IN ('CI_DRAFT','CI_ACCEPT','CI_REJECT','CI_FAULT','CI_REOPEN','CI_RESCHEDULE') ORDER BY id ASC", contractId);
+                "is_prohibited_goods_committed, is_goods_value_verified, goods_value_assessment, assessed_goods_value, " +
+                "goods_value_assessment_note, notes, evidence_image_urls, created_at FROM handover_records " +
+                "WHERE contract_id = ? AND record_type IN ('CI_DRAFT','CI_ACCEPT','CI_REJECT','CI_FAULT','CI_RESOLUTION','CI_REOPEN','CI_RESCHEDULE') ORDER BY id ASC", contractId);
         Map<Integer, Map<String, Object>> attempts = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             String type = (String) row.get("record_type");
@@ -881,6 +929,12 @@ public class StaffTaskService {
                 view.put("unitClean", row.get("is_clean"));
                 view.put("lockIntact", row.get("is_lock_intact"));
                 view.put("goodsChecked", row.get("is_prohibited_goods_committed"));
+                view.put("goodsValueVerified", row.get("is_goods_value_verified"));
+                view.put("goodsValueAssessment", row.get("goods_value_assessment"));
+                view.put("assessedGoodsValue", row.get("assessed_goods_value"));
+                view.put("goodsValueAssessmentNote", row.get("goods_value_assessment_note"));
+                view.put("declaredGoodsValue", data.get("declaredGoodsValue"));
+                view.put("goodsValueEvidenceImages", data.get("goodsValueEvidenceImages"));
                 if (data.get("checklistEvidence") instanceof Map<?, ?>) view.put("checklistEvidence", data.get("checklistEvidence"));
                 view.put("evidenceImages", parseEvidenceImages((String) row.get("evidence_image_urls")));
                 view.put("created_at", row.get("created_at"));
@@ -893,12 +947,20 @@ public class StaffTaskService {
                 if ("CI_REJECT".equals(type)) {
                     view.put("status", "REJECTED");
                     view.put("rejection_reason", eventData(row).get("reason"));
+                    view.put("rejectionTypes", eventData(row).get("rejectionTypes"));
                     view.put("customerEvidenceImages", parseEvidenceImages((String) row.get("evidence_image_urls")));
                 }
                 if ("CI_FAULT".equals(type)) {
                     view.put("facility_fault_confirmed", true);
                     view.put("faultNote", eventData(row).get("note"));
                     view.put("faultConfirmedAt", row.get("created_at"));
+                }
+                if ("CI_RESOLUTION".equals(type)) {
+                    Map<String, Object> resolution = eventData(row);
+                    view.put("issueResolution", resolution);
+                    view.put("issuesResolved", true);
+                    view.put("resolutionRecordedAt", row.get("created_at"));
+                    view.put("resolutionEvidenceImages", parseEvidenceImages((String) row.get("evidence_image_urls")));
                 }
                 if ("CI_REOPEN".equals(type)) {
                     view.put("status", "SUPERSEDED");
@@ -938,6 +1000,14 @@ public class StaffTaskService {
     @Transactional
     public Map<String, Object> decideCheckIn(Integer contractId, Integer draftId, CurrentUser actor,
                                                boolean accepted, String reason, List<String> evidence) {
+        return decideCheckIn(contractId, draftId, actor, accepted, reason, evidence,
+                accepted ? List.of() : List.of("UNIT_CONDITION"));
+    }
+
+    @Transactional
+    public Map<String, Object> decideCheckIn(Integer contractId, Integer draftId, CurrentUser actor,
+                                               boolean accepted, String reason, List<String> evidence,
+                                               List<String> rejectionTypes) {
         if (!actor.hasRole("CUSTOMER")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ khách hàng được xác nhận");
         RentalContract contract = checkInContract(contractId, actor);
         Map<String, Object> draft = checkInEvent(contractId, "CI_DRAFT");
@@ -945,7 +1015,7 @@ public class StaffTaskService {
         int taskId = ((Number) eventData(draft).get("taskId")).intValue();
         lockCheckInTask(taskId);
         // Re-read under the task lock to serialize decision, reopening and finalization.
-        Map<String, Object> latest = checkInEvent(contractId, "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+        Map<String, Object> latest = checkInEvent(contractId, "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
         StaffTask task = staffTaskRepository.findDetailById(taskId).orElseThrow();
         if (latest == null || eventId(latest) != draftId
                 || !("IN_PROGRESS".equals(task.getStatus()) || (!accepted && "OVERDUE".equals(task.getStatus())))
@@ -960,36 +1030,104 @@ public class StaffTaskService {
         if (!accepted && (reason == null || reason.trim().length() < 5 || reason.trim().length() > 1000))
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REJECTION_REASON_REQUIRED", "Lý do từ chối cần 5–1000 ký tự");
         if (evidence != null && evidence.size() > 10) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "TOO_MANY_PHOTOS", "Tối đa 10 ảnh");
+        List<String> normalizedTypes = accepted ? List.of() : normalizeRejectionTypes(rejectionTypes);
+        if (!accepted && normalizedTypes.isEmpty()) throw new StaffTaskException(HttpStatus.BAD_REQUEST,
+                "REJECTION_TYPE_REQUIRED", "Chọn ít nhất một nội dung không đồng ý");
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("draftId", draftId);
         data.put("actorId", actor.id());
         data.put("unitId", eventData(draft).get("unitId"));
-        if (!accepted) data.put("reason", reason.trim());
+        if (!accepted) {
+            data.put("reason", reason.trim());
+            data.put("rejectionTypes", normalizedTypes);
+        }
         addCheckInEvent(contract, null, accepted ? "CI_ACCEPT" : "CI_REJECT", data,
                 accepted || evidence == null ? null : serializeEvidenceImages(evidence), null);
         jdbcTemplate.update("INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
                 "VALUES (?, ?, 'handover_records', ?, SYSDATETIME())", actor.id(),
                 accepted ? "CHECK_IN_ACCEPT" : "CHECK_IN_REJECT", String.valueOf(draftId));
         if (!accepted && notificationService != null) notificationService.notifyFacilityManagers(task.getFacilityId(),
-                "Khách từ chối nhận ô " + contract.getStorageUnit().getId(), "Kiểm tra task #" + taskId + " và xử lý hoặc đổi ô.",
+                "Khách từ chối biên bản nhận kho " + contract.getStorageUnit().getId(),
+                "Task #" + taskId + " cần xử lý: " + String.join(", ", normalizedTypes) + ".",
                 "BOOKING", "/manager/tasks/" + taskId);
         return Map.of("status", accepted ? "ACCEPTED" : "REJECTED",
                 "message", accepted ? "Đã đồng ý biên bản; nhân viên sẽ hoàn tất bàn giao và cấp quyền truy cập" : "Đã ghi nhận từ chối; quản lý sẽ kiểm tra");
     }
 
     @Transactional
+    public Map<String, Object> resolveCheckInIssues(Integer taskId, CurrentUser actor, Map<String, Object> body) {
+        if (!actor.hasRole("FACILITY_MANAGER")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ quản lý cơ sở được xử lý biên bản bị từ chối");
+        lockCheckInTask(taskId);
+        StaffTask task = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        if (!task.getFacilityId().equals(actor.facilityId())) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Khác cơ sở");
+        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
+        if (latest == null || !"CI_REJECT".equals(latest.get("record_type")) || eventDraftId(latest) < 0)
+            throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_NOT_REJECTED", "Chưa có biên bản từ chối cần xử lý");
+
+        Map<String, Object> rejection = eventData(latest);
+        List<String> rejectedTypes = normalizeRejectionTypes(asStringList(rejection.get("rejectionTypes")));
+        if (rejectedTypes.isEmpty()) rejectedTypes = List.of("UNIT_CONDITION"); // dữ liệu cũ
+        List<String> resolvedTypes = normalizeRejectionTypes(asStringList(body != null ? body.get("resolvedIssueTypes") : null));
+        if (!resolvedTypes.containsAll(rejectedTypes)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "ISSUES_NOT_FULLY_RESOLVED",
+                    "Phải xử lý đầy đủ tất cả nội dung khách từ chối trước khi mở lại check-in");
+        }
+
+        String unitNote = text(body, "unitResolutionNote");
+        if (rejectedTypes.contains("UNIT_CONDITION") && !validLength(unitNote, 10, 500)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "UNIT_RESOLUTION_REQUIRED", "Ghi cách xử lý ô kho trong 10–500 ký tự");
+        }
+        String valueNote = text(body, "goodsValueResolutionNote");
+        BigDecimal resolvedValue = decimal(body != null ? body.get("resolvedGoodsValue") : null);
+        if (rejectedTypes.contains("GOODS_VALUE")) {
+            if (resolvedValue == null || resolvedValue.signum() <= 0
+                    || resolvedValue.compareTo(InsurancePlan.MAX_DECLARED_VALUE) > 0) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_GOODS_VALUE", "Giá trị FM đề xuất phải lớn hơn 0 và không vượt quá 10 tỷ đồng");
+            }
+            if (!validLength(valueNote, 10, 1000)) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_RESOLUTION_REQUIRED", "Ghi căn cứ kết luận giá trị trong 10–1000 ký tự");
+            }
+        }
+        String otherNote = text(body, "otherResolutionNote");
+        if ((rejectedTypes.contains("GOODS_INFORMATION") || rejectedTypes.contains("OTHER"))
+                && !validLength(otherNote, 10, 500)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "OTHER_RESOLUTION_REQUIRED", "Ghi cách xử lý nội dung còn lại trong 10–500 ký tự");
+        }
+        List<String> evidence = asStringList(body != null ? body.get("evidenceImages") : null).stream()
+                .filter(value -> value != null && !value.isBlank()).distinct().toList();
+        if (evidence.isEmpty()) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "RESOLUTION_PHOTO_REQUIRED", "Cần ít nhất một ảnh hoặc chứng từ sau xử lý");
+        if (evidence.size() > 10) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "TOO_MANY_PHOTOS", "Tối đa 10 ảnh");
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("draftId", eventDraftId(latest));
+        data.put("actorId", actor.id());
+        data.put("resolvedIssueTypes", resolvedTypes);
+        data.put("unitResolutionNote", unitNote);
+        data.put("resolvedGoodsValue", resolvedValue);
+        data.put("goodsValueResolutionNote", valueNote);
+        data.put("otherResolutionNote", otherNote);
+        addCheckInEvent(task.getContract(), actor.id(), "CI_RESOLUTION", data,
+                serializeEvidenceImages(evidence), null);
+        if (notificationService != null) notificationService.notifyCustomer(task.getContract().getCustomer().getId(),
+                "Quản lý đã xử lý phản hồi check-in", "Các nội dung bạn từ chối đã được xử lý. Nhân viên sẽ kiểm tra lại và gửi biên bản mới.",
+                "ASSIGNED", "/kho-cua-toi/hop-dong/" + task.getContract().getReservation().getId());
+        return Map.of("status", "RESOLVED", "message", "Đã xử lý đầy đủ; có thể mở lại check-in");
+    }
+
+    // Endpoint cũ giữ để dữ liệu/client cũ vẫn hoạt động. Flow mới dùng resolveCheckInIssues.
+    @Transactional
     public Map<String, Object> confirmCheckInIssue(Integer taskId, CurrentUser actor, String note) {
         if (!actor.hasRole("FACILITY_MANAGER")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ quản lý cơ sở được xác nhận sự cố");
         lockCheckInTask(taskId);
         StaffTask task = staffTaskRepository.findDetailById(taskId).orElseThrow();
         if (!task.getFacilityId().equals(actor.facilityId())) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Khác cơ sở");
-        if (note == null || note.trim().length() < 10 || note.trim().length() > 500) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "ISSUE_NOTE_REQUIRED", "Ghi nhận lỗi cơ sở trong 10–500 ký tự");
-        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+        if (!validLength(note, 10, 500)) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "ISSUE_NOTE_REQUIRED", "Ghi nhận lỗi cơ sở trong 10–500 ký tự");
+        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
         if (latest == null || !"CI_REJECT".equals(latest.get("record_type")) || eventDraftId(latest) < 0)
             throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_NOT_REJECTED", "Chưa có biên bản từ chối cần xác nhận");
         addCheckInEvent(task.getContract(), actor.id(), "CI_FAULT",
                 Map.of("draftId", eventDraftId(latest), "note", note.trim(), "actorId", actor.id()), null, null);
-        return Map.of("status", "REJECTED", "message", "Đã xác nhận lỗi cơ sở; khách có thể dời lịch hoặc hủy hoàn tiền");
+        return Map.of("status", "REJECTED", "message", "Đã xác nhận lỗi cơ sở");
     }
 
     @Transactional
@@ -1002,12 +1140,14 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "RESCHEDULE_REQUIRED", "Task đã quá hạn hoặc không còn mở; cần dời lịch trước");
         if (note == null || note.trim().length() < 10 || note.trim().length() > 500)
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "RESOLUTION_NOTE_REQUIRED", "Ghi cách xử lý trong 10–500 ký tự");
-        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
         if (latest == null || "CI_REOPEN".equals(latest.get("record_type")) || "CI_RESCHEDULE".equals(latest.get("record_type")))
             throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_NOT_PENDING", "Không có biên bản cần mở lại");
         int draftId = "CI_DRAFT".equals(latest.get("record_type")) ? eventId(latest) : eventDraftId(latest);
         if (draftId < 0) throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_STALE", "Biên bản không hợp lệ");
-        if (("CI_REJECT".equals(latest.get("record_type")) || "CI_FAULT".equals(latest.get("record_type")))
+        if ("CI_REJECT".equals(latest.get("record_type")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "ISSUES_NOT_RESOLVED", "Quản lý phải xử lý đầy đủ các nội dung khách từ chối trước");
+        if (("CI_RESOLUTION".equals(latest.get("record_type")) || "CI_FAULT".equals(latest.get("record_type")))
                 && (photo == null || photo.isBlank())) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "RESOLUTION_PHOTO_REQUIRED", "Cần ảnh ô sau khi xử lý hoặc ô thay thế");
         assertUnitReadyForCheckIn(task.getContract());
         Map<String, Object> data = new LinkedHashMap<>();
@@ -1015,6 +1155,13 @@ public class StaffTaskService {
         data.put("note", note.trim());
         data.put("actorId", actor.id());
         data.put("unitId", task.getContract().getStorageUnit().getId());
+        // Khi FM đã chốt lại giá trị hàng, kết luận này phải được giữ nguyên
+        // xuyên suốt lần lập biên bản mới; staff không được tự sửa lại giá trị.
+        if ("CI_RESOLUTION".equals(latest.get("record_type"))) {
+            Map<String, Object> resolutionData = eventData(latest);
+            data.put("resolvedGoodsValue", resolutionData.get("resolvedGoodsValue"));
+            data.put("goodsValueResolutionNote", resolutionData.get("goodsValueResolutionNote"));
+        }
         addCheckInEvent(task.getContract(), actor.id(), "CI_REOPEN", data, photo, null);
         return Map.of("status", "IN_PROGRESS", "message", "Đã mở lại; nhân viên cần cùng khách kiểm tra và lập biên bản mới");
     }
@@ -1022,11 +1169,12 @@ public class StaffTaskService {
     private CheckInRequest approvedCheckInDraft(StaffTask task, Integer staffId, Integer draftId) {
         if (draftId == null) throw new StaffTaskException(HttpStatus.CONFLICT, "CUSTOMER_CONFIRMATION_REQUIRED", "Khách cần xác nhận biên bản trước");
         lockCheckInTask(task.getId());
-        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE");
+        Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE");
         if (latest == null || !"CI_ACCEPT".equals(latest.get("record_type")) || eventDraftId(latest) != draftId)
             throw new StaffTaskException(HttpStatus.CONFLICT, "CUSTOMER_CONFIRMATION_REQUIRED", "Biên bản chưa được khách đồng ý hoặc đã thay thế");
         List<Map<String, Object>> drafts = jdbcTemplate.queryForList("SELECT id, staff_id, is_identity_verified, is_empty, is_clean, is_lock_intact, " +
-                "is_prohibited_goods_committed, notes, evidence_image_urls, created_at FROM handover_records " +
+                "is_prohibited_goods_committed, is_goods_value_verified, goods_value_assessment, assessed_goods_value, " +
+                "goods_value_assessment_note, notes, evidence_image_urls, created_at FROM handover_records " +
                 "WHERE id = ? AND contract_id = ? AND record_type = 'CI_DRAFT'", draftId, task.getContract().getId());
         if (drafts.isEmpty() || !staffId.equals(((Number) drafts.get(0).get("staff_id")).intValue())
                 || !task.getId().equals(((Number) eventData(drafts.get(0)).get("taskId")).intValue())
@@ -1039,6 +1187,10 @@ public class StaffTaskService {
         request.setUnitClean((Boolean) draft.get("is_clean"));
         request.setLockIntact((Boolean) draft.get("is_lock_intact"));
         request.setGoodsChecked((Boolean) draft.get("is_prohibited_goods_committed"));
+        request.setGoodsValueVerified((Boolean) draft.get("is_goods_value_verified"));
+        request.setGoodsValueAssessment((String) draft.get("goods_value_assessment"));
+        request.setAssessedGoodsValue((BigDecimal) draft.get("assessed_goods_value"));
+        request.setGoodsValueAssessmentNote((String) draft.get("goods_value_assessment_note"));
         request.setNotes((String) eventData(draft).get("notes"));
         Object checklistEvidence = eventData(draft).get("checklistEvidence");
         if (checklistEvidence instanceof Map<?, ?> values) {
@@ -1065,17 +1217,29 @@ public class StaffTaskService {
 
         // Checklist is loaded from the customer-approved draft below.
         if (request == null) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin hoàn tất bàn giao");
+        RentalContract taskContract = task.getContract();
+        if (taskContract == null && request.getApprovalId() == null) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CUSTOMER_CONFIRMATION_REQUIRED",
+                    "Khách cần xác nhận biên bản trước khi cấp PIN/RFID và kích hoạt hợp đồng");
+        }
+        if (taskContract == null) {
+            throw new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND", "Task chưa gắn với hợp đồng");
+        }
 
         // PR-C1 (sửa L-17): không bàn giao trước ngày khách hẹn nhận kho — hợp đồng tính tiền từ ngày đó
-        LocalDate appointmentDate = task.getContract().getStartDate();
-        if (task.getContract().getReservation() != null
-                && task.getContract().getReservation().getExpectedAppointmentTime() != null) {
-            appointmentDate = task.getContract().getReservation().getExpectedAppointmentTime().toLocalDate();
+        LocalDate appointmentDate = taskContract.getStartDate();
+        if (taskContract.getReservation() != null
+                && taskContract.getReservation().getExpectedAppointmentTime() != null) {
+            appointmentDate = taskContract.getReservation().getExpectedAppointmentTime().toLocalDate();
         }
         if (appointmentDate != null && LocalDate.now().isBefore(appointmentDate)) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY",
                     "Khách hẹn nhận kho ngày " + appointmentDate.format(DATE_FMT)
                             + ", chưa được check-in trước ngày hẹn");
+        }
+        if (request.getApprovalId() == null) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CUSTOMER_CONFIRMATION_REQUIRED",
+                    "Khách cần xác nhận biên bản trước khi cấp PIN/RFID và kích hoạt hợp đồng");
         }
         // D-18: ô có thể đã gán cho khách này từ trước, nhưng tới ngày nhận kho ô đang bảo trì / khách trước chưa trả
         // → không bàn giao, FM phải đổi ô cho hợp đồng trước
@@ -1131,6 +1295,10 @@ public class StaffTaskService {
         record.setLockIntact(true);
         record.setCustomerSignatureConfirmed(true);
         record.setProhibitedGoodsCommitted(true);
+        record.setGoodsValueVerified(true);
+        record.setGoodsValueAssessment(request.getGoodsValueAssessment());
+        record.setAssessedGoodsValue(request.getAssessedGoodsValue());
+        record.setGoodsValueAssessmentNote(request.getGoodsValueAssessmentNote());
         record.setNotes(notes);
         record.setEvidenceImageUrls(serializeEvidenceImages(request.getEvidenceImages()));
         record.setCheckInMethod("COUNTER");
@@ -1195,6 +1363,23 @@ public class StaffTaskService {
                 });
     }
 
+    private void normalizeGoodsValueAssessment(RentalContract contract, CheckInRequest request) {
+        if (request == null) return;
+        String assessment = request.getGoodsValueAssessment() == null
+                ? "" : request.getGoodsValueAssessment().trim().toUpperCase();
+        request.setGoodsValueAssessment(assessment);
+        if ("MATCHED".equals(assessment)) {
+            BigDecimal declared = contract != null && contract.getReservation() != null
+                    ? contract.getReservation().getDeclaredGoodsValue() : null;
+            if (declared == null || declared.signum() <= 0) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_ASSESSMENT_REQUIRED",
+                        "Đơn cũ chưa có giá trị khai báo; hãy ghi nhận giá trị thực tế tại check-in");
+            }
+            request.setAssessedGoodsValue(declared);
+            request.setGoodsValueAssessmentNote(null);
+        }
+    }
+
     void validateCheckInRequest(CheckInRequest request) {
         validateCheckInRequest(request, true);
     }
@@ -1218,6 +1403,26 @@ public class StaffTaskService {
         if (!Boolean.TRUE.equals(request.getGoodsChecked())) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_CHECK_REQUIRED",
                     "Phải kiểm tra hàng khách mang vào (khớp khai báo, không có hàng cấm) trước khi bàn giao");
+        }
+        if (!Boolean.TRUE.equals(request.getGoodsValueVerified())) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_CHECK_REQUIRED",
+                    "Phải đối chiếu hàng thực tế với giá trị và chứng từ khách khai trước khi gửi biên bản");
+        }
+        String assessment = request.getGoodsValueAssessment() == null
+                ? "" : request.getGoodsValueAssessment().trim().toUpperCase();
+        if (!List.of("MATCHED", "ADJUSTED").contains(assessment)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_ASSESSMENT_REQUIRED",
+                    "Chọn giá trị khớp khai báo hoặc đề xuất giá trị điều chỉnh");
+        }
+        if (request.getAssessedGoodsValue() == null || request.getAssessedGoodsValue().signum() <= 0
+                || request.getAssessedGoodsValue().compareTo(InsurancePlan.MAX_DECLARED_VALUE) > 0) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_GOODS_VALUE",
+                    "Giá trị hàng ghi nhận phải lớn hơn 0 và không vượt quá 10 tỷ đồng");
+        }
+        if ("ADJUSTED".equals(assessment)
+                && !validLength(request.getGoodsValueAssessmentNote(), 5, 1000)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_NOTE_REQUIRED",
+                    "Khi điều chỉnh giá trị, lý do phải từ 5 đến 1000 ký tự");
         }
         if (requireCustomerApproval && (request.getAccessPinCode() == null || !request.getAccessPinCode().trim().matches("\\d{6}"))) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Mã PIN phải gồm đúng 6 chữ số");
@@ -2598,6 +2803,10 @@ public class StaffTaskService {
                         ? operationsCatalogService.goodsLabels(contract.getReservation().getGoodsCategoryCodes()) : null)
                 .goodsDescription(contract != null && contract.getReservation() != null
                         ? contract.getReservation().getGoodsDescription() : null)
+                .declaredGoodsValue(contract != null && contract.getReservation() != null
+                        ? contract.getReservation().getDeclaredGoodsValue() : null)
+                .goodsValueEvidenceImages(contract != null && contract.getReservation() != null
+                        ? parseEvidenceImages(contract.getReservation().getGoodsValueEvidenceImages()) : Collections.emptyList())
                 .build();
     }
 
@@ -2613,6 +2822,10 @@ public class StaffTaskService {
                 .lockIntact(record.getLockIntact())
                 .customerSignatureConfirmed(record.getCustomerSignatureConfirmed())
                 .prohibitedGoodsCommitted(record.getProhibitedGoodsCommitted())
+                .goodsValueVerified(record.getGoodsValueVerified())
+                .goodsValueAssessment(record.getGoodsValueAssessment())
+                .assessedGoodsValue(record.getAssessedGoodsValue())
+                .goodsValueAssessmentNote(record.getGoodsValueAssessmentNote())
                 .notes(record.getNotes())
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : "Khách tự check-in online")

@@ -22,6 +22,9 @@ public class CheckoutSettlement {
     public static final String DISPUTED = "DISPUTED";
     public static final String RECHECKING = "RECHECKING";
     public static final String AWAITING_PAYMENT = "AWAITING_PAYMENT";
+    // D-23 / PR-O29: khách đã xác nhận, chờ FM chi tiền → FM đã chi, chờ khách xác nhận đã nhận
+    public static final String REFUNDING = "REFUNDING";
+    public static final String REFUND_SENT = "REFUND_SENT";
     public static final String COMPLETED = "COMPLETED";
     public static final String SUPERSEDED = "SUPERSEDED";
 
@@ -108,6 +111,13 @@ public class CheckoutSettlement {
     // D-22: tiền thuê / bảo hiểm kỳ hiện tại lúc nghiệm thu (RefundBreakdown.RentBasis dạng key=value)
     @Column(name = "rent_basis", length = 1000)
     private String rentBasis;
+
+    // D-23 / PR-O31: số tiền hoàn dự kiến khách thấy lúc hẹn trả kho (chưa có sự cố / bồi thường) — để đối chiếu
+    @Column(name = "expected_net", precision = 15, scale = 2)
+    private BigDecimal expectedNet;
+
+    @Column(name = "scheduled_checkout_date")
+    private LocalDate scheduledCheckoutDate;
 
     /** Quyết toán âm → khách phải trả thêm (PR-O21) */
     public boolean customerPays() {

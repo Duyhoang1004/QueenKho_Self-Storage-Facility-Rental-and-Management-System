@@ -1206,3 +1206,16 @@ Không đổi schema.
 
 ### Job
 - Mỗi phút (`StaffTaskOverdueJob`): khoản hoàn chuyển khoản `WAITING_CUSTOMER` quá 3 ngày → `AUTO_CONFIRMED`.
+
+## Cập nhật 21/11/2026 — Tất toán chỉ xong khi khách đã nhận tiền hoàn (D-23)
+
+> Rule: `docs/business-rules.md` PR-O29 → PR-O31. Schema: `sql_script/Update_hoan_tien_tat_toan_d23.sql`. Không có endpoint mới.
+
+- Trạng thái quyết toán thêm **`REFUNDING`** (khách đã xác nhận, chờ FM chi) và **`REFUND_SENT`** (FM đã chi, chờ khách xác nhận đã nhận).
+- `POST /api/v1/contracts/{id}/settlement/confirm` (số dương): quyết toán → `REFUNDING`, hợp đồng **giữ `SETTLEMENT_PENDING`** (trước đây `TERMINATED` ngay). Số phải chi = 0 → `COMPLETED` + `TERMINATED`.
+- `POST /api/v1/refunds/{taskId}/confirm` với task hoàn của quyết toán → quyết toán `COMPLETED`, hợp đồng `TERMINATED`. `POST /api/v1/refunds/{taskId}/dispute` → quyết toán về `REFUNDING`.
+- `GET /api/v1/contracts/{id}/settlement` trả thêm: `refundPayout`, `compensationPayout`, `expectedNet`, `scheduledCheckoutDate`, `reconcile[] { label, amount, note }`, `refundTaskStatus`, `refundReceiptStatus`, `refundSentAt`, `refundDisputeReason`, `refundEvidenceUrl`, `refundReceiptAutoConfirmAt`, `canConfirmReceipt`.
+- `GET /api/v1/settlements?group=REFUND` → quyết toán `REFUNDING` + `REFUND_SENT`; `group=ALL` gồm cả 2 trạng thái này.
+- `GET /api/v1/staff-tasks/{id}` (task `REFUND` của quyết toán) trả thêm `settlementRefund { settlementId, contractId, roundNo, settlementStatus, depositRentRefund, compensationPayout, compensationOffset, total, claims[] { id, claimCode, claimType, status, amount } }`; `refundAmount` = `total`.
+- `GET /api/v1/claims*` trả thêm `settlementStatus`, `refundTaskId`.
+

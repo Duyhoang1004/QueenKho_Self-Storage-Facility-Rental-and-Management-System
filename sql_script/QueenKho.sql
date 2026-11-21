@@ -622,13 +622,15 @@ CREATE TABLE checkout_settlements (
     created_at            DATETIME2      NOT NULL DEFAULT SYSDATETIME(),
     updated_at            DATETIME2      NULL,
     rent_basis            NVARCHAR(1000) NULL,                  -- D-22: JSON tiền thuê / bảo hiểm kỳ hiện tại lúc nghiệm thu
+    expected_net          DECIMAL(15, 2) NULL,                  -- D-23: số tiền hoàn dự kiến khách thấy lúc hẹn trả kho
+    scheduled_checkout_date DATE         NULL,                  -- D-23: ngày hẹn trả kho dùng để tính số dự kiến
     CONSTRAINT FK_settlements_contract FOREIGN KEY (contract_id)         REFERENCES rental_contracts(id),
     CONSTRAINT FK_settlements_task     FOREIGN KEY (check_out_task_id)   REFERENCES facility_tasks(id),
     CONSTRAINT FK_settlements_refund   FOREIGN KEY (refund_task_id)      REFERENCES facility_tasks(id),
     CONSTRAINT FK_settlements_debt     FOREIGN KEY (debt_transaction_id) REFERENCES payment_transactions(id),
     CONSTRAINT FK_settlements_creator  FOREIGN KEY (created_by)          REFERENCES users(id),
     CONSTRAINT CK_settlements_status   CHECK (status IN ('WAITING_CLAIM', 'WAITING_CUSTOMER', 'DISPUTED', 'RECHECKING',
-                                                         'AWAITING_PAYMENT', 'COMPLETED', 'SUPERSEDED'))
+                                                         'AWAITING_PAYMENT', 'REFUNDING', 'REFUND_SENT', 'COMPLETED', 'SUPERSEDED'))
 );
 GO
 CREATE INDEX IX_settlements_contract_status ON checkout_settlements(contract_id, status);

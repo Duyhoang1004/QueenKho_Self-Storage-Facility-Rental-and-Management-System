@@ -9,6 +9,8 @@ const TABS = [
   { key: 'ACTION', label: 'Cần quản lý xử lý', icon: 'report', hint: 'Khách không đồng ý · chờ chốt hồ sơ bồi thường' },
   { key: 'CUSTOMER', label: 'Chờ khách', icon: 'how_to_reg', hint: 'Chờ khách xác nhận · đang kiểm tra lại' },
   { key: 'PAYMENT', label: 'Chờ thanh toán', icon: 'payments', hint: 'Khách đã đồng ý, chưa trả phần âm' },
+  // D-23 / PR-O29: khách đã xác nhận, quyết toán chưa xong cho tới khi khách nhận được tiền
+  { key: 'REFUND', label: 'Chờ hoàn tiền', icon: 'currency_exchange', hint: 'Chờ quản lý chi tiền · chờ khách xác nhận đã nhận' },
   { key: 'DONE', label: 'Đã tất toán', icon: 'task_alt', hint: 'Hợp đồng đã kết thúc' },
 ]
 

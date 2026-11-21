@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
@@ -57,6 +58,8 @@ class BookingBusinessTest {
         r.setCustomerId(10); r.setFacilityId(1); r.setUnitTypeId(1);
         r.setStartDate(LocalDate.now().plusDays(2));
         r.setDurationMonths(3); r.setAcceptedTerms(true);
+        r.setDeclaredGoodsValue(money("30000000"));
+        r.setGoodsValueEvidenceImages(List.of("http://localhost/uploads/proof.jpg"));
         return r;
     }
 

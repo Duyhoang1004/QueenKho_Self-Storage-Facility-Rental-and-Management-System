@@ -103,6 +103,10 @@ public class Reservation {
     @Column(name = "declared_goods_value", precision = 15, scale = 2)
     private java.math.BigDecimal declaredGoodsValue;
 
+    // Ảnh hoá đơn / biên lai / chứng từ giá trị hàng, ngăn bởi \n|||\n.
+    @Column(name = "goods_value_evidence_images")
+    private String goodsValueEvidenceImages;
+
     // BR-131 (05/11/2026): loại hàng khách khai báo (mã goods_categories, ngăn bởi dấu phẩy) + mô tả thêm
     @Column(name = "goods_category_codes", length = 300)
     private String goodsCategoryCodes;

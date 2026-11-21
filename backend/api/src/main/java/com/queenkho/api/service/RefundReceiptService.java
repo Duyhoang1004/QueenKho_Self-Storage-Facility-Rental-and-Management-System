@@ -49,6 +49,11 @@ public class RefundReceiptService {
     @Lazy
     private StaffTaskService staffTaskService;
 
+    // D-23 / PR-O29: task hoàn của quyết toán trả kho → khách nhận tiền xong mới kết thúc hợp đồng
+    @Autowired
+    @Lazy
+    private CheckoutSettlementService settlementService;
+
     public RefundReceiptService(StaffTaskRepository staffTaskRepository, JdbcTemplate jdbcTemplate,
                                 ActivityLogService activityLogService) {
         this.staffTaskRepository = staffTaskRepository;
@@ -124,6 +129,7 @@ public class RefundReceiptService {
         staffTaskRepository.saveAndFlush(task); // flush trước khi đọc lại bằng JDBC
         activityLogService.log(actor.id(), "[REFUND_RECEIVED] Khách xác nhận đã nhận tiền hoàn task #" + taskId,
                 "facility_tasks", String.valueOf(taskId));
+        settlementService.syncWithRefundTask(task, actor.id());
         return find(actor, taskId);
     }
 
@@ -148,6 +154,7 @@ public class RefundReceiptService {
 
         activityLogService.log(actor.id(), "[REFUND_DISPUTE] Khách báo chưa nhận tiền hoàn task #" + taskId + ": " + r,
                 "facility_tasks", String.valueOf(taskId));
+        settlementService.syncWithRefundTask(task, actor.id());
         if (notificationService != null) {
             notificationService.notifyFacilityManagers(task.getFacilityId(),
                     "Khách báo chưa nhận tiền hoàn — task #" + taskId,

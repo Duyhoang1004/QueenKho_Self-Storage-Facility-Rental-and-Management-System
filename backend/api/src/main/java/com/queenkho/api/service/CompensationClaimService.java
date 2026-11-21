@@ -614,8 +614,19 @@ public class CompensationClaimService {
         var su = contract != null ? contract.getStorageUnit() : null;
         SupportRequest ticket = c.getSupportRequest();
         User customer = c.getCustomer();
+        // D-23 / PR-O30: quyết toán (đã gắn, hoặc vòng mới nhất của hợp đồng) + task hoàn tiền chứa khoản bồi thường
+        Map<String, Object> settlement = null;
+        if (c.getSettlementId() != null || (contract != null && "SETTLEMENT_PENDING".equals(contract.getStatus()))) {
+            List<Map<String, Object>> rows = c.getSettlementId() != null
+                    ? jdbcTemplate.queryForList("SELECT status, refund_task_id FROM checkout_settlements WHERE id = ?", c.getSettlementId())
+                    : jdbcTemplate.queryForList("SELECT TOP 1 status, refund_task_id FROM checkout_settlements WHERE contract_id = ? " +
+                            "ORDER BY round_no DESC", contract.getId());
+            settlement = rows.isEmpty() ? null : rows.get(0);
+        }
         return CompensationClaimResponse.builder()
                 .id(c.getId())
+                .settlementStatus(settlement != null ? (String) settlement.get("status") : null)
+                .refundTaskId(settlement != null && settlement.get("refund_task_id") instanceof Number n ? n.intValue() : null)
                 .claimCode(c.getClaimCode())
                 .claimType(c.getClaimType())
                 .status(c.getStatus())

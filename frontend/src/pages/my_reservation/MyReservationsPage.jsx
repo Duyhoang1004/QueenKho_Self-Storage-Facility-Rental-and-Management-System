@@ -41,7 +41,7 @@ const STATUS_META = {
   },
   // D-21: nghiệm thu xong, chờ khách xác nhận quyết toán
   SETTLEMENT_PENDING: {
-    label: "Chờ xác nhận kết thúc",
+    label: "Đang tất toán trả kho",
     className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
   },
   CANCELLED: {

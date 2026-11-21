@@ -60,6 +60,24 @@ public class SettlementResponse {
     private boolean canDispute;
     private boolean canPay;
 
+    // D-23 / PR-O30: phần chi cho khách (quyết toán dương)
+    private BigDecimal refundPayout;        // hoàn cọc + tiền thuê
+    private BigDecimal compensationPayout;  // bồi thường còn phải chi (sau khi cấn trừ phí vượt cọc)
+
+    // D-23 / PR-O31: đối chiếu với số khách thấy lúc hẹn trả kho
+    private BigDecimal expectedNet;
+    private LocalDate scheduledCheckoutDate;
+    private List<ReconcileLine> reconcile;
+
+    // D-23 / PR-O29: task hoàn tiền + khách xác nhận đã nhận
+    private String refundTaskStatus;
+    private String refundReceiptStatus;     // WAITING_CUSTOMER / CONFIRMED / AUTO_CONFIRMED / DISPUTED
+    private LocalDateTime refundSentAt;
+    private String refundDisputeReason;
+    private String refundEvidenceUrl;
+    private LocalDateTime refundReceiptAutoConfirmAt;
+    private boolean canConfirmReceipt;
+
     // D-22: bảng "Bạn đã đóng − Cơ sở giữ lại + Bồi thường = Hoàn"
     private List<MoneyLine> lines;
     private BigDecimal paidTotal;
@@ -94,6 +112,15 @@ public class SettlementResponse {
         private String status;
         private BigDecimal totalCompensation;
         private boolean includedInSettlement;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ReconcileLine {
+        private String label;
+        private BigDecimal amount;   // + tăng tiền hoàn, − giảm
+        private String note;
     }
 
     @Data

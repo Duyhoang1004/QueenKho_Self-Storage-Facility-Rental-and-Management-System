@@ -111,4 +111,7 @@ public class StaffTaskDetailResponse {
     private String goodsDescription;
     private BigDecimal declaredGoodsValue;
     private java.util.List<String> goodsValueEvidenceImages;
+
+    // D-23 / PR-O30: task REFUND của quyết toán trả kho — hoàn cọc + tiền thuê và bồi thường từng hồ sơ
+    private SettlementRefundSplit settlementRefund;
 }

@@ -5,6 +5,7 @@ import {
   adjustSettlement, keepSettlement, recheckSettlement, simulateSettlementAutoConfirm,
 } from '../services/settlementService'
 import { getFacilityStaff } from '../services/facilityStaffService'
+import { confirmRefundReceipt, disputeRefundReceipt } from '../services/refundReceiptService'
 import SimulationButton from './SimulationButton'
 import MoneyBreakdownTable from './MoneyBreakdownTable'
 
@@ -12,6 +13,8 @@ import MoneyBreakdownTable from './MoneyBreakdownTable'
 //  - Khách: xác nhận kết thúc / đồng ý & thanh toán / không đồng ý
 //  - Staff / FM: thu tiền mặt phần khách trả thêm
 //  - FM: xử lý khiếu nại — sửa số tiền (chỉ giảm), giữ nguyên, giao nhân viên kiểm tra lại
+// D-23 (PR-O29 → PR-O31): chờ hoàn tiền → khách xác nhận đã nhận mới tất toán; tách hoàn cọc / bồi thường;
+//  đối chiếu với số tiền hoàn dự kiến lúc hẹn trả kho
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -53,7 +56,8 @@ function MoneyRow({ label, value, sign, strong, hint }) {
 }
 
 // fallback: hiện khi hợp đồng chưa có bảng quyết toán (hợp đồng trả kho trước D-21)
-export default function SettlementPanel({ contractId, viewer, onChanged, highlight = false, fallback = null }) {
+// onLoaded(settlement | null): trang cha biết hợp đồng có bảng quyết toán chưa (D-23: ẩn khối tính tay cũ)
+export default function SettlementPanel({ contractId, viewer, onChanged, onLoaded, highlight = false, fallback = null }) {
   const [s, setS] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -85,6 +89,10 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [contractId, reloadKey])
+
+  useEffect(() => {
+    if (!loading && onLoaded) onLoaded(s)
+  }, [s, loading, onLoaded])
 
   const load = () => setReloadKey((k) => k + 1)
 
@@ -143,13 +151,13 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
     switch (s.status) {
       case 'WAITING_CLAIM':
         return isCustomer
-          ? 'Quản lý cơ sở đang chốt hồ sơ bồi thường hàng của bạn. Bảng quyết toán sẽ cập nhật tiền bồi thường, sau đó bạn xác nhận kết thúc hợp đồng.'
+          ? 'Quản lý cơ sở đang chốt hồ sơ bồi thường hàng của bạn. Chốt xong, bảng quyết toán tự cộng tiền bồi thường — lúc đó bạn mới bấm được "Xác nhận" hoặc "Không đồng ý".'
           : 'Còn hồ sơ bồi thường đã kiểm tra hiện trường nhưng chưa chốt. Quản lý chốt ở màn Bồi thường hàng hoá rồi bảng sẽ tự tính lại.'
       case 'WAITING_CUSTOMER':
         return isCustomer
           ? (pays
             ? `Nhân viên đã nghiệm thu. Bạn cần thanh toán thêm ${formatVND(Math.abs(s.netAmount))} để kết thúc hợp đồng. Nếu chưa đồng ý với biên bản, hãy bấm "Không đồng ý".`
-            : `Nhân viên đã nghiệm thu. Vui lòng kiểm tra biên bản và xác nhận để kết thúc hợp đồng — sau đó cơ sở hoàn ${formatVND(s.netAmount)} cho bạn.${s.autoConfirmAt ? ` Nếu không phản hồi, hệ thống tự xác nhận lúc ${formatDateTime(s.autoConfirmAt)}.` : ''}`)
+            : `Nhân viên đã nghiệm thu. Kiểm tra biên bản và số tiền: đồng ý thì bấm "Xác nhận", cơ sở sẽ lập lệnh hoàn ${formatVND(s.netAmount)} cho bạn. Chưa đồng ý thì bấm "Không đồng ý" ngay bây giờ — sau khi xác nhận, bạn chỉ còn phản hồi được việc đã nhận tiền hay chưa.${s.autoConfirmAt ? ` Nếu không phản hồi, hệ thống tự xác nhận lúc ${formatDateTime(s.autoConfirmAt)}.` : ''}`)
           : 'Đã nghiệm thu, đang chờ khách xác nhận trên tài khoản của khách. Hợp đồng chỉ kết thúc khi khách xác nhận.'
       case 'DISPUTED':
         return isCustomer
@@ -163,7 +171,23 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
         return isCustomer
           ? `Bạn đã đồng ý quyết toán. Thanh toán ${formatVND(Math.abs(s.netAmount))} qua VNPAY hoặc tiền mặt tại quầy để kết thúc hợp đồng. Trong thời gian này bạn chưa đặt được kho mới.`
           : `Khách đã đồng ý, chờ thanh toán ${formatVND(Math.abs(s.netAmount))}. Khách có thể trả VNPAY trên tài khoản, hoặc thu tiền mặt tại quầy.`
+      case 'REFUNDING':
+        if (s.refundReceiptStatus === 'DISPUTED') {
+          return isCustomer
+            ? `Bạn đã báo chưa nhận được tiền${s.refundDisputeReason ? ` ("${s.refundDisputeReason}")` : ''}. Quản lý cơ sở đang kiểm tra lại giao dịch.`
+            : `Khách báo chưa nhận được tiền hoàn${s.refundDisputeReason ? `: "${s.refundDisputeReason}"` : ''}. Quản lý kiểm tra giao dịch / chuyển bổ sung trong task hoàn tiền.`
+        }
+        return isCustomer
+          ? `Bạn đã xác nhận quyết toán. Quản lý cơ sở sẽ hoàn ${formatVND(s.netAmount)} trong 24 giờ làm việc. Hợp đồng kết thúc khi bạn xác nhận đã nhận tiền.`
+          : `Khách đã xác nhận quyết toán. Quản lý cần chi ${formatVND(s.netAmount)} trong task hoàn tiền${s.refundTaskId ? ` #${s.refundTaskId}` : ''}; hợp đồng chỉ kết thúc khi khách xác nhận đã nhận.`
+      case 'REFUND_SENT':
+        return isCustomer
+          ? `Quản lý cơ sở đã hoàn ${formatVND(s.netAmount)}${s.refundSentAt ? ` lúc ${formatDateTime(s.refundSentAt)}` : ''}. Kiểm tra tài khoản / tiền mặt rồi bấm "Đã nhận được" để kết thúc hợp đồng, hoặc "Chưa nhận được" nếu có vấn đề.${s.refundReceiptAutoConfirmAt ? ` Không phản hồi, hệ thống tự xác nhận lúc ${formatDateTime(s.refundReceiptAutoConfirmAt)}.` : ''}`
+          : `Đã chi tiền, chờ khách xác nhận đã nhận${s.refundReceiptAutoConfirmAt ? ` (tự xác nhận lúc ${formatDateTime(s.refundReceiptAutoConfirmAt)})` : ''}.`
       case 'COMPLETED':
+        if (s.refundTaskId && !pays) {
+          return `Khách đã nhận tiền hoàn${s.refundReceiptStatus === 'AUTO_CONFIRMED' ? ' (tự xác nhận sau 3 ngày)' : ''}. Hợp đồng đã kết thúc.`
+        }
         return s.autoConfirmed
           ? 'Hệ thống đã tự xác nhận quyết toán sau 3 ngày khách không phản hồi. Hợp đồng đã kết thúc.'
           : `Khách đã xác nhận${s.customerConfirmedAt ? ` lúc ${formatDateTime(s.customerConfirmedAt)}` : ''}. Hợp đồng đã kết thúc.`
@@ -211,6 +235,43 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
       )}
       {!pays && s.refundMethod && (
         <p className="text-[11px] font-bold text-[#AFAFAF] -mt-2">Nhận tiền: {s.refundMethod === 'CASH' ? 'tiền mặt tại quầy' : 'chuyển khoản (tài khoản đã khai khi hẹn trả kho)'}</p>
+      )}
+
+      {/* D-23 / PR-O31: đối chiếu với số tiền hoàn dự kiến khách thấy lúc hẹn trả kho */}
+      {s.expectedNet != null && (
+        <div className="border-2 border-[#E5E5E5] rounded-xl p-3 flex flex-col gap-1.5">
+          <p className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Đối chiếu với lúc hẹn trả kho</p>
+          <div className="flex justify-between gap-3 text-sm font-bold text-[#4B4B4B]">
+            <span>Dự kiến lúc hẹn ({formatDate(s.scheduledCheckoutDate)})</span>
+            <span className="font-black whitespace-nowrap">{Number(s.expectedNet) < 0 ? 'Trả thêm ' : 'Hoàn '}{formatVND(Math.abs(Number(s.expectedNet)))}</span>
+          </div>
+          {(s.reconcile || []).map((r, i) => (
+            <div key={i} className="flex justify-between gap-3 text-xs">
+              <span className="flex flex-col">
+                <span className="font-bold text-[#777777]">{r.label}</span>
+                {r.note && <span className="text-[11px] text-[#AFAFAF]">{r.note}</span>}
+              </span>
+              <span className={`font-black whitespace-nowrap ${Number(r.amount) < 0 ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
+                {Number(r.amount) < 0 ? '− ' : '+ '}{formatVND(Math.abs(Number(r.amount)))}
+              </span>
+            </div>
+          ))}
+          {(s.reconcile || []).length === 0 && <p className="text-xs font-bold text-[#58A700]">Không chênh lệch — đúng số đã thấy lúc hẹn trả kho.</p>}
+          <div className="flex justify-between gap-3 text-sm font-black text-[#4B4B4B] border-t-2 border-[#F0F0F0] pt-1.5">
+            <span>Quyết toán</span>
+            <span className={pays ? 'text-[#FF4B4B]' : 'text-[#58A700]'}>{pays ? 'Trả thêm ' : 'Hoàn '}{formatVND(Math.abs(Number(s.netAmount)))}</span>
+          </div>
+        </div>
+      )}
+
+      {/* D-23 / PR-O30: khoản hoàn gồm những gì (task hoàn tiền của FM chi đúng các dòng này) */}
+      {!pays && Number(s.compensationAmount) > 0 && s.refundPayout != null && (
+        <div className="border-2 border-[#E5E5E5] rounded-xl px-4 py-2 divide-y divide-[#F0F0F0]">
+          <MoneyRow label="Hoàn cọc + tiền thuê" value={s.refundPayout} strong />
+          <MoneyRow label="Bồi thường hàng hư / mất" value={s.compensationPayout} strong
+            hint={Number(s.compensationPayout) < Number(s.compensationAmount)
+              ? `Đã cấn trừ ${formatVND(Number(s.compensationAmount) - Number(s.compensationPayout))} vào phí vượt cọc` : 'Chi cùng lệnh hoàn tiền trả kho'} />
+        </div>
       )}
 
       {/* Sự cố (UC-24) */}
@@ -296,13 +357,13 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
             onClick={() => {
               const text = pays
                 ? `Đồng ý quyết toán và thanh toán ${formatVND(Math.abs(s.netAmount))} qua VNPAY?`
-                : `Xác nhận kết thúc hợp đồng ${s.contractCode}? Cơ sở sẽ hoàn ${formatVND(s.netAmount)} cho bạn.`
-              if (window.confirm(text)) run(() => confirmSettlement(s.contractId), 'Đã xác nhận kết thúc hợp đồng.')
+                : `Xác nhận quyết toán hợp đồng ${s.contractCode}? Cơ sở sẽ lập lệnh hoàn ${formatVND(s.netAmount)}; hợp đồng kết thúc khi bạn xác nhận đã nhận tiền.`
+              if (window.confirm(text)) run(() => confirmSettlement(s.contractId), 'Đã xác nhận quyết toán.')
             }}
             className="duo-btn-green px-5 py-3 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
           >
             <span className="material-symbols-outlined text-[18px]">{pays ? 'payments' : 'task_alt'}</span>
-            {pays ? `Đồng ý & thanh toán ${formatVND(Math.abs(s.netAmount))}` : 'Xác nhận kết thúc hợp đồng'}
+            {pays ? `Đồng ý & thanh toán ${formatVND(Math.abs(s.netAmount))}` : 'Xác nhận quyết toán'}
           </button>
           <button type="button" disabled={busy} onClick={() => openMode('dispute')} className="duo-btn-white px-5 py-3 text-xs uppercase tracking-wider cursor-pointer">
             Không đồng ý
@@ -338,6 +399,49 @@ export default function SettlementPanel({ contractId, viewer, onChanged, highlig
           <span className="material-symbols-outlined text-[18px]">payments</span>
           Thanh toán {formatVND(Math.abs(s.netAmount))} qua VNPAY
         </button>
+      )}
+
+      {/* ===== D-23 / PR-O29: khách xác nhận đã nhận tiền hoàn ===== */}
+      {isCustomer && s.canConfirmReceipt && mode !== 'receiptDispute' && (
+        <div className="flex flex-col gap-2">
+          {s.refundEvidenceUrl && (
+            <a href={s.refundEvidenceUrl} target="_blank" rel="noreferrer" className="text-xs font-black text-[#1CB0F6]">Xem chứng từ hoàn tiền</a>
+          )}
+          <div className="flex flex-wrap gap-3">
+            <button type="button" disabled={busy}
+              onClick={() => {
+                if (window.confirm(`Xác nhận đã nhận đủ ${formatVND(s.netAmount)}? Hợp đồng ${s.contractCode} sẽ kết thúc.`)) {
+                  run(() => confirmRefundReceipt(s.refundTaskId), 'Đã xác nhận nhận tiền. Hợp đồng đã kết thúc.')
+                }
+              }}
+              className="duo-btn-green px-5 py-3 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:opacity-60">
+              <span className="material-symbols-outlined text-[18px]">task_alt</span>Đã nhận được
+            </button>
+            <button type="button" disabled={busy} onClick={() => openMode('receiptDispute')} className="duo-btn-white px-5 py-3 text-xs uppercase tracking-wider cursor-pointer">
+              Chưa nhận được
+            </button>
+          </div>
+        </div>
+      )}
+      {isCustomer && mode === 'receiptDispute' && (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-black text-[#4B4B4B]">Vấn đề khi nhận tiền (10–500 ký tự)</label>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={500}
+            placeholder="Ví dụ: chưa thấy tiền về tài khoản, số tiền thiếu, sai số tài khoản"
+            className="border-2 border-[#E5E5E5] rounded-xl p-3 text-sm font-bold focus:border-[#1CB0F6] outline-none" />
+          <div className="flex gap-3">
+            <button type="button" disabled={busy || reason.trim().length < 10}
+              onClick={() => run(() => disputeRefundReceipt(s.refundTaskId, reason.trim()), 'Đã báo quản lý cơ sở kiểm tra lại.')}
+              className="duo-btn-red px-5 py-3 text-xs uppercase tracking-wider cursor-pointer disabled:opacity-60">Gửi phản hồi</button>
+            <button type="button" onClick={() => setMode(null)} className="duo-btn-gray px-5 py-3 text-xs uppercase cursor-pointer">Huỷ</button>
+          </div>
+        </div>
+      )}
+      {isManager && s.refundTaskId && ['REFUNDING', 'REFUND_SENT'].includes(s.status) && (
+        <a href={`/manager/refunds/${s.refundTaskId}`} className="duo-btn-blue px-4 py-2 text-xs self-start flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[16px]">currency_exchange</span>
+          {s.status === 'REFUNDING' ? `Mở task hoàn tiền #${s.refundTaskId}` : `Xem task hoàn tiền #${s.refundTaskId}`}
+        </a>
       )}
 
       {/* ===== Staff / FM thu tiền mặt (PR-O21) ===== */}

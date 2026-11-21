@@ -78,7 +78,7 @@ const STATUS_MAP = {
   },
   // D-21: nghiệm thu xong, chờ khách xác nhận quyết toán
   SETTLEMENT_PENDING: {
-    label: "Chờ xác nhận kết thúc",
+    label: "Đang tất toán trả kho",
     cls: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
     icon: "how_to_reg",
   },
@@ -114,6 +114,8 @@ export default function CustomerContractPage() {
   const { reservationId } = useParams();
   const navigate = useNavigate();
   const [contract, setContract] = useState(null);
+  // D-23 / PR-O31: có bảng quyết toán → số tiền lấy từ quyết toán, ẩn khối tính tay cũ (lệch vì thiếu bồi thường)
+  const [settlement, setSettlement] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -380,7 +382,7 @@ export default function CustomerContractPage() {
             </span>
           </div>
         </div>
-      ) : isTerminated && (
+      ) : isTerminated && !settlement && (
         <div className={`border-2 rounded-2xl p-5 flex items-start gap-4 shadow-sm ${isRefundPending ? "bg-[#FFF8EE] border-[#FF9600]" : "bg-[#FAF5FF] border-[#CE82FF]"}`}>
           <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border-2 ${isRefundPending ? "bg-[#FFE8CC] border-[#FF9600]" : "bg-[#F3E8FF] border-[#CE82FF]"}`}>
             <span className={`material-symbols-outlined text-[28px] ${isRefundPending ? "text-[#E58800]" : "text-[#A560E8]"}`}>
@@ -585,11 +587,15 @@ export default function CustomerContractPage() {
           viewer="CUSTOMER"
           highlight={contract.status === "SETTLEMENT_PENDING"}
           onChanged={() => fetchContract()}
+          onLoaded={setSettlement}
         />
       )}
 
-      {/* D-22 / PR-O25: khoản hoàn cơ sở đã chi — bấm "Đã nhận được" / "Chưa nhận được" */}
-      <RefundReceiptList contractId={contract.contractId || contract.id} title="Tiền hoàn của hợp đồng" />
+      {/* D-22 / PR-O25: khoản hoàn cơ sở đã chi — bấm "Đã nhận được" / "Chưa nhận được".
+          D-23: khoản hoàn của quyết toán đã có nút ngay trên bảng quyết toán → không hiện trùng */}
+      {!settlement?.refundTaskId && (
+        <RefundReceiptList contractId={contract.contractId || contract.id} title="Tiền hoàn của hợp đồng" />
+      )}
 
       {/* D-22: chính sách đã chốt lúc đặt, hiện bằng số tiền của hợp đồng này */}
       <ContractPolicyPanel contractId={contract.contractId || contract.id} />

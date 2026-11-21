@@ -53,6 +53,11 @@ public class StaffTaskOverdueJob {
             if (receipts > 0) {
                 System.out.println("[QueenKho Refund] Da tu xac nhan " + receipts + " khoan hoan tien qua 3 ngay.");
             }
+            // D-23 / PR-O29: quyết toán trả kho có khoản hoàn vừa được xác nhận đã nhận → kết thúc hợp đồng
+            int finished = settlementService.finalizeReceivedRefunds();
+            if (finished > 0) {
+                System.out.println("[QueenKho Settlement] Da ket thuc " + finished + " quyet toan sau khi khach nhan tien hoan.");
+            }
         } catch (Exception e) {
             System.err.println("[QueenKho Refund] Warning auto-confirming refund receipts: " + e.getMessage());
         }

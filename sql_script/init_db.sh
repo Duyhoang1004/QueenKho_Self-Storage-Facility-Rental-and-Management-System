@@ -45,14 +45,22 @@ for script in \
     Update_kho_lanh.sql \
     Update_gop_y_product_12_11.sql \
     UC28_setup.sql \
-    Update_admin_accounts.sql; do
+    Update_admin_accounts.sql \
+    Create_unit_access_history.sql \
+    Update_tat_toan_tra_kho.sql \
+    Update_hoan_tien_chinh_sach_v6.sql \
+    Update_checkin_goods_value_flow.sql; do
     APPLIED=$("${SQLCMD[@]}" -d QueenKhoDB -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.docker_schema_history WHERE script_name = '$script'")
     if [[ "$APPLIED" == *1* ]]; then
         echo "[DB-INIT] Already applied: $script"
         continue
     fi
     # The current full seed already includes the schema updates.
-    if [[ "$FRESH_DATABASE" == false || "$script" == UC28_setup.sql || "$script" == Update_admin_accounts.sql || "$script" == Update_gop_y_product_12_11.sql ]]; then
+    # 21/11/2026: các script từ 18/11 trở đi đều chạy lại được (IF NOT EXISTS / IF OBJECT_ID) → chạy cả khi DB mới tạo,
+    # vì QueenKho_full.sql chưa có bảng unit_access_history.
+    if [[ "$FRESH_DATABASE" == false || "$script" == UC28_setup.sql || "$script" == Update_admin_accounts.sql || "$script" == Update_gop_y_product_12_11.sql \
+          || "$script" == Create_unit_access_history.sql || "$script" == Update_tat_toan_tra_kho.sql \
+          || "$script" == Update_hoan_tien_chinh_sach_v6.sql || "$script" == Update_checkin_goods_value_flow.sql ]]; then
         echo "[DB-INIT] Applying $script..."
         "${SQLCMD[@]}" -d QueenKhoDB -i "/scripts/$script"
     fi

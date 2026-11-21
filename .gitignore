@@ -1,1 +1,3 @@
 Personal/
+# Biến môi trường riêng từng máy cho docker compose
+.env

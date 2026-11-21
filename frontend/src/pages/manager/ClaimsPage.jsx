@@ -328,8 +328,20 @@ function ClaimDetail({ claimId }) {
         <Card icon="receipt_long" title="Chi trả qua quyết toán trả kho">
           <p className="text-xs font-bold text-[#4B4B4B] leading-relaxed">
             Hợp đồng {claim.contractCode} đã nghiệm thu trả kho. {formatVND(claim.totalCompensation)} bồi thường được cộng vào bảng quyết toán;
-            khách xác nhận xong, khoản này nằm trong task hoàn tiền (hoặc cấn trừ vào phần khách phải trả).
+            khách xác nhận xong, khoản này được chi trong task hoàn tiền trả kho (dòng "Bồi thường hàng hư / mất"), hoặc cấn trừ vào phần khách phải trả.
           </p>
+          {/* D-23 / PR-O30: đi thẳng tới task hoàn tiền chứa khoản bồi thường */}
+          {claim.refundTaskId ? (
+            <a href={`/manager/refunds/${claim.refundTaskId}`} className="duo-btn-green px-4 py-2 text-xs self-start flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">currency_exchange</span>Chi bồi thường trong task hoàn tiền #{claim.refundTaskId}
+            </a>
+          ) : (
+            <p className="text-xs font-bold text-[#B07A00]">
+              {claim.settlementStatus === 'AWAITING_PAYMENT'
+                ? 'Quyết toán âm: bồi thường đã cấn trừ vào khoản khách phải trả.'
+                : 'Chưa có task hoàn tiền — chờ khách xác nhận bảng quyết toán.'}
+            </p>
+          )}
           <a href="/manager/settlements?tab=ALL" className="duo-btn-blue px-4 py-2 text-xs self-start">Mở quyết toán trả kho</a>
         </Card>
       ) : claim.status === 'APPROVED' && !bom && <PaymentForm claim={claim} onDone={refresh} />}

@@ -12,6 +12,7 @@ import com.queenkho.api.dto.ExtendSupportTaskRequest;
 import com.queenkho.api.dto.HandoverRecordResponse;
 import com.queenkho.api.dto.RefundCalculationResult;
 import com.queenkho.api.dto.ResolveSupportTaskRequest;
+import com.queenkho.api.dto.SettlementRefundSplit;
 import com.queenkho.api.dto.StaffTaskDetailResponse;
 import com.queenkho.api.dto.StaffTaskResponse;
 import com.queenkho.api.entity.CheckoutSettlement;
@@ -2785,6 +2786,14 @@ public class StaffTaskService {
                 ? SupportRequestService.isUrgentIssue(sr.getIssueType())
                 : ("SUPPORT".equals(task.getTaskType()) && taskNote != null && taskNote.contains("[KHẨN]"));
 
+        // D-23 / PR-O30: task hoàn của quyết toán trả kho → số tiền lấy từ quyết toán (gồm bồi thường),
+        // không tính lại theo hợp đồng (sau nghiệm thu cọc / trạng thái đã đổi nên tính lại sẽ lệch)
+        SettlementRefundSplit settlementRefund = "REFUND".equals(task.getTaskType()) && settlementService != null
+                ? settlementService.refundSplitOfTask(task.getId()).orElse(null) : null;
+        if (settlementRefund != null) {
+            refundAmount = settlementRefund.total();
+        }
+
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .facilityId(task.getFacilityId())
@@ -2871,6 +2880,8 @@ public class StaffTaskService {
                         ? contract.getReservation().getDeclaredGoodsValue() : null)
                 .goodsValueEvidenceImages(contract != null && contract.getReservation() != null
                         ? parseEvidenceImages(contract.getReservation().getGoodsValueEvidenceImages()) : Collections.emptyList())
+                // D-23 / PR-O30: task hoàn tiền trả kho tách hoàn cọc + tiền thuê / bồi thường từng hồ sơ
+                .settlementRefund(settlementRefund)
                 .build();
     }
 
@@ -3115,8 +3126,12 @@ public class StaffTaskService {
             // D-21 / PR-O20: task hoàn của quyết toán trả kho → tiền bồi thường gộp trong task + hồ sơ chuyển PAID
             if (settlementService != null) settlementService.onRefundCompleted(task, method,
                     hasEvidenceImg ? request.getEvidenceImageUrl().trim() : null, ftCode, managerId);
-        } else if (additional.signum() > 0) {
-            insertAdditionalRefund(task, customerId, method, additional, ftCode);
+        } else {
+            if (additional.signum() > 0) {
+                insertAdditionalRefund(task, customerId, method, additional, ftCode);
+            }
+            // D-23 / PR-O29: xử lý lại "Chưa nhận được" → quyết toán quay về chờ khách xác nhận đã nhận
+            if (settlementService != null) settlementService.syncWithRefundTask(task, managerId);
         }
 
         // BR-111 / BR-117: khách nhận thông báo + email đã hoàn tiền (kèm yêu cầu xác nhận — PR-O25)

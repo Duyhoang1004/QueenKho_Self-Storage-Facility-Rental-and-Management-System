@@ -30,6 +30,8 @@ public class CompensationClaimResponse {
     private String contractCode;
     private String contractStatus;
     private Integer settlementId;      // D-21: chi trả qua quyết toán trả kho (NULL = chi trả riêng)
+    private String settlementStatus;   // D-23: trạng thái quyết toán đang mở / đã gắn của hợp đồng
+    private Integer refundTaskId;      // D-23 / PR-O30: task hoàn tiền trả kho chứa khoản bồi thường này
     private Integer reservationId;
     private String storageUnitId;
     private String unitTypeName;

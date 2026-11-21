@@ -8,7 +8,7 @@ services:
       TZ: Asia/Ho_Chi_Minh
       MSSQL_SA_PASSWORD: "12345678@Password"
     ports:
-      - "1434:1433"
+      - "${DB_HOST_PORT:-1434}:1433"   # máy đã cài SQL Server chiếm 1434 → đặt DB_HOST_PORT trong .env
     volumes:
       - sql_data:/var/opt/mssql/data
     healthcheck:

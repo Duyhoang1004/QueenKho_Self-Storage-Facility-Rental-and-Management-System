@@ -112,7 +112,7 @@ const CONTRACT_STATUS_LABEL = {
   ACTIVE: 'Đang hoạt động',
   OVERDUE: 'Quá hạn thanh toán',
   TERMINATION_PENDING: 'Chờ trả kho',
-  SETTLEMENT_PENDING: 'Chờ khách xác nhận quyết toán', // D-21
+  SETTLEMENT_PENDING: 'Đang tất toán trả kho', // D-21, D-23: gồm cả chờ hoàn tiền
   TERMINATED: 'Đã chấm dứt',
   LIQUIDATED: 'Đã cưỡng chế dọn kho',
 };
@@ -186,6 +186,41 @@ function formatDateTime(value) {
 }
 
 import { parseRefundNote } from '../../utils/refundParser';
+
+// D-23 / PR-O30: task hoàn tiền trả kho — tách hoàn cọc + tiền thuê và bồi thường từng hồ sơ (lấy từ quyết toán)
+function SettlementRefundRows({ split, isManager }) {
+  const fmt = (v) => Number(v || 0).toLocaleString('vi-VN') + '₫';
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex justify-between text-xs text-[#475569]">
+        <span className="font-bold">• Hoàn cọc + tiền thuê (quyết toán vòng {split.roundNo}):</span>
+        <span className="font-black">{fmt(split.depositRentRefund)}</span>
+      </div>
+      {(Number(split.compensationPayout) > 0 || Number(split.compensationOffset) > 0) && (
+        <div className="flex flex-col gap-1 text-xs text-[#9A3412] bg-[#FFF7ED] px-2.5 py-1.5 rounded-xl border border-[#FDBA74]">
+          <div className="flex justify-between">
+            <span className="font-bold">• Bồi thường hàng hư / mất:</span>
+            <span className="font-black">+ {fmt(split.compensationPayout)}</span>
+          </div>
+          {(split.claims || []).map((c) => (
+            <div key={c.id} className="flex justify-between pl-3 text-[11px]">
+              {isManager
+                ? <a href={`/manager/claims/${c.id}`} className="font-mono font-bold underline">{c.claimCode}</a>
+                : <span className="font-mono font-bold">{c.claimCode}</span>}
+              <span className="font-bold">{c.claimType === 'GOODS_LOSS' ? 'Mất hàng' : 'Hư hàng'} · {fmt(c.amount)}</span>
+            </div>
+          ))}
+          {Number(split.compensationOffset) > 0 && (
+            <span className="pl-3 text-[11px] font-bold">Đã cấn trừ {fmt(split.compensationOffset)} vào phí vượt cọc — chỉ chi phần còn lại.</span>
+          )}
+        </div>
+      )}
+      {isManager && split.contractId && (
+        <a href="/manager/settlements?tab=REFUND" className="text-[11px] font-black text-[#1CB0F6] self-start">Xem bảng quyết toán</a>
+      )}
+    </div>
+  );
+}
 import DateInput from '../../components/DateInput';
 
 function formatDate(value) {
@@ -1715,7 +1750,7 @@ export default function StaffTaskDetailPage() {
                         Thông tin thụ hưởng &amp; Số tiền đã hoàn trả
                       </span>
                       <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
-                        Đã tất toán
+                        {task.settlementRefund && task.settlementRefund.settlementStatus !== 'COMPLETED' ? 'Đã chi · chờ khách nhận' : 'Đã chi tiền'}
                       </span>
                     </div>
 
@@ -1742,17 +1777,23 @@ export default function StaffTaskDetailPage() {
                     )}
 
                     <div className="border-t border-[#BAE6FD] pt-3 mt-1 flex flex-col gap-1.5">
-                      {(task.contractCode || parsedRefund?.isCheckout) && (
-                        <div className="flex justify-between text-xs text-[#475569]">
-                          <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
-                          <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
-                        </div>
-                      )}
-                      {effectiveEarlyRentRefund > 0 && (
-                        <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
-                          <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
-                          <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
-                        </div>
+                      {task.settlementRefund ? (
+                        <SettlementRefundRows split={task.settlementRefund} isManager={isManager} />
+                      ) : (
+                        <>
+                          {(task.contractCode || parsedRefund?.isCheckout) && (
+                            <div className="flex justify-between text-xs text-[#475569]">
+                              <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
+                              <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
+                            </div>
+                          )}
+                          {effectiveEarlyRentRefund > 0 && (
+                            <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
+                              <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                              <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
+                            </div>
+                          )}
+                        </>
                       )}
                       <div className="flex justify-between items-baseline pt-1">
                         <span className="text-xs font-black uppercase text-[#0284C7]">Tổng số tiền đã hoàn trả:</span>
@@ -1874,17 +1915,23 @@ export default function StaffTaskDetailPage() {
 
                     {/* Tổng tiền cần chuyển */}
                     <div className="border-t border-[#BAE6FD] pt-3 mt-1 flex flex-col gap-1.5">
-                      {(task.contractCode || parsedRefund?.isCheckout) && (
-                        <div className="flex justify-between text-xs text-[#475569]">
-                          <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
-                          <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
-                        </div>
-                      )}
-                      {effectiveEarlyRentRefund > 0 && (
-                        <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
-                          <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
-                          <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
-                        </div>
+                      {task.settlementRefund ? (
+                        <SettlementRefundRows split={task.settlementRefund} isManager={isManager} />
+                      ) : (
+                        <>
+                          {(task.contractCode || parsedRefund?.isCheckout) && (
+                            <div className="flex justify-between text-xs text-[#475569]">
+                              <span className="font-bold">• Tiền cọc hợp đồng hoàn lại:</span>
+                              <span className="font-black">{formatCurrency(effectiveDepositRefund)}</span>
+                            </div>
+                          )}
+                          {effectiveEarlyRentRefund > 0 && (
+                            <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
+                              <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                              <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
+                            </div>
+                          )}
+                        </>
                       )}
                       <div className="flex justify-between items-baseline pt-1">
                         <span className="text-xs font-black uppercase text-[#0284C7]">Tổng số tiền cần chuyển hoàn:</span>

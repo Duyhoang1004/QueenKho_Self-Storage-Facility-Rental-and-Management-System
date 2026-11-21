@@ -113,6 +113,11 @@ public class StaffTaskController {
         return ResponseEntity.ok(staffTaskService.prepareCheckIn(id, currentUser.require(), request));
     }
 
+    @PostMapping("/{id}/withdraw-check-in")
+    public ResponseEntity<?> withdrawCheckIn(@PathVariable Integer id) {
+        return ResponseEntity.ok(staffTaskService.withdrawCheckIn(id, currentUser.require()));
+    }
+
     @PostMapping("/{id}/confirm-unit-issue")
     public ResponseEntity<?> confirmCheckInIssue(@PathVariable Integer id, @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(staffTaskService.confirmCheckInIssue(id, currentUser.require(), body.get("note")));

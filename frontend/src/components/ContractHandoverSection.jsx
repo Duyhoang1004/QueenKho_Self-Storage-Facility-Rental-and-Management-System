@@ -10,8 +10,9 @@ const REASON_LABELS = {
 
 const CHECKIN_EVIDENCE_LABELS = {
   identityVerified: 'Đối chiếu CCCD',
-  unitEmpty: 'Ô trống',
-  unitClean: 'Ô sạch',
+  unitChecked: 'Đã kiểm tra ô kho',
+  unitEmpty: 'Ô trống (biên bản cũ)',
+  unitClean: 'Ô sạch (biên bản cũ)',
   lockIntact: 'Khóa nguyên vẹn',
   goodsChecked: 'Hàng mang vào phù hợp',
   goodsValueVerified: 'Đối chiếu giá trị hàng',
@@ -100,13 +101,14 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
       {customerCanDecide && pending && (
         <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
           <h3 className="text-sm font-black text-[#0369A1]">Xác nhận nhận ô kho {pending.storage_unit_id}</h3>
-          <p className="text-xs font-bold text-[#4B4B4B]">Hãy cùng nhân viên đến kiểm tra đúng ô kho trước khi chọn. Nhân viên đã ghi ô trống, sạch, khóa nguyên vẹn và hàng phù hợp.</p>
+            <p className="text-xs font-bold text-[#4B4B4B]">Hãy cùng nhân viên đến kiểm tra đúng ô kho trước khi chọn. Nhân viên đã ghi nhận ô trống, sạch, khóa nguyên vẹn và hàng phù hợp.</p>
           {pending.notes && <p className="text-xs text-[#4B4B4B]">Ghi chú: {pending.notes}</p>}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {Object.entries(CHECKIN_EVIDENCE_LABELS).map(([key, label]) => pending.checklistEvidence?.[key] && (
               <div key={key} className="flex flex-col gap-1">
                 <span className="text-[11px] font-bold text-[#4B4B4B]">{label}</span>
-                <img src={pending.checklistEvidence[key]} alt={`Ảnh ${label}`} className="w-full aspect-square rounded-xl object-cover border" />
+                <div className="flex flex-wrap gap-1">{(Array.isArray(pending.checklistEvidence[key]) ? pending.checklistEvidence[key] : [pending.checklistEvidence[key]]).map((src, i) =>
+                  <img key={i} src={src} alt={`Ảnh ${label} ${i + 1}`} className="w-20 h-20 rounded-xl object-cover border" />)}</div>
               </div>
             ))}
           </div>
@@ -139,7 +141,7 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
             label="Ảnh khách ghi nhận (nếu từ chối)" hint="Có thể chụp chỗ còn đồ, bẩn hoặc hư hỏng." required={false} />
           {decisionError && <p className="text-xs font-bold text-[#FF4B4B]">{decisionError}</p>}
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={deciding || pending.acceptAllowed === false} onClick={() => decide(pending, true)} className="duo-btn-green px-4 py-2 text-xs">Tôi đã kiểm tra và đồng ý nhận ô này</button>
+            <button type="button" disabled={deciding || pending.acceptAllowed === false || rejectionTypes.length > 0} onClick={() => decide(pending, true)} className="duo-btn-green px-4 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Tôi đã kiểm tra và đồng ý nhận ô này</button>
             <button type="button" disabled={deciding || rejectionReason.trim().length < 5 || rejectionTypes.length === 0} onClick={() => decide(pending, false)} className="duo-btn-gray px-4 py-2 text-xs">Không đồng ý biên bản</button>
           </div>
         </div>
@@ -155,7 +157,7 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
           </p>}
           {attempts.map(a => (
             <div key={a.id} className="rounded-xl border border-[#E5E5E5] p-3 text-xs text-[#4B4B4B]">
-              <b>Ô {a.storage_unit_id}</b> · {a.status === 'ACCEPTED' ? 'Khách đồng ý' : a.status === 'REJECTED' ? 'Khách từ chối' : a.status === 'PENDING_CUSTOMER' ? 'Chờ khách xác nhận' : 'Biên bản đã thay thế'}
+              <b>Ô {a.storage_unit_id}</b> · {a.status === 'ACCEPTED' ? 'Khách đồng ý' : a.status === 'REJECTED' ? 'Khách từ chối' : a.status === 'WITHDRAWN' ? 'Nhân viên đã hoàn tác' : a.status === 'PENDING_CUSTOMER' ? 'Chờ khách xác nhận' : 'Biên bản đã thay thế'}
               <span> · Nhân viên #{a.staff_id} lập lúc {formatDateTime(a.created_at)}</span>
               {a.decided_at && <span> · {formatDateTime(a.decided_at)}</span>}
               {a.notes && <p className="mt-1">Ghi chú biên bản: {a.notes}</p>}

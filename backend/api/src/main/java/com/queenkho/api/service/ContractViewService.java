@@ -119,6 +119,8 @@ public class ContractViewService {
         boolean noShowWaived = noShow && countOf(
                 "SELECT COUNT(1) FROM activity_logs WHERE target_entity = 'reservations' AND target_id = ? AND LEFT(action, 9) = '[NO-SHOW]' AND action LIKE '%FM phê duyệt miễn phạt%'",
                 reservation.getId()) > 0;
+        boolean cancelledBeforeHandover = "TERMINATED".equalsIgnoreCase(status)
+                && !noShow && reservation.getCancellationTier() != null;
 
         // Tiền đã đóng (cọc + tiền thuê) từ payment_transactions
         BigDecimal totalPaid = sumPayments(rc, "status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')");
@@ -218,7 +220,9 @@ public class ContractViewService {
             totalOverdueCharge = lateFeeAmount.add(overstayFeeAmount);
             amountBeyondDeposit = orZero(calc.getOverstayDebtAmount());
         }
-        if (!noShow && settled && calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
+        if (cancelledBeforeHandover) {
+            refundAmount = orZero(reservation.getCancellationRefundAmount());
+        } else if (!noShow && settled && calc.getTotalRefundAmount() != null && calc.getTotalRefundAmount().compareTo(refundAmount) > 0) {
             refundAmount = calc.getTotalRefundAmount();
         }
 
@@ -291,6 +295,11 @@ public class ContractViewService {
         dto.setEmergencyUnit(su.isEmergencyUnit());
         dto.setNoShow(noShow);
         dto.setNoShowWaived(noShowWaived);
+        if (cancelledBeforeHandover) {
+            dto.setCancellationTier(reservation.getCancellationTier());
+            dto.setCancellationRefundAmount(orZero(reservation.getCancellationRefundAmount()));
+            dto.setCancellationPenaltyAmount(orZero(reservation.getCancellationPenaltyAmount()));
+        }
         dto.setInsurancePlanLabel(plan.label());
         dto.setInsurancePremiumMonthly(reservation.getInsurancePremiumMonthly());
         dto.setDeclaredGoodsValue(reservation.getDeclaredGoodsValue());

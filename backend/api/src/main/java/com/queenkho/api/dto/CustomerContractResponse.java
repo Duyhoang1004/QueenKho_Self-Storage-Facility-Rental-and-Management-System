@@ -111,6 +111,10 @@ public class CustomerContractResponse {
     private Boolean emergencyUnit;                   // BR-140: hợp đồng đang tạm ở ô kho khẩn cấp
     private Boolean noShow;
     private Boolean noShowWaived;
+    // Hủy đơn khi hợp đồng chưa được bàn giao; không dùng quyết toán trả kho.
+    private String cancellationTier;
+    private BigDecimal cancellationRefundAmount;
+    private BigDecimal cancellationPenaltyAmount;
 
     // === Bóc tách chi tiết thanh toán ban đầu (giá gốc, giảm giá gói, voucher, bảo hiểm) ===
     private BigDecimal baseRentAmount;

@@ -3,6 +3,7 @@ import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import {
   prepareCheckInHandover,
+  withdrawCheckInHandover,
   checkInStaffTask,
   reopenCheckInHandover,
   resolveCheckInIssues,
@@ -127,8 +128,7 @@ const UNIT_STATUS_LABEL = {
 // Mục 6 (họp nhóm 05/11/2026, PR-C7 / BR-132): kiểm tra hàng khách mang vào; biên bản lưu ở prohibitedGoodsCommitted
 const CHECKIN_CHECKLIST = [
   { key: 'identityVerified',           label: 'Đã xác minh CCCD của khách',     hint: 'Đối chiếu CCCD với thông tin đặt chỗ' },
-  { key: 'unitEmpty',                  label: 'Ô kho trống',                    hint: 'Không còn đồ của người thuê trước' },
-  { key: 'unitClean',                  label: 'Ô kho sạch sẽ',                  hint: 'Sàn, tường, cửa đã vệ sinh' },
+  { key: 'unitChecked',                label: 'Đã kiểm tra ô kho',              hint: 'Ô trống, sạch sẽ và sẵn sàng bàn giao' },
   { key: 'lockIntact',                 label: 'Khoá SmartLock nguyên vẹn',      hint: 'Khoá hoạt động, không trầy xước' },
   { key: 'goodsChecked', recordKey: 'prohibitedGoodsCommitted', label: 'Đã kiểm tra hàng mang vào',
     hint: 'Hàng khớp loại khách khai báo, không có chất dễ cháy nổ / hàng cấm' },
@@ -734,7 +734,8 @@ export default function StaffTaskDetailPage() {
   const [pinLoading, setPinLoading] = useState(false);
   const [rfid, setRfid] = useState('');
   const [notes, setNotes] = useState('');
-  const [checkInEvidence, setCheckInEvidence] = useState({}); // one photo per check-in item
+  const [checkInEvidence, setCheckInEvidence] = useState({}); // multiple photos per item
+  const [withdrawingCheckIn, setWithdrawingCheckIn] = useState(false);
   const [reopenNote, setReopenNote] = useState('');
   const [issueNote, setIssueNote] = useState('');
   const [reopenPhotos, setReopenPhotos] = useState([]);
@@ -838,14 +839,15 @@ export default function StaffTaskDetailPage() {
 
   // ================== LOGIC CHECK-IN (UC-18) ==================
   const allCheckInChecked = CHECKIN_CHECKLIST.every(item => checks[item.key]);
-  const allCheckInPhotos = CHECKIN_CHECKLIST.every(item => Boolean(checkInEvidence[item.key]));
+  const allCheckInPhotos = CHECKIN_CHECKLIST.every(item => (checkInEvidence[item.key] || []).length > 0);
+  const checkInPhotoCount = CHECKIN_CHECKLIST.reduce((count, item) => count + (checkInEvidence[item.key] || []).length, 0);
   const goodsValueAssessmentValid = goodsValueAssessment === 'MATCHED'
     ? Number(task?.declaredGoodsValue) > 0
     : Number(assessedGoodsValue) > 0 && Number(assessedGoodsValue) <= 10000000000
       && goodsValueAssessmentNote.trim().length >= 5;
   const canSubmitCheckIn = handover?.status === 'ACCEPTED'
     ? /^\d{6}$/.test(pin) && /^RFID-\d{5}$/.test(rfid) && !submitting
-    : allCheckInChecked && allCheckInPhotos && goodsValueAssessmentValid && notes.length <= NOTES_MAX && !submitting;
+    : allCheckInChecked && allCheckInPhotos && checkInPhotoCount <= 10 && goodsValueAssessmentValid && notes.length <= NOTES_MAX && !submitting;
 
   const handleCheckInSubmit = () => {
     setSubmitting(true);
@@ -2797,6 +2799,23 @@ export default function StaffTaskDetailPage() {
               <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
               <p className="text-sm font-black text-[#4B4B4B]">Không thể lập biên bản</p>
               <p className="text-xs font-bold text-[#777777] max-w-[360px]">{reason}</p>
+              {!isManager && task.taskType === 'CHECK_IN' && handover?.status === 'PENDING_CUSTOMER'
+                && task.staffId === userId && (
+                <button type="button" className="duo-btn-gray px-4 py-2 text-xs disabled:opacity-50"
+                  disabled={withdrawingCheckIn} onClick={async () => {
+                    try {
+                      setWithdrawingCheckIn(true);
+                      await withdrawCheckInHandover(task.id);
+                      await loadTask();
+                      setToast({ type: 'success', message: 'Đã hoàn tác biên bản. Bạn có thể lập bản mới.' });
+                    } catch (err) {
+                      await loadTask();
+                      setToast({ type: 'error', message: err.response?.data?.message || 'Không hoàn tác được biên bản.' });
+                    } finally {
+                      setWithdrawingCheckIn(false);
+                    }
+                  }}>Hoàn tác biên bản đã gửi</button>
+              )}
               {isManager && task.taskType === 'CHECK_IN' && ['PENDING_CUSTOMER', 'REJECTED'].includes(handover?.status) && (
                 <div className="w-full max-w-md flex flex-col gap-3 text-left mt-2">
                   {handover?.status === 'REJECTED' && <div className="rounded-2xl border-2 border-[#FFB4B4] bg-[#FFF4F4] p-4 flex flex-col gap-2">
@@ -3423,7 +3442,7 @@ export default function StaffTaskDetailPage() {
                   onClick={() => {
                     setChecks(CHECKIN_CHECKLIST.reduce((acc, item) => ({ ...acc, [item.key]: true }), {}));
                     setCheckInEvidence(Object.fromEntries(CHECKIN_CHECKLIST.map(item => [item.key,
-                      createMockEvidenceDataUrl(`${item.label} - ô ${task.storageUnitId || ''}`, 'ẢNH MINH CHỨNG CHECK-IN')])));
+                      [createMockEvidenceDataUrl(`${item.label} - ô ${task.storageUnitId || ''}`, 'ẢNH MINH CHỨNG CHECK-IN')]])));
                   }}
                   className="duo-btn-white px-4 py-2 text-xs gap-1.5"
                 >
@@ -3514,17 +3533,17 @@ export default function StaffTaskDetailPage() {
                     </span>
                   </label>
                   <HandoverPhotoPicker
-                    images={checkInEvidence[item.key] ? [checkInEvidence[item.key]] : []}
-                    onChange={images => setCheckInEvidence(prev => ({ ...prev, [item.key]: images[0] || undefined }))}
+                    images={checkInEvidence[item.key] || []}
+                    onChange={images => setCheckInEvidence(prev => ({ ...prev, [item.key]: images }))}
                     label={`Ảnh minh chứng: ${item.label}`}
                     hint={item.key === 'identityVerified' ? 'Nếu chụp CCCD, che bớt số và thông tin không cần thiết.' : 'Chụp đúng mục này tại ô kho đang bàn giao.'}
                     mockLabel={`${item.label} - ô ${task.storageUnitId || ''}`}
-                    maxPhotos={1}
+                    maxPhotos={Math.max((checkInEvidence[item.key] || []).length, 10 - checkInPhotoCount + (checkInEvidence[item.key] || []).length)}
                   />
                   </div>
                 ))}
                 <p className={`text-[11px] font-black ${allCheckInChecked ? 'text-[#58A700]' : 'text-[#AFAFAF]'}`}>
-                  Đã kiểm tra {CHECKIN_CHECKLIST.filter(item => checks[item.key]).length}/{CHECKIN_CHECKLIST.length} mục · Có ảnh {CHECKIN_CHECKLIST.filter(item => checkInEvidence[item.key]).length}/{CHECKIN_CHECKLIST.length}
+                  Đã kiểm tra {CHECKIN_CHECKLIST.filter(item => checks[item.key]).length}/{CHECKIN_CHECKLIST.length} mục · Có ảnh cho {CHECKIN_CHECKLIST.filter(item => (checkInEvidence[item.key] || []).length).length}/{CHECKIN_CHECKLIST.length} mục · Tổng {checkInPhotoCount}/10 ảnh
                 </p>
               </div>
 

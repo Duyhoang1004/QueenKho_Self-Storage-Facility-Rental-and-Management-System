@@ -212,7 +212,8 @@ public class ReservationService {
                                     ? refundEvidenceService.findCompleted(r.getId(), r.getReservationCode(), contractId)
                                     : null,
                             hasUnitIssue(r),
-                            assignedUnit != null && assignedUnit.isEmergencyUnit());
+                            assignedUnit != null && assignedUnit.isEmergencyUnit(),
+                            unitIssueRescheduled(r));
                 })
                 .toList();
     }
@@ -230,6 +231,20 @@ public class ReservationService {
                         "WHERE a.contract_id = c.id AND a.record_type = 'CI_FAULT' " +
                         "AND NOT EXISTS (SELECT 1 FROM handover_records x WHERE x.contract_id = c.id " +
                         "AND x.record_type IN ('CI_REOPEN','CHECK_IN') AND x.id > a.id)))",
+                Integer.class, reservation.getId());
+        return count != null && count > 0;
+    }
+
+    private boolean unitIssueRescheduled(Reservation reservation) {
+        if (!hasUnitIssue(reservation)) return false;
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts c JOIN storage_units su ON su.id = c.storage_unit_id " +
+                "WHERE c.reservation_id = ? " +
+                "AND EXISTS (SELECT 1 FROM handover_records r WHERE r.contract_id = c.id " +
+                "AND r.record_type = 'CI_RESCHEDULE' " +
+                "AND (su.status <> 'MAINTENANCE' OR su.maintenance_since IS NULL OR r.created_at >= su.maintenance_since) " +
+                "AND r.id > COALESCE((SELECT MAX(f.id) FROM handover_records f " +
+                "WHERE f.contract_id = c.id AND f.record_type = 'CI_FAULT'), 0))",
                 Integer.class, reservation.getId());
         return count != null && count > 0;
     }

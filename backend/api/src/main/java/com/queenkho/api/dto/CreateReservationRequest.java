@@ -22,7 +22,8 @@ public class CreateReservationRequest {
     private String cccd;
     private String voucherCode;    // BR-25: bỏ trống = tự áp mã mặc định (NEWKHO)
     private String insurancePlan;  // BR-125: BASIC (mặc định, miễn phí) / ADVANCED / PREMIUM
-    private java.math.BigDecimal declaredGoodsValue; // BR-125: giá trị hàng khai báo, tuỳ chọn
+    private java.math.BigDecimal declaredGoodsValue; // giá trị hàng khai báo bắt buộc
+    private java.util.List<String> goodsValueEvidenceImages; // 1-5 ảnh hoá đơn/biên lai/chứng từ
     private java.util.List<String> goodsCategoryCodes; // BR-131: mã loại hàng (bắt buộc ≥ 1)
     private String goodsDescription;               // BR-131: mô tả hàng (bắt buộc khi chọn "Khác")
 }

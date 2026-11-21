@@ -38,6 +38,8 @@ import java.util.Random;
 
 @Service
 public class ReservationService {
+    private static final String IMAGE_DELIMITER = "\n|||\n";
+    private static final int MAX_GOODS_VALUE_EVIDENCE_IMAGES = 5;
     // Phiên bản "Điều khoản xử lý tài sản khi không trả kho" (nội dung ở FE: components/AssetTermsModal.jsx).
     // Đổi nội dung điều khoản → tăng version để biết khách nào đồng ý bản nào.
     // v2 (27/10/2026): thêm phí chiếm dụng khi quá hạn (PR-Q14), thanh lý sau 15 ngày (PR-Q8), phí lưu giữ hàng (PR-Q15)
@@ -439,7 +441,7 @@ public class ReservationService {
             throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "TERMS_NOT_ACCEPTED",
                     "Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi đặt kho");
         }
-        // BR-125: gói bảo hiểm (bỏ trống = BASIC miễn phí) + giá trị hàng khai báo (tuỳ chọn, căn cứ trần bồi thường)
+        // BR-125: gói bảo hiểm + giá trị/chứng từ hàng bắt buộc, làm căn cứ khi bồi thường.
         String planCode = request.getInsurancePlan() == null || request.getInsurancePlan().isBlank()
                 ? "BASIC" : request.getInsurancePlan().trim().toUpperCase();
         if (!List.of("BASIC", "ADVANCED", "PREMIUM").contains(planCode)) {
@@ -448,9 +450,19 @@ public class ReservationService {
         }
         InsurancePlan insurancePlan = InsurancePlan.of(planCode);
         java.math.BigDecimal declaredValue = request.getDeclaredGoodsValue();
-        if (declaredValue != null && (declaredValue.signum() < 0 || declaredValue.compareTo(InsurancePlan.MAX_DECLARED_VALUE) > 0)) {
+        if (declaredValue == null || declaredValue.signum() <= 0
+                || declaredValue.compareTo(InsurancePlan.MAX_DECLARED_VALUE) > 0) {
             throw new com.queenkho.api.exception.ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Giá trị hàng khai báo phải từ 0 đến 10 tỷ đồng");
+                    "Giá trị hàng gửi kho bắt buộc phải lớn hơn 0 và không vượt quá 10 tỷ đồng");
+        }
+        List<String> valueEvidenceImages = cleanEvidenceImages(request.getGoodsValueEvidenceImages());
+        if (valueEvidenceImages.isEmpty()) {
+            throw new ReservationException(HttpStatus.BAD_REQUEST, "GOODS_VALUE_EVIDENCE_REQUIRED",
+                    "Vui lòng tải ít nhất 1 ảnh hoá đơn, biên lai hoặc chứng từ chứng minh giá trị hàng");
+        }
+        if (valueEvidenceImages.size() > MAX_GOODS_VALUE_EVIDENCE_IMAGES) {
+            throw new ReservationException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Chỉ được tải tối đa " + MAX_GOODS_VALUE_EVIDENCE_IMAGES + " ảnh chứng minh giá trị hàng");
         }
 
         // Kiem tra khach hang
@@ -590,7 +602,8 @@ public class ReservationService {
         reservation.setTermsAcceptedAt(LocalDateTime.now());
         reservation.setInsurancePlan(insurancePlan.name());
         reservation.setInsurancePremiumMonthly(insurancePlan.monthlyPremium());
-        reservation.setDeclaredGoodsValue(declaredValue != null && declaredValue.signum() > 0 ? declaredValue : null);
+        reservation.setDeclaredGoodsValue(declaredValue.setScale(0, java.math.RoundingMode.HALF_UP));
+        reservation.setGoodsValueEvidenceImages(String.join(IMAGE_DELIMITER, valueEvidenceImages));
         reservation.setGoodsCategoryCodes(goodsCodes);
         reservation.setGoodsDescription(request.getGoodsDescription() != null && !request.getGoodsDescription().isBlank()
                 ? request.getGoodsDescription().trim() : null);
@@ -1571,6 +1584,16 @@ public class ReservationService {
         if (value instanceof java.sql.Timestamp ts) return ts.toLocalDateTime();
         if (value instanceof LocalDateTime ldt) return ldt;
         return null;
+    }
+
+    private static List<String> cleanEvidenceImages(List<String> images) {
+        if (images == null) return List.of();
+        return images.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .filter(value -> value.length() <= 2000)
+                .distinct()
+                .toList();
     }
 
     // Hàm phụ trợ: Tính deadline 24h bỏ qua Chủ Nhật

@@ -12,6 +12,7 @@ import { getInsurancePlans } from '../../services/claimService'
 import { getGoodsCategories, TEMPERATURE_LABELS } from '../../services/catalogService'
 import GoodsCategoryDropdown from '../../components/GoodsCategoryDropdown'
 import DateInput from '../../components/DateInput'
+import { uploadImageFile } from '../../services/staffTaskService'
 
 // BR-125: dự phòng khi chưa tải được danh sách gói từ backend (GET /insurance-plans)
 const FALLBACK_PLANS = [
@@ -19,7 +20,7 @@ const FALLBACK_PLANS = [
   { code: 'ADVANCED', label: 'Nâng cao', monthlyPremium: 50000, coverageLimit: 200000000, insured: true },
   { code: 'PREMIUM', label: 'Cao cấp', monthlyPremium: 120000, coverageLimit: 500000000, insured: true },
 ]
-const NO_DECLARATION_CAP = 5000000
+const MAX_GOODS_VALUE_EVIDENCE_IMAGES = 5
 
 function buildUnit(availability, unitTypeId) {
   const slot = (availability.unitTypeAvailability || []).find((item) => item.unitTypeId === unitTypeId)
@@ -84,6 +85,8 @@ export default function CreateReservationPage() {
   const [insurancePlans, setInsurancePlans] = useState(FALLBACK_PLANS)
   const [insurancePlan, setInsurancePlan] = useState('BASIC')
   const [declaredValue, setDeclaredValue] = useState('')
+  const [goodsValueEvidenceImages, setGoodsValueEvidenceImages] = useState([])
+  const [goodsEvidenceUploading, setGoodsEvidenceUploading] = useState(false)
   // BR-131 (05/11/2026): loại hàng gửi kho — BOM quản lý danh mục, thực phẩm chỉ cho kho lạnh / đông
   const [goodsCategories, setGoodsCategories] = useState([])
   const [goodsCodes, setGoodsCodes] = useState([])
@@ -302,9 +305,7 @@ export default function CreateReservationPage() {
   const selectedPlan = insurancePlans.find((p) => p.code === insurancePlan) || insurancePlans[0]
   const insuranceTotal = Number(selectedPlan.monthlyPremium || 0) * selectedMonths
   const declaredNumber = Number(declaredValue || 0)
-  const coverageCap = declaredNumber > 0
-    ? Math.min(declaredNumber, Number(selectedPlan.coverageLimit))
-    : Math.min(NO_DECLARATION_CAP, Number(selectedPlan.coverageLimit))
+  const coverageCap = declaredNumber > 0 ? Math.min(declaredNumber, Number(selectedPlan.coverageLimit)) : 0
   const totalPayment = netRent + deposit - voucherApplied.discount + insuranceTotal
   const needsGoodsNote = goodsCategories.some((c) => c.requiresNote && goodsCodes.includes(c.code))
 
@@ -314,6 +315,31 @@ export default function CreateReservationPage() {
     setErrorField(field)
     if (field) {
       document.getElementById(field)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }
+
+  const handleGoodsEvidenceFiles = async (event) => {
+    const input = event.target
+    const files = Array.from(input.files || [])
+    input.value = ''
+    if (files.length === 0) return
+    if (!isAuthenticated) {
+      fail('Bạn cần đăng nhập trước khi tải chứng từ giá trị hàng.', 'sec-value')
+      return
+    }
+    if (goodsValueEvidenceImages.length + files.length > MAX_GOODS_VALUE_EVIDENCE_IMAGES) {
+      fail(`Chỉ được tải tối đa ${MAX_GOODS_VALUE_EVIDENCE_IMAGES} ảnh chứng từ giá trị hàng.`, 'sec-value')
+      return
+    }
+    try {
+      setGoodsEvidenceUploading(true)
+      const uploaded = await Promise.all(files.map(uploadImageFile))
+      setGoodsValueEvidenceImages(prev => [...prev, ...uploaded.map(item => item.url)])
+      if (errorField === 'sec-value') setErrorField('')
+    } catch (uploadError) {
+      fail(uploadError.response?.data?.message || 'Không thể tải ảnh chứng từ. Vui lòng thử lại.', 'sec-value')
+    } finally {
+      setGoodsEvidenceUploading(false)
     }
   }
 
@@ -338,6 +364,18 @@ export default function CreateReservationPage() {
     // D-18: khoảng ngày đã chọn hết ô
     if (range && !range.available) {
       fail(range.message || 'Không còn ô trống cho khoảng ngày này. Vui lòng chọn ngày nhận khác hoặc gói ngắn hơn.', 'sec-start')
+      return
+    }
+    if (!Number.isFinite(declaredNumber) || declaredNumber <= 0 || declaredNumber > 10000000000) {
+      fail('Vui lòng khai báo giá trị hàng lớn hơn 0 và không vượt quá 10 tỷ đồng.', 'sec-value')
+      return
+    }
+    if (goodsValueEvidenceImages.length === 0) {
+      fail('Vui lòng tải ít nhất 1 ảnh hoá đơn, biên lai hoặc chứng từ chứng minh giá trị hàng.', 'sec-value')
+      return
+    }
+    if (goodsEvidenceUploading) {
+      fail('Ảnh chứng từ đang được tải lên, vui lòng chờ hoàn tất.', 'sec-value')
       return
     }
     if (goodsCodes.length === 0) {
@@ -394,7 +432,8 @@ export default function CreateReservationPage() {
         cccd: customerInfo.cccd?.trim(),
         voucherCode: customVoucherCode || undefined,
         insurancePlan,
-        declaredGoodsValue: declaredNumber > 0 ? declaredNumber : undefined,
+        declaredGoodsValue: declaredNumber,
+        goodsValueEvidenceImages,
         goodsCategoryCodes: goodsCodes,
         goodsDescription: goodsDescription.trim() || undefined,
       })
@@ -430,7 +469,8 @@ export default function CreateReservationPage() {
       } else {
         setHasDebtError(false)
         const field = ['NO_AVAILABILITY', 'START_DATE_TOO_FAR'].includes(errData?.error) ? 'sec-start'
-          : String(errData?.error || '').startsWith('GOODS') ? 'sec-goods' : ''
+          : String(errData?.error || '').startsWith('GOODS_VALUE') ? 'sec-value'
+            : String(errData?.error || '').startsWith('GOODS') ? 'sec-goods' : ''
         fail(errData?.detail || errData?.message || 'Có lỗi xảy ra. Vui lòng thử lại.', field)
       }
       setLoading(false)
@@ -631,7 +671,7 @@ export default function CreateReservationPage() {
             </div>
 
             {/* BR-125: gói bảo hiểm hàng hoá */}
-            <div className="mt-6 pt-5 border-t-2 border-[#E5E5E5] flex flex-col gap-3">
+            <div id="sec-value" className={`mt-6 pt-5 border-t-2 border-[#E5E5E5] flex flex-col gap-3 rounded-2xl ${ring('sec-value')}`}>
               <div>
                 <p className="text-sm font-black text-[#4B4B4B] flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[20px] text-[#1CB0F6]">verified_user</span>
@@ -662,10 +702,11 @@ export default function CreateReservationPage() {
                 ))}
               </div>
               <label className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Giá trị hàng gửi kho (khai báo, tuỳ chọn)</span>
+                <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Giá trị hàng gửi kho <span className="text-[#FF4B4B]">*</span></span>
                 <input
                   type="number"
-                  min="0"
+                  min="1"
+                  max="10000000000"
                   step="100000"
                   value={declaredValue}
                   onChange={(e) => setDeclaredValue(e.target.value)}
@@ -673,10 +714,36 @@ export default function CreateReservationPage() {
                   className="duo-input"
                 />
                 <span className="text-[11px] font-bold text-[#777777]">
-                  Trần bồi thường của bạn: <strong className="text-[#1CB0F6]">{formatVND(coverageCap)}</strong>
-                  {declaredNumber > 0 ? '' : ` — không khai báo giá trị chỉ được tối đa ${formatVND(Math.min(NO_DECLARATION_CAP, Number(selectedPlan.coverageLimit)))}`}
+                  Trần bồi thường dự kiến: <strong className="text-[#1CB0F6]">{formatVND(coverageCap)}</strong> — không vượt giá trị hai bên xác nhận và trần gói.
                 </span>
               </label>
+              <div className="rounded-2xl border-2 border-dashed border-[#84D8FF] bg-[#F4FBFF] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-black uppercase text-[#4B4B4B]">Ảnh chứng minh giá trị hàng <span className="text-[#FF4B4B]">*</span></p>
+                    <p className="text-[10px] font-bold text-[#777777]">Hoá đơn, biên lai hoặc chứng từ mua hàng; staff sẽ đối chiếu lúc check-in.</p>
+                  </div>
+                  <label className={`duo-btn-white px-3 py-2 text-xs gap-1 cursor-pointer ${goodsEvidenceUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <span className="material-symbols-outlined text-[17px] text-[#1CB0F6]">upload_file</span>
+                    {goodsEvidenceUploading ? 'Đang tải...' : `Tải ảnh (${goodsValueEvidenceImages.length}/${MAX_GOODS_VALUE_EVIDENCE_IMAGES})`}
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleGoodsEvidenceFiles} />
+                  </label>
+                </div>
+                {goodsValueEvidenceImages.length === 0 ? (
+                  <p className="mt-3 text-[11px] font-bold text-[#FF4B4B]">Bắt buộc ít nhất 1 ảnh chứng từ.</p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {goodsValueEvidenceImages.map((url, index) => (
+                      <div key={`${url}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-xl border-2 border-[#84D8FF] bg-white">
+                        <img src={url} alt={`Chứng từ ${index + 1}`} className="h-full w-full object-cover" />
+                        <button type="button" onClick={() => setGoodsValueEvidenceImages(prev => prev.filter((_, itemIndex) => itemIndex !== index))}
+                          className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#FF4B4B] text-xs font-black text-white"
+                          aria-label={`Xoá chứng từ ${index + 1}`}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

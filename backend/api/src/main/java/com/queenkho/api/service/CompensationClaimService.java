@@ -239,14 +239,15 @@ public class CompensationClaimService {
      * BR-127: bảng tính bồi thường (hàm thuần — dùng chung cho xem trước và lúc chốt).
      *  - Thiệt hại hàng = giá trị thẩm định × % hư hại (mất hàng = 100%).
      *  - Trần = min(giá trị hàng đã chốt khi check-in, trần gói).
-     *  - Lỗi cơ sở (FACILITY): tiền hàng (≤ trần) + phạt vi phạm 1 tháng giá thuê + hoàn tiền thuê những ngày ô không dùng được.
+     *  - Lỗi cơ sở (FACILITY): tiền hàng (≤ trần) + phạt vi phạm 1 tháng giá thuê (khi chấm dứt HĐ) + hoàn tiền thuê những ngày ô không dùng được.
+     *    Nếu khách tiếp tục thuê (CONTINUE), cơ sở đền tiền hàng thực tế + hoàn ngày gián đoạn, không phạt vi phạm 1 tháng tiền thuê.
      *  - Bất khả kháng (FORCE_MAJEURE): chỉ gói có bảo hiểm mới được bồi thường tiền hàng (≤ trần); + hoàn tiền thuê ngày không dùng được; không phạt.
      *  - Lỗi khách (CUSTOMER): 0.
-     *  Không đền "gấp đôi giá trị hàng" (dễ trục lợi) — phần "đền thêm" là khoản phạt vi phạm 1 tháng tiền thuê.
+     *  Không đền "gấp đôi giá trị hàng" (dễ trục lợi) — phần "đền thêm" là khoản phạt vi phạm 1 tháng tiền thuê khi khách chấm dứt hợp đồng do lỗi cơ sở.
      */
     public static CompensationQuoteResponse compute(String liableParty, String claimType, BigDecimal assessedValue,
                                                     Integer damagePercent, Integer unusableDays, InsurancePlan plan,
-                                                    BigDecimal declaredValue, BigDecimal monthlyPrice) {
+                                                    BigDecimal declaredValue, BigDecimal monthlyPrice, String resolution) {
         BigDecimal assessed = assessedValue != null ? assessedValue.max(BigDecimal.ZERO) : BigDecimal.ZERO;
         int percent = "GOODS_LOSS".equals(claimType) ? 100 : Math.max(0, Math.min(100, damagePercent != null ? damagePercent : 0));
         int days = Math.max(0, unusableDays != null ? unusableDays : 0);
@@ -263,7 +264,8 @@ public class CompensationClaimService {
         switch (liableParty == null ? "" : liableParty) {
             case "FACILITY" -> {
                 goods = goodsLoss.min(cap);
-                penalty = price.setScale(0, RoundingMode.HALF_UP);
+                boolean isTerminate = "TERMINATE".equalsIgnoreCase(resolution);
+                penalty = isTerminate ? price.setScale(0, RoundingMode.HALF_UP) : BigDecimal.ZERO;
                 rentRefund = dailyRent.multiply(BigDecimal.valueOf(days));
                 String capDetail = "";
                 if (goodsLoss.compareTo(cap) > 0) {
@@ -275,7 +277,8 @@ public class CompensationClaimService {
                         capDetail = " (khống chế theo giá trị hàng hai bên đã xác nhận khi check-in " + formatVnd(cap) + ", thiệt hại thực tế " + formatVnd(goodsLoss) + ")";
                     }
                 }
-                explanation = "Lỗi cơ sở: bồi thường tiền hàng " + formatVnd(goods) + capDetail + " + phạt vi phạm 1 tháng tiền thuê (" + formatVnd(penalty) + ")"
+                explanation = "Lỗi cơ sở: bồi thường tiền hàng " + formatVnd(goods) + capDetail
+                        + (isTerminate ? " + phạt vi phạm 1 tháng tiền thuê do chấm dứt HĐ (" + formatVnd(penalty) + ")" : " (tiếp tục thuê — không phạt vi phạm)")
                         + (days > 0 ? " + hoàn tiền thuê " + days + " ngày ô không dùng được (" + formatVnd(rentRefund) + ")" : "") + ".";
             }
             case "FORCE_MAJEURE" -> {
@@ -290,6 +293,12 @@ public class CompensationClaimService {
         BigDecimal total = goods.add(penalty).add(rentRefund);
         boolean claimable = plan.insured() && goods.signum() > 0 && !"CUSTOMER".equals(liableParty);
         return new CompensationQuoteResponse(liableParty, goodsLoss, cap, goods, penalty, rentRefund, total, claimable, explanation);
+    }
+
+    public static CompensationQuoteResponse compute(String liableParty, String claimType, BigDecimal assessedValue,
+                                                    Integer damagePercent, Integer unusableDays, InsurancePlan plan,
+                                                    BigDecimal declaredValue, BigDecimal monthlyPrice) {
+        return compute(liableParty, claimType, assessedValue, damagePercent, unusableDays, plan, declaredValue, monthlyPrice, "TERMINATE");
     }
 
     @Transactional(readOnly = true)
@@ -584,9 +593,10 @@ public class CompensationClaimService {
     private CompensationQuoteResponse computeFor(CompensationClaim claim, ClaimDecisionRequest request) {
         RentalContract contract = claim.getContract();
         BigDecimal price = contract.getStorageUnit().getUnitType().getBasePriceMonthly();
+        String resolution = request.getResolution() != null ? request.getResolution().trim().toUpperCase() : "CONTINUE";
         return compute(request.getLiableParty().trim().toUpperCase(), claim.getClaimType(), request.getAssessedValue(),
                 request.getDamagePercent(), request.getUnusableDays(), planOf(contract),
-                agreedGoodsValue(contract), price);
+                agreedGoodsValue(contract), price, resolution);
     }
 
     /**

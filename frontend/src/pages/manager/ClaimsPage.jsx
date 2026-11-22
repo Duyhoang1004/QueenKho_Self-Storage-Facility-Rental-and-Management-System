@@ -396,7 +396,7 @@ function DecisionSummary({ claim }) {
           </div>
         </div>
       )}
-      <Row label="Phạt vi phạm" value={formatVND(claim.penaltyAmount)} />
+      <Row label={claim.resolution === 'TERMINATE' ? "Phạt vi phạm (hủy HĐ)" : "Phạt vi phạm (tiếp tục thuê: 0đ)"} value={formatVND(claim.penaltyAmount)} />
       <Row label={`Hoàn tiền thuê (${claim.unusableDays ?? 0} ngày)`} value={formatVND(claim.rentRefundAmount)} />
       <Row label="Tổng bồi thường" value={<strong className="text-[#58A700] text-sm">{formatVND(claim.totalCompensation)}</strong>} />
       <Row label="Hướng xử lý" value={claim.resolution === 'TERMINATE' ? 'Chấm dứt hợp đồng không phí phá HĐ' : 'Tiếp tục thuê (có thể chuyển ô cùng loại)'} />
@@ -458,7 +458,7 @@ function DecisionForm({ claim, onDone }) {
         <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#777777]">
           Bên chịu lỗi
           <select value={form.liableParty} onChange={set('liableParty')} className="duo-input text-xs normal-case">
-            <option value="FACILITY">Lỗi do cơ sở — bồi thường hàng + phạt 1 tháng tiền thuê</option>
+            <option value="FACILITY">Lỗi do cơ sở — bồi thường hàng (+ phạt 1 tháng nếu hủy HĐ)</option>
             <option value="FORCE_MAJEURE">Bất khả kháng — chỉ gói có bảo hiểm được tiền hàng</option>
             <option value="CUSTOMER">Lỗi do khách — không bồi thường</option>
           </select>
@@ -525,7 +525,10 @@ function DecisionForm({ claim, onDone }) {
           )}
 
           <Row label="Tiền hàng được bồi thường (≤ trần)" value={<strong className="text-[#4B4B4B]">{formatVND(quote.goodsCompensation)}</strong>} />
-          <Row label="Phạt vi phạm hợp đồng (1 tháng tiền thuê)" value={formatVND(quote.penaltyAmount)} />
+          <Row
+            label={form.resolution === 'TERMINATE' ? "Phạt vi phạm hợp đồng (1 tháng tiền thuê do hủy HĐ)" : "Phạt vi phạm hợp đồng (Tiếp tục thuê: 0đ)"}
+            value={formatVND(quote.penaltyAmount)}
+          />
           <Row label={`Hoàn tiền thuê (${form.unusableDays || 0} ngày ô gián đoạn)`} value={formatVND(quote.rentRefundAmount)} />
 
           <div className="pt-2 border-t-2 border-[#E5E5E5] flex justify-between items-center">

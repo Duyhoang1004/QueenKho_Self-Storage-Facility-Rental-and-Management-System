@@ -223,7 +223,7 @@ export default function IncidentReportModal({
                 <button
                   type="button"
                   onClick={() => {
-                    const skeleton = buildBlankIncidentReport(task);
+                    const skeleton = buildBlankIncidentReport(task, repairStatus);
                     setLocalNote(skeleton);
                     if (onUpdateResolutionNote) {
                       onUpdateResolutionNote(skeleton);

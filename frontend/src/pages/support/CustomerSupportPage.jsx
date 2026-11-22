@@ -975,47 +975,64 @@ export default function CustomerSupportPage() {
                   )}
                 </div>
 
-                {/* Hiển thị Kết quả xử lý từ Nhân viên (khi RESOLVED hoặc CLOSED có resolutionNote) */}
-                {ticket.resolutionNote && (
-                  <div className="rounded-2xl bg-[#D7FFB8]/40 border-2 border-[#58CC02] p-4 flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-wider text-[#58A700] flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-[16px]">verified</span>
-                        Kết quả xử lý từ nhân viên cơ sở
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {ticket.resolvedAt && (
-                          <span className="text-[11px] font-bold text-[#58A700]">
-                            Hoàn tất lúc: {formatDateTime(ticket.resolvedAt)}
+                {/* Hiển thị Kết quả xử lý từ Nhân viên (khi có resolutionNote) */}
+                {ticket.resolutionNote && (() => {
+                  const isEscalatedMaint = ticket.status === 'IN_PROGRESS' && ticket.resolutionNote?.includes('[Chuyển bảo trì chuyên sâu]');
+                  return (
+                    <div className={`rounded-2xl p-4 flex flex-col gap-2 ${
+                      isEscalatedMaint ? 'bg-[#FFF7ED] border-2 border-[#F97316]' : 'bg-[#D7FFB8]/40 border-2 border-[#58CC02]'
+                    }`}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className={`text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                          isEscalatedMaint ? 'text-[#EA580C]' : 'text-[#58A700]'
+                        }`}>
+                          <span className="material-symbols-outlined text-[16px]">
+                            {isEscalatedMaint ? 'engineering' : 'verified'}
                           </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedReportTicket(ticket);
-                            setIncidentReportModalOpen(true);
-                          }}
-                          className="px-3 py-1 rounded-xl bg-white border border-[#58CC02] hover:bg-[#D7FFB8] text-[11px] font-black text-[#2B5300] cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">description</span>
-                          Xem &amp; In biên bản A4
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs md:text-sm font-black text-[#4B4B4B] whitespace-pre-line">
-                      {ticket.resolutionNote}
-                    </p>
-                    {ticket.resolutionImages?.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-[#86EFAC] flex flex-col gap-1.5">
-                        <span className="text-[11px] font-black uppercase text-[#15803D] flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[16px]">photo_library</span>
-                          Hình ảnh bằng chứng khắc phục / kiểm tra của nhân viên:
+                          {isEscalatedMaint ? 'Biên bản kiểm tra — Đang bảo trì kỹ thuật chuyên sâu' : 'Kết quả xử lý từ nhân viên cơ sở'}
                         </span>
-                        <PhotoGrid images={ticket.resolutionImages} />
+                        <div className="flex items-center gap-2">
+                          {ticket.resolvedAt && !isEscalatedMaint && (
+                            <span className="text-[11px] font-bold text-[#58A700]">
+                              Hoàn tất lúc: {formatDateTime(ticket.resolvedAt)}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReportTicket(ticket);
+                              setIncidentReportModalOpen(true);
+                            }}
+                            className={`px-3 py-1 rounded-xl bg-white border text-[11px] font-black cursor-pointer flex items-center gap-1.5 transition-colors shadow-2xs ${
+                              isEscalatedMaint
+                                ? 'border-[#F97316] hover:bg-[#FFEDD5] text-[#C2410C]'
+                                : 'border-[#58CC02] hover:bg-[#D7FFB8] text-[#2B5300]'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">description</span>
+                            Xem &amp; In biên bản A4
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )}
+                      <p className="text-xs md:text-sm font-black text-[#4B4B4B] whitespace-pre-line">
+                        {ticket.resolutionNote}
+                      </p>
+                      {ticket.resolutionImages?.length > 0 && (
+                        <div className={`mt-2 pt-2 border-t flex flex-col gap-1.5 ${
+                          isEscalatedMaint ? 'border-[#FDBA74]' : 'border-[#86EFAC]'
+                        }`}>
+                          <span className={`text-[11px] font-black uppercase flex items-center gap-1 ${
+                            isEscalatedMaint ? 'text-[#C2410C]' : 'text-[#15803D]'
+                          }`}>
+                            <span className="material-symbols-outlined text-[16px]">photo_library</span>
+                            Hình ảnh bằng chứng khắc phục / kiểm tra của nhân viên:
+                          </span>
+                          <PhotoGrid images={ticket.resolutionImages} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* PR-52: Khối phản hồi của khách khi ticket ở trạng thái RESOLVED */}
                 {isResolved && (

@@ -107,6 +107,12 @@ export async function resetSupportContractPin(taskId, staffId) {
   return res.data
 }
 
+// UC-27 / PR-S7: Staff cấp đổi thẻ từ RFID mới cho ticket LOCK_ISSUE
+export async function reissueSupportContractRfid(taskId, staffId, rfidCardCode) {
+  const res = await api.post(`/staff-tasks/${taskId}/reissue-rfid`, { rfidCardCode }, { params: { staffId } })
+  return res.data
+}
+
 // UC-27 / PR-S4: Facility Manager gia hạn task SUPPORT đã quá hạn (giữ người nhận)
 export async function extendSupportTask(taskId, managerId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/extend-support`, payload, { params: { managerId } })

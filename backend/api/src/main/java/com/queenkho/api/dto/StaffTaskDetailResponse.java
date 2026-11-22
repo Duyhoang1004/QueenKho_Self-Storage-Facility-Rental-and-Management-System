@@ -103,6 +103,9 @@ public class StaffTaskDetailResponse {
     private LocalDateTime ticketResolvedAt;
     private LocalDateTime ticketClosedAt;
 
+    // PR-S5: Task bảo trì chuyên sâu được kích hoạt từ task hỗ trợ này (nếu có)
+    private Integer escalatedMaintenanceTaskId;
+
     // BR-126: task hỗ trợ của ticket hàng hư / mất = kiểm tra hiện trường cho hồ sơ bồi thường
     private CompensationClaimResponse claim;
 

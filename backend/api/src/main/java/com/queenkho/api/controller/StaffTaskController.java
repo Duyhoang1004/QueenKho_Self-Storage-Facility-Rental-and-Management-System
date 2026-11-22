@@ -179,9 +179,12 @@ public class StaffTaskController {
                                             @RequestParam(required = false) Integer staffId,
                                             @RequestBody(required = false) ResolveSupportTaskRequest request) {
         try {
-            return ResponseEntity.ok(staffTaskService.resolveSupportTask(id, staffId, request));
+            Integer effectiveStaffId = staffId != null ? staffId : (currentUser != null && currentUser.require() != null ? currentUser.require().id() : null);
+            return ResponseEntity.ok(staffTaskService.resolveSupportTask(id, effectiveStaffId, request));
         } catch (StaffTaskException e) {
             return toError(e);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "RESOLVE_FAILED", "message", e.getMessage() != null ? e.getMessage() : "Lỗi khi xử lý task hỗ trợ"));
         }
     }
 

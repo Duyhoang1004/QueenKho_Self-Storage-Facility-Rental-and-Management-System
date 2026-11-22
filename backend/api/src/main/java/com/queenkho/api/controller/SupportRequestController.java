@@ -74,17 +74,19 @@ public class SupportRequestController {
     }
 
     // ──────────────────────────────────────────────────────
-    // UC-26 API 4: Khách hủy ticket còn OPEN → CLOSED, task CANCELLED (PR-S3)
-    // POST /api/v1/support-requests/{id}/cancel?customerId=...
+    // UC-26 API 4: Khách hủy ticket OPEN / IN_PROGRESS → CLOSED, task CANCELLED (PR-S3, PR-S3a)
+    // POST /api/v1/support-requests/{id}/cancel?customerId=...   body (tuỳ chọn): { "reason": "..." }
     // ──────────────────────────────────────────────────────
     @PostMapping("/{id}/cancel")
     public ResponseEntity<?> cancelTicket(
             @PathVariable Integer id,
             @RequestParam(required = false) Integer customerId,
-            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId,
+            @RequestBody(required = false) Map<String, String> body) {
         try {
             Integer effectiveCustomerId = customerId != null ? customerId : headerUserId;
-            return ResponseEntity.ok(supportRequestService.cancelTicket(id, effectiveCustomerId));
+            String reason = body != null ? body.get("reason") : null;
+            return ResponseEntity.ok(supportRequestService.cancelTicket(id, effectiveCustomerId, reason));
         } catch (StaffTaskException e) {
             return toError(e);
         }

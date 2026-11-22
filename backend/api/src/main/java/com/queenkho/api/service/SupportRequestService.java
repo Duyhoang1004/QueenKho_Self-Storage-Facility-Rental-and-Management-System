@@ -270,16 +270,35 @@ public class SupportRequestService {
     }
 
     // ──────────────────────────────────────────────────────
-    // UC-26 / PR-S3: Khách hủy ticket còn OPEN → CLOSED, task CANCELLED
+    // UC-26 / PR-S3: Khách hủy ticket → CLOSED, task CANCELLED
+    // (sửa 22/11/2026 — PR-S3a) cho huỷ cả khi đang xử lý (IN_PROGRESS), bắt buộc lý do 10–300 ký tự; task ghi lý do
+    // + báo nhân viên đang làm. Hồ sơ bồi thường đã duyệt / đã chi trả thì không huỷ được.
     // ──────────────────────────────────────────────────────
     @Transactional
     public SupportRequestResponse cancelTicket(Integer ticketId, Integer customerId) {
+        return cancelTicket(ticketId, customerId, null);
+    }
+
+    @Transactional
+    public SupportRequestResponse cancelTicket(Integer ticketId, Integer customerId, String reason) {
         User customer = validateCustomer(customerId);
         SupportRequest ticket = getOwnedTicket(ticketId, customer.getId());
 
-        if (!"OPEN".equals(ticket.getStatus())) {
+        boolean inProgress = "IN_PROGRESS".equals(ticket.getStatus());
+        if (!"OPEN".equals(ticket.getStatus()) && !inProgress) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TICKET_NOT_CANCELLABLE",
-                    "Chỉ có thể hủy yêu cầu khi còn ở trạng thái Chờ tiếp nhận (OPEN). Hiện tại: " + ticket.getStatus());
+                    "Chỉ huỷ được yêu cầu đang chờ tiếp nhận hoặc đang xử lý. Hiện tại: " + ticket.getStatus());
+        }
+        String r = reason != null ? reason.trim() : "";
+        if (inProgress && (r.length() < 10 || r.length() > 300)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "CANCEL_REASON_REQUIRED",
+                    "Yêu cầu đang được nhân viên xử lý — vui lòng ghi lý do huỷ (10–300 ký tự)");
+        }
+        boolean claimLocked = compensationClaimService.byTicketIds(List.of(ticket.getId())).values().stream()
+                .anyMatch(c -> List.of("APPROVED", "PAID").contains(c.getStatus()));
+        if (claimLocked) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TICKET_NOT_CANCELLABLE",
+                    "Hồ sơ bồi thường của yêu cầu này đã được duyệt / chi trả, không huỷ được");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -289,15 +308,17 @@ public class SupportRequestService {
 
         // Hủy các task SUPPORT đang mở của ticket này
         List<StaffTask> openTasks = staffTaskRepository.findBySupportRequestIdAndStatusIn(ticket.getId(), OPEN_TASK_STATUSES);
+        String taskReason = "Khách huỷ yêu cầu " + ticket.getTicketCode() + (r.isEmpty() ? "" : ": " + r);
         for (StaffTask t : openTasks) {
-            t.setStatus("CANCELLED");
+            staffTaskService.cancelTaskWithReason(t, taskReason); // PR-T2: lý do + báo nhân viên đang làm
         }
         staffTaskRepository.saveAll(openTasks);
         compensationClaimService.withdrawForTicket(ticket.getId()); // BR-126: rút hồ sơ bồi thường đi kèm (nếu có)
 
         activityLogService.log(
                 customer.getId(),
-                "[SUPPORT_CANCEL] Khách " + customer.getFullName() + " hủy ticket hỗ trợ " + ticket.getTicketCode(),
+                "[SUPPORT_CANCEL] Khách " + customer.getFullName() + " hủy ticket hỗ trợ " + ticket.getTicketCode()
+                        + (r.isEmpty() ? "" : " — " + r),
                 "support_requests",
                 String.valueOf(ticket.getId())
         );

@@ -223,12 +223,35 @@ public class StaffTaskService {
     // khi xử lý No-Show
     @Transactional
     public void cancelOpenTasks(Integer contractId, String taskType) {
+        cancelOpenTasks(contractId, taskType, null);
+    }
+
+    /**
+     * PR-T2 (22/11/2026): huỷ task đang mở kèm lý do (vd khách huỷ đơn) — task vẫn còn trên bảng ở cột "Đã đóng"
+     * với nhãn lý do, nhân viên đang giữ task nhận thông báo.
+     */
+    @Transactional
+    public void cancelOpenTasks(Integer contractId, String taskType, String reason) {
         List<StaffTask> tasks = staffTaskRepository
                 .findByContractIdAndTaskTypeAndStatusIn(contractId, taskType, OPEN_STATUSES);
         for (StaffTask task : tasks) {
-            task.setStatus("CANCELLED");
+            cancelTaskWithReason(task, reason);
         }
         staffTaskRepository.saveAll(tasks);
+    }
+
+    /** PR-T2: đánh dấu 1 task CANCELLED + lý do + báo nhân viên đang giữ (không lưu — người gọi tự save) */
+    public void cancelTaskWithReason(StaffTask task, String reason) {
+        task.setStatus("CANCELLED");
+        if (reason == null || reason.isBlank()) return;
+        String r = reason.trim();
+        task.setCancelReason(r.length() > 300 ? r.substring(0, 297) + "..." : r);
+        if (notificationService != null && task.getStaff() != null) {
+            notificationService.notifyStaff(task.getStaff().getId(),
+                    "Task #" + task.getId() + " đã huỷ",
+                    r + ". Bạn không cần xử lý task này nữa.",
+                    task.getTaskType(), "/staff/tasks/" + task.getId());
+        }
     }
 
     // PR-S8: Hợp đồng TERMINATED / LIQUIDATED -> đóng mọi ticket hỗ trợ còn mở và hủy task SUPPORT đang mở
@@ -434,6 +457,7 @@ public class StaffTaskService {
 
         return StaffTaskResponse.builder()
                 .id(task.getId())
+                .cancelReason(task.getCancelReason())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -2796,6 +2820,7 @@ public class StaffTaskService {
 
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
+                .cancelReason(task.getCancelReason())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -3144,7 +3169,7 @@ public class StaffTaskService {
                     + extraNote;
         }
         if (StaffTask.RECEIPT_WAITING.equals(task.getReceiptStatus())) {
-            how += " Vui lòng vào mục Thanh toán bấm \"Đã nhận được\" hoặc \"Chưa nhận được\" (tự xác nhận sau "
+            how += " Vui lòng vào Kho của tôi (hoặc mục Thanh toán) bấm \"Đã nhận được\" hoặc \"Chưa nhận được\" (tự xác nhận sau "
                     + RefundReceiptService.AUTO_CONFIRM_DAYS + " ngày).";
         }
         notifyCustomerRefunded(task, how);
@@ -3275,9 +3300,11 @@ public class StaffTaskService {
         notificationService.notifyCustomer(
                 customerId,
                 "Đã hoàn tiền" + (code != null ? " — " + code : ""),
-                detail + " Vui lòng kiểm tra tài khoản / biên nhận; nếu chưa nhận được, hãy liên hệ hotline cơ sở.",
+                detail,
                 "REFUND",
-                reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId : "/kho-cua-toi");
+                // PR-O32: đơn huỷ chưa có hợp đồng → mở Kho của tôi, tô sáng đúng đơn (có nút xác nhận nhận tiền)
+                reservationId != null ? "/kho-cua-toi/hop-dong/" + reservationId
+                        : (code != null ? "/kho-cua-toi?highlightCode=" + code : "/kho-cua-toi"));
     }
 
     // Xác định giao dịch REFUND của 1 task theo thứ tự chắc chắn nhất:
@@ -3441,33 +3468,64 @@ public class StaffTaskService {
                 : (cycleMonths >= 12 ? 15 : cycleMonths >= 6 ? 10 : cycleMonths >= 3 ? 5 : 0);
         BigDecimal rentPaid = PricingService.discountedRent(baseMonthlyPrice, cycleMonths, discountPercent);
 
-        // PR-O2c: kỳ hiện tại = kỳ gia hạn gần nhất (nếu có) → tính trả sớm từ đầu kỳ đó, không từ ngày ký HĐ
+        // PR-O2c (sửa 22/11/2026 — PR-O2d): các kỳ đã trả = kỳ gốc + từng lần gia hạn, xếp lùi từ end_date.
+        // Kỳ hiện tại là kỳ CHỨA ngày trả kho → tính trả sớm PR-O2 trong kỳ đó. Kỳ gia hạn CHƯA bắt đầu được hoàn đủ
+        // (gồm bảo hiểm), không thu phí phá HĐ. Trước đây luôn coi kỳ gia hạn gần nhất là kỳ hiện tại → khách gia hạn rồi
+        // trả kho ngay trong kỳ gốc bị mất cả tiền thuê kỳ gốc lẫn tiền gia hạn.
         LocalDate periodStart = startDate;
         int periodMonths = cycleMonths;
+        BigDecimal futurePaid = BigDecimal.ZERO;
+        int futureMonths = 0;
+        LocalDate futureStart = null;
         try {
-            List<Map<String, Object>> latestRenewal = jdbcTemplate.queryForList(
-                    "SELECT TOP 1 amount, renewal_months FROM payment_transactions WHERE contract_id = ? " +
-                            "AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' ORDER BY id DESC",
+            List<Map<String, Object>> renewals = jdbcTemplate.queryForList(
+                    "SELECT amount, renewal_months FROM payment_transactions WHERE contract_id = ? " +
+                            "AND payment_type = 'MONTHLY_RENT' AND status = 'SUCCESS' AND renewal_months > 0 ORDER BY id DESC",
                     contract.getId());
-            BigDecimal latestMonthlyRent = latestRenewal.isEmpty() ? null : (BigDecimal) latestRenewal.get(0).get("amount");
-            if (!latestRenewal.isEmpty() && latestRenewal.get(0).get("renewal_months") instanceof Number rm && rm.intValue() > 0) {
-                periodMonths = rm.intValue();
-                periodStart = endDate.minusMonths(periodMonths);
+            BigDecimal renewalsTotal = BigDecimal.ZERO;
+            for (Map<String, Object> r : renewals) {
+                if (r.get("amount") instanceof BigDecimal a) renewalsTotal = renewalsTotal.add(a);
             }
-            if (latestMonthlyRent != null && latestMonthlyRent.compareTo(BigDecimal.ZERO) > 0) {
-                rentPaid = latestMonthlyRent;
-            } else {
+            LocalDate cursor = endDate;
+            boolean currentIsRenewal = false;
+            for (Map<String, Object> r : renewals) {
+                int m = r.get("renewal_months") instanceof Number n ? n.intValue() : 0;
+                BigDecimal amount = r.get("amount") instanceof BigDecimal a ? a : BigDecimal.ZERO;
+                if (m <= 0) continue;
+                LocalDate start = cursor.minusMonths(m);
+                if (!actualDate.isAfter(start)) {
+                    // kỳ gia hạn chưa bắt đầu tại ngày trả kho
+                    futurePaid = futurePaid.add(amount);
+                    futureMonths += m;
+                    futureStart = start;
+                    cursor = start;
+                    continue;
+                }
+                periodStart = start;
+                periodMonths = m;
+                rentPaid = amount;
+                currentIsRenewal = true;
+                break;
+            }
+            if (!currentIsRenewal) {
+                // Kỳ gốc: tiền đã đóng lúc đặt (DEPOSIT + MONTHLY_RENT không phải gia hạn) − cọc
+                if (!renewals.isEmpty()) {
+                    periodMonths = Math.max(resMonths, billMonths);
+                    periodStart = cursor.minusMonths(periodMonths);
+                }
                 Integer resId = contract.getReservation() != null ? contract.getReservation().getId() : -1;
                 BigDecimal totalPaid = jdbcTemplate.queryForObject(
                         "SELECT COALESCE(SUM(amount), 0) FROM payment_transactions " +
                                 "WHERE (contract_id = ? OR reservation_id = ?) AND status = 'SUCCESS' AND payment_type IN ('DEPOSIT', 'MONTHLY_RENT')",
                         BigDecimal.class, contract.getId(), resId);
-                if (totalPaid != null && totalPaid.compareTo(depositHeld) > 0) {
-                    rentPaid = totalPaid.subtract(depositHeld);
+                BigDecimal originalRent = totalPaid != null ? totalPaid.subtract(depositHeld).subtract(renewalsTotal) : BigDecimal.ZERO;
+                if (originalRent.compareTo(BigDecimal.ZERO) > 0) {
+                    rentPaid = originalRent;
                 }
             }
         } catch (Exception ignored) {
         }
+        LocalDate periodEnd = periodStart.plusMonths(periodMonths);
 
         // D-22: tách tiền thuê kỳ hiện tại và phí bảo hiểm (BR-125) để bảng "Đã đóng" khớp màn hợp đồng
         BigDecimal insurancePaid = PricingService.insurancePremiumMonthly(contract)
@@ -3481,7 +3539,7 @@ public class StaffTaskService {
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
 
         if (isEarlyCheckout && Boolean.TRUE.equals(contract.getFaultTermination())) {
-            EarlyReturn early = faultTerminationReturn(periodStart, endDate, actualDate, rentPaid);
+            EarlyReturn early = faultTerminationReturn(periodStart, periodEnd.isAfter(endDate) ? endDate : periodEnd, actualDate, rentPaid);
             usedMonths = early.usedMonths();
             breakFee = BigDecimal.ZERO;
             earlyRentRefund = early.refund();
@@ -3493,6 +3551,10 @@ public class StaffTaskService {
             usedMonths = early.usedMonths();
             breakFee = early.breakFee();
             earlyRentRefund = early.refund();
+        }
+        // PR-O2d: cộng tiền các kỳ gia hạn chưa bắt đầu (hoàn đủ)
+        if (isEarlyCheckout && futurePaid.signum() > 0) {
+            earlyRentRefund = earlyRentRefund.add(futurePaid);
         }
 
         // 2. Kiểm tra Ân hạn (PR-O14, D-11) & Phí trễ hạn (PR-Q3): ngày nghiệm thu > endDate
@@ -3569,8 +3631,12 @@ public class StaffTaskService {
         }
         desc.append(" => Cọc hoàn: ").append(vndFmt.format(depositRefund)).append("đ");
 
-        if (earlyRentRefund.compareTo(BigDecimal.ZERO) > 0) {
-            desc.append(" + Hoàn tiền thuê trả sớm: ").append(vndFmt.format(earlyRentRefund)).append("đ")
+        if (futurePaid.signum() > 0) {
+            desc.append(" + Hoàn đủ ").append(futureMonths).append("T gia hạn chưa bắt đầu: ")
+                    .append(vndFmt.format(futurePaid)).append("đ");
+        }
+        if (earlyRentRefund.subtract(futurePaid).compareTo(BigDecimal.ZERO) > 0) {
+            desc.append(" + Hoàn tiền thuê trả sớm: ").append(vndFmt.format(earlyRentRefund.subtract(futurePaid))).append("đ")
                     .append(" (Đã trả ").append(periodMonths).append("T: ").append(vndFmt.format(rentPaid)).append("đ")
                     .append(" - Đã dùng ").append(usedMonths).append("T: ").append(vndFmt.format(baseMonthlyPrice.multiply(BigDecimal.valueOf(usedMonths)))).append("đ")
                     .append(" - Phí hủy HĐ: ").append(vndFmt.format(breakFee)).append("đ)");
@@ -3587,12 +3653,16 @@ public class StaffTaskService {
         // D-22: bảng "Bạn đã đóng − Cơ sở giữ lại = Hoàn" — dùng chung với bảng quyết toán sau nghiệm thu
         boolean fault = isEarlyCheckout && Boolean.TRUE.equals(contract.getFaultTermination());
         RefundBreakdown.RentBasis rentBasis = new RefundBreakdown.RentBasis(rentPaidNet, insurancePaid, periodMonths,
-                periodStart, isEarlyCheckout, fault, usedMonths, baseMonthlyPrice, breakFee, daysPast);
+                periodStart, isEarlyCheckout, fault, usedMonths, baseMonthlyPrice, breakFee, daysPast,
+                futurePaid, futureMonths, futureStart);
         List<MoneyLine> lines = RefundBreakdown.lines(depositHeld, rentBasis, earlyRentRefund, totalDamageCost,
                 feeOffset, overstayFee, BigDecimal.ZERO);
         RefundBreakdown.Totals totals = RefundBreakdown.totals(lines);
 
         return RefundCalculationResult.builder()
+                .futurePaid(futurePaid)
+                .futureMonths(futureMonths)
+                .futureStart(futureStart)
                 .rentPaidNet(rentPaidNet)
                 .insurancePaid(insurancePaid)
                 .periodMonths(periodMonths)

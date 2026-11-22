@@ -3,6 +3,7 @@ import { getMyRefundReceipts, confirmRefundReceipt, disputeRefundReceipt } from 
 
 // D-22 (PR-O25 → PR-O27): khoản hoàn cơ sở đã chi — khách bấm "Đã nhận được" / "Chưa nhận được"
 // contractId: chỉ khoản hoàn của 1 hợp đồng; onlyPending: chỉ hiện khoản đang chờ / đang xử lý
+// 22/11/2026: reservationCode — chỉ khoản hoàn của 1 đơn (đơn huỷ chưa có hợp đồng); onChanged — báo trang cha tải lại
 
 function formatVND(v) {
   if (v == null) return '—'
@@ -24,7 +25,7 @@ const STATUS = {
   AUTO_CONFIRMED: { label: 'Đã nhận (tự xác nhận)', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' },
 }
 
-export default function RefundReceiptList({ contractId, onlyPending = false, title = 'Tiền hoàn của bạn' }) {
+export default function RefundReceiptList({ contractId, reservationCode, onlyPending = false, title = 'Tiền hoàn của bạn', onChanged }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [reloadKey, setReloadKey] = useState(0)
@@ -42,7 +43,8 @@ export default function RefundReceiptList({ contractId, onlyPending = false, tit
     return () => { cancelled = true }
   }, [contractId, reloadKey])
 
-  const shown = onlyPending ? items.filter((i) => ['WAITING_CUSTOMER', 'DISPUTED'].includes(i.receiptStatus)) : items
+  const byOrder = reservationCode ? items.filter((i) => i.reservationCode === reservationCode) : items
+  const shown = onlyPending ? byOrder.filter((i) => ['WAITING_CUSTOMER', 'DISPUTED'].includes(i.receiptStatus)) : byOrder
   if (loading || shown.length === 0) return null
 
   const act = async (fn, ok) => {
@@ -54,6 +56,7 @@ export default function RefundReceiptList({ contractId, onlyPending = false, tit
       setDisputeId(null)
       setReason('')
       setReloadKey((k) => k + 1)
+      if (onChanged) onChanged()
     } catch (err) {
       setMessage({ ok: false, text: err.response?.data?.message || 'Thao tác không thành công.' })
     } finally {

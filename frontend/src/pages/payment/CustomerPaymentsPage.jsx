@@ -5,6 +5,7 @@ import { createVnpayDebt } from '../../services/vnpayService'
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar'
 import TimeFilterBar from '../../components/TimeFilterBar'
 import RefundReceiptList from '../../components/RefundReceiptList'
+import PaymentConfirmModal from '../../components/PaymentConfirmModal'
 import { applyTimeFilter, makeTimeFilter } from '../../utils/timeFilter'
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee'
 
@@ -582,6 +583,7 @@ export default function CustomerPaymentsPage() {
   const [result, setResult] = useState({ tick: -1, data: null, error: '' })
   const state = { loading: result.tick !== reloadTick, data: result.data, error: result.error }
   const [payingId, setPayingId] = useState(null)
+  const [confirmDebt, setConfirmDebt] = useState(null) // PR-B12: xác nhận số tiền trước khi trả nợ qua VNPAY
   const [payError, setPayError] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [showFailed, setShowFailed] = useState(false)
@@ -628,7 +630,12 @@ export default function CustomerPaymentsPage() {
     return () => { cancelled = true }
   }, [reloadTick])
 
-  const handlePayDebt = async (debt) => {
+  const handlePayDebt = (debt) => {
+    setPayError('')
+    setConfirmDebt(debt)
+  }
+
+  const doPayDebt = async (debt) => {
     setPayingId(debt.id)
     setPayError('')
     try {
@@ -637,6 +644,7 @@ export default function CustomerPaymentsPage() {
     } catch (err) {
       setPayError(err.response?.data?.message || 'Không tạo được link thanh toán, vui lòng thử lại.')
       setPayingId(null)
+      setConfirmDebt(null)
     }
   }
 
@@ -931,6 +939,16 @@ export default function CustomerPaymentsPage() {
       <PaymentReceiptModal
         transaction={selectedTx}
         onClose={() => setSelectedTx(null)}
+      />
+      <PaymentConfirmModal
+        open={Boolean(confirmDebt)}
+        title="Xác nhận thanh toán khoản nợ"
+        subtitle={confirmDebt ? [confirmDebt.facilityName, confirmDebt.unitTypeName].filter(Boolean).join(' · ') : ''}
+        lines={confirmDebt ? [{ label: confirmDebt.transactionCode?.startsWith('MV-') ? 'Phí dọn & di dời hàng vượt tiền cọc' : 'Khoản phí phát sinh khi trả kho', amount: confirmDebt.amount }] : []}
+        total={confirmDebt?.amount}
+        submitting={Boolean(confirmDebt) && payingId === confirmDebt?.id}
+        onConfirm={() => doPayDebt(confirmDebt)}
+        onCancel={() => setConfirmDebt(null)}
       />
     </div>
   )

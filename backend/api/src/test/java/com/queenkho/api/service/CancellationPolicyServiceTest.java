@@ -151,4 +151,36 @@ class CancellationPolicyServiceTest {
         assertEquals(0, paid.compareTo(result.refundAmount()));
         assertEquals(0, BigDecimal.ZERO.compareTo(result.penaltyAmount()));
     }
+
+    @Test
+    @DisplayName("PR-X5: khách từ chối biên bản bàn giao 2 lần → huỷ hoàn 100% (cơ sở không bàn giao được)")
+    void handoverFailedRefundsEverything() {
+        var result = policy.calculate(paid, deposit, months, appointment, appointment.minusDays(3),
+                appointment.plusHours(5), false, true, true);
+
+        assertEquals("HANDOVER_FAILED", result.tier());
+        assertEquals(0, paid.compareTo(result.refundAmount()));
+        assertEquals(0, BigDecimal.ZERO.compareTo(result.penaltyAmount()));
+    }
+
+    @Test
+    @DisplayName("PR-X5: khách đã tới, bàn giao dở mà huỷ sau giờ hẹn → giữ 100% cọc, không tính như No-Show")
+    void customerShowedUpIsNotNoShow() {
+        var result = policy.calculate(paid, deposit, months, appointment, appointment.minusDays(3),
+                appointment.plusHours(5), false, true, false);
+
+        assertEquals("HANDOVER_IN_PROGRESS", result.tier());
+        assertEquals(0, deposit.compareTo(result.penaltyAmount()));
+        assertEquals(0, new BigDecimal("3000000").compareTo(result.refundAmount()));
+    }
+
+    @Test
+    @DisplayName("PR-X5: chưa có biên bản nào mà huỷ sau giờ hẹn → vẫn giữ cọc + 1 tháng như No-Show")
+    void noHandoverAfterAppointmentStillNoShowRule() {
+        var result = policy.calculate(paid, deposit, months, appointment, appointment.minusDays(3),
+                appointment.plusHours(5), false, false, false);
+
+        assertEquals("AFTER_APPOINTMENT", result.tier());
+        assertEquals(0, new BigDecimal("3000000").compareTo(result.penaltyAmount()));
+    }
 }

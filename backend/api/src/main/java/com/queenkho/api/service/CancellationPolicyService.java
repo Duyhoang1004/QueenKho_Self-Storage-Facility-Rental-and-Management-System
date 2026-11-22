@@ -24,6 +24,9 @@ public class CancellationPolicyService {
     // PR-X1: No-Show / hủy sau giờ hẹn giữ thêm số tháng tiền thuê này (ngoài cọc)
     public static final int NO_SHOW_RENT_MONTHS_KEPT = 1;
 
+    /** PR-X5: số lần khách từ chối biên bản bàn giao để coi như cơ sở không bàn giao được ô → huỷ hoàn 100% */
+    public static final int HANDOVER_REJECTIONS_FOR_FREE_CANCEL = 2;
+
     public Decision calculate(BigDecimal totalPaid,
                               BigDecimal depositAmount,
                               int durationMonths,
@@ -31,6 +34,23 @@ public class CancellationPolicyService {
                               LocalDateTime paymentSuccessAt,
                               LocalDateTime cancelledAt,
                               boolean facilityUnableToServe) {
+        return calculate(totalPaid, depositAmount, durationMonths, appointmentTime, paymentSuccessAt, cancelledAt,
+                facilityUnableToServe, false, false);
+    }
+
+    /**
+     * @param customerShowedUp  (22/11/2026, PR-X5) đã có biên bản bàn giao → khách có tới, không bao giờ tính như No-Show
+     * @param handoverFailed    khách đã từ chối biên bản ≥ {@link #HANDOVER_REJECTIONS_FOR_FREE_CANCEL} lần → hoàn 100%
+     */
+    public Decision calculate(BigDecimal totalPaid,
+                              BigDecimal depositAmount,
+                              int durationMonths,
+                              LocalDateTime appointmentTime,
+                              LocalDateTime paymentSuccessAt,
+                              LocalDateTime cancelledAt,
+                              boolean facilityUnableToServe,
+                              boolean customerShowedUp,
+                              boolean handoverFailed) {
         BigDecimal paid = money(totalPaid);
         BigDecimal deposit = money(depositAmount).min(paid);
         long minutesUntilCheckIn = appointmentTime == null
@@ -44,6 +64,12 @@ public class CancellationPolicyService {
 
         if (facilityUnableToServe) {
             return decision("FACILITY_FAULT", "Cơ sở không thể bàn giao ô đúng hẹn", paid, deposit,
+                    BigDecimal.ZERO, paid, minutesUntilCheckIn, false, null);
+        }
+
+        if (handoverFailed) {
+            return decision("HANDOVER_FAILED", "Bàn giao không thành sau " + HANDOVER_REJECTIONS_FOR_FREE_CANCEL
+                            + " lần khách từ chối biên bản, hoàn 100%", paid, deposit,
                     BigDecimal.ZERO, paid, minutesUntilCheckIn, false, null);
         }
 
@@ -76,6 +102,13 @@ public class CancellationPolicyService {
             BigDecimal penalty = percentage(deposit, LATE_DEPOSIT_PENALTY_PERCENT).min(paid);
             return decision("FULL_DEPOSIT", "Hủy dưới 24 giờ trước giờ hẹn, giữ 100% cọc", paid, deposit,
                     penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
+        }
+
+        // PR-X5: khách đã tới và đang bàn giao dở (có biên bản) → không phải No-Show, giữ 100% cọc như huỷ sát giờ
+        if (customerShowedUp) {
+            BigDecimal penalty = percentage(deposit, LATE_DEPOSIT_PENALTY_PERCENT).min(paid);
+            return decision("HANDOVER_IN_PROGRESS", "Đã tới nhận kho nhưng chưa bàn giao xong, giữ 100% cọc (không tính No-Show)",
+                    paid, deposit, penalty, paid.subtract(penalty), minutesUntilCheckIn, false, graceExpiresAt);
         }
 
         // Đã qua giờ hẹn mà chưa check-in: khách tự hủy cũng tính như No-Show (không rẻ hơn bị No-Show)

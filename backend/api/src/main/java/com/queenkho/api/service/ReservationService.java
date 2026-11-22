@@ -50,7 +50,7 @@ public class ReservationService {
     // hoặc cưỡng chế ngay trong ngày nếu có khách mới đặt đơn trúng ô quá hạn
     // v6 (20/11/2026, D-22): thêm bảng phí & hoàn tiền bằng số, trả sớm mất ưu đãi + phí phá HĐ, bảo hiểm không hoàn khi tự trả sớm,
     // hoàn tiền trong 24h, khách xác nhận đã nhận tiền (tự xác nhận sau 3 ngày), trả kho phải tất toán (D-21)
-    public static final String ASSET_TERMS_VERSION = "v6";
+    public static final String ASSET_TERMS_VERSION = "v7"; // 22/11/2026 D-24: sắp lại điều khoản + bổ sung bảo hiểm, check-in, PIN, gia hạn
     // PR-X3 (08/11/2026): Staff liên hệ khách trong 48h sau giờ hẹn; ≥ 2 lần thất bại thì FM được xử lý No-Show
     public static final int NO_SHOW_WAIT_HOURS = 48;
     public static final int NO_SHOW_MIN_FAILED_CONTACTS = 2;
@@ -216,6 +216,24 @@ public class ReservationService {
                             unitIssueRescheduled(r));
                 })
                 .toList();
+    }
+
+    /** PR-X5: [số biên bản bàn giao đã lập, số lần khách từ chối] của hợp đồng chờ nhận kho */
+    int[] handoverAttempts(Reservation reservation) {
+        if (reservation == null || !"UNIT_ASSIGNED".equals(reservation.getStatus())) return new int[]{0, 0};
+        try {
+            Map<String, Object> row = jdbcTemplate.queryForMap(
+                    "SELECT SUM(CASE WHEN h.record_type = 'CI_DRAFT' THEN 1 ELSE 0 END) AS drafts, " +
+                            "SUM(CASE WHEN h.record_type = 'CI_REJECT' THEN 1 ELSE 0 END) AS rejects " +
+                            "FROM rental_contracts c JOIN handover_records h ON h.contract_id = c.id " +
+                            "WHERE c.reservation_id = ? AND c.status = 'PENDING_CHECK_IN'",
+                    reservation.getId());
+            int drafts = row.get("drafts") instanceof Number n ? n.intValue() : 0;
+            int rejects = row.get("rejects") instanceof Number n ? n.intValue() : 0;
+            return new int[]{drafts, rejects};
+        } catch (Exception e) {
+            return new int[]{0, 0};
+        }
     }
 
     /**
@@ -904,6 +922,12 @@ public class ReservationService {
         if (appointmentTime == null && reservation.getStartDate() != null) {
             appointmentTime = reservation.getStartDate().atTime(9, 0);
         }
+        // PR-X4 (22/11/2026): nút giả lập dời giờ hẹn không được làm khách bị phạt nặng hơn → lấy mốc muộn hơn
+        // giữa giờ hẹn gốc (penalty_anchor_time) và giờ hẹn hiện tại
+        LocalDateTime anchor = reservation.getPenaltyAnchorTime();
+        if (anchor != null && (appointmentTime == null || anchor.isAfter(appointmentTime))) {
+            appointmentTime = anchor;
+        }
 
         BigDecimal totalPaid = BigDecimal.ZERO;
         try {
@@ -942,9 +966,15 @@ public class ReservationService {
                 // BR-141: ô đã gán đang bảo trì (sự cố) trước khi khách nhận kho → lỗi cơ sở, hoàn 100%
                 || hasUnitIssue(reservation);
 
+        // PR-X5: biên bản bàn giao — khách đã tới (có bản nháp) / đã từ chối đủ số lần
+        int[] handover = handoverAttempts(reservation);
+        boolean customerShowedUp = handover[0] > 0;
+        boolean handoverFailed = handover[1] >= CancellationPolicyService.HANDOVER_REJECTIONS_FOR_FREE_CANCEL;
+
         int durationMonths = reservation.getDurationMonths() != null ? reservation.getDurationMonths() : 1;
         CancellationPolicyService.Decision decision = cancellationPolicyService.calculate(
-                totalPaid, deposit, durationMonths, appointmentTime, paymentSuccessAt, calculatedAt, facilityNoUnit);
+                totalPaid, deposit, durationMonths, appointmentTime, paymentSuccessAt, calculatedAt, facilityNoUnit,
+                customerShowedUp, handoverFailed);
 
         return CancelPreviewResponse.builder()
                 .totalPaid(decision.totalPaid())
@@ -1133,7 +1163,10 @@ public class ReservationService {
         contract.setAccessPinCode(null);
         contract.setRfidCardCode(null);
         rentalContractRepository.save(contract);
-        staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN");
+        // PR-T2: task bàn giao ghi rõ "Khách huỷ đơn" + báo nhân viên đang giữ task
+        staffTaskService.cancelOpenTasks(contract.getId(), "CHECK_IN",
+                "Khách huỷ đơn " + reservation.getReservationCode() + " lúc "
+                        + LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")));
 
         // D-18: ô có thể còn khách khác đang ở (đơn này gán trước cho ngày sau) → tính lại theo lịch, không ép AVAILABLE
         unitScheduleService.refreshUnitStatus(reservation.getStorageUnitId());
@@ -1496,6 +1529,7 @@ public class ReservationService {
         reservation.setStartDate(newStartDate);
         // Check-in (PR-C1) và No-Show (PR-X3) lấy mốc theo giờ hẹn → phải dời cùng ngày nhận kho (PR-B10: 09:00)
         reservation.setExpectedAppointmentTime(newStartDate.atTime(9, 0));
+        reservation.setPenaltyAnchorTime(null); // PR-X4: dời lịch thật → mốc tính phí huỷ theo lịch mới
         reservationRepository.save(reservation);
 
         rentalContractRepository.findByReservationId(reservation.getId()).ifPresent(contract -> {

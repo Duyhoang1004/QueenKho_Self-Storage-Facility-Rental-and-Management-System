@@ -95,7 +95,9 @@ class DemoSimulationServiceTest {
         service.arriveToday(50, staff);
 
         LocalDate today = LocalDate.now();
-        verify(jdbcTemplate).update(contains("UPDATE reservations SET start_date"), eq(today), any(), eq(4));
+        // PR-X4: lưu giờ hẹn gốc (penalty_anchor_time) trước khi dời — phí huỷ không bị đẩy lên vì giả lập
+        verify(jdbcTemplate).update(contains("penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time)"),
+                eq(today), any(), eq(4));
         verify(jdbcTemplate).update(contains("UPDATE rental_contracts SET start_date"), eq(today), eq(today.plusMonths(3)), eq(9));
         verify(jdbcTemplate).update(contains("WHEN status = 'OVERDUE'"), any(Timestamp.class), eq(50));
         verify(activityLogService).log(eq(12), startsWith("[SIMULATION]"), eq("facility_tasks"), eq("50"));

@@ -61,4 +61,9 @@ public class RefundCalculationResult {
     private BigDecimal paidTotal;
     private BigDecimal keptTotal;
     private BigDecimal netAmount;          // > 0 hoàn khách, < 0 khách trả thêm
+
+    // 22/11/2026 — PR-O2d: các kỳ gia hạn chưa bắt đầu tại ngày trả kho (hoàn đủ, đã cộng vào earlyRentRefund)
+    private BigDecimal futurePaid;
+    private int futureMonths;
+    private LocalDate futureStart;
 }

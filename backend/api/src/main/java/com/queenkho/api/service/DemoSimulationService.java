@@ -127,7 +127,9 @@ public class DemoSimulationService {
         LocalDateTime dueAt = days > 0 || now.toLocalTime().isBefore(CLOSING_TIME)
                 ? today.atTime(CLOSING_TIME) : today.plusDays(1).atTime(CLOSING_TIME);
 
-        jdbcTemplate.update("UPDATE reservations SET start_date = ?, expected_appointment_time = ? WHERE id = ?",
+        // PR-X4: lưu giờ hẹn gốc (lần giả lập đầu) — phí huỷ đơn không bị đẩy lên vì giả lập
+        jdbcTemplate.update("UPDATE reservations SET penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time), " +
+                        "start_date = ?, expected_appointment_time = ? WHERE id = ?",
                 today, today.atTime(APPOINTMENT_TIME), contract.get("reservation_id"));
         jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
                 today, today.plusMonths(months), contract.get("id"));

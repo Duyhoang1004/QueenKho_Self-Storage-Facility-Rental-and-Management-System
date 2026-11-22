@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { getMyReservations } from "../../services/reservationService";
+import { getMyRefundReceipts } from "../../services/refundReceiptService";
+import RefundReceiptList from "../../components/RefundReceiptList";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
 import UnitIssueRescheduleModal from "../../components/UnitIssueRescheduleModal";
@@ -123,9 +125,22 @@ function getStorageLocation(r) {
   return parts.join(" • ");
 }
 
+// 22/11/2026 (PR-O32): đơn huỷ / No-Show đã được chuyển tiền nhưng khách chưa xác nhận → nhãn theo bước nhận tiền
+const RECEIPT_META = {
+  WAITING_CUSTOMER: { label: "Đã chuyển tiền · chờ bạn xác nhận", className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]" },
+  DISPUTED: { label: "Cơ sở đang kiểm tra tiền hoàn", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+};
+
+function statusMetaOf(r) {
+  if (r.receiptStatus && RECEIPT_META[r.receiptStatus] && ["REFUND_PENDING", "REFUNDED"].includes(r.status)) {
+    return RECEIPT_META[r.receiptStatus];
+  }
+  return STATUS_META[r.status] || { label: r.status, className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" };
+}
+
 // Đơn chưa có hợp đồng (chờ thanh toán / đã cọc chờ gán ô / đã huỷ trước khi gán ô): bấm mã đơn → tóm tắt đơn
-function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
-  const meta = STATUS_META[r.status] || { label: r.status, className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" };
+function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms, onChanged }) {
+  const meta = statusMetaOf(r);
   const waitingUnit = ["PENDING", "DEPOSIT_PAID"].includes(r.status);
   const rows = [
     ["Cơ sở", r.facilityName],
@@ -159,7 +174,11 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms }) {
             ? "Đơn chưa có hợp đồng. Hợp đồng được tạo khi cơ sở gán ô kho cho bạn — lúc đó bấm mã đơn sẽ mở trang hợp đồng."
             : "Đơn đã đóng trước khi cơ sở gán ô kho nên không phát sinh hợp đồng."}
         </p>
-        {r.status === "REFUNDED" && r.refundEvidence && (
+        {/* PR-O32: khoản hoàn của đơn — khách bấm "Đã nhận được" / "Chưa nhận được" ngay tại đây */}
+        {["REFUND_PENDING", "REFUNDED"].includes(r.status) && (
+          <RefundReceiptList reservationCode={r.reservationCode} title="Tiền hoàn của đơn" onChanged={onChanged} />
+        )}
+        {r.status === "REFUNDED" && r.refundEvidence && !r.receiptStatus && (
           <div className="border-2 border-[#84D8FF] bg-[#F0FAFF] rounded-2xl p-3 flex flex-col gap-2">
             <p className="text-[11px] font-black uppercase tracking-wider text-[#1899D6]">Minh chứng hoàn tiền</p>
             <div className="text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
@@ -235,9 +254,16 @@ export default function MyReservationsPage() {
         .get("/contracts", { params: { customerId: userId } })
         .then((res) => res.data)
         .catch(() => []),
+      getMyRefundReceipts().catch(() => []),
     ])
-      .then(([resData, contractsData]) => {
+      .then(([resData, contractsData, receiptsData]) => {
         if (cancelled) return;
+
+        // PR-O32: trạng thái khách xác nhận nhận tiền hoàn, theo mã đơn (khoản mới nhất)
+        const receiptByResCode = {};
+        (receiptsData || []).forEach((rc) => {
+          if (rc.reservationCode && !receiptByResCode[rc.reservationCode]) receiptByResCode[rc.reservationCode] = rc.receiptStatus;
+        });
 
         // Tạo map hợp đồng theo mã đơn
         const contractsByResCode = {};
@@ -248,7 +274,8 @@ export default function MyReservationsPage() {
         });
 
         // Gộp ngày kết thúc thực tế của HĐ và đồng bộ trạng thái vào từng đơn đặt chỗ
-        const merged = (resData || []).map((r) => {
+        const merged = (resData || []).map((raw) => {
+          const r = { ...raw, receiptStatus: receiptByResCode[raw.reservationCode] || null };
           const c = contractsByResCode[r.reservationCode];
           if (c) {
             return {
@@ -547,6 +574,9 @@ export default function MyReservationsPage() {
         </div>
       </div>
 
+      {/* PR-O32: mọi khoản hoàn đang chờ khách xác nhận (huỷ đơn, No-Show, trả kho...) */}
+      <RefundReceiptList onlyPending title="Tiền hoàn chờ bạn xác nhận" onChanged={() => setReloadKey((k) => k + 1)} />
+
       {/* Thẻ thống kê */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
@@ -726,11 +756,7 @@ export default function MyReservationsPage() {
               </thead>
               <tbody className="text-[13px] font-bold text-[#4B4B4B]">
                 {paginatedReservations.map((r, index) => {
-                  const meta = STATUS_META[r.status] || {
-                    label: r.status,
-                    className:
-                      "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]",
-                  };
+                  const meta = statusMetaOf(r);
                   const diffDays = getDaysUntilExpiry(r);
                   const isExpiringSoon = diffDays !== null && diffDays <= 3;
                   const isLast = index === paginatedReservations.length - 1;
@@ -1000,6 +1026,7 @@ export default function MyReservationsPage() {
           reservation={summaryRes}
           onClose={() => setSummaryRes(null)}
           onOpenTerms={() => setTermsOpen(true)}
+          onChanged={() => setReloadKey((k) => k + 1)}
         />
       )}
     </div>

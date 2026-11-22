@@ -114,4 +114,7 @@ public class StaffTaskDetailResponse {
 
     // D-23 / PR-O30: task REFUND của quyết toán trả kho — hoàn cọc + tiền thuê và bồi thường từng hồ sơ
     private SettlementRefundSplit settlementRefund;
+
+    // PR-T2: lý do task bị huỷ
+    private String cancelReason;
 }

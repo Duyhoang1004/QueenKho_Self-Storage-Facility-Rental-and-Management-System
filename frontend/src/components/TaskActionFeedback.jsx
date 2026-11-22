@@ -7,7 +7,8 @@ const TONES = {
   red:   { btn: 'duo-btn-red',   icon: 'bg-[#FF4B4B] border-[#EA2B2B]' },
 }
 
-export function TaskConfirmDialog({ open, icon, title, message, confirmLabel, tone = 'green', submitting, onConfirm, onCancel }) {
+// children: nội dung thêm (vd ô nhập lý do) · confirmDisabled: khoá nút xác nhận khi chưa nhập đủ
+export function TaskConfirmDialog({ open, icon, title, message, confirmLabel, tone = 'green', submitting, onConfirm, onCancel, children, confirmDisabled = false }) {
   if (!open) return null
   const t = TONES[tone] || TONES.green
   return (
@@ -20,11 +21,12 @@ export function TaskConfirmDialog({ open, icon, title, message, confirmLabel, to
           <h2 className="text-lg font-black text-[#4B4B4B]">{title}</h2>
         </div>
         <p className="text-sm font-bold text-[#777777] leading-relaxed">{message}</p>
+        {children}
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} disabled={submitting} className="duo-btn-gray px-5 py-2.5 text-xs disabled:opacity-50">
             Huỷ
           </button>
-          <button onClick={onConfirm} disabled={submitting} className={`${t.btn} px-5 py-2.5 text-xs gap-1.5 disabled:opacity-60`}>
+          <button onClick={onConfirm} disabled={submitting || confirmDisabled} className={`${t.btn} px-5 py-2.5 text-xs gap-1.5 disabled:opacity-60`}>
             {submitting && <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>}
             {confirmLabel}
           </button>

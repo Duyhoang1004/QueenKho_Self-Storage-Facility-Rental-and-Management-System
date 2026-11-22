@@ -88,4 +88,8 @@ public class StaffTask {
 
     @Column(name = "receipt_round", nullable = false)
     private Integer receiptRound = 0;
+
+    // 22/11/2026 — PR-T2: lý do task bị huỷ (khách huỷ đơn / khách huỷ yêu cầu hỗ trợ), hiện cho nhân viên
+    @Column(name = "cancel_reason", length = 300)
+    private String cancelReason;
 }

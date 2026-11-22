@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { checkRangeAvailability, createReservation } from '../../services/reservationService'
 import { createVnpayPayment } from '../../services/vnpayService'
 import { getFacilityAvailability, getFacilityPricing } from '../../services/facilityService'
+import PaymentConfirmModal from '../../components/PaymentConfirmModal'
 import AssetTermsModal from '../../components/AssetTermsModal'
 import PolicySummary from '../../components/PolicySummary'
 import { getQuotePolicySummary } from '../../services/policySummaryService'
@@ -96,6 +97,8 @@ export default function CreateReservationPage() {
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [termsOpen, setTermsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  // PR-B12 (22/11/2026): modal xác nhận số tiền trước khi tạo đơn + chuyển VNPAY
+  const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false)
   const [error, setError] = useState('')
   // (08/11/2026, góp ý test) lỗi hiện ngay trên nút thanh toán + cuộn tới đúng mục bị thiếu
   const [errorField, setErrorField] = useState('')
@@ -415,7 +418,12 @@ export default function CreateReservationPage() {
       fail('Bạn cần đồng ý Điều khoản xử lý tài sản khi không trả kho trước khi tiếp tục.', 'sec-commit')
       return
     }
+    setError('')
+    setPaymentConfirmOpen(true)
+  }
 
+  // PR-B12: khách bấm xác nhận trong modal mới tạo đơn và chuyển sang VNPAY
+  const doSubmit = async () => {
     try {
       setLoading(true)
       setError('')
@@ -459,6 +467,7 @@ export default function CreateReservationPage() {
         storage: unit,
       }))
 
+      setPaymentConfirmOpen(false)
       window.location.assign(paymentData.payUrl)
 
     } catch (err) {
@@ -473,6 +482,7 @@ export default function CreateReservationPage() {
             : String(errData?.error || '').startsWith('GOODS') ? 'sec-goods' : ''
         fail(errData?.detail || errData?.message || 'Có lỗi xảy ra. Vui lòng thử lại.', field)
       }
+      setPaymentConfirmOpen(false)
       setLoading(false)
     }
   }
@@ -932,7 +942,7 @@ export default function CreateReservationPage() {
                   onClick={(e) => { e.preventDefault(); setTermsOpen(true) }}
                   className="font-black text-[#1CB0F6] underline cursor-pointer"
                 >
-                  Điều khoản thuê kho & xử lý tài sản (v6)
+                  Điều khoản thuê kho & xử lý tài sản (v7)
                 </button>
                 .
                 <details className="mt-1 text-[11px] text-[#777777]">
@@ -949,6 +959,23 @@ export default function CreateReservationPage() {
               open={termsOpen}
               onClose={() => setTermsOpen(false)}
               onAccept={() => { setTermsAccepted(true); setTermsOpen(false) }}
+            />
+            <PaymentConfirmModal
+              open={paymentConfirmOpen}
+              title="Xác nhận thanh toán giữ kho"
+              subtitle={`${unit.unitTypeName || unit.name || 'Kho'} · ${selectedMonths} tháng · nhận kho ${startDate ? startDate.split('-').reverse().join('/') : ''}`}
+              lines={[
+                { label: `Tiền thuê ${selectedMonths} tháng`, amount: baseTotal, note: `${formatVND(unit.pricePerMonth)} / tháng` },
+                { label: 'Ưu đãi theo gói', amount: discountAmount, minus: true },
+                { label: `Voucher ${voucherApplied.code || ''}`.trim(), amount: voucherApplied.discount, minus: true },
+                { label: `Bảo hiểm ${selectedPlan.label || ''}`.trim(), amount: insuranceTotal },
+                { label: 'Tiền cọc', amount: deposit, note: 'Hoàn khi trả kho sau khi trừ các khoản phí (nếu có)' },
+              ]}
+              total={totalPayment}
+              note="Đơn được giữ chỗ 15 phút trong lúc thanh toán. Huỷ trong 30 phút sau khi thanh toán (trước giờ hẹn) được hoàn 100%."
+              submitting={loading}
+              onConfirm={doSubmit}
+              onCancel={() => setPaymentConfirmOpen(false)}
             />
           </div>
 

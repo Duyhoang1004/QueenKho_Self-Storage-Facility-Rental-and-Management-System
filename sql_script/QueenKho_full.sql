@@ -280,6 +280,7 @@ CREATE TABLE reservations (
     deposit_amount              DECIMAL(12,2) NOT NULL,
     total_deposit_paid          DECIMAL(12,2) NOT NULL DEFAULT 0,
     expected_appointment_time   DATETIME2 NULL,
+    penalty_anchor_time         DATETIME2 NULL,    -- 22/11/2026 (PR-X4): giờ hẹn gốc trước khi bị giả lập dời, mốc tính phí huỷ
     start_date                  DATE NULL,
     rent_discount_percent       INT NULL,            -- % ưu đãi tiền thuê chốt lúc tạo đơn (giống deposit_amount)
     terms_version               NVARCHAR(20) NULL,   -- Phiên bản điều khoản xử lý tài sản khách đã đồng ý (NULL = đơn cũ, chưa đồng ý)
@@ -540,6 +541,7 @@ CREATE TABLE facility_tasks (
     receipt_dispute_reason NVARCHAR(500) NULL,
     receipt_disputed_at DATETIME2 NULL,
     receipt_round       INT NOT NULL CONSTRAINT DF_facilitytasks_receipt_round DEFAULT 0,
+    cancel_reason       NVARCHAR(300) NULL, -- 22/11/2026 (PR-T2): lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
     CONSTRAINT FK_facilitytasks_customer FOREIGN KEY (customer_id) REFERENCES users(id),
     CONSTRAINT CK_facilitytasks_receipt CHECK (receipt_status IS NULL OR receipt_status IN ('WAITING_CUSTOMER', 'CONFIRMED', 'AUTO_CONFIRMED', 'DISPUTED')),
     CONSTRAINT FK_facilitytasks_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),

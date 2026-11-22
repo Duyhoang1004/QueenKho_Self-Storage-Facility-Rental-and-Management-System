@@ -250,7 +250,7 @@ function blockedReason(task, userId) {
   }
   if (task.taskType === 'SUPPORT') {
     if (task.status === 'COMPLETED') return null;
-    if (task.status === 'CANCELLED') return 'Yêu cầu hỗ trợ đã bị huỷ hoặc đã đóng.';
+    if (task.status === 'CANCELLED') return task.cancelReason ? `Task đã huỷ — ${task.cancelReason}.` : 'Yêu cầu hỗ trợ đã bị huỷ hoặc đã đóng.';
     if (task.status === 'OPEN') return 'Task hỗ trợ chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
     if (task.status === 'OVERDUE') return 'Task hỗ trợ đã quá hạn (PR-S4). Cần Quản lý cơ sở gia hạn trước khi nhân viên có thể hoàn tất.';
     if (task.staffId !== userId) return `Task hỗ trợ đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
@@ -263,7 +263,7 @@ function blockedReason(task, userId) {
   switch (task.status) {
     case 'OPEN': return 'Task chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
     case 'OVERDUE': return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản. Vui lòng báo quản lý cơ sở.';
-    case 'CANCELLED': return 'Task đã bị huỷ (khách không đến hoặc đã huỷ yêu cầu).';
+    case 'CANCELLED': return task.cancelReason ? `Task đã huỷ — ${task.cancelReason}.` : 'Task đã bị huỷ (khách không đến hoặc đã huỷ yêu cầu).';
     case 'COMPLETED': return null;
     default:
       if (task.staffId !== userId) return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;

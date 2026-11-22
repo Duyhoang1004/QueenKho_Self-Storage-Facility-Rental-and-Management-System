@@ -8,6 +8,7 @@ import { getFacilityStaff } from '../services/facilityStaffService'
 import { confirmRefundReceipt, disputeRefundReceipt } from '../services/refundReceiptService'
 import SimulationButton from './SimulationButton'
 import MoneyBreakdownTable from './MoneyBreakdownTable'
+import PaymentConfirmModal from './PaymentConfirmModal'
 
 // D-21 (PR-O19 → PR-O23): bảng quyết toán trả kho dùng chung
 //  - Khách: xác nhận kết thúc / đồng ý & thanh toán / không đồng ý
@@ -73,6 +74,7 @@ export default function SettlementPanel({ contractId, viewer, onChanged, onLoade
   const [staffList, setStaffList] = useState([])
   const [staffId, setStaffId] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [payConfirm, setPayConfirm] = useState(false) // PR-B12: xác nhận số tiền trước khi chuyển VNPAY
 
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -355,9 +357,8 @@ export default function SettlementPanel({ contractId, viewer, onChanged, onLoade
             type="button"
             disabled={busy}
             onClick={() => {
-              const text = pays
-                ? `Đồng ý quyết toán và thanh toán ${formatVND(Math.abs(s.netAmount))} qua VNPAY?`
-                : `Xác nhận quyết toán hợp đồng ${s.contractCode}? Cơ sở sẽ lập lệnh hoàn ${formatVND(s.netAmount)}; hợp đồng kết thúc khi bạn xác nhận đã nhận tiền.`
+              if (pays) { setPayConfirm(true); return } // PR-B12: phần âm → modal xác nhận số tiền
+              const text = `Xác nhận quyết toán hợp đồng ${s.contractCode}? Cơ sở sẽ lập lệnh hoàn ${formatVND(s.netAmount)}; hợp đồng kết thúc khi bạn xác nhận đã nhận tiền.`
               if (window.confirm(text)) run(() => confirmSettlement(s.contractId), 'Đã xác nhận quyết toán.')
             }}
             className="duo-btn-green px-5 py-3 text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
@@ -394,7 +395,7 @@ export default function SettlementPanel({ contractId, viewer, onChanged, onLoade
       )}
       {isCustomer && s.canPay && (
         <button type="button" disabled={busy}
-          onClick={() => run(() => paySettlement(s.contractId))}
+          onClick={() => setPayConfirm(true)}
           className="duo-btn-orange px-5 py-3 text-xs uppercase tracking-wider flex items-center gap-1.5 self-start cursor-pointer disabled:opacity-60">
           <span className="material-symbols-outlined text-[18px]">payments</span>
           Thanh toán {formatVND(Math.abs(s.netAmount))} qua VNPAY
@@ -536,6 +537,17 @@ export default function SettlementPanel({ contractId, viewer, onChanged, onLoade
           </div>
         </div>
       )}
+      <PaymentConfirmModal
+        open={payConfirm}
+        title={s.canConfirm ? 'Đồng ý quyết toán & thanh toán' : 'Thanh toán phần còn thiếu'}
+        subtitle={`Hợp đồng ${s.contractCode}`}
+        lines={(s.lines || []).filter((l) => l.group === 'KEPT').map((l) => ({ label: l.label, amount: l.amount, note: l.note }))}
+        total={Math.abs(Number(s.netAmount))}
+        note={`Phần cơ sở giữ lại vượt số bạn đã đóng ${formatVND(Math.abs(Number(s.netAmount)))}. Thanh toán xong hợp đồng mới kết thúc.`}
+        submitting={busy}
+        onConfirm={() => { setPayConfirm(false); run(() => (s.canConfirm ? confirmSettlement(s.contractId) : paySettlement(s.contractId))) }}
+        onCancel={() => setPayConfirm(false)}
+      />
     </div>
   )
 }

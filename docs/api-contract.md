@@ -1219,3 +1219,14 @@ Không đổi schema.
 - `GET /api/v1/staff-tasks/{id}` (task `REFUND` của quyết toán) trả thêm `settlementRefund { settlementId, contractId, roundNo, settlementStatus, depositRentRefund, compensationPayout, compensationOffset, total, claims[] { id, claimCode, claimType, status, amount } }`; `refundAmount` = `total`.
 - `GET /api/v1/claims*` trả thêm `settlementStatus`, `refundTaskId`.
 
+## Cập nhật 22/11/2026 — Sửa lỗi sau buổi test (D-24)
+
+> Rule: `docs/business-rules.md` PR-O2d, PR-O32, PR-X4, PR-X5, PR-T2, PR-S3a, PR-B12. Schema: `sql_script/Update_gop_y_test_22_11.sql`. Không có endpoint mới.
+
+- `POST /api/v1/support-requests/{id}/cancel?customerId=` nhận thêm body tuỳ chọn `{ "reason": "..." }`. Ticket `IN_PROGRESS` huỷ được, bắt buộc `reason` 10–300 ký tự (thiếu → 400 `CANCEL_REASON_REQUIRED`). Hồ sơ bồi thường `APPROVED` / `PAID` → 409 `TICKET_NOT_CANCELLABLE`.
+- `GET /api/v1/staff-tasks`, `GET /api/v1/staff-tasks/{id}` trả thêm `cancelReason` (task huỷ do khách huỷ đơn / huỷ yêu cầu).
+- `GET /api/v1/reservations/{id}/cancel-preview`, `POST .../cancel`: `policyTier` có thêm `HANDOVER_FAILED` (khách từ chối biên bản ≥ 2 lần → hoàn 100%) và `HANDOVER_IN_PROGRESS` (đã có biên bản, huỷ sau giờ hẹn → giữ 100% cọc, không tính No-Show). `appointmentTime` trả về là mốc tính phí (muộn hơn giữa giờ hẹn gốc và giờ hẹn hiện tại).
+- `GET /api/v1/contracts/{id}/checkout-refund-preview` và bảng quyết toán: `lines` có thêm dòng "Tiền gia hạn chưa bắt đầu" khi trả sớm trước kỳ gia hạn; `earlyRentRefund` gồm cả tiền kỳ đó; thêm `futurePaid`, `futureMonths`, `futureStart`.
+- `GET /api/v1/facilities/{id}/policy-summary`, `GET /api/v1/contracts/{id}/policy-summary`: mục ⑤ có thêm dòng "Giá thuê ngày (căn cứ tính phí)".
+- Điều khoản lưu `reservations.terms_version = 'v7'` cho đơn mới.
+

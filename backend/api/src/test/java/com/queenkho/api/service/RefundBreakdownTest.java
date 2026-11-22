@@ -89,4 +89,35 @@ class RefundBreakdownTest {
         assertEquals(List.of(1, 2, 6, 11), PolicySummaryService.sampleMonths(12));
         assertEquals(List.of(), PolicySummaryService.sampleMonths(1));
     }
+
+    @Test
+    @DisplayName("PR-O2d: HĐ 3 tháng + gia hạn 1 tháng, trả kho trong tháng đầu → kỳ gia hạn chưa bắt đầu được hoàn đủ")
+    void renewalNotStartedIsRefundedInFull() {
+        // Kho 1.850.000đ / tháng: cọc 1.850.000 + thuê 3 tháng 5.550.000 + gia hạn 1 tháng 1.850.000 = đã đóng 9.250.000
+        // Kỳ đang dùng (gốc): dùng 1 tháng → hoàn 5.550.000 − 1.850.000 − phí phá HĐ 1.850.000 = 1.850.000
+        // Kỳ gia hạn chưa bắt đầu: hoàn đủ 1.850.000 → tổng hoàn tiền thuê 3.700.000, nhận về 5.550.000
+        var basis = new RefundBreakdown.RentBasis(m(5_550_000), m(0), 3, LocalDate.of(2026, 11, 20), true, false,
+                1, m(1_850_000), m(1_850_000), 0, m(1_850_000), 1, LocalDate.of(2027, 2, 20));
+        List<MoneyLine> lines = RefundBreakdown.lines(m(1_850_000), basis, m(3_700_000), m(0), m(0), m(0), m(0));
+        var t = RefundBreakdown.totals(lines);
+        assertMoney(9_250_000, t.paid());
+        assertMoney(3_700_000, t.kept());
+        assertMoney(5_550_000, t.net());
+        assertTrue(lines.stream().anyMatch(l -> l.label().contains("gia hạn chưa bắt đầu")), "phải có dòng kỳ gia hạn chưa dùng");
+        assertMoney(5_550_000, net(1_850_000, basis, 3_700_000, 0, 0, 0, 0));
+        // lưu / đọc lại rent_basis giữ nguyên phần kỳ chưa dùng
+        var parsed = RefundBreakdown.RentBasis.parse(basis.toText());
+        assertMoney(1_850_000, parsed.futurePaid());
+        assertEquals(1, parsed.futureMonths());
+        assertEquals(LocalDate.of(2027, 2, 20), parsed.futureStart());
+    }
+
+    @Test
+    @DisplayName("PR-O2d: rent_basis cũ (trước 22/11) không có phần kỳ chưa dùng vẫn đọc được")
+    void oldRentBasisStillParses() {
+        var parsed = RefundBreakdown.RentBasis.parse("rentPaid=100;insurance=0;periodMonths=1;periodStart=2026-11-01;early=false;"
+                + "fault=false;usedMonths=1;price=100;breakFee=0;daysPast=0");
+        assertMoney(0, parsed.futurePaid());
+        assertEquals(0, parsed.futureMonths());
+    }
 }

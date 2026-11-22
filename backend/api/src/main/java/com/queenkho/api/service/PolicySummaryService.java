@@ -229,10 +229,14 @@ public class PolicySummaryService {
                 : LateFeeService.isImmediateV4LiquidationTerms(termsVersion) ? 1
                 : (p != null && p.getLiquidationDays() != null ? p.getLiquidationDays() : LateFeeService.DEFAULT_LIQUIDATION_DAYS);
 
+        BigDecimal daily = LateFeeService.dailyRate(b.price());
         List<Row> rows = new ArrayList<>();
+        // 22/11/2026 (góp ý test): hiện rõ GIÁ THUÊ NGÀY bằng số — phí chiếm dụng / lưu giữ tính theo nó
+        rows.add(row("Giá thuê ngày (căn cứ tính phí)", daily, "Giá niêm yết 1 tháng " + vnd(b.price()) + " ÷ 30", null));
         rows.add(row("Phí trễ hạn", latePerDay, ratePct.stripTrailingZeros().toPlainString() + "% cọc / ngày · tối đa "
                 + vnd(lateCap) + " (" + maxPct.stripTrailingZeros().toPlainString() + "% cọc)", "KEEP"));
-        rows.add(row("Phí chiếm dụng ô", overstayPerDay, overstayPct + "% giá thuê ngày · mỗi ngày quá hạn, không giới hạn", "KEEP"));
+        rows.add(row("Phí chiếm dụng ô", overstayPerDay,
+                overstayPct + "% × giá thuê ngày " + vnd(daily) + " · mỗi ngày quá hạn, không giới hạn", "KEEP"));
         if (liquidationDays > 3) {
             BigDecimal fees3 = latePerDay.multiply(BigDecimal.valueOf(3)).min(lateCap).add(overstayPerDay.multiply(BigDecimal.valueOf(3)));
             rows.add(row("Ví dụ quá hạn 3 ngày", fees3,
@@ -245,7 +249,8 @@ public class PolicySummaryService {
                 "Phí trễ + chiếm dụng " + liquidationDays + " ngày + phí dọn & di dời " + vnd(moving) + " (" + movingPct + "% giá tháng)"
                         + (feesLiq.compareTo(b.deposit()) > 0 ? " · vượt cọc " + vnd(feesLiq.subtract(b.deposit())) + " là khoản nợ" : ""),
                 "KEEP"));
-        rows.add(row("Phí lưu giữ hàng ở kho tổng", storagePerDay, heldPct + "% giá thuê ngày · tới khi bạn nhận lại hàng, QueenKho không bán hàng", "KEEP"));
+        rows.add(row("Phí lưu giữ hàng ở kho tổng", storagePerDay, heldPct + "% × giá thuê ngày " + vnd(daily)
+                + " · tới khi bạn nhận lại hàng, QueenKho không bán hàng", "KEEP"));
         if (termsVersion != null && !LateFeeService.acceptsV5Terms(termsVersion)) {
             rows.add(row("Lưu ý", null, "Hợp đồng theo điều khoản " + termsVersion + " đã ký: mốc cưỡng chế dọn kho là "
                     + liquidationDays + " ngày quá hạn", null));

@@ -56,4 +56,5 @@ public class StaffTaskResponse {
     private String ticketStatus;
     private String ticketDescription;
     private String resolutionNote;
+    private String cancelReason;     // PR-T2: lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
 }

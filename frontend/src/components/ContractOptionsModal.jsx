@@ -4,6 +4,7 @@ import { createVnpayRenewal } from '../services/vnpayService'
 import { getCustomerSupportTickets } from '../services/supportService'
 import DateInput from './DateInput'
 import MoneyBreakdownTable from './MoneyBreakdownTable'
+import PaymentConfirmModal from './PaymentConfirmModal'
 import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
 function formatVND(v) {
@@ -78,6 +79,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   // Tab 1 state: Gia hạn
   const [selectedMonths, setSelectedMonths] = useState(6)
   const [renewLoading, setRenewLoading] = useState(false)
+  const [renewConfirmOpen, setRenewConfirmOpen] = useState(false) // PR-B12: xác nhận số tiền gia hạn
   const [renewError, setRenewError] = useState('')
 
   // Tab 2 state: Trả kho (PR-O1, PR-O2, PR-O3, PR-O14)
@@ -195,8 +197,14 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const maxRenewalDiscount = Math.max(0, ...[1, 3, 6, 12].map((m) => getPricing(m).discountPercent))
 
   // UC-21: Xử lý Gia hạn hợp đồng qua cổng VNPAY
-  const handleRenewSubmit = async (e) => {
+  const handleRenewSubmit = (e) => {
     e.preventDefault()
+    setRenewError('')
+    setRenewConfirmOpen(true)
+  }
+
+  // PR-B12: khách xác nhận số tiền trong modal rồi mới tạo link VNPAY
+  const doRenew = async () => {
     setRenewLoading(true)
     setRenewError('')
     try {
@@ -215,6 +223,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     } catch (err) {
       setRenewError(err.response?.data?.message || err.message || 'Có lỗi xảy ra khi tạo giao dịch thanh toán VNPAY.')
       setRenewLoading(false)
+      setRenewConfirmOpen(false)
     }
   }
 
@@ -852,6 +861,23 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
         </div>
 
       </div>
+      <PaymentConfirmModal
+        open={renewConfirmOpen}
+        title="Xác nhận thanh toán gia hạn"
+        subtitle={`Hợp đồng ${contract?.contractCode || ''} · gia hạn ${selectedMonths} tháng`}
+        lines={[
+          { label: `Tiền thuê ${selectedMonths} tháng`, amount: currentPricing.subtotal },
+          { label: `Ưu đãi gia hạn ${currentPricing.discountPercent || 0}%`, amount: currentPricing.discountAmount, minus: true },
+          { label: 'Phí bảo hiểm', amount: Number(currentQuote?.insuranceAmount || 0) },
+          { label: 'Phí trễ hạn', amount: lateFee },
+          { label: 'Phí chiếm dụng ô', amount: overstayFee },
+        ]}
+        total={totalPayment}
+        note={isTerminationPending ? 'Gia hạn sẽ huỷ yêu cầu trả kho đang chờ của bạn.' : undefined}
+        submitting={renewLoading}
+        onConfirm={doRenew}
+        onCancel={() => setRenewConfirmOpen(false)}
+      />
     </div>
   )
 }

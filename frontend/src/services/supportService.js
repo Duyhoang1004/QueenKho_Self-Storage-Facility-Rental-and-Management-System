@@ -29,8 +29,9 @@ export async function createSupportTicket(customerId, payload) {
 }
 
 // UC-26 / PR-S3: Khách hủy ticket còn ở trạng thái OPEN
-export async function cancelSupportTicket(ticketId, customerId) {
-  const res = await api.post(`/support-requests/${ticketId}/cancel`, null, {
+// PR-S3a (22/11/2026): yêu cầu đang xử lý bắt buộc lý do 10–300 ký tự
+export async function cancelSupportTicket(ticketId, customerId, reason) {
+  const res = await api.post(`/support-requests/${ticketId}/cancel`, reason ? { reason } : null, {
     params: { customerId }
   })
   return res.data

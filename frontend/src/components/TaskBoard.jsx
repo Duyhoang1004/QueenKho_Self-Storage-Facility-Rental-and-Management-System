@@ -613,6 +613,9 @@ export default function TaskBoard({
                 const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
                 const status = isRefund && task.status === 'OPEN'
                   ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
+                  : task.status === 'CANCELLED' && task.cancelReason
+                  // PR-T2: task huỷ vì khách huỷ đơn / huỷ yêu cầu — rê chuột xem lý do
+                  ? { label: 'Khách huỷ', cls: 'bg-[#FFF4D6] text-[#B07A00] border-2 border-[#FFD966]', title: task.cancelReason }
                   : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' })
                 const hint = dueHint(task)
                 const actions = renderActions ? renderActions(task) : null
@@ -729,7 +732,7 @@ export default function TaskBoard({
                           <div className="h-7 flex items-center w-full">
                             {isMine ? (
                               <div className="flex items-center justify-between gap-1.5 w-full">
-                                <span className={`duo-badge whitespace-nowrap text-xs ${status.cls}`}>{status.label}</span>
+                                <span className={`duo-badge whitespace-nowrap text-xs ${status.cls}`} title={status.title}>{status.label}</span>
                                 <span className="duo-badge whitespace-nowrap bg-[#A560E8] text-white border-2 border-[#A560E8] flex items-center gap-0.5 text-[10px] py-0.5 px-2 shrink-0">
                                   <span className="material-symbols-outlined text-[12px]">person_check</span>
                                   CỦA BẠN
@@ -737,7 +740,7 @@ export default function TaskBoard({
                               </div>
                             ) : (
                               <div className="flex items-center justify-center w-full">
-                                <span className={`duo-badge whitespace-nowrap text-xs ${status.cls}`}>{status.label}</span>
+                                <span className={`duo-badge whitespace-nowrap text-xs ${status.cls}`} title={status.title}>{status.label}</span>
                               </div>
                             )}
                           </div>
@@ -868,6 +871,9 @@ export default function TaskBoard({
                 const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
                 const status = isRefund && task.status === 'OPEN'
                   ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
+                  : task.status === 'CANCELLED' && task.cancelReason
+                  // PR-T2: task huỷ vì khách huỷ đơn / huỷ yêu cầu — rê chuột xem lý do
+                  ? { label: 'Khách huỷ', cls: 'bg-[#FFF4D6] text-[#B07A00] border-2 border-[#FFD966]', title: task.cancelReason }
                   : (STATUS_META[task.status] || { label: task.status, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' })
                 const hint = dueHint(task)
                 const actions = renderActions ? renderActions(task) : null
@@ -913,7 +919,7 @@ export default function TaskBoard({
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1.5">
-                        <span className={`duo-badge whitespace-nowrap ${status.cls}`}>{status.label}</span>
+                        <span className={`duo-badge whitespace-nowrap ${status.cls}`} title={status.title}>{status.label}</span>
                         {isMine && (
                           <span className="duo-badge whitespace-nowrap bg-[#A560E8] text-white border-2 border-[#A560E8] flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px]">person_check</span>Của bạn

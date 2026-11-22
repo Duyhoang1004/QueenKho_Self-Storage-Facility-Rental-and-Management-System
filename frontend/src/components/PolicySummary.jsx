@@ -43,7 +43,7 @@ export default function PolicySummary({ summary, loading, compact = false, secti
               <div key={i} className={`flex justify-between gap-3 py-1 ${r.total ? 'border-t border-[#E5E5E5] mt-1 pt-1.5' : ''}`}>
                 <div className="flex flex-col min-w-0">
                   <span className={`text-xs ${r.total ? 'font-black text-[#4B4B4B]' : 'font-bold text-[#4B4B4B]'}`}>{r.label}</span>
-                  {r.note && <span className="text-[11px] font-semibold text-[#777777] leading-snug">{r.note}</span>}
+                  {r.note && <span className="text-[11px] font-semibold text-[#777777] leading-snug whitespace-pre-line">{r.note}</span>}
                 </div>
                 {r.amount != null && (
                   <span className={`text-xs font-black whitespace-nowrap ${

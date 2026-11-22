@@ -201,7 +201,8 @@ public class CheckoutSettlementService {
         s.setRefundMethod(StaffTaskService.detectRefundMethodFromNote(checkOutTask.getNote()));
         s.setRentBasis(new RefundBreakdown.RentBasis(calc.getRentPaidNet(), calc.getInsurancePaid(), calc.getPeriodMonths(),
                 calc.getPeriodStart(), calc.isEarlyCheckout(), calc.isFaultTermination(), calc.getUsedMonths(),
-                calc.getBaseMonthlyPrice(), calc.getBreakFee(), calc.getDaysPastEndDate()).toText());
+                calc.getBaseMonthlyPrice(), calc.getBreakFee(), calc.getDaysPastEndDate(),
+                calc.getFuturePaid(), calc.getFutureMonths(), calc.getFutureStart()).toText());
         s.setStaffNote(truncate(staffNote, 1000));
         s.setCreatedBy(staffId);
         fillExpected(s, contract, checkOutTask);

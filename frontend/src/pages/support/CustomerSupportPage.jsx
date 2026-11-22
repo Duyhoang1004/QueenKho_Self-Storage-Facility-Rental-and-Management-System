@@ -270,6 +270,7 @@ export default function CustomerSupportPage() {
 
   // Modal hủy ticket (PR-S3)
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState(''); // PR-S3a: lý do huỷ khi yêu cầu đang xử lý
 
   // Modal xác nhận Đã ổn (PR-52)
   const [confirmTarget, setConfirmTarget] = useState(null);
@@ -439,13 +440,14 @@ export default function CustomerSupportPage() {
   const handleCancelTicket = () => {
     if (!cancelTarget) return;
     setSubmitting(true);
-    cancelSupportTicket(cancelTarget.id, customerId)
+    cancelSupportTicket(cancelTarget.id, customerId, cancelReason.trim() || undefined)
       .then((updated) => {
         setToast({
           type: 'success',
           message: `Đã hủy yêu cầu hỗ trợ ${updated.ticketCode} và hủy công việc liên quan.`,
         });
         setCancelTarget(null);
+        setCancelReason('');
         fetchData();
       })
       .catch((err) => {
@@ -960,11 +962,11 @@ export default function CustomerSupportPage() {
                     )}
                   </div>
 
-                  {/* PR-S3: Nút hủy khi ticket còn OPEN */}
-                  {isOpen && (
+                  {/* PR-S3 / PR-S3a: huỷ khi còn chờ tiếp nhận hoặc đang xử lý (đang xử lý bắt buộc lý do) */}
+                  {(isOpen || (ticket.status === 'IN_PROGRESS' && !(ticket.claim && ['APPROVED', 'PAID'].includes(ticket.claim.status)))) && (
                     <button
                       type="button"
-                      onClick={() => setCancelTarget(ticket)}
+                      onClick={() => { setCancelTarget(ticket); setCancelReason(''); }}
                       className="duo-btn-red px-4 py-2 text-xs flex items-center gap-1.5"
                     >
                       <span className="material-symbols-outlined text-[16px]">cancel</span>
@@ -1475,12 +1477,22 @@ export default function CustomerSupportPage() {
         open={Boolean(cancelTarget)}
         icon="cancel"
         title={`Hủy yêu cầu ${cancelTarget?.ticketCode || ''}?`}
-        message="Yêu cầu hỗ trợ sẽ chuyển sang trạng thái Đã đóng (CLOSED) và công việc tương ứng tại cơ sở sẽ bị hủy (PR-S3)."
+        message={cancelTarget?.status === 'IN_PROGRESS'
+          ? 'Nhân viên đang xử lý yêu cầu này. Huỷ thì công việc của nhân viên dừng lại và nhân viên được báo lý do bạn huỷ.'
+          : 'Yêu cầu hỗ trợ sẽ chuyển sang Đã đóng và công việc tương ứng tại cơ sở bị huỷ (PR-S3).'}
         confirmLabel="Xác nhận hủy"
         submitting={submitting}
+        confirmDisabled={cancelTarget?.status === 'IN_PROGRESS' && (cancelReason.trim().length < 10 || cancelReason.trim().length > 300)}
         onConfirm={handleCancelTicket}
         onCancel={() => setCancelTarget(null)}
-      />
+      >
+        <label className="flex flex-col gap-1 text-xs font-black text-[#4B4B4B]">
+          Lý do huỷ {cancelTarget?.status === 'IN_PROGRESS' ? '(bắt buộc, 10–300 ký tự)' : '(tuỳ chọn)'}
+          <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3} maxLength={300}
+            placeholder="Ví dụ: sự cố đã tự hết, không cần nhân viên tới nữa"
+            className="border-2 border-[#E5E5E5] rounded-xl p-2.5 text-sm font-bold outline-none focus:border-[#1CB0F6]" />
+        </label>
+      </TaskConfirmDialog>
 
       {/* Dialog xác nhận Đã ổn (PR-52) */}
       <TaskConfirmDialog

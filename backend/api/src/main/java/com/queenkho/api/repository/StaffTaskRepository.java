@@ -37,6 +37,9 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     // Lấy task mới nhất theo contract và taskType (ví dụ tìm task bảo trì chuyên sâu gắn với hợp đồng)
     Optional<StaffTask> findFirstByContractIdAndTaskTypeOrderByIdDesc(Integer contractId, String taskType);
 
+    // Lấy task bảo trì chuyên sâu gắn trực tiếp với chính ticket hỗ trợ (supportRequestId)
+    Optional<StaffTask> findFirstBySupportRequestIdAndTaskTypeOrderByIdDesc(Integer supportRequestId, String taskType);
+
     // UC-26 / PR-S3: lấy các task đang mở theo supportRequestId
     List<StaffTask> findBySupportRequestIdAndStatusIn(Integer supportRequestId, Collection<String> statuses);
 

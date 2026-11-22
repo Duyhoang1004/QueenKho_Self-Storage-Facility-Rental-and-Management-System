@@ -16,6 +16,7 @@ import {
   getStaffTaskDetail,
   requestMaintenanceUnitTransfer,
   resetSupportContractPin,
+  reissueSupportContractRfid,
   resolveSupportTask,
   reopenSupportTask,
   updateSupportResolution,
@@ -419,6 +420,15 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   // Task cũ chưa có maintenanceReason: suy ra từ hợp đồng
   const isLiquidation = task.maintenanceReason === 'LIQUIDATION'
     || (!task.maintenanceReason && task.contractStatus === 'LIQUIDATED');
+  const isFromSupport = Boolean(
+    task.supportRequestId ||
+    task.maintenanceReason === 'FACILITY_DAMAGE' ||
+    task.note?.includes('Bảo trì chuyên sâu') ||
+    task.note?.includes('Ticket #') ||
+    task.note?.includes('SR-') ||
+    task.title?.includes('[SR-')
+  );
+  const isContractActive = task.contractStatus === 'ACTIVE';
 
   useEffect(() => {
     if (!isLiquidation) return;
@@ -463,7 +473,20 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
       ]);
     } else {
-      setNote('Đã thay vách tôn mới, sửa khung, xử lý chống thấm trần và vệ sinh ô. Khoá SmartLock hoạt động bình thường.');
+      const lowerNote = String(task.note || '').toLowerCase();
+      if (lowerNote.includes('thông gió') || lowerNote.includes('quạt')) {
+        setNote('Đã thay cụm bạc đạn quạt thông gió, bổ sung mỡ chịu nhiệt và siết chặt ốc giảm chấn giá treo. Quạt chạy êm ái dưới 45dB, hệ thống thông gió hoạt động ổn định.');
+      } else if (lowerNote.includes('đèn') || lowerNote.includes('chiếu sáng')) {
+        setNote('Đã thay mới bộ đèn LED 1.2m Rạng Đông 18W chống ẩm và thay driver nguồn ổn áp. Ánh sáng khu vực ô kho đạt chuẩn, đấu nối an toàn tuyệt đối.');
+      } else if (lowerNote.includes('cửa') || lowerNote.includes('ray')) {
+        setNote('Đã nắn chỉnh thanh đáy cửa cuốn, làm sạch rãnh ray dẫn hướng và tra mỡ bôi trơn chuyên dụng. Cửa cuốn kéo lên hạ xuống êm ái, chốt đáy khít hoàn toàn.');
+      } else if (lowerNote.includes('dột') || lowerNote.includes('thấm') || lowerNote.includes('nước')) {
+        setNote('Đã siết chặt mối nối ống thoát nước ngưng điều hòa, dán keo chống thấm 3 lớp. Hiện trường khô ráo, tài sản ô kho được bảo vệ an toàn.');
+      } else if (lowerNote.includes('ổ cắm') || lowerNote.includes('điện') || lowerNote.includes('công tắc')) {
+        setNote('Đã thay mới cụm ổ cắm - công tắc âm tường chống cháy Panasonic 16A, đo kiểm tra điện áp 220V ổn định không có dòng rò.');
+      } else {
+        setNote('Đã kiểm tra, xử lý dứt điểm toàn bộ sự cố kỹ thuật tại hiện trường ô kho. Bàn giao an toàn, các thiết bị hoạt động ổn định.');
+      }
     }
   };
 
@@ -494,6 +517,8 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           type: 'success',
           message: data.heldGoodsId
             ? `Đã dọn xong ô ${data.storageUnitId}. Hàng đã vào kho tổng — hồ sơ lưu giữ #${data.heldGoodsId}.`
+            : isFromSupport
+            ? `Đã hoàn tất bảo trì kỹ thuật cho ô ${data.storageUnitId}. Khách hàng tiếp tục sử dụng kho an toàn!`
             : `Đã hoàn tất bảo trì. Ô ${data.storageUnitId} sẵn sàng cho thuê.`,
         });
       })
@@ -510,13 +535,27 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         <div>
           <h2 className="text-lg font-black text-[#4B4B4B]">Phiếu bảo trì ô kho</h2>
           <p className="text-xs font-bold text-[#AFAFAF]">
-            Ô {task.storageUnitId} · HĐ {task.contractCode} — xong việc thì ô quay về "Sẵn sàng cho thuê".
+            Ô {task.storageUnitId} · HĐ {task.contractCode} — {
+              isFromSupport
+                ? (isContractActive ? 'Khắc phục sự cố kỹ thuật hạ tầng cho khách đang thuê.' : 'Hoàn tất bảo trì kỹ thuật cho ô kho.')
+                : isLiquidation
+                ? 'xong việc thì ô quay về "Sẵn sàng cho thuê".'
+                : 'xong việc thì ô quay về "Sẵn sàng cho thuê".'
+            }
           </p>
         </div>
-        <span className={`duo-badge whitespace-nowrap border ${isLiquidation
-          ? 'bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]'
-          : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'}`}>
-          {isLiquidation ? 'Cưỡng chế dọn kho' : 'Sửa chữa sau trả kho'}
+        <span className={`duo-badge whitespace-nowrap border ${
+          isLiquidation
+            ? 'bg-[#F3E8FF] text-[#9333EA] border-[#C084FC]'
+            : isFromSupport
+            ? (isContractActive ? 'Bảo trì kỹ thuật hạ tầng (Khách đang thuê)' : 'Bảo trì kỹ thuật hạ tầng')
+            : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
+        }`}>
+          {isLiquidation
+            ? 'Cưỡng chế dọn kho'
+            : isFromSupport
+            ? (isContractActive ? 'Bảo trì kỹ thuật hạ tầng (Khách đang thuê)' : 'Bảo trì kỹ thuật hạ tầng')
+            : 'Sửa chữa sau trả kho'}
         </span>
       </div>
 
@@ -790,7 +829,9 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
             className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[20px]">task_alt</span>
-            {doneLabel} — mở lại ô cho thuê
+            {isFromSupport && isContractActive
+              ? `${doneLabel} — Hoàn tất bảo trì ô kho`
+              : `${doneLabel} — mở lại ô cho thuê`}
           </button>
           {inventoryError && noteValid && (
             <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">{inventoryError}</p>
@@ -802,7 +843,11 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         open={confirmOpen}
         icon="build"
         title={`Xác nhận ${doneLabel.toLowerCase()}?`}
-        message={`Task bảo trì #${task.id} sẽ đóng và ô ${task.storageUnitId} chuyển sang "Sẵn sàng cho thuê" (AVAILABLE).`}
+        message={
+          isFromSupport && isContractActive
+            ? `Task bảo trì #${task.id} sẽ đóng và sự cố kỹ thuật của ô ${task.storageUnitId} được ghi nhận hoàn tất cho khách hàng.`
+            : `Task bảo trì #${task.id} sẽ đóng và ô ${task.storageUnitId} chuyển sang "Sẵn sàng cho thuê" (AVAILABLE).`
+        }
         confirmLabel={doneLabel}
         submitting={submitting}
         onConfirm={handleSubmit}
@@ -2358,7 +2403,7 @@ export default function StaffTaskDetailPage() {
                     </div>
                   </div>
 
-                  {(task.resolutionNote?.toLowerCase().includes('bảo trì chuyên sâu') || task.resolutionNote?.toLowerCase().includes('escalated') || task.escalatedMaintenanceTaskId) && (
+                  {task.issueType === 'FACILITY_DAMAGE' && Boolean(task.escalatedMaintenanceTaskId || task.resolutionNote?.includes('[Chuyển bảo trì chuyên sâu]')) && (
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl bg-[#FFF7ED] border-2 border-[#F97316] p-4">
                       <div className="flex items-start gap-3">
                         <span className="material-symbols-outlined text-[28px] text-[#EA580C] shrink-0 mt-0.5">engineering</span>
@@ -2391,8 +2436,12 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
-                  {task.issueType === 'LOCK_ISSUE' && task.accessPinCode && (
-                    <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
+                  {task.issueType === 'LOCK_ISSUE' && (
+                    task.subCategory && (task.subCategory.includes('RFID') || task.subCategory.includes('thẻ')) ? (
+                      <CodeBox icon="badge" label="Mã thẻ từ RFID ô kho" value={task.rfidCardCode || `RF-${task.storageUnitId || 'TB01'}-09`} big />
+                    ) : task.accessPinCode ? (
+                      <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
+                    ) : null
                   )}
 
                   {task.ticketStatus === 'RESOLVED' && (
@@ -2504,50 +2553,231 @@ export default function StaffTaskDetailPage() {
               ) : (
                 /* Nhân viên đang giữ task IN_PROGRESS xử lý yêu cầu hỗ trợ */
                 <div className="flex flex-col gap-5">
-                  {/* Công cụ Cấp lại mã PIN 6 số cho sự cố LOCK_ISSUE (PR-S6 & PR-Q5) */}
-                  {task.issueType === 'LOCK_ISSUE' && (
-                    <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[18px]">dialpad</span>
-                            Công cụ cấp lại mã PIN 6 số (PR-S6)
-                          </h3>
-                          <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
-                            Dành riêng cho sự cố khóa / quên mã PIN. Hệ thống sinh mã PIN 6 số mới duy nhất theo BR-73.
-                          </p>
-                        </div>
-                        <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
-                          <span className="text-[10px] font-black uppercase text-[#0284C7]">PIN hiện tại:</span>
-                          <span className="font-mono text-base font-black tracking-widest text-[#0F172A]">
-                            {task.accessPinCode || '------'}
-                          </span>
-                        </div>
-                      </div>
+                  {/* Xử lý sự cố KHÓA & MÃ PIN (LOCK_ISSUE) - Phân nhánh chính xác theo mục khách chọn */}
+                  {task.issueType === 'LOCK_ISSUE' && (() => {
+                    const isRfidIssue = task.subCategory && (task.subCategory.includes('RFID') || task.subCategory.includes('thẻ'));
+                    const isBatteryIssue = task.subCategory && (task.subCategory.includes('Hết pin') || task.subCategory.includes('không nhận mã') || task.subCategory.includes('pin'));
+                    const isJammedKeypad = task.subCategory && (task.subCategory.includes('kẹt') || task.subCategory.includes('liệt') || task.subCategory.includes('bàn phím'));
 
-                      {task.contractStatus === 'OVERDUE' ? (
-                        <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3.5 py-2.5 flex items-center gap-2 text-xs font-bold text-[#FF4B4B]">
-                          <span className="material-symbols-outlined text-[18px]">block</span>
-                          Hợp đồng đang QUÁ HẠN THANH TOÁN (OVERDUE) — Không được cấp lại mã PIN theo quy tắc PR-Q5 &amp; PR-S6. Vui lòng hướng dẫn khách thanh toán cước trước.
+                    if (isRfidIssue) {
+                      return (
+                        <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[18px]">contactless</span>
+                                Công cụ xử lý thẻ từ RFID SmartLock (PR-S7)
+                              </h3>
+                              <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
+                                Dành riêng cho sự cố thẻ từ không nhận tín hiệu, chập chờn hoặc đầu đọc báo đèn đỏ. Nhân viên nạp lại mã thẻ hoặc cấp phát thẻ RFID mới.
+                              </p>
+                            </div>
+                            <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase text-[#0284C7]">Thẻ RFID ô:</span>
+                              <span className="font-mono text-sm font-black tracking-wider text-[#0F172A]">
+                                {task.rfidCardCode || `RF-${task.storageUnitId || 'TB01'}-09`}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#BAE6FD]/60">
+                            <span className="text-[11px] font-bold text-[#0369A1]">
+                              * Nạp lại mã thẻ vào bộ nhớ đầu đọc hoặc cấp phát thẻ RFID mới và đồng bộ ngay vào hợp đồng khách hàng.
+                            </span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setToast({
+                                    type: 'success',
+                                    message: 'Đã nạp lại mã thẻ từ RFID vào đầu đọc SmartLock ô kho thành công! Quẹt thẻ mở chốt tức thì.'
+                                  });
+                                  const sample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_RFID_ERROR') || findMatchingTemplate(task);
+                                  setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                                }}
+                                className="duo-btn-blue px-3.5 py-2 text-xs gap-1.5 cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">sync</span>
+                                Nạp &amp; Đồng bộ lại đầu đọc thẻ
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newRfidCode = `RF-${task.storageUnitId || 'TB01'}-${Math.floor(1000 + Math.random() * 9000)}`;
+                                  reissueSupportContractRfid(task.id, userId, newRfidCode)
+                                    .then(data => {
+                                      setTask(data);
+                                      setToast({
+                                        type: 'success',
+                                        message: `Đã cấp phát và cập nhật thẻ từ RFID mới (${data.rfidCardCode || newRfidCode}) vào hợp đồng ${data.contractCode || ''} thành công!`
+                                      });
+                                      const now = new Date();
+                                      const pad = n => String(n).padStart(2, '0');
+                                      const dateStr = `${pad(now.getHours())}:${pad(now.getMinutes())} ngày ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                                      const unit = task?.storageUnitId || 'Ô kho';
+                                      const staff = task?.staffName || task?.assignedStaffName || 'Nhân viên cơ sở';
+                                      const rawTicket = task?.ticketCode || (task?.id ? `SR-${task.id}` : '---');
+                                      const ticketCode = String(rawTicket).startsWith('#') ? String(rawTicket).slice(1) : String(rawTicket);
+                                      setResolutionNote(`[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]
+• Thời gian: ${dateStr} · Ô kho: ${unit}
+• Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode} [Lỗi thẻ từ RFID]
+• Hiện trạng: Thẻ từ RFID cũ bị trầy xước chip từ, đầu đọc báo đèn đỏ không nhận diện.
+• Nguyên nhân sơ bộ: Hỏng vi mạch thẻ từ do va chạm cơ học trong quá trình sử dụng.
+• Biện pháp xử lý kỹ thuật:
+  - Vô hiệu hóa mã thẻ RFID cũ trong bộ nhớ điều khiển khóa ô kho.
+  - Cấp mới thẻ từ RFID mã số ${data.rfidCardCode || newRfidCode} và kích hoạt quyền truy cập mở khóa ô kho.
+  - Thử quẹt thẻ 03 lần liên tiếp: đầu đọc báo đèn xanh và mở chốt êm ái 100%.
+• Kết quả nghiệm thu: Đã bàn giao thẻ từ RFID mới (${data.rfidCardCode || newRfidCode}) cho khách hàng, kiểm tra mở khóa hoạt động hoàn hảo.`);
+                                    })
+                                    .catch(err => {
+                                      setToast({
+                                        type: 'error',
+                                        message: err.response?.data?.message || 'Không thể cấp đổi thẻ từ RFID lúc này.'
+                                      });
+                                    });
+                                }}
+                                className="duo-btn-green px-3.5 py-2 text-xs gap-1.5 cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">add_card</span>
+                                Cấp phát thẻ từ RFID mới
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                          <span className="text-[11px] font-bold text-[#0369A1]">
-                            * Khi bấm cấp lại, mã PIN cũ sẽ bị vô hiệu hóa ngay lập tức và ghi nhật ký [PIN_RESET].
-                          </span>
-                          <button
-                            type="button"
-                            disabled={pinResetting}
-                            onClick={handleResetPinForLockIssue}
-                            className="duo-btn-blue px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
-                          >
-                            <span className="material-symbols-outlined text-[17px]">autorenew</span>
-                            {pinResetting ? 'Đang cấp PIN mới...' : 'Cấp lại mã PIN (6 số)'}
-                          </button>
+                      );
+                    }
+
+                    if (isBatteryIssue) {
+                      return (
+                        <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[18px]">battery_alert</span>
+                                Quy trình kích nguồn dự phòng &amp; Thay pin SmartLock (PR-S8)
+                              </h3>
+                              <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
+                                Bàn phím không sáng đèn, không có tiếng bip báo hiệu, pin sụt dưới 10% không đủ điện áp kích mở chốt điện tử.
+                              </p>
+                            </div>
+                            <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase text-[#E58800]">Nguồn khẩn cấp:</span>
+                              <span className="font-mono text-xs font-black text-[#0F172A]">Cổng phụ Type-C 5V</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#BAE6FD]/60">
+                            <span className="text-[11px] font-bold text-[#0369A1]">
+                              * Kích nguồn qua cổng USB phụ mặt dưới khóa, sau đó mở cửa và thay mới 04 pin AA Panasonic Alkaline.
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setToast({
+                                  type: 'success',
+                                  message: 'Đã kích nguồn khẩn cấp qua cổng Type-C và thay mới trọn bộ 04 pin AA Panasonic Alkaline! Điện áp đạt 6.2V.'
+                                });
+                                const sample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_DEAD_BATTERY') || findMatchingTemplate(task);
+                                setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                              }}
+                              className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[17px]">battery_charging_full</span>
+                              Kích nguồn &amp; Thay 04 pin AA Panasonic mới
+                            </button>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      );
+                    }
+
+                    if (isJammedKeypad) {
+                      return (
+                        <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[18px]">keyboard</span>
+                                Khắc phục kẹt phím &amp; Vệ sinh bàn phím số SmartLock
+                              </h3>
+                              <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
+                                Phím số bị rít, kẹt cơ học hoặc giảm độ nhạy cảm ứng do bụi bẩn bám dính lâu ngày trong môi trường kho.
+                              </p>
+                            </div>
+                            <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
+                              <span className="text-[10px] font-black uppercase text-[#0284C7]">Tiếp điểm:</span>
+                              <span className="font-mono text-xs font-black text-[#0F172A]">Cảm ứng &amp; Cơ</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#BAE6FD]/60">
+                            <span className="text-[11px] font-bold text-[#0369A1]">
+                              * Tháo nắp che, vệ sinh cặn bụi bằng cồn chuyên dụng và cân chỉnh độ nảy lò xo phím số.
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setToast({
+                                  type: 'success',
+                                  message: 'Đã vệ sinh tiếp điểm và căn chỉnh lực đàn hồi phím số thành công! Các phím 0-9 nhạy 100%.'
+                                });
+                                const sample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_JAMMED_KEYPAD') || findMatchingTemplate(task);
+                                setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                              }}
+                              className="duo-btn-blue px-4 py-2 text-xs gap-1.5 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[17px]">cleaning_services</span>
+                              Vệ sinh tiếp điểm &amp; Cân chỉnh lò xo phím
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Mặc định: Quên mã PIN SmartLock
+                    return (
+                      <div className="rounded-2xl border-2 border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <h3 className="text-xs font-black uppercase text-[#0284C7] flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[18px]">dialpad</span>
+                              Công cụ cấp lại mã PIN 6 số (PR-S6)
+                            </h3>
+                            <p className="text-[11px] font-bold text-[#64748B] mt-0.5">
+                              Dành riêng cho sự cố khóa / quên mã PIN. Hệ thống sinh mã PIN 6 số mới duy nhất theo BR-73.
+                            </p>
+                          </div>
+                          <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase text-[#0284C7]">PIN hiện tại:</span>
+                            <span className="font-mono text-base font-black tracking-widest text-[#0F172A]">
+                              {task.accessPinCode || '------'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {task.contractStatus === 'OVERDUE' ? (
+                          <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3.5 py-2.5 flex items-center gap-2 text-xs font-bold text-[#FF4B4B]">
+                            <span className="material-symbols-outlined text-[18px]">block</span>
+                            Hợp đồng đang QUÁ HẠN THANH TOÁN (OVERDUE) — Không được cấp lại mã PIN theo quy tắc PR-Q5 &amp; PR-S6. Vui lòng hướng dẫn khách thanh toán cước trước.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <span className="text-[11px] font-bold text-[#0369A1]">
+                              * Khi bấm cấp lại, mã PIN cũ sẽ bị vô hiệu hóa ngay lập tức và ghi nhật ký [PIN_RESET].
+                            </span>
+                            <button
+                              type="button"
+                              disabled={pinResetting}
+                              onClick={handleResetPinForLockIssue}
+                              className="duo-btn-blue px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[17px]">autorenew</span>
+                              {pinResetting ? 'Đang cấp PIN mới...' : 'Cấp lại mã PIN (6 số)'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Xử lý sự cố AN NINH (SECURITY) */}
                   {task.issueType === 'SECURITY' && (
@@ -2584,6 +2814,25 @@ export default function StaffTaskDetailPage() {
                         label="Ảnh bằng chứng kiểm tra an ninh (Bắt buộc ít nhất 1 ảnh)"
                         mockLabel={`Ảnh kiểm tra an ninh ô ${task.storageUnitId || ''}`}
                       />
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#FCA5A5]/60">
+                        <span className="text-[11px] font-bold text-[#991B1B]">Gợi ý thao tác nhanh:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sample = findMatchingTemplate(task);
+                            setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                            setToast({
+                              type: 'success',
+                              message: `Đã áp dụng mẫu biên bản an ninh khớp với [${task.subCategory || 'An ninh'}].`
+                            });
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-[#EF4444] hover:bg-[#FEE2E2] text-[11px] font-black text-[#B91C1C] flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">verified_user</span>
+                          Áp dụng biên bản an ninh khớp với [{task.subCategory || 'Sự cố an ninh'}]
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -2660,6 +2909,25 @@ export default function StaffTaskDetailPage() {
                         label="Ảnh bằng chứng khu vực sau khi đã được dọn sạch sẽ (Bắt buộc ít nhất 1 ảnh)"
                         mockLabel={`Ảnh nghiệm thu vệ sinh ô ${task.storageUnitId || ''}`}
                       />
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#A7F3D0]/60">
+                        <span className="text-[11px] font-bold text-[#065F46]">Gợi ý thao tác nhanh:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sample = findMatchingTemplate(task);
+                            setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                            setToast({
+                              type: 'success',
+                              message: `Đã áp dụng mẫu biên bản vệ sinh khớp với [${task.subCategory || 'Vệ sinh'}].`
+                            });
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-[#10B981] hover:bg-[#D1FAE5] text-[11px] font-black text-[#047857] flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">sanitizer</span>
+                          Áp dụng biên bản vệ sinh khớp với [{task.subCategory || 'Vệ sinh kho'}]
+                        </button>
+                      </div>
                     </div>
                   )}
 

@@ -1596,6 +1596,8 @@ public class StaffTaskService {
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
 
+
+
     // D-18: ô của hợp đồng phải sẵn sàng hôm nay — không bảo trì, không còn khách khác đang ở
     void assertUnitReadyForCheckIn(RentalContract contract) {
         StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
@@ -1822,6 +1824,10 @@ public class StaffTaskService {
                         maintNote = maintNote.substring(0, 997) + "...";
                     }
                     createdMaintenanceTask = createMaintenanceTask(liveContract, "FACILITY_DAMAGE", maintNote, false, staff);
+                    if (createdMaintenanceTask != null && updatedTask.getSupportRequestId() != null) {
+                        createdMaintenanceTask.setSupportRequestId(updatedTask.getSupportRequestId());
+                        staffTaskRepository.save(createdMaintenanceTask);
+                    }
                 }
             }
         }
@@ -1853,13 +1859,17 @@ public class StaffTaskService {
             SupportRequest sr = supportRequestRepository.findById(supportRequestId)
                     .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND",
                             "Không tìm thấy ticket hỗ trợ liên kết"));
-            sr.setStatus("RESOLVED");
+            if (isEscalated) {
+                sr.setStatus("IN_PROGRESS");
+            } else {
+                sr.setStatus("RESOLVED");
+                sr.setResolvedAt(now);
+            }
             String resNoteToSave = fullResolution.toString();
             if (resNoteToSave.length() > 1000) {
                 resNoteToSave = resNoteToSave.substring(0, 997) + "...";
             }
             sr.setResolutionNote(resNoteToSave);
-            sr.setResolvedAt(now);
             supportRequestRepository.save(sr);
             ticketCode = sr.getTicketCode();
 
@@ -1894,6 +1904,8 @@ public class StaffTaskService {
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
+
+
 
     /**
      * PR-S5: Chỉnh sửa lại kết quả xử lý hỗ trợ khi ticket đang ở trạng thái RESOLVED (Chờ khách xác nhận).
@@ -1981,6 +1993,8 @@ public class StaffTaskService {
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
 
+
+
     /**
      * PR-S5: Nhân viên / Quản lý cơ sở thu hồi kết quả và mở lại toàn bộ task SUPPORT để xử lý lại từ đầu.
      * Áp dụng khi ticket đang ở trạng thái RESOLVED (Chờ khách xác nhận).
@@ -2054,6 +2068,8 @@ public class StaffTaskService {
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
 
+
+
     /**
      * UC-27 / PR-S6, BR-73, PR-Q5: Cấp lại mã PIN 6 số cho ticket LOCK_ISSUE.
      * Chặn nếu hợp đồng đang OVERDUE (PR-Q5).
@@ -2113,6 +2129,73 @@ public class StaffTaskService {
         activityLogService.log(
                 staff.getId(),
                 "[PIN_RESET] Nhân viên " + staff.getFullName() + " cấp lại mã PIN mới cho HĐ " + contract.getContractCode()
+                        + " (Ticket " + sr.getTicketCode() + ")",
+                "rental_contracts",
+                String.valueOf(contract.getId())
+        );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * UC-27 / PR-S7: Staff cấp đổi thẻ từ RFID mới cho ticket LOCK_ISSUE (lỗi thẻ từ RFID).
+     */
+    @Transactional
+    public StaffTaskDetailResponse reissueSupportContractRfid(Integer taskId, Integer staffId, String customRfid) {
+        User staff = findUserWithRole(staffId, "STAFF", "Chỉ nhân viên mới được cấp đổi thẻ từ RFID hỗ trợ");
+        StaffTask task = findTaskInFacility(taskId, staff.getFacilityId());
+
+        if (!"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_SUPPORT",
+                    "Chỉ task Hỗ trợ (SUPPORT) mới có chức năng cấp đổi thẻ từ RFID");
+        }
+        if (!"IN_PROGRESS".equals(task.getStatus())
+                || task.getStaff() == null
+                || !task.getStaff().getId().equals(staffId)
+                || (task.getDueAt() != null && !task.getDueAt().isAfter(LocalDateTime.now()))) {
+            throw explainSupportFailure(taskId, staffId);
+        }
+
+        SupportRequest sr = task.getSupportRequestId() != null
+                ? supportRequestRepository.findDetailById(task.getSupportRequestId()).orElse(null)
+                : null;
+        if (sr == null || !"LOCK_ISSUE".equalsIgnoreCase(sr.getIssueType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "INVALID_ISSUE_TYPE",
+                    "Chỉ yêu cầu hỗ trợ thuộc loại Sự cố khóa (LOCK_ISSUE) mới được cấp đổi thẻ từ RFID");
+        }
+
+        RentalContract contract = task.getContract() != null ? task.getContract() : sr.getContract();
+        if (contract == null) {
+            throw new StaffTaskException(HttpStatus.NOT_FOUND, "CONTRACT_NOT_FOUND",
+                    "Không tìm thấy hợp đồng gắn với yêu cầu hỗ trợ này");
+        }
+
+        if (!LIVE_CONTRACT_STATUSES.contains(contract.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID",
+                    "Hợp đồng không còn hiệu lực để cấp đổi thẻ từ RFID");
+        }
+
+        String unitId = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "TB01";
+        String newRfid = (customRfid != null && !customRfid.isBlank())
+                ? customRfid.trim()
+                : String.format("RF-%s-%04d", unitId, RANDOM.nextInt(10000));
+
+        contract.setRfidCardCode(newRfid);
+        rentalContractRepository.save(contract);
+
+        String stamp = LocalDateTime.now().format(TS_FMT);
+        String updatedNote = (task.getNote() != null ? task.getNote() : "") + " | [Đã cấp đổi thẻ RFID mới " + newRfid + " lúc " + stamp + "]";
+        if (updatedNote.length() > 1000) {
+            updatedNote = updatedNote.substring(0, 997) + "...";
+        }
+        task.setNote(updatedNote);
+        staffTaskRepository.save(task);
+
+        activityLogService.log(
+                staff.getId(),
+                "[RFID_REISSUE] Nhân viên " + staff.getFullName() + " cấp đổi thẻ từ RFID mới (" + newRfid + ") cho HĐ " + contract.getContractCode()
                         + " (Ticket " + sr.getTicketCode() + ")",
                 "rental_contracts",
                 String.valueOf(contract.getId())
@@ -2269,6 +2352,8 @@ public class StaffTaskService {
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
+
+
 
     private StaffTaskException explainSupportFailure(Integer taskId, Integer staffId) {
         StaffTask current = staffTaskRepository.findDetailById(taskId).orElseThrow();
@@ -2491,6 +2576,8 @@ public class StaffTaskService {
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
 
+
+
     // ================== PR-O10: HOÀN TẤT TASK BẢO TRÌ Ô KHO ==================
 
     // Staff đang giữ task, hoặc FM của cơ sở (đóng thẳng, không cần nhận việc) bấm "Sửa xong" / "Dọn xong".
@@ -2598,10 +2685,39 @@ public class StaffTaskService {
                 "/manager/tasks/" + taskId
         );
 
+        // Nếu task bảo trì xuất phát từ yêu cầu hỗ trợ -> cập nhật ticket sang RESOLVED
+        if (done.getSupportRequestId() != null && supportRequestRepository != null) {
+            supportRequestRepository.findById(done.getSupportRequestId()).ifPresent(sr -> {
+                if (!"CLOSED".equals(sr.getStatus())) {
+                    sr.setStatus("RESOLVED");
+                    sr.setResolvedAt(now);
+                    String updatedRes = (sr.getResolutionNote() != null ? sr.getResolutionNote() : "")
+                            + " | [Bảo trì ô kho hoàn tất lúc " + now.format(TS_FMT) + ": " + workNote + "]";
+                    if (updatedRes.length() > 1000) {
+                        updatedRes = updatedRes.substring(0, 997) + "...";
+                    }
+                    sr.setResolutionNote(updatedRes);
+                    supportRequestRepository.save(sr);
+
+                    if (notificationService != null && sr.getCustomer() != null) {
+                        notificationService.notifyCustomer(
+                                sr.getCustomer().getId(),
+                                "Bảo trì ô kho hoàn tất — Yêu cầu " + sr.getTicketCode(),
+                                "Cơ sở đã hoàn tất bảo trì kỹ thuật cho ô kho của bạn: " + workNote + ". Vui lòng kiểm tra và xác nhận trên hệ thống.",
+                                "SUPPORT",
+                                "/ho-tro"
+                        );
+                    }
+                }
+            });
+        }
+
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
+
+
 
     /**
      * Vấn đề 6 (22/11/2026): trong quá trình xử lý task MAINTENANCE, nhân viên kỹ thuật nhận thấy việc sửa kho cần
@@ -2674,6 +2790,8 @@ public class StaffTaskService {
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
     }
+
+
 
     // PR-Q10: biên bản kiểm kê hàng của khách khi dọn kho sau thanh lý
     private void validateInventory(CompleteMaintenanceRequest request, List<String> images) {
@@ -3149,9 +3267,9 @@ public class StaffTaskService {
         }
 
         Integer escalatedMaintId = null;
-        if ("SUPPORT".equals(task.getTaskType()) && contract != null) {
+        if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
             escalatedMaintId = staffTaskRepository
-                    .findFirstByContractIdAndTaskTypeOrderByIdDesc(contract.getId(), "MAINTENANCE")
+                    .findFirstBySupportRequestIdAndTaskTypeOrderByIdDesc(task.getSupportRequestId(), "MAINTENANCE")
                     .map(StaffTask::getId)
                     .orElse(null);
         }

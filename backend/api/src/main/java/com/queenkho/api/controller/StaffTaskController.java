@@ -227,6 +227,20 @@ public class StaffTaskController {
         }
     }
 
+    // UC-27 / PR-S7: Staff cấp phát / đổi thẻ từ RFID mới cho ticket LOCK_ISSUE
+    // POST /api/v1/staff-tasks/12/reissue-rfid?staffId=2   body (optional): { "rfidCardCode": "RF-TB01-1234" }
+    @PostMapping("/{id}/reissue-rfid")
+    public ResponseEntity<?> reissueRfid(@PathVariable Integer id,
+                                         @RequestParam(required = false) Integer staffId,
+                                         @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String customRfid = body != null ? body.get("rfidCardCode") : null;
+            return ResponseEntity.ok(staffTaskService.reissueSupportContractRfid(id, staffId, customRfid));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     // UC-27 / PR-S4: Facility Manager gia hạn task SUPPORT đã quá hạn (giữ người nhận)
     // POST /api/v1/staff-tasks/12/extend-support?managerId=3   body: { "newDueDate": "2026-10-25", "reason": "..." }
     @PostMapping("/{id}/extend-support")

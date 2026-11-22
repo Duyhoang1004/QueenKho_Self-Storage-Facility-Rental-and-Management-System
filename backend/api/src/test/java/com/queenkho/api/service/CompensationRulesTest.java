@@ -43,6 +43,18 @@ class CompensationRulesTest {
     }
 
     @Test
+    @DisplayName("BR-127 lỗi cơ sở: khách chọn tiếp tục thuê (CONTINUE) thì không phạt 1 tháng tiền thuê (penalty = 0)")
+    void facilityFaultContinueRental() {
+        CompensationQuoteResponse q = CompensationClaimService.compute("FACILITY", "GOODS_DAMAGE",
+                new BigDecimal("30000000"), 50, 4, InsurancePlan.ADVANCED, new BigDecimal("100000000"), PRICE, "CONTINUE");
+        assertMoney("15000000", q.goodsCompensation());
+        assertMoney("0", q.penaltyAmount());
+        assertMoney("200000", q.rentRefundAmount());
+        assertMoney("15200000", q.totalCompensation());
+        assertTrue(q.insuranceClaimable());
+    }
+
+    @Test
     @DisplayName("BR-127: tiền hàng bị chặn bởi trần — gói Cơ bản không khai báo chỉ 5 triệu dù mất 40 triệu")
     void capApplied() {
         CompensationQuoteResponse q = CompensationClaimService.compute("FACILITY", "GOODS_LOSS",

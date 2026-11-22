@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../utils/imageEvidence';
 import { uploadImageFile } from '../services/staffTaskService';
-import { INCIDENT_REPORT_TEMPLATES, SUPPORT_ISSUE_LABEL, buildIncidentReportNote, buildBlankIncidentReport } from '../utils/incidentTemplates';
+import { INCIDENT_REPORT_TEMPLATES, SUPPORT_ISSUE_LABEL, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate } from '../utils/incidentTemplates';
 
 const MAX_INCIDENT_PHOTOS = 10; // Đồng bộ tối đa 10 ảnh bằng chứng hiện trường (BR-121)
 
@@ -9,6 +9,7 @@ export default function IncidentReportModal({
   isOpen,
   onClose,
   task,
+  repairStatus = 'FIXED',
   resolutionNote,
   evidenceImages = [],
   onUpdateResolutionNote,
@@ -35,7 +36,9 @@ export default function IncidentReportModal({
   // Đồng bộ dữ liệu ban đầu khi mở modal
   useEffect(() => {
     if (isOpen && task) {
-      setLocalNote(resolutionNote || task.resolutionNote || buildBlankIncidentReport(task));
+      const matched = findMatchingTemplate(task);
+      setSelectedTemplateKey(matched?.id || '');
+      setLocalNote(resolutionNote || task.resolutionNote || buildBlankIncidentReport(task, repairStatus));
       setLocalDescription(task.ticketDescription || task.description || 'Khách hàng liên hệ yêu cầu cơ sở hỗ trợ kỹ thuật và kiểm tra hiện trường tại ô kho.');
       setLocalCustomerName(task.customerName || 'Khách hàng QueenKho');
       setLocalStaffName(task.staffName || task.assignedStaffName || 'Nhân viên cơ sở');
@@ -44,10 +47,9 @@ export default function IncidentReportModal({
         ? evidenceImages
         : Array.from(new Set([...(task.resolutionImages || []), ...(task.ticketEvidenceImages || [])])).filter(Boolean);
       setLocalImages(initialImages);
-      setSelectedTemplateKey('');
       setUploadError('');
     }
-  }, [isOpen, task, resolutionNote, evidenceImages]);
+  }, [isOpen, task, resolutionNote, evidenceImages, repairStatus]);
 
   // Khi người dùng gõ sửa nội dung biên bản
   const handleNoteChange = (newText) => {
@@ -67,7 +69,7 @@ export default function IncidentReportModal({
       if (found) break;
     }
     if (found) {
-      const generated = buildIncidentReportNote(task, found);
+      const generated = buildIncidentReportNote(task, found, repairStatus);
       setLocalNote(generated);
       if (onUpdateResolutionNote) {
         onUpdateResolutionNote(generated);
@@ -234,20 +236,35 @@ export default function IncidentReportModal({
                   + Chèn khung biên bản (tự điền)
                 </button>
 
+                {/* Dropdown chọn mẫu biên bản khớp với từng luồng sự cố */}
+                <select
+                  value={selectedTemplateKey}
+                  onChange={(e) => handleSelectTemplate(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 hover:border-blue-500 text-[11px] font-bold text-slate-700 cursor-pointer outline-none transition-colors max-w-[280px] truncate"
+                  title="Chọn mẫu biên bản phù hợp với sự cố"
+                >
+                  {((task?.issueType && INCIDENT_REPORT_TEMPLATES[task.issueType]) || INCIDENT_REPORT_TEMPLATES.OTHER).map(tpl => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.subCategory ? `[${tpl.subCategory}] - ${tpl.label}` : tpl.label}
+                    </option>
+                  ))}
+                </select>
+
                 <button
                   type="button"
                   onClick={() => {
-                    const sampleTemplate = (task?.issueType && INCIDENT_REPORT_TEMPLATES[task.issueType]?.[0]) || INCIDENT_REPORT_TEMPLATES.OTHER[0];
+                    const sampleTemplate = findMatchingTemplate(task);
                     const sampleNote = buildIncidentReportNote(task, sampleTemplate);
                     setLocalNote(sampleNote);
+                    setSelectedTemplateKey(sampleTemplate?.id || '');
                     if (onUpdateResolutionNote) {
                       onUpdateResolutionNote(sampleNote);
                     }
                   }}
-                  className="text-[10px] font-bold text-slate-500 hover:text-blue-700 hover:underline cursor-pointer"
-                  title="Điền dữ liệu mẫu đầy đủ để demo nhanh khi cần"
+                  className="text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                  title="Điền dữ liệu mẫu khớp đúng mục khách đã chọn"
                 >
-                  (Hoặc điền mẫu demo)
+                  + Điền mẫu chuẩn theo sự cố (demo)
                 </button>
               </div>
 

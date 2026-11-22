@@ -34,6 +34,9 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     // UC-16: lấy task đang mở của 1 hợp đồng để hủy (khách gia hạn)
     List<StaffTask> findByContractIdAndTaskTypeAndStatusIn(Integer contractId, String taskType, List<String> statuses);
 
+    // Lấy task mới nhất theo contract và taskType (ví dụ tìm task bảo trì chuyên sâu gắn với hợp đồng)
+    Optional<StaffTask> findFirstByContractIdAndTaskTypeOrderByIdDesc(Integer contractId, String taskType);
+
     // UC-26 / PR-S3: lấy các task đang mở theo supportRequestId
     List<StaffTask> findBySupportRequestIdAndStatusIn(Integer supportRequestId, Collection<String> statuses);
 

@@ -181,6 +181,7 @@ export default function App() {
       {/* ========== Staff Portal (UC-16, UC-17, UC-18, UC-27) ========== */}
       <Route element={<StaffLayout />}>
         <Route path="/staff" element={<StaffTaskBoardPage />} />
+        <Route path="/staff/tasks" element={<StaffTaskBoardPage />} />
         <Route path="/staff/profile" element={<UserProfilePage />} />
         <Route path="/staff/tasks/:id" element={<StaffTaskDetailPage />} />
       </Route>
@@ -211,6 +212,9 @@ export default function App() {
         <Route path="/bom/claims" element={<ClaimsPage />} />
         <Route path="/bom/claims/:id" element={<ClaimsPage />} />
       </Route>
+
+      {/* Catch-all fallback để tránh màn hình trắng khi gõ nhầm URL */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

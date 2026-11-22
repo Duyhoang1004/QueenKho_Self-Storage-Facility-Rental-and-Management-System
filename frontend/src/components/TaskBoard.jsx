@@ -129,7 +129,10 @@ export default function TaskBoard({
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState(isRefundMode ? 'REFUND_OPEN' : 'ACTIVE')
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const highlightParam = searchParams.get('highlightTaskId')
+  const [tab, setTab] = useState(() => (tabParam && ['OPEN', 'ACTIVE', 'IN_PROGRESS', 'OVERDUE', 'DONE'].includes(tabParam) ? tabParam : (isRefundMode ? 'REFUND_OPEN' : 'ACTIVE')))
   const [typeFilter, setTypeFilter] = useState(initialTypeFilter)
   const [search, setSearch] = useState('')
   const [mineOnly, setMineOnly] = useState(false)
@@ -137,9 +140,17 @@ export default function TaskBoard({
   const [lastUpdated, setLastUpdated] = useState(null)
   const [viewLayout, setViewLayout] = useState(defaultLayout)
   const [currentPage, setCurrentPage] = useState(1)
-  const [searchParams] = useSearchParams()
-  const highlightParam = searchParams.get('highlightTaskId')
   const [activeHighlightId, setActiveHighlightId] = useState(null)
+
+  // Hỗ trợ tham số tab trên URL (ví dụ: ?tab=OPEN thì tự mở tab Chờ nhận và bỏ lọc Việc của tôi)
+  useEffect(() => {
+    if (tabParam && ['OPEN', 'ACTIVE', 'IN_PROGRESS', 'OVERDUE', 'DONE'].includes(tabParam)) {
+      setTab(tabParam)
+      if (tabParam === 'OPEN') {
+        setMineOnly(false)
+      }
+    }
+  }, [tabParam])
 
   // Tự động tìm task, đổi tab và tắt bộ lọc cản trở khi bấm từ thông báo
   useEffect(() => {

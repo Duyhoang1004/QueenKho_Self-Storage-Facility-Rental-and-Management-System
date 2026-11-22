@@ -31,7 +31,7 @@ import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/i
 import { getCentralWarehouses } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 import IncidentReportModal from '../../components/IncidentReportModal';
-import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport } from '../../utils/incidentTemplates';
+import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate, getPresetsForTask } from '../../utils/incidentTemplates';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -1243,13 +1243,18 @@ export default function StaffTaskDetailPage() {
           type: 'success',
           message: isClaimInspection
             ? `Đã lập biên bản kiểm tra hồ sơ ${claim.claimCode}. Quản lý cơ sở sẽ thẩm định và chốt bồi thường.`
+            : repairStatus === 'ESCALATED_MAINTENANCE'
+            ? `Đã xử lý ticket ${data.ticketCode || ''} & chuyển sang Bảo trì chuyên sâu (Task bảo trì mới đang ở cột Chờ nhận trên Bảng công việc).`
             : `Đã xử lý xong yêu cầu hỗ trợ ${data.ticketCode || ''}. Trạng thái phiếu chuyển sang Chờ khách xác nhận (RESOLVED).`,
         });
       })
       .catch(err => {
+        const errorMsg = err.response?.data?.message
+          || err.response?.data?.error
+          || (err.response ? `Lỗi máy chủ (${err.response.status})` : 'Mất kết nối máy chủ (Backend port 8080 chưa chạy hoặc bị ngắt kết nối).');
         setToast({
           type: 'error',
-          message: err.response?.data?.message || 'Không thể hoàn tất xử lý yêu cầu hỗ trợ.',
+          message: errorMsg,
         });
         loadTask();
       })
@@ -2192,6 +2197,39 @@ export default function StaffTaskDetailPage() {
                     </div>
                   </div>
 
+                  {(task.resolutionNote?.toLowerCase().includes('bảo trì chuyên sâu') || task.resolutionNote?.toLowerCase().includes('escalated') || task.escalatedMaintenanceTaskId) && (
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl bg-[#FFF7ED] border-2 border-[#F97316] p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="material-symbols-outlined text-[28px] text-[#EA580C] shrink-0 mt-0.5">engineering</span>
+                        <div>
+                          <p className="text-sm font-black text-[#EA580C]">Đã chuyển sang quy trình Bảo trì chuyên sâu</p>
+                          <p className="text-xs font-bold text-[#9A3412]">
+                            {task.escalatedMaintenanceTaskId ? (
+                              <>
+                                Hệ thống đã tự động tạo Task bảo trì kho <strong>#{task.escalatedMaintenanceTaskId}</strong> và bàn giao cho bạn trực tiếp xử lý tiếp tại hiện trường.
+                              </>
+                            ) : (
+                              <>
+                                Hệ thống đã tự động tạo Task bảo trì kho mới (MAINTENANCE) và tự động bàn giao cho bạn thực hiện tiếp.
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <Link
+                        to={task.escalatedMaintenanceTaskId ? `/staff/tasks/${task.escalatedMaintenanceTaskId}` : '/staff?tab=OPEN'}
+                        className="duo-btn-yellow px-4 py-2 text-xs font-black gap-1.5 whitespace-nowrap shrink-0 flex items-center"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">
+                          {task.escalatedMaintenanceTaskId ? 'arrow_forward' : 'assignment'}
+                        </span>
+                        {task.escalatedMaintenanceTaskId
+                          ? `Đến Task bảo trì #${task.escalatedMaintenanceTaskId}`
+                          : 'Đến Bảng công việc'}
+                      </Link>
+                    </div>
+                  )}
+
                   {task.issueType === 'LOCK_ISSUE' && task.accessPinCode && (
                     <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
                   )}
@@ -2408,7 +2446,20 @@ export default function StaffTaskDetailPage() {
                         <span className="text-[11px] font-black uppercase text-[#777777]">Biện pháp xử lý *</span>
                         <select
                           value={repairStatus}
-                          onChange={e => setRepairStatus(e.target.value)}
+                          onChange={e => {
+                            const newStatus = e.target.value;
+                            setRepairStatus(newStatus);
+                            if (
+                              !resolutionNote.trim() ||
+                              resolutionNote.includes('[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]') ||
+                              resolutionNote.includes('chuyên sâu') ||
+                              resolutionNote.includes('tiêu chuẩn') ||
+                              resolutionNote.includes('hoạt động ổn định')
+                            ) {
+                              const sampleTemplate = findMatchingTemplate(task);
+                              setResolutionNote(buildIncidentReportNote(task, sampleTemplate, newStatus));
+                            }
+                          }}
                           className="duo-input text-xs bg-white"
                         >
                           <option value="">— Chọn biện pháp xử lý —</option>
@@ -2511,7 +2562,7 @@ export default function StaffTaskDetailPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setResolutionNote(buildBlankIncidentReport(task));
+                              setResolutionNote(buildBlankIncidentReport(task, repairStatus));
                             }}
                             className="px-3 py-1.5 rounded-xl bg-white border border-[#006699] hover:bg-[#E0F2FE] text-[11px] font-black text-[#006699] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
                             title="Tạo khung biên bản trống chuẩn để nhân viên tự điền"
@@ -2531,33 +2582,44 @@ export default function StaffTaskDetailPage() {
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#5588A3] pt-0.5">
-                        <p className="font-medium leading-relaxed">
-                          💡 <em>Hệ thống chỉ điền sẵn thông tin hành chính (Thời gian, Ô kho, Cán bộ xử lý, Mã phiếu). Các mục Hiện trạng, Nguyên nhân, Biện pháp &amp; Nghiệm thu để trống để nhân viên tự nhập theo hiện trường.</em>
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-medium leading-relaxed">
+                            💡 <em>Hệ thống điền sẵn thông tin hành chính.</em>
+                          </p>
+                          {task?.subCategory && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#E0F2FE] text-[#0369A1] font-bold text-[10px] border border-[#BAE6FD]">
+                              Khớp danh mục: {task.subCategory}
+                            </span>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
-                            const sampleTemplate = (task?.issueType && INCIDENT_REPORT_TEMPLATES[task.issueType]?.[0]) || INCIDENT_REPORT_TEMPLATES.OTHER[0];
-                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate));
+                            const sampleTemplate = findMatchingTemplate(task);
+                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate, repairStatus));
                           }}
                           className="text-[10px] font-bold text-[#006699] hover:underline cursor-pointer shrink-0"
-                          title="Điền dữ liệu mẫu đầy đủ để thử nghiệm nhanh khi demo"
+                          title="Điền dữ liệu mẫu chuẩn khớp với mục khách đã chọn"
                         >
                           + Điền mẫu tham khảo (demo)
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-black uppercase text-[#AFAFAF] mr-1">Mẫu phản hồi nhanh (câu ngắn):</span>
-                      {((task?.issueType && SUPPORT_PRESETS_BY_TYPE[task.issueType]) || SUPPORT_RESOLUTION_PRESETS).map((preset, idx) => (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="text-[10px] font-black uppercase text-[#94A3B8] mr-1 flex items-center gap-0.5">
+                        <span className="material-symbols-outlined text-[13px]">bolt</span>
+                        Gợi ý phản hồi nhanh:
+                      </span>
+                      {getPresetsForTask(task, repairStatus).map((preset, idx) => (
                         <button
                           key={idx}
                           type="button"
                           onClick={() => setResolutionNote(preset)}
-                          className="px-2.5 py-1 rounded-xl bg-[#F7F7F7] border border-[#E5E5E5] hover:border-[#1CB0F6] text-[11px] font-bold text-[#4B4B4B] cursor-pointer transition-colors text-left"
+                          className="px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#38BDF8] hover:bg-[#F0F9FF] text-[11px] font-bold text-[#475569] cursor-pointer transition-colors text-left"
+                          title={preset}
                         >
-                          + Mẫu #{idx + 1}: {preset.slice(0, 42)}...
+                          + Mẫu #{idx + 1}: {preset.slice(0, 38)}...
                         </button>
                       ))}
                     </div>
@@ -3933,6 +3995,7 @@ export default function StaffTaskDetailPage() {
         isOpen={incidentReportModalOpen}
         onClose={() => setIncidentReportModalOpen(false)}
         task={task}
+        repairStatus={repairStatus}
         resolutionNote={editResolutionOpen ? editResolutionNote : (resolutionNote || task?.resolutionNote)}
         evidenceImages={
           editResolutionOpen

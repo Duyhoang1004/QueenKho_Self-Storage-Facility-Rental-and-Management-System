@@ -273,25 +273,76 @@ public class StaffTaskService {
     // reason: DAMAGE (sự cố trả kho) / LIQUIDATION (dọn kho sau thanh lý — "Dọn xong" bắt buộc kiểm kê hàng, PR-Q10)
     @Transactional
     public void createMaintenanceTask(RentalContract contract, String reason, String note) {
-        createMaintenanceTask(contract, reason, note, false);
+        createMaintenanceTask(contract, reason, note, false, null);
     }
 
     @Transactional
     public void createMaintenanceTask(RentalContract contract, String reason, String note, boolean urgentSameWorkingDay) {
-        if (contract == null || contract.getStorageUnit() == null) return;
-        if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(contract.getId(), "MAINTENANCE", OPEN_STATUSES)) {
-            return;
+        createMaintenanceTask(contract, reason, note, urgentSameWorkingDay, null);
+    }
+
+    @Transactional
+    public StaffTask createMaintenanceTask(RentalContract contract, String reason, String note, boolean urgentSameWorkingDay, User assignedStaff) {
+        if (contract == null || contract.getId() == null) return null;
+        RentalContract liveContract = rentalContractRepository != null 
+                ? rentalContractRepository.findDetailById(contract.getId()).orElse(contract) 
+                : contract;
+        if (liveContract == null || liveContract.getStorageUnit() == null) return null;
+        if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(liveContract.getId(), "MAINTENANCE", OPEN_STATUSES)) {
+            return null;
         }
+        Integer facilityId = (liveContract.getStorageUnit().getFacility() != null)
+                ? liveContract.getStorageUnit().getFacility().getId()
+                : null;
+        if (facilityId == null) return null;
+
         StaffTask task = new StaffTask();
-        task.setFacilityId(contract.getStorageUnit().getFacility().getId());
-        task.setContract(contract);
+        task.setFacilityId(facilityId);
+        task.setContract(liveContract);
         task.setTaskType("MAINTENANCE");
         task.setMaintenanceReason(reason);
-        task.setStatus("OPEN");
+        LocalDateTime now = LocalDateTime.now();
+        if (assignedStaff != null) {
+            task.setStaff(assignedStaff);
+            task.setStatus("IN_PROGRESS");
+            task.setClaimedAt(now);
+        } else {
+            task.setStatus("OPEN");
+        }
         LocalDate targetDate = urgentSameWorkingDay ? LocalDate.now() : LocalDate.now().plusDays(MAINTENANCE_DUE_DAYS);
         task.setDueAt(computeDueAt(targetDate));
         task.setNote(note != null && note.length() > 1000 ? note.substring(0, 997) + "..." : note);
-        staffTaskRepository.save(task);
+        StaffTask savedTask = staffTaskRepository.save(task);
+
+        if (notificationService != null) {
+            String unitCode = (liveContract.getStorageUnit() != null) ? liveContract.getStorageUnit().getId() : "";
+            // 1. Thông báo cho Quản lý cơ sở (FM)
+            String fmTitle = assignedStaff != null
+                    ? "Task bảo trì mới #" + savedTask.getId() + " (Ô " + unitCode + ")"
+                    : "Task bảo trì mới cần phân công (Ô " + unitCode + ")";
+            String fmBody = assignedStaff != null
+                    ? "Nhân viên " + assignedStaff.getFullName() + " đã lập và trực tiếp tiếp nhận Task #" + savedTask.getId() + " [Bảo trì ô kho " + unitCode + "]. Vui lòng theo dõi tiến độ."
+                    : "Task #" + savedTask.getId() + " [Bảo trì ô kho] được tạo từ sự cố kỹ thuật. Vui lòng kiểm tra và giao việc cho nhân viên.";
+            notificationService.notifyFacilityManagers(
+                    facilityId,
+                    fmTitle,
+                    fmBody,
+                    "MAINTENANCE",
+                    "/manager/tasks"
+            );
+
+            // 2. Thông báo cho Nhân viên (Staff) nếu được giao trực tiếp
+            if (assignedStaff != null) {
+                notificationService.notifyStaff(
+                        assignedStaff.getId(),
+                        "Bạn đã tiếp nhận Task bảo trì #" + savedTask.getId(),
+                        "Task #" + savedTask.getId() + " [Bảo trì ô " + unitCode + "] đã được tạo và tự động giao cho bạn. Nhấp để chuyển đến thực hiện.",
+                        "MAINTENANCE",
+                        "/staff/tasks/" + savedTask.getId()
+                );
+            }
+        }
+        return savedTask;
     }
 
     private void createTask(RentalContract contract, String taskType, LocalDate appointmentDate, String note) {
@@ -1750,8 +1801,21 @@ public class StaffTaskService {
                     .append("TAMPERED".equalsIgnoreCase(request.getSecurityLockStatus()) ? "Có dấu vết can thiệp" : "Nguyên vẹn")
                     .append("]");
         }
-        if (request != null && request.getRepairStatus() != null && "ESCALATED_MAINTENANCE".equalsIgnoreCase(request.getRepairStatus())) {
+        boolean isEscalated = request != null && request.getRepairStatus() != null && "ESCALATED_MAINTENANCE".equalsIgnoreCase(request.getRepairStatus());
+        StaffTask createdMaintenanceTask = null;
+        if (isEscalated) {
             fullResolution.append(" [Chuyển bảo trì chuyên sâu]");
+            Integer contractId = updatedTask.getContract() != null ? updatedTask.getContract().getId() : null;
+            if (contractId != null && rentalContractRepository != null) {
+                RentalContract liveContract = rentalContractRepository.findDetailById(contractId).orElse(null);
+                if (liveContract != null) {
+                    String maintNote = "[Bảo trì chuyên sâu từ Ticket #" + (updatedTask.getSupportRequestId() != null ? updatedTask.getSupportRequestId() : "") + "] " + resolutionNote;
+                    if (maintNote.length() > 1000) {
+                        maintNote = maintNote.substring(0, 997) + "...";
+                    }
+                    createdMaintenanceTask = createMaintenanceTask(liveContract, "FACILITY_DAMAGE", maintNote, false, staff);
+                }
+            }
         }
 
         String appendedNote = oldNote + " | [Kết quả xử lý: " + fullResolution + "]";
@@ -1782,19 +1846,33 @@ public class StaffTaskService {
                     .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "TICKET_NOT_FOUND",
                             "Không tìm thấy ticket hỗ trợ liên kết"));
             sr.setStatus("RESOLVED");
-            sr.setResolutionNote(fullResolution.toString());
+            String resNoteToSave = fullResolution.toString();
+            if (resNoteToSave.length() > 1000) {
+                resNoteToSave = resNoteToSave.substring(0, 997) + "...";
+            }
+            sr.setResolutionNote(resNoteToSave);
             sr.setResolvedAt(now);
             supportRequestRepository.save(sr);
             ticketCode = sr.getTicketCode();
 
             // BR-111 / BR-117: khách nhận thông báo + email kết quả xử lý
-            if (notificationService != null && sr.getCustomer() != null) notificationService.notifyCustomer(
-                    sr.getCustomer().getId(),
-                    "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã được xử lý",
-                    "Kết quả: " + resolutionNote + ". Nếu sự cố chưa được khắc phục, bạn có thể yêu cầu xử lý lại trong 3 ngày.",
-                    "SUPPORT",
-                    "/ho-tro"
-            );
+            if (notificationService != null && sr.getCustomer() != null) {
+                String notifTitle = isEscalated
+                        ? "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã chuyển sang bảo trì chuyên sâu"
+                        : "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã được xử lý";
+                String notifBody = isEscalated
+                        ? "Nhân viên " + staff.getFullName() + " đã kiểm tra hiện trường và chuyển tiếp sang bảo trì chuyên sâu"
+                          + (createdMaintenanceTask != null ? " (Task #" + createdMaintenanceTask.getId() + ")" : "")
+                          + ": " + resolutionNote + ". Đội ngũ kỹ thuật đang tiếp tục xử lý."
+                        : "Kết quả: " + resolutionNote + ". Nếu sự cố chưa được khắc phục, bạn có thể yêu cầu xử lý lại trong 3 ngày.";
+                notificationService.notifyCustomer(
+                        sr.getCustomer().getId(),
+                        notifTitle,
+                        notifBody,
+                        "SUPPORT",
+                        "/ho-tro"
+                );
+            }
         }
 
         activityLogService.log(
@@ -1867,7 +1945,11 @@ public class StaffTaskService {
             fullResolution.append(" [Chuyển bảo trì chuyên sâu]");
         }
 
-        sr.setResolutionNote(fullResolution.toString());
+        String resNoteToSave = fullResolution.toString();
+        if (resNoteToSave.length() > 1000) {
+            resNoteToSave = resNoteToSave.substring(0, 997) + "...";
+        }
+        sr.setResolutionNote(resNoteToSave);
         supportRequestRepository.save(sr);
 
         if (request != null && request.getInspectionImages() != null && !request.getInspectionImages().isEmpty()) {
@@ -2943,6 +3025,14 @@ public class StaffTaskService {
             refundAmount = settlementRefund.total();
         }
 
+        Integer escalatedMaintId = null;
+        if ("SUPPORT".equals(task.getTaskType()) && contract != null) {
+            escalatedMaintId = staffTaskRepository
+                    .findFirstByContractIdAndTaskTypeOrderByIdDesc(contract.getId(), "MAINTENANCE")
+                    .map(StaffTask::getId)
+                    .orElse(null);
+        }
+
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
@@ -3032,6 +3122,7 @@ public class StaffTaskService {
                         ? parseEvidenceImages(contract.getReservation().getGoodsValueEvidenceImages()) : Collections.emptyList())
                 // D-23 / PR-O30: task hoàn tiền trả kho tách hoàn cọc + tiền thuê / bồi thường từng hồ sơ
                 .settlementRefund(settlementRefund)
+                .escalatedMaintenanceTaskId(escalatedMaintId)
                 .build();
     }
 

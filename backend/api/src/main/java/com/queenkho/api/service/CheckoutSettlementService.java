@@ -303,6 +303,36 @@ public class CheckoutSettlementService {
         notifyCustomerSettlementReady(s, true);
     }
 
+    /**
+     * Vấn đề 1 (22/11/2026): khách huỷ ticket bồi thường → hồ sơ WITHDRAWN. Nếu quyết toán đang WAITING_CLAIM
+     * (chờ FM chốt chính hồ sơ này) thì FM không còn gì để chốt → tự tính lại vòng mới (bồi thường hồ sơ này = 0)
+     * để khách xác nhận nhận cọc, đồng thời báo FM biết quyết toán đã tự cập nhật.
+     */
+    @Transactional
+    public void onClaimWithdrawn(CompensationClaim claim, Integer actorId) {
+        if (claim == null || claim.getContract() == null) return;
+        CheckoutSettlement current = findOpen(claim.getContract().getId()).orElse(null);
+        if (current == null || !CheckoutSettlement.WAITING_CLAIM.equals(current.getStatus())) {
+            return;
+        }
+        CheckoutSettlement s = newRound(current, actorId, null, null, null, null,
+                "Khách rút hồ sơ bồi thường " + claim.getClaimCode() + " (huỷ yêu cầu hỗ trợ) — tự tính lại quyết toán");
+        RentalContract contract = s.getContract();
+        log(actorId, "[SETTLEMENT_CLAIM_WITHDRAWN] Tự tính lại quyết toán HĐ " + contract.getContractCode()
+                + " sau khi khách rút hồ sơ " + claim.getClaimCode() + ": " + describeNet(s.getNetAmount()), contract.getId());
+        notifyCustomerSettlementReady(s, true);
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(facilityIdOf(contract),
+                    "Quyết toán tự cập nhật — HĐ " + contract.getContractCode(),
+                    "Khách hàng đã huỷ yêu cầu bồi thường (hồ sơ " + claim.getClaimCode() + "). Bảng quyết toán HĐ "
+                            + contract.getContractCode() + " đã tự tính lại"
+                            + (CheckoutSettlement.WAITING_CUSTOMER.equals(s.getStatus())
+                                ? " sang trạng thái Chờ khách xác nhận. " : ". ")
+                            + describeNet(s.getNetAmount()),
+                    "CHECKOUT", "/manager/settlements?highlight=" + s.getId());
+        }
+    }
+
     // ================== 3. KHÁCH XÁC NHẬN / KHÔNG ĐỒNG Ý (PR-O20 → PR-O22) ==================
 
     @Transactional

@@ -434,8 +434,8 @@ public class ReservationService {
         return reservationRepository
                 .findOverdueNoShowByFacility(targetFacilityId, LocalDate.now())
                 .stream()
-                .filter(r -> !wasPresentForCheckIn(r))
                 .map(r -> {
+                    boolean presentOrIssue = wasPresentForCheckIn(r);
                     String staffNote = null;
                     String staffName = null;
                     try {
@@ -474,6 +474,7 @@ public class ReservationService {
                     response.setTotalPaid(money.totalPaid());
                     response.setNoShowPenaltyAmount(money.penaltyAmount());
                     response.setNoShowRefundAmount(money.refundAmount());
+                    response.setHasDraftHandover(presentOrIssue);
                     return response;
                 })
                 .toList();
@@ -845,13 +846,16 @@ public class ReservationService {
         // D06 / D-18: khoá dòng ô kho → 2 quản lý gán cùng 1 ô cùng lúc thì người sau phải chờ, rồi thấy lịch đã bị chiếm
         String lockedStatus = jdbcTemplate.queryForObject(
                 "SELECT status FROM storage_units WITH (UPDLOCK, HOLDLOCK) WHERE id = ?", String.class, storageUnit.getId());
-        if (!"AVAILABLE".equalsIgnoreCase(lockedStatus)) {
+        LocalDate rangeFrom = reservation.getStartDate() != null ? reservation.getStartDate() : UnitScheduleService.today();
+        LocalDate rangeTo = UnitScheduleService.rangeEnd(rangeFrom, durationOf(reservation));
+        boolean canPreAssignReleasing = "OCCUPIED".equalsIgnoreCase(lockedStatus)
+                && reservation.getStartDate() != null
+                && reservation.getStartDate().isAfter(UnitScheduleService.today());
+        if (!"AVAILABLE".equalsIgnoreCase(lockedStatus) && !canPreAssignReleasing) {
             throw new IllegalStateException("Ô kho này hiện không khả dụng (đang có khách sử dụng hoặc đang bảo trì)");
         }
         // D-18: ô phải rảnh suốt [ngày nhận kho, hết hạn + ngày dọn ô) — ô đã gán cho khách nhận kho muộn hơn vẫn gán được
         // nếu đơn này trả ô trước ngày khách kia nhận
-        LocalDate rangeFrom = reservation.getStartDate() != null ? reservation.getStartDate() : UnitScheduleService.today();
-        LocalDate rangeTo = UnitScheduleService.rangeEnd(rangeFrom, durationOf(reservation));
         List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(storageUnit, rangeFrom, rangeTo, null);
         if (!clashes.isEmpty()) {
             throw new IllegalStateException("Ô " + storageUnit.getId() + " không trống suốt thời gian thuê "

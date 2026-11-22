@@ -119,4 +119,47 @@ class UnitTransferBusinessTest {
         assertThrows(ContractException.class, () -> service.transferUnit(30, 6, r));
         verifyNoInteractions(history);
     }
+
+    @Test
+    void renewalReassignRequestAndManagerAssignMarksAssigned() {
+        var res = service.requestRenewalReassign(30, contract.getCustomer().getId(), 1, "Xin gán ô mới để gia hạn 1 tháng");
+        assertEquals("PENDING", res.get("reassignRequestStatus"));
+        assertEquals(1, res.get("reassignRequestedMonths"));
+        assertEquals("PENDING", contract.getReassignRequestStatus());
+
+        var req = request("REARRANGE");
+        req.setRenewalMonths(1);
+        service.transferUnit(30, 6, req);
+
+        assertEquals("ASSIGNED", contract.getReassignRequestStatus());
+        assertEquals("TEST-B", contract.getReassignAssignedUnitId());
+        assertEquals(1, contract.getReassignRequestedMonths());
+        assertNotNull(contract.getReassignResolvedAt());
+    }
+
+    @Test
+    void renewalReassignRejectMarksOutOfStockAndNotifiesCustomer() {
+        service.requestRenewalReassign(30, contract.getCustomer().getId(), 3, null);
+        var res = service.rejectRenewalReassign(30, 6, "Hiện đã hết loại kho này, vui lòng đặt loại kho khác.");
+        assertEquals("OUT_OF_STOCK", res.get("reassignRequestStatus"));
+        assertEquals("OUT_OF_STOCK", contract.getReassignRequestStatus());
+        assertTrue(contract.getReassignNote().contains("vui lòng đặt loại kho khác"));
+        verify(notifications).notifyCustomer(eq(contract.getCustomer().getId()), contains("hết loại kho"),
+                contains("vui lòng đặt loại kho khác"), eq("WARNING"), anyString());
+    }
+
+    @Test
+    void overdueContractWithPendingRenewalReassignCanTransferUnit() {
+        contract.setStatus("OVERDUE");
+        contract.setReassignRequestStatus("PENDING");
+        contract.setReassignRequestedMonths(3);
+
+        var req = request("REARRANGE");
+        req.setRenewalMonths(3);
+        var res = service.transferUnit(30, 6, req);
+
+        assertEquals("TEST-B", res.getToUnitId());
+        assertEquals("ASSIGNED", contract.getReassignRequestStatus());
+        assertEquals("TEST-B", contract.getReassignAssignedUnitId());
+    }
 }

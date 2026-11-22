@@ -11,8 +11,10 @@ import {
   checkOutStaffTask,
   completeMaintenanceTask,
   completeRefundTask,
+  extendOverdueTask,
   extendSupportTask,
   getStaffTaskDetail,
+  requestMaintenanceUnitTransfer,
   resetSupportContractPin,
   resolveSupportTask,
   reopenSupportTask,
@@ -21,6 +23,8 @@ import {
   uploadImageFile,
 } from '../../services/staffTaskService';
 import { getCheckInHandover } from '../../services/contractService';
+import { rescheduleReservation } from '../../services/reservationService';
+import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
 import SettlementPanel from '../../components/SettlementPanel';
 import UnitLocationMap from '../../components/UnitLocationMap';
@@ -407,6 +411,11 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   const [storageLocation, setStorageLocation] = useState('');
   const [inventoryImages, setInventoryImages] = useState([]);
 
+  // Vấn đề 6 (22/11/2026): Staff báo cáo sửa kho kéo dài & yêu cầu FM chuyển HĐ của khách sang ô tiêu chuẩn khác
+  const [transferReqReason, setTransferReqReason] = useState('');
+  const [sendingTransferReq, setSendingTransferReq] = useState(false);
+  const [fmTransferOpen, setFmTransferOpen] = useState(false);
+
   // Task cũ chưa có maintenanceReason: suy ra từ hợp đồng
   const isLiquidation = task.maintenanceReason === 'LIQUIDATION'
     || (!task.maintenanceReason && task.contractStatus === 'LIQUIDATED');
@@ -543,6 +552,101 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           <DamageCaseList cases={task.damageCases} onPreview={onPreview} />
         </div>
       )}
+
+      {/* Vấn đề 6 (22/11/2026): Khi công việc sửa kho cần nhiều thời gian hơn (đặc biệt khi khách đang lưu tạm ở ô khẩn cấp),
+          Staff yêu cầu FM chuyển hợp đồng của khách sang ô tiêu chuẩn khác; FM duyệt chuyển ô ngay tại đây */}
+      {!isLiquidation && task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus)
+        && task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && (() => {
+          const alreadyRequested = typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH');
+          const alreadyTransferred = typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô tiêu chuẩn');
+          return (
+            <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4 flex flex-col gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">swap_horiz</span>
+                  <div>
+                    <h3 className="text-xs font-black uppercase text-[#E58800]">
+                      Điều phối ô kho cho khách khi bảo trì kéo dài (HĐ {task.contractCode})
+                    </h3>
+                    <p className="text-xs font-bold text-[#777777] mt-0.5">
+                      {isManager
+                        ? 'Nếu việc sửa kho cần nhiều thời gian hoặc khách đang lưu tạm tại ô khẩn cấp, Quản lý có thể chuyển hợp đồng của khách sang ô tiêu chuẩn khác đang trống.'
+                        : 'Nếu phát hiện việc sửa chữa ô kho cần nhiều thời gian hơn (đặc biệt khi hàng của khách đang nằm tạm ở kho khẩn cấp), hãy gửi yêu cầu để Quản lý cơ sở (FM) chuyển khách sang ô tiêu chuẩn khác.'}
+                    </p>
+                  </div>
+                </div>
+                {alreadyTransferred ? (
+                  <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
+                    FM đã chuyển sang ô tiêu chuẩn
+                  </span>
+                ) : alreadyRequested ? (
+                  <span className="duo-badge bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[10px]">
+                    Chờ FM chuyển ô cho khách
+                  </span>
+                ) : null}
+              </div>
+
+              {isManager ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <span className="text-[11px] font-bold text-[#4B4B4B]">
+                    Ô hiện tại của HĐ {task.contractCode}: <strong className="font-mono">{task.storageUnitId || '—'}</strong> ({task.unitTypeName || '—'})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFmTransferOpen(true)}
+                    className="duo-btn-orange px-4 py-2 text-xs gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                    Chuyển hợp đồng sang ô tiêu chuẩn khác
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    rows={2}
+                    maxLength={500}
+                    value={transferReqReason}
+                    onChange={e => setTransferReqReason(e.target.value)}
+                    placeholder="Mô tả tình trạng hư hỏng kéo dài & đề xuất FM chuyển sang kho khác (10–500 ký tự, VD: Thấm dột mái nghiêm trọng cần chống thấm 2 tuần, đề xuất FM chuyển HĐ sang ô tiêu chuẩn khác)..."
+                    className="duo-input text-xs bg-white resize-none"
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-[#AFAFAF]">
+                      {transferReqReason.trim().length}/500 ký tự (tối thiểu 10)
+                    </span>
+                    <button
+                      type="button"
+                      disabled={sendingTransferReq || transferReqReason.trim().length < 10}
+                      onClick={() => {
+                        setSendingTransferReq(true);
+                        requestMaintenanceUnitTransfer(task.id, { reason: transferReqReason.trim() })
+                          .then(updated => {
+                            onCompleted(updated);
+                            setTransferReqReason('');
+                            onToast({
+                              type: 'success',
+                              message: `Đã gửi yêu cầu Quản lý cơ sở chuyển kho cho HĐ ${task.contractCode}.`,
+                            });
+                          })
+                          .catch(err => {
+                            onToast({
+                              type: 'error',
+                              message: err.response?.data?.message || 'Không gửi được yêu cầu đổi kho.',
+                            });
+                          })
+                          .finally(() => setSendingTransferReq(false));
+                      }}
+                      className="duo-btn-orange px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">send</span>
+                      {sendingTransferReq ? 'Đang gửi...' : alreadyRequested ? 'Gửi bổ sung yêu cầu FM đổi kho' : 'Yêu cầu FM chuyển sang kho khác'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {task.status === 'COMPLETED' ? (
         <div className="rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4 flex flex-col gap-2">
@@ -704,6 +808,29 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         onConfirm={handleSubmit}
         onCancel={() => setConfirmOpen(false)}
       />
+
+      {fmTransferOpen && task.contractId && (
+        <TransferUnitModal
+          contract={{
+            contractId: task.contractId,
+            contractCode: task.contractCode,
+            storageUnitId: task.storageUnitId,
+            unitTypeName: task.unitTypeName,
+            status: task.contractStatus,
+            customerFullName: task.customerName,
+          }}
+          managerId={userId}
+          onClose={() => setFmTransferOpen(false)}
+          onDone={(res) => {
+            setFmTransferOpen(false);
+            getStaffTaskDetail(task.id).then(updated => onCompleted(updated)).catch(() => {});
+            onToast({
+              type: 'success',
+              message: `Đã chuyển HĐ ${task.contractCode} sang ô ${res?.toUnitId || 'mới'} thành công!`,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1350,10 +1477,44 @@ export default function StaffTaskDetailPage() {
       .finally(() => setPinResetting(false));
   };
 
+  // Vấn đề 2 (22/11/2026): FM dời lịch nhận kho trực tiếp trên trang chi tiết task CHECK_IN quá hạn
+  const [rescheduleCheckInDate, setRescheduleCheckInDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [rescheduleCheckInReason, setRescheduleCheckInReason] = useState('');
+  const [reschedulingCheckIn, setReschedulingCheckIn] = useState(false);
+
+  const handleRescheduleCheckInFromTask = async () => {
+    if (!task?.reservationId || !rescheduleCheckInDate) return;
+    setReschedulingCheckIn(true);
+    try {
+      await rescheduleReservation(task.reservationId, {
+        newStartDate: rescheduleCheckInDate,
+        reason: rescheduleCheckInReason.trim() || 'Dời lịch nhận kho từ task check-in quá hạn',
+        managerId: userId,
+      });
+      setRescheduleCheckInReason('');
+      await loadTask();
+      setToast({
+        type: 'success',
+        message: `Đã dời lịch nhận kho đơn ${task.reservationCode || '#' + task.reservationId} sang ngày ${formatDate(rescheduleCheckInDate)}. Task đã được mở lại!`,
+      });
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err.response?.data?.message || 'Không thể dời lịch nhận kho.',
+      });
+    } finally {
+      setReschedulingCheckIn(false);
+    }
+  };
+
   const handleExtendSupportSubmit = () => {
     if (!extendDueDate || !extendReason.trim()) return;
     setExtendingSupport(true);
-    extendSupportTask(task.id, userId, {
+    extendOverdueTask(task.id, {
       newDueDate: extendDueDate,
       reason: extendReason.trim(),
     })
@@ -1362,13 +1523,13 @@ export default function StaffTaskDetailPage() {
         setExtendReason('');
         setToast({
           type: 'success',
-          message: `Đã gia hạn task hỗ trợ #${data.id} đến 21:00 ngày ${formatDate(extendDueDate)}.`,
+          message: `Đã gia hạn task #${data.id} đến 21:00 ngày ${formatDate(extendDueDate)}.`,
         });
       })
       .catch(err => {
         setToast({
           type: 'error',
-          message: err.response?.data?.message || 'Không thể gia hạn task hỗ trợ.',
+          message: err.response?.data?.message || 'Không thể gia hạn task.',
         });
       })
       .finally(() => setExtendingSupport(false));
@@ -2901,6 +3062,104 @@ export default function StaffTaskDetailPage() {
                     onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>
                 </> : <p className="text-xs font-bold text-[#777777]">Quản lý đang kiểm tra và thống nhất phương án với khách.</p>}
               </div>}
+
+              {/* Vấn đề 2 (22/11/2026): Task CHECK_IN bị OVERDUE (kể cả khi đã lập biên bản nháp / bị từ chối) → FM dời lịch nhận kho ngay tại trang task */}
+              {isManager && task.taskType === 'CHECK_IN' && task.reservationId
+                && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
+                <div className="w-full max-w-md rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5 text-left mt-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">edit_calendar</span>
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-[#E58800]">
+                        Dời lịch nhận kho để mở lại task Check-in quá hạn
+                      </h3>
+                      <p className="text-xs font-bold text-[#777777] mt-0.5">
+                        Task nhận kho đã quá hạn 21:00 nên không thể mở lại biên bản hoặc bàn giao tiếp. Quản lý chọn ngày nhận kho mới bên dưới để cập nhật hạn task và tiếp tục xử lý.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Ngày nhận kho mới *</span>
+                      <DateInput
+                        min={localTodayIso()}
+                        value={rescheduleCheckInDate}
+                        onChange={e => setRescheduleCheckInDate(e.target.value)}
+                        className="duo-input text-xs font-bold bg-white"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Lý do dời lịch</span>
+                      <input
+                        type="text"
+                        maxLength={300}
+                        value={rescheduleCheckInReason}
+                        onChange={e => setRescheduleCheckInReason(e.target.value)}
+                        placeholder="VD: Khách hẹn quay lại ký biên bản bàn giao vào ngày mai..."
+                        className="duo-input text-xs bg-white"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={reschedulingCheckIn || !rescheduleCheckInDate}
+                      onClick={handleRescheduleCheckInFromTask}
+                      className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                      {reschedulingCheckIn ? 'Đang dời lịch...' : 'Xác nhận dời lịch nhận kho'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Vấn đề 3C (22/11/2026): Task phúc tra CHECK_OUT [RECHECK] bị OVERDUE → FM gia hạn xử lý ngay tại trang task */}
+              {isManager && isRecheckTask
+                && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
+                <div className="w-full max-w-md rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5 text-left mt-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">more_time</span>
+                    <div>
+                      <h3 className="text-xs font-black uppercase text-[#E58800]">
+                        Gia hạn xử lý task kiểm tra lại nghiệm thu quá hạn (PR-S4)
+                      </h3>
+                      <p className="text-xs font-bold text-[#777777] mt-0.5">
+                        Task phúc tra quyết toán đã quá hạn 21:00 nên nhân viên bị khóa thao tác. Quản lý chọn ngày hạn mới bên dưới để mở lại (hệ thống tự bắn chuông báo và gửi email cho khách &amp; nhân viên).
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Ngày hạn mới (hạn lúc 21:00, tối đa 7 ngày) *</span>
+                      <DateInput
+                        min={localTodayIso()}
+                        value={extendDueDate}
+                        onChange={e => setExtendDueDate(e.target.value)}
+                        className="duo-input text-xs font-bold bg-white"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-[11px] font-black uppercase text-[#777777]">Lý do gia hạn *</span>
+                      <input
+                        type="text"
+                        maxLength={500}
+                        value={extendReason}
+                        onChange={e => setExtendReason(e.target.value)}
+                        placeholder="VD: Chờ đối chiếu lại hình ảnh hiện trạng cùng khách hàng..."
+                        className="duo-input text-xs bg-white"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={extendingSupport || !extendDueDate || !extendReason.trim()}
+                      onClick={handleExtendSupportSubmit}
+                      className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                      {extendingSupport ? 'Đang gia hạn...' : 'Xác nhận gia hạn task kiểm tra lại'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : isCheckOut ? (
             /* ================== FORM NGHIỆM THU TRẢ KHO & SỰ CỐ (UC-23 & UC-24) ================== */

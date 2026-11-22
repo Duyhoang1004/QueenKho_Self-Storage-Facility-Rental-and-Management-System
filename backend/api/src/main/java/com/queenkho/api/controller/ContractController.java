@@ -251,11 +251,34 @@ public class ContractController {
         return ResponseEntity.ok(staffTaskService.decideCheckIn(id, draftId, currentUser.require(), accepted, reason, images, rejectionTypes));
     }
 
-    // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang
+    // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang (hỗ trợ truyền renewalMonths khi gán lại ô để gia hạn)
     @GetMapping("/{id}/transfer-options")
-    public ResponseEntity<?> getTransferOptions(@PathVariable Integer id) {
+    public ResponseEntity<?> getTransferOptions(
+            @PathVariable Integer id,
+            @RequestParam(required = false) Integer renewalMonths) {
         ownershipGuard.checkContract(id);
-        return ResponseEntity.ok(unitTransferService.getTransferOptions(id));
+        return ResponseEntity.ok(unitTransferService.getTransferOptions(id, renewalMonths));
+    }
+
+    // Khách gửi yêu cầu Quản lý gán lại ô kho mới cùng loại khi ô hiện tại gần hết hạn (< 3 ngày) và đã có người đặt trùng
+    @PostMapping("/{id}/renewal-reassign-request")
+    public ResponseEntity<?> requestRenewalReassign(
+            @PathVariable Integer id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        ownershipGuard.checkContract(id);
+        Integer requestedMonths = body != null && body.get("requestedMonths") instanceof Number n ? n.intValue() : 1;
+        String note = body != null && body.get("note") instanceof String s ? s : null;
+        return ResponseEntity.ok(unitTransferService.requestRenewalReassign(id, currentUser.require().id(), requestedMonths, note));
+    }
+
+    // Quản lý (FM) thông báo đã hết loại kho này cho yêu cầu gán lại ô gia hạn → khách phải đặt loại kho khác
+    @PostMapping("/{id}/renewal-reassign-reject")
+    public ResponseEntity<?> rejectRenewalReassign(
+            @PathVariable Integer id,
+            @RequestBody(required = false) Map<String, Object> body) {
+        ownershipGuard.checkContract(id);
+        String reason = body != null && body.get("reason") instanceof String s ? s : null;
+        return ResponseEntity.ok(unitTransferService.rejectRenewalReassign(id, currentUser.require().id(), reason));
     }
 
     // BR-129: nhiệt độ / độ ẩm ô của hợp đồng — `days` ngày quanh ngày `around` (mặc định: N ngày gần nhất)

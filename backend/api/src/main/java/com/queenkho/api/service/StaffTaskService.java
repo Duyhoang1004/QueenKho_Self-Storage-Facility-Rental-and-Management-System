@@ -205,10 +205,18 @@ public class StaffTaskService {
             }
             if ("CHECK_IN".equals(task.getTaskType())) {
                 Map<String, Object> latest = checkInEvent(contractId, "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_BLOCKER", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE", "CI_WITHDRAW");
-                if (latest != null && !"CI_REOPEN".equals(latest.get("record_type"))
-                        && !"CI_RESCHEDULE".equals(latest.get("record_type")) && !"CI_WITHDRAW".equals(latest.get("record_type"))) {
-                    int draftId = "CI_DRAFT".equals(latest.get("record_type")) ? eventId(latest) : eventDraftId(latest);
-                    if (draftId > 0 || "CI_BLOCKER".equals(latest.get("record_type")) || "CI_FAULT".equals(latest.get("record_type"))) addCheckInEvent(task.getContract(), null, "CI_RESCHEDULE",
+                String latestType = latest != null ? String.valueOf(latest.get("record_type")) : null;
+                boolean unitInMaintenance = task.getContract() != null && task.getContract().getStorageUnit() != null
+                        && "MAINTENANCE".equalsIgnoreCase(task.getContract().getStorageUnit().getStatus());
+                // Vấn đề 2: nếu khách đã từ chối (CI_REJECT / CI_RESOLUTION) và ô không đang bảo trì thì giữ trạng thái
+                // REJECTED để sau khi dời lịch, staff/FM vẫn xử lý được các nội dung khách từ chối.
+                boolean keepRejectedForResolution = !unitInMaintenance
+                        && ("CI_REJECT".equals(latestType) || "CI_RESOLUTION".equals(latestType));
+                if (latest != null && !keepRejectedForResolution
+                        && !"CI_REOPEN".equals(latestType)
+                        && !"CI_RESCHEDULE".equals(latestType) && !"CI_WITHDRAW".equals(latestType)) {
+                    int draftId = "CI_DRAFT".equals(latestType) ? eventId(latest) : eventDraftId(latest);
+                    if (draftId > 0 || "CI_BLOCKER".equals(latestType) || "CI_FAULT".equals(latestType)) addCheckInEvent(task.getContract(), null, "CI_RESCHEDULE",
                             Map.of("draftId", draftId, "note", "Dời lịch nhận kho; cần kiểm tra lại ô"), null, null);
                 } else if (latest == null) {
                     addCheckInEvent(task.getContract(), null, "CI_RESCHEDULE",
@@ -2199,8 +2207,9 @@ public class StaffTaskService {
         staffTaskRepository.save(task);
 
         String ticketCode = "#" + task.getSupportRequestId();
+        SupportRequest sr = null;
         if (task.getSupportRequestId() != null) {
-            SupportRequest sr = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            sr = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
             if (sr != null) {
                 ticketCode = sr.getTicketCode();
                 if ("OPEN".equals(sr.getStatus()) || "IN_PROGRESS".equals(sr.getStatus())) {
@@ -2220,14 +2229,41 @@ public class StaffTaskService {
                 String.valueOf(task.getId())
         );
 
-        // BR-111: nhân viên đang giữ task biết hạn mới
-        if (notificationService != null && task.getStaff() != null) notificationService.notifyStaff(
-                task.getStaff().getId(),
-                "Task #" + task.getId() + " đã được gia hạn",
-                "Quản lý " + manager.getFullName() + " gia hạn task " + typeLabel + " đến 21:00 " + formattedDue + ". Lý do: " + reason,
-                "TASK",
-                "/staff?highlightTaskId=" + task.getId()
-        );
+        // BR-111 & Vấn đề 3C: nhân viên đang giữ task biết hạn mới (chuông báo + email)
+        if (notificationService != null && task.getStaff() != null) {
+            notificationService.notifyStaff(
+                    task.getStaff().getId(),
+                    "Task #" + task.getId() + " đã được gia hạn đến " + formattedDue,
+                    "Quản lý " + manager.getFullName() + " đã dời hạn xử lý task " + typeLabel + " sang 21:00 ngày " + formattedDue + ". Lý do: " + reason,
+                    "TASK",
+                    "/staff?highlightTaskId=" + task.getId(),
+                    true
+            );
+        }
+
+        // Vấn đề 3C: chuông báo + email cho khách hàng liên quan biết công việc được dời qua ngày mới
+        if (notificationService != null) {
+            User customer = (task.getContract() != null && task.getContract().getCustomer() != null)
+                    ? task.getContract().getCustomer()
+                    : (sr != null ? sr.getCustomer() : null);
+            if (customer != null) {
+                String contractCode = task.getContract() != null ? task.getContract().getContractCode() : "";
+                String custTitle = support
+                        ? "Gia hạn thời gian xử lý yêu cầu hỗ trợ " + ticketCode
+                        : recheck
+                        ? "Gia hạn kiểm tra lại nghiệm thu trả kho — HĐ " + contractCode
+                        : "Cập nhật lịch bảo trì ô kho" + (!contractCode.isEmpty() ? " — HĐ " + contractCode : "");
+                String custMsg = "Quản lý cơ sở đã dời thời hạn hoàn tất công việc " + typeLabel
+                        + (support ? " (phiếu " + ticketCode + ")" : (!contractCode.isEmpty() ? " của HĐ " + contractCode : ""))
+                        + " sang trước 21:00 ngày " + formattedDue + ". Lý do: " + reason + ".";
+                String custUrl = support
+                        ? "/ho-tro"
+                        : (task.getContract() != null && task.getContract().getReservation() != null
+                            ? "/kho-cua-toi/hop-dong/" + task.getContract().getReservation().getId()
+                            : "/kho-cua-toi");
+                notificationService.notifyCustomer(customer.getId(), custTitle, custMsg, support ? "SUPPORT" : "CONTRACT", custUrl);
+            }
+        }
 
         entityManager.flush();
         entityManager.clear();
@@ -2513,6 +2549,21 @@ public class StaffTaskService {
 
         StaffTask done = staffTaskRepository.findDetailById(taskId).orElseThrow();
         StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
+        if (unit != null && !"MAINTENANCE".equals(unit.getStatus()) && done.getContract() != null) {
+            // Vấn đề 6: nếu HĐ đã chuyển tạm sang ô khẩn cấp / ô khác khi ô cũ vào bảo trì, mở lại chính ô cũ đó
+            try {
+                List<String> oldIds = jdbcTemplate.queryForList(
+                        "SELECT TOP 1 from_unit_id FROM unit_transfers WHERE contract_id = ? AND old_unit_status = 'MAINTENANCE' ORDER BY id DESC",
+                        String.class, done.getContract().getId());
+                if (!oldIds.isEmpty() && oldIds.get(0) != null) {
+                    StorageUnit origUnit = storageUnitRepository.findById(oldIds.get(0)).orElse(null);
+                    if (origUnit != null && "MAINTENANCE".equals(origUnit.getStatus())) {
+                        unit = origUnit;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
         if (unit != null && "MAINTENANCE".equals(unit.getStatus())) {
             unit.setStatus(unit.idleStatus());
             unit.setMaintenanceNote(null);
@@ -2546,6 +2597,78 @@ public class StaffTaskService {
                 "TASK",
                 "/manager/tasks/" + taskId
         );
+
+        entityManager.flush();
+        entityManager.clear();
+        return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /**
+     * Vấn đề 6 (22/11/2026): trong quá trình xử lý task MAINTENANCE, nhân viên kỹ thuật nhận thấy việc sửa kho cần
+     * nhiều thời gian hơn (đặc biệt khi hàng của khách đang nằm tạm ở ô khẩn cấp) → gửi yêu cầu cho Quản lý cơ sở (FM)
+     * chuyển hợp đồng của khách sang ô tiêu chuẩn khác.
+     */
+    @Transactional
+    public StaffTaskDetailResponse requestMaintenanceUnitTransfer(Integer taskId, Integer userId, String reason) {
+        if (userId == null) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Thiếu thông tin người thao tác");
+        }
+        User actor = userRepository.findById(userId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Không tìm thấy tài khoản"));
+        String role = actor.getRole() != null ? actor.getRole().getName() : "";
+        if (!"STAFF".equals(role) && !"FACILITY_MANAGER".equals(role)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
+                    "Chỉ nhân viên kỹ thuật hoặc quản lý cơ sở mới được gửi yêu cầu chuyển ô từ task bảo trì");
+        }
+        StaffTask task = findTaskInFacility(taskId, actor.getFacilityId());
+        if (!"MAINTENANCE".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_MAINTENANCE",
+                    "Chỉ task bảo trì ô kho (MAINTENANCE) mới sử dụng chức năng yêu cầu đổi kho này");
+        }
+        if ("COMPLETED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_CLOSED",
+                    "Task bảo trì đã đóng, không thể gửi yêu cầu đổi kho");
+        }
+        RentalContract contract = task.getContract();
+        if (contract == null) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "NO_LINKED_CONTRACT",
+                    "Task bảo trì này không gắn với hợp đồng đang thuê để yêu cầu chuyển ô");
+        }
+        String cleanReason = reason != null ? reason.trim() : "";
+        if (cleanReason.length() < 10 || cleanReason.length() > 500) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Vui lòng nhập lý do sự cố kéo dài & đề xuất chuyển kho từ 10 đến 500 ký tự");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        String tag = "[YÊU CẦU FM ĐỔI KHO CHO KHÁCH bởi " + actor.getFullName() + " lúc " + now.format(TS_FMT) + ": " + cleanReason + "]";
+        task.setNote(appendTaskNote(task.getNote(), tag));
+        staffTaskRepository.save(task);
+
+        String unitCode = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "—";
+        boolean inEmergency = contract.getStorageUnit() != null && contract.getStorageUnit().isEmergencyUnit();
+
+        activityLogService.log(
+                actor.getId(),
+                "[MAINTENANCE_TRANSFER_REQ] " + actor.getFullName() + " báo cáo bảo trì kéo dài ở task #" + taskId
+                        + ", yêu cầu FM chuyển HĐ " + contract.getContractCode() + " (đang ở ô " + unitCode
+                        + (inEmergency ? " - khẩn cấp" : "") + ") sang ô tiêu chuẩn khác: " + cleanReason,
+                "facility_tasks",
+                String.valueOf(taskId)
+        );
+
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(
+                    task.getFacilityId(),
+                    "Yêu cầu đổi kho từ bảo trì — HĐ " + contract.getContractCode(),
+                    "Nhân viên " + actor.getFullName() + " báo cáo việc sửa kho (Task #" + taskId + ") cần nhiều thời gian hơn và đề xuất chuyển HĐ "
+                            + contract.getContractCode() + " (hiện ở ô " + unitCode + (inEmergency ? " — ô khẩn cấp tạm thời" : "")
+                            + ") sang ô tiêu chuẩn khác. Lý do: " + cleanReason,
+                    "TASK",
+                    "/manager/tasks/" + taskId,
+                    true
+            );
+        }
 
         entityManager.flush();
         entityManager.clear();

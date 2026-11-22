@@ -477,10 +477,11 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       )
     }
 
-    // PR-S4: Task SUPPORT quá hạn -> FM được bấm "Gia hạn xử lý"
+    // PR-S4 & Vấn đề 3C: Task SUPPORT hoặc CHECK_OUT [RECHECK] quá hạn -> FM được bấm "Gia hạn xử lý"
     const isTaskOverdue = task.status === 'OVERDUE'
       || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) <= new Date())
-    if (task.taskType === 'SUPPORT' && isTaskOverdue) {
+    const isRecheckTask = task.taskType === 'CHECK_OUT' && typeof task.note === 'string' && task.note.includes('[RECHECK]')
+    if ((task.taskType === 'SUPPORT' || isRecheckTask) && isTaskOverdue) {
       return (
         <>
           <Link
@@ -736,10 +737,10 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </div>
               <div>
                 <h3 className="text-lg font-black text-[#4B4B4B]">
-                  Gia hạn task {extendTarget.taskType === 'MAINTENANCE' ? 'bảo trì' : 'hỗ trợ'} (PR-S4)
+                  Gia hạn task {extendTarget.taskType === 'MAINTENANCE' ? 'bảo trì' : extendTarget.taskType === 'CHECK_OUT' ? 'kiểm tra lại nghiệm thu' : 'hỗ trợ'} (PR-S4)
                 </h3>
                 <p className="text-xs font-bold text-[#AFAFAF]">
-                  Task #{extendTarget.id} · {extendTarget.taskType === 'MAINTENANCE' ? `Ô ${extendTarget.storageUnitId || '—'}` : (extendTarget.ticketCode || 'Hỗ trợ KH')} · Giữ nguyên người nhận ({extendTarget.staffName || 'Chưa có'})
+                  Task #{extendTarget.id} · {extendTarget.taskType === 'MAINTENANCE' ? `Ô ${extendTarget.storageUnitId || '—'}` : extendTarget.taskType === 'CHECK_OUT' ? `HĐ ${extendTarget.contractCode || '—'}` : (extendTarget.ticketCode || 'Hỗ trợ KH')} · Giữ nguyên người nhận ({extendTarget.staffName || 'Chưa có'})
                 </p>
               </div>
             </div>

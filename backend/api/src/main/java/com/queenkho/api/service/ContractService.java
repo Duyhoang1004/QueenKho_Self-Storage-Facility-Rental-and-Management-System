@@ -150,7 +150,6 @@ public class ContractService {
 
         // Kiểm tra business rule:
         if (isAlreadyPending) {
-            // Nếu đã ở trạng thái TERMINATION_PENDING, không được dời ngày muộn hơn ngày đã hẹn trước đó
             LocalDate prevCheckoutDate = null;
             try {
                 var dueAtTimestamp = jdbcTemplate.queryForObject(
@@ -166,15 +165,31 @@ public class ContractService {
                 prevCheckoutDate = contract.getEndDate();
             }
 
-            if (prevCheckoutDate != null && checkoutDate.isAfter(prevCheckoutDate)) {
-                throw new IllegalArgumentException("Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (" + UnitScheduleService.formatDate(prevCheckoutDate) + ").");
+            // Vấn đề 3A & 3B (22/11/2026): khách được hẹn / dời lịch trả kho trễ tối đa 5 ngày sau hạn hợp đồng
+            // (sau ngày thứ 5 hàng bị cưỡng chế dọn vào kho tổng). Nếu lịch hẹn cũ đã quá hạn (prevCheckoutDate <= today)
+            // thì mở khoá cho khách chọn ngày mới trong khung 5 ngày sau hạn HĐ (hoặc tối đa 3 ngày tới nếu đã sát hạn).
+            LocalDate maxGraceDate = contract.getEndDate() != null
+                    ? contract.getEndDate().plusDays(LateFeeService.V5_LIQUIDATION_DAYS)
+                    : today.plusDays(LateFeeService.V5_LIQUIDATION_DAYS);
+            LocalDate effectiveMax = maxGraceDate.isAfter(today) ? maxGraceDate : today.plusDays(3);
+            if (prevCheckoutDate != null && prevCheckoutDate.isAfter(effectiveMax)) {
+                effectiveMax = prevCheckoutDate;
+            }
+            if (checkoutDate.isAfter(effectiveMax)) {
+                throw new IllegalArgumentException("Ngày trả kho chỉ được trễ tối đa 5 ngày sau hạn hợp đồng (chậm nhất "
+                        + UnitScheduleService.formatDate(effectiveMax)
+                        + " — sau ngày thứ 5 hàng sẽ tự động bị cưỡng chế dọn vào kho tổng).");
             }
         } else if ("ACTIVE".equals(contract.getStatus())) {
-            // PR-O1 (sửa 05/11/2026, D-15): bỏ ân hạn 5 ngày — hẹn trả kho từ ngày mai đến hết ngày end_date
-            LocalDate maxAllowedDate = contract.getEndDate() != null ? contract.getEndDate() : today.plusDays(30);
+            // Vấn đề 3A (22/11/2026): cho phép khách hẹn trả kho trễ hơn hạn hợp đồng tối đa 5 ngày
+            // (sau ngày thứ 5 hàng tự động bị cưỡng chế dọn vào kho tổng, khách phải lấy hàng từ kho tổng)
+            LocalDate maxAllowedDate = contract.getEndDate() != null
+                    ? contract.getEndDate().plusDays(LateFeeService.V5_LIQUIDATION_DAYS)
+                    : today.plusDays(30);
             if (checkoutDate.isAfter(maxAllowedDate)) {
-                throw new IllegalArgumentException("Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất " + UnitScheduleService.formatDate(maxAllowedDate)
-                        + "). Muốn dùng kho lâu hơn vui lòng gia hạn.");
+                throw new IllegalArgumentException("Ngày hẹn trả kho chỉ được trễ tối đa 5 ngày sau hạn hợp đồng (chậm nhất "
+                        + UnitScheduleService.formatDate(maxAllowedDate)
+                        + " — sau ngày thứ 5 hàng sẽ tự động bị cưỡng chế dọn vào kho tổng). Muốn dùng kho lâu hơn vui lòng gia hạn.");
             }
         } else if ("OVERDUE".equals(contract.getStatus())) {
             // PR-O1: HĐ đang OVERDUE được hẹn trả kho trong 3 ngày tới
@@ -1169,9 +1184,10 @@ public class ContractService {
             throw new ContractException(HttpStatus.CONFLICT, "NO_DEPOSIT_TO_REFUND", "Hợp đồng không còn tiền cọc để hoàn trả");
         }
 
-        // chưa có task REFUND nào của hợp đồng này (409 REFUND_ALREADY_REQUESTED)
+        // chưa có task REFUND còn hiệu lực của hợp đồng này (409 REFUND_ALREADY_REQUESTED)
+        // Task REFUND đã huỷ (vd khách huỷ hẹn trả kho) không tính — khách chưa nhận đồng cọc nào
         Integer existingTasks = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND'",
+                "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' AND status <> 'CANCELLED'",
                 Integer.class,
                 contractId
         );

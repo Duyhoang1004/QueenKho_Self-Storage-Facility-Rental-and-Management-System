@@ -35,6 +35,20 @@ public class PendingReservationResponse {
     private BigDecimal totalPaid;
     private BigDecimal noShowPenaltyAmount;
     private BigDecimal noShowRefundAmount;
+    // Vấn đề 2 (22/11/2026): khách đã tới / đã lập biên bản nháp nhưng quá hạn chưa hoàn tất → chỉ cho Dời lịch, khoá phạt No-Show
+    private Boolean hasDraftHandover;
+
+    public PendingReservationResponse(Integer id, String reservationCode, String customerName,
+                                      String customerPhone, String unitTypeName, LocalDate startDate,
+                                      Integer durationMonths, BigDecimal depositAmount, LocalDateTime createdAt,
+                                      String staffNote, String staffName, Boolean noShowEligible,
+                                      Integer failedContactCount, String noShowIneligibleReason,
+                                      Integer priorityScore, Integer pastRentalCount, String priorityLabel,
+                                      BigDecimal totalPaid, BigDecimal noShowPenaltyAmount, BigDecimal noShowRefundAmount) {
+        this(id, reservationCode, customerName, customerPhone, unitTypeName, startDate, durationMonths, depositAmount,
+                createdAt, staffNote, staffName, noShowEligible, failedContactCount, noShowIneligibleReason,
+                priorityScore, pastRentalCount, priorityLabel, totalPaid, noShowPenaltyAmount, noShowRefundAmount, null);
+    }
 
     public PendingReservationResponse(Integer id, String reservationCode, String customerName,
                                       String customerPhone, String unitTypeName, LocalDate startDate,

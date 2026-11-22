@@ -126,8 +126,22 @@ export async function getHandoverRecords(contractId) {
 }
 
 // BR-122: ô trống cùng loại, cùng cơ sở để FM chuyển hợp đồng sang
-export async function getTransferOptions(contractId) {
-  const res = await api.get(`/contracts/${contractId}/transfer-options`)
+export async function getTransferOptions(contractId, renewalMonths) {
+  const res = await api.get(`/contracts/${contractId}/transfer-options`, {
+    params: renewalMonths ? { renewalMonths } : undefined,
+  })
+  return res.data
+}
+
+// Khách gửi yêu cầu Quản lý gán lại ô kho mới cùng loại khi ô hiện tại gần hết hạn (< 3 ngày) và đã có người đặt trùng
+export async function requestRenewalReassign(contractId, { requestedMonths, note } = {}) {
+  const res = await api.post(`/contracts/${contractId}/renewal-reassign-request`, { requestedMonths, note })
+  return res.data
+}
+
+// Quản lý (FM) thông báo đã hết loại kho này cho yêu cầu gán lại ô gia hạn → khách phải đặt loại kho khác
+export async function rejectRenewalReassign(contractId, { reason } = {}) {
+  const res = await api.post(`/contracts/${contractId}/renewal-reassign-reject`, { reason })
   return res.data
 }
 

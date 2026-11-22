@@ -243,9 +243,16 @@ export default function CustomerContractsPage() {
 
                       {/* Trạng thái */}
                       <td className="px-5 py-4 whitespace-nowrap">
-                        <span className={`duo-badge ${statusInfo.cls}`}>
-                          {statusInfo.label}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`duo-badge ${statusInfo.cls}`}>
+                            {statusInfo.label}
+                          </span>
+                          {c.reassignRequestStatus === 'PENDING' && (
+                            <span className="duo-badge bg-[#FFF0D6] text-[#E58800] border-2 border-[#FF9600] text-[10px]">
+                              Yêu cầu gán ô mới (+{c.reassignRequestedMonths || 1}T)
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Nút xem HĐ */}

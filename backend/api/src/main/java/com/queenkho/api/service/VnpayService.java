@@ -142,6 +142,7 @@ public class VnpayService {
         }
         // PR-R10 / PR-R11: quá hạn chót gia hạn ưu tiên (end_date − 3) mà ô đã có khách khác đặt trước → 409
         renewalPolicy.assertRenewable(c);
+        renewalPolicy.assertRenewableForMonths(c, m);
 
         // Flow 6 / PR-Q6: báo giá dùng chung với màn hình (GET /contracts/{id}/renewal-quote) và CHỐT CỨNG
         // số tiền tại thời điểm tạo link: tiền thuê theo % ưu đãi gia hạn của BOM + phí trễ (0 nếu FM đã miễn)
@@ -451,6 +452,13 @@ public class VnpayService {
         c.setLateFeeWaived(false);
         c.setOverstayFeeWaived(false);
         c.setLateFeeWaiverNote(null);
+        // Xoá trạng thái yêu cầu gán lại ô kho sau khi khách đã hoàn tất thanh toán gia hạn
+        c.setReassignRequestStatus(null);
+        c.setReassignRequestedMonths(null);
+        c.setReassignRequestedAt(null);
+        c.setReassignAssignedUnitId(null);
+        c.setReassignNote(null);
+        c.setReassignResolvedAt(null);
 
         if (c.getStatus().matches("(?i)OVERDUE|TERMINATION_PENDING")) { 
             c.setStatus("ACTIVE");

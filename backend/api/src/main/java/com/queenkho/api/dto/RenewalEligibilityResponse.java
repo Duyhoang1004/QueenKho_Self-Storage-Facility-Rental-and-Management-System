@@ -19,7 +19,30 @@ public record RenewalEligibilityResponse(
         boolean renewable,
         boolean unitReleasing,        // ô đang được tính "sắp trống" cho đơn đặt mới
         String blockedReason,
-        List<PackageEndDate> packages
+        List<PackageEndDate> packages,
+        String reassignRequestStatus,
+        Integer reassignRequestedMonths,
+        String reassignAssignedUnitId,
+        String reassignNote,
+        LocalDate currentUnitFreeUntil,
+        List<Integer> renewablePackages
 ) {
+    public RenewalEligibilityResponse(
+            Integer contractId,
+            String status,
+            LocalDate endDate,
+            LocalDate priorityDeadline,
+            long daysUntilDeadline,
+            String window,
+            boolean renewable,
+            boolean unitReleasing,
+            String blockedReason,
+            List<PackageEndDate> packages
+    ) {
+        this(contractId, status, endDate, priorityDeadline, daysUntilDeadline, window, renewable, unitReleasing,
+                blockedReason, packages, null, null, null, null, null,
+                renewable && packages != null ? packages.stream().map(PackageEndDate::months).toList() : List.of());
+    }
+
     public record PackageEndDate(int months, LocalDate newEndDate) {}
 }

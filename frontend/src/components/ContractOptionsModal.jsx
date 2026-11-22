@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getCheckoutRefundPreview, getRenewalEligibility, getRenewalQuote, requestCheckout } from '../services/contractService'
+import { getCheckoutRefundPreview, getRenewalEligibility, getRenewalQuote, requestCheckout, requestRenewalReassign } from '../services/contractService'
 import { createVnpayRenewal } from '../services/vnpayService'
 import { getCustomerSupportTickets } from '../services/supportService'
 import DateInput from './DateInput'
@@ -32,12 +32,14 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const isOverdue = contract?.status === 'OVERDUE' || (contract?.endDate && contract.endDate < today)
   const prevScheduledDate = contract?.scheduledCheckoutDate || contract?.endDate
 
-  // PR-O1 (sửa 05/11/2026, D-15 bỏ ân hạn 5 ngày): hẹn từ ngày mai đến hết end_date; HĐ OVERDUE (điều khoản cũ) trong 3 ngày tới
+  // Vấn đề 3A & 3B (22/11/2026): khách được hẹn / dời ngày trả kho trễ tối đa 5 ngày sau hạn hợp đồng
+  // (sau ngày thứ 5 hàng tự động bị cưỡng chế dọn vào kho tổng)
+  const maxGraceCheckoutDate = contract?.endDate ? addDays(contract.endDate, 5) : addDays(today, 5)
   const maxCheckoutDate = isOverdue
-    ? addDays(today, 3)
+    ? (maxGraceCheckoutDate && maxGraceCheckoutDate >= tomorrow ? maxGraceCheckoutDate : addDays(today, 3))
     : isTerminationPending
-    ? (prevScheduledDate || contract?.endDate)
-    : contract?.endDate
+    ? (prevScheduledDate && prevScheduledDate > maxGraceCheckoutDate ? prevScheduledDate : maxGraceCheckoutDate)
+    : maxGraceCheckoutDate
 
   const getInitialCheckoutDate = () => {
     const initialDate = contract?.scheduledCheckoutDate || (isOverdue ? tomorrow : contract?.endDate)
@@ -114,15 +116,25 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
   const [quotes, setQuotes] = useState([])
   // PR-R10 / PR-R11: hạn chót gia hạn ưu tiên + ô đã có người đặt trước chưa
   const [eligibility, setEligibility] = useState(null)
+  const [reassignLoading, setReassignLoading] = useState(false)
+  const [reassignSuccess, setReassignSuccess] = useState('')
   const contractId = contract?.contractId
   useEffect(() => {
     if (!isOpen || !contractId || !isRenewable) return undefined
     let cancelled = false
+    setReassignSuccess('')
     getRenewalQuote(contractId)
       .then((data) => { if (!cancelled) setQuotes(Array.isArray(data) ? data : []) })
       .catch(() => { if (!cancelled) setQuotes([]) })
     getRenewalEligibility(contractId)
-      .then((data) => { if (!cancelled) setEligibility(data) })
+      .then((data) => {
+        if (!cancelled) {
+          setEligibility(data)
+          if (data?.reassignRequestedMonths && [1, 3, 6, 12].includes(Number(data.reassignRequestedMonths))) {
+            setSelectedMonths(Number(data.reassignRequestedMonths))
+          }
+        }
+      })
       .catch(() => { if (!cancelled) setEligibility(null) })
     return () => { cancelled = true }
   }, [isOpen, contractId, isRenewable])
@@ -131,7 +143,32 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
     const pkg = eligibility?.packages?.find((p) => p.months === months)
     return pkg ? formatDate(pkg.newEndDate) : calculateNewEndDate(months)
   }
-  const renewBlocked = eligibility?.renewable === false
+  const packageNotRenewable = Array.isArray(eligibility?.renewablePackages)
+    && !eligibility.renewablePackages.includes(selectedMonths)
+  const renewBlocked = eligibility?.renewable === false || packageNotRenewable
+  const reassignStatus = eligibility?.reassignRequestStatus || contract?.reassignRequestStatus || null
+  const reassignRequestedMonths = Number(eligibility?.reassignRequestedMonths || contract?.reassignRequestedMonths || 0) || null
+  const reassignAssignedUnitId = eligibility?.reassignAssignedUnitId || contract?.reassignAssignedUnitId || null
+  const reassignNote = eligibility?.reassignNote || contract?.reassignNote || null
+
+  const handleRequestReassign = async () => {
+    if (!contractId) return
+    setReassignLoading(true)
+    setRenewError('')
+    setReassignSuccess('')
+    try {
+      const res = await requestRenewalReassign(contractId, { requestedMonths: selectedMonths })
+      const msg = res?.message || `Đã gửi yêu cầu gán lại ô kho mới (gói +${selectedMonths} tháng) cho Quản lý cơ sở.`
+      setReassignSuccess(msg)
+      const updated = await getRenewalEligibility(contractId)
+      setEligibility(updated)
+      onSuccess?.(msg)
+    } catch (err) {
+      setRenewError(err.response?.data?.message || err.message || 'Không thể gửi yêu cầu gán lại ô kho mới.')
+    } finally {
+      setReassignLoading(false)
+    }
+  }
 
   // UC-22 (góp ý test 13/11): tiền hoàn dự kiến lấy từ BE theo ngày khách chọn — cùng công thức lúc nghiệm thu
   // (trừ phí bảo hiểm BR-125, kỳ gia hạn gần nhất PR-O2c, tháng cuối kỳ không phạt PR-O2a); FE chỉ tính dự phòng
@@ -240,18 +277,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
       return
     }
 
-    if (isOverdue && maxCheckoutDate && checkoutDate > maxCheckoutDate) {
-      setCheckoutError(`Hợp đồng đã quá hạn (${formatDate(contract.endDate)}). Quý khách chỉ có thể hẹn trả kho trong tối đa 3 ngày tới (đến ngày ${formatDate(maxCheckoutDate)}).`)
-      return
-    }
-
-    if (!isTerminationPending && maxCheckoutDate && checkoutDate > maxCheckoutDate) {
-      setCheckoutError(`Ngày hẹn trả kho phải trong thời hạn hợp đồng (chậm nhất ${formatDate(maxCheckoutDate)}). Muốn dùng kho lâu hơn vui lòng gia hạn.`)
-      return
-    }
-
-    if (isTerminationPending && prevScheduledDate && checkoutDate > prevScheduledDate) {
-      setCheckoutError(`Không thể dời ngày qua sau ngày trả kho đã thực hiện trước đó (${formatDate(prevScheduledDate)}).`)
+    if (maxCheckoutDate && checkoutDate > maxCheckoutDate) {
+      setCheckoutError(`Ngày hẹn trả kho chỉ được trễ tối đa 5 ngày sau hạn hợp đồng (chậm nhất ${formatDate(maxCheckoutDate)} — sau ngày thứ 5 hàng sẽ tự động bị cưỡng chế dọn vào kho tổng).`)
       return
     }
 
@@ -371,6 +398,17 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               </div>
             )}
 
+            {contract?.emergencyUnit && (
+              <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-sky-900 text-xs flex items-start gap-2">
+                <span className="material-symbols-outlined text-sky-600 text-[18px] shrink-0">shield_with_heart</span>
+                <span>
+                  Hợp đồng của bạn đang được cơ sở hỗ trợ lưu trữ tạm thời tại khoang sự cố <strong>{contract.storageUnitId}</strong>;
+                  mức giá và quyền lợi gia hạn giữ nguyên theo loại kho bạn đã đặt (<strong>{contract.unitTypeName}</strong>).
+                  Đội kỹ thuật và Quản lý cơ sở sẽ chủ động điều phối lại ô kho chính thức cho bạn khi hoàn tất bảo trì.
+                </span>
+              </div>
+            )}
+
             {/* PR-R10 / PR-R11: hạn chót gia hạn ưu tiên */}
             {eligibility?.window === 'PRIORITY' && (
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs flex items-start gap-2">
@@ -382,7 +420,27 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 </span>
               </div>
             )}
-            {eligibility?.window === 'LATE' && !renewBlocked && (
+            {reassignSuccess && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-semibold">
+                <span className="material-symbols-outlined text-emerald-600 text-[18px]">check_circle</span>
+                <span>{reassignSuccess}</span>
+              </div>
+            )}
+            {reassignStatus === 'ASSIGNED' && !renewBlocked && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex flex-col gap-1.5">
+                <div className="flex items-start gap-2 font-bold text-emerald-800">
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px] shrink-0">check_circle</span>
+                  <span>
+                    Quản lý đã gán ô kho mới <strong>{reassignAssignedUnitId || contract.storageUnitId}</strong> (cùng loại {contract.unitTypeName}) cho kỳ gia hạn +{reassignRequestedMonths || selectedMonths} tháng của bạn!
+                  </span>
+                </div>
+                {reassignNote && <p className="pl-6 text-emerald-700">Ghi chú từ Quản lý: {reassignNote}</p>}
+                <p className="pl-6 text-emerald-800 font-semibold">
+                  Quý khách hiện có thể nhấn &quot;Thanh Toán &amp; Gia Hạn Ngay&quot; bên dưới để hoàn tất gia hạn.
+                </p>
+              </div>
+            )}
+            {eligibility?.window === 'LATE' && !renewBlocked && reassignStatus !== 'ASSIGNED' && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2">
                 <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">hourglass_bottom</span>
                 <span>
@@ -391,20 +449,122 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 </span>
               </div>
             )}
-            {renewBlocked && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex flex-col gap-2">
+            {reassignStatus === 'OUT_OF_STOCK' && (
+              <div className="p-3.5 bg-red-50 border border-red-300 rounded-xl text-red-900 text-xs flex flex-col gap-2.5">
                 <div className="flex items-start gap-2">
-                  <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0">block</span>
-                  <span>{eligibility.blockedReason || 'Ô kho đã có khách khác đặt trước, không thể gia hạn.'}</span>
+                  <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0">warning</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="font-bold text-red-800">
+                      Không còn ô kho cùng loại ({contract.unitTypeName}) để gán mới{reassignRequestedMonths ? ` cho gói +${reassignRequestedMonths} tháng` : ''}
+                    </span>
+                    <span>
+                      {reassignNote || `Hiện cơ sở đã hết ô kho trống thuộc loại ${contract.unitTypeName} trong khoảng thời gian quý khách yêu cầu gia hạn. Quý khách vui lòng đặt thuê loại kho khác và hẹn ngày trả ô kho hiện tại.`}
+                    </span>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('checkout')}
-                  className="self-start px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 font-semibold hover:bg-red-100 cursor-pointer"
-                >
-                  Chuyển sang Hẹn trả kho
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href="/tim-kho"
+                    className="px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors cursor-pointer"
+                  >
+                    Đặt loại kho khác
+                  </a>
+                  {reassignRequestedMonths && selectedMonths < reassignRequestedMonths && (
+                    <button
+                      type="button"
+                      disabled={reassignLoading}
+                      onClick={handleRequestReassign}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {reassignLoading ? 'Đang gửi...' : `Yêu cầu gán ô cho gói ngắn hơn (+${selectedMonths} tháng)`}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('checkout')}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-red-300 text-red-700 font-semibold hover:bg-red-100 cursor-pointer"
+                  >
+                    Chuyển sang Hẹn trả kho
+                  </button>
+                </div>
               </div>
+            )}
+            {renewBlocked && reassignStatus !== 'OUT_OF_STOCK' && (
+              reassignStatus === 'PENDING' ? (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex flex-col gap-2.5">
+                  <div className="flex items-start gap-2">
+                    <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0">pending_actions</span>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold text-amber-900">
+                        Đã gửi yêu cầu gán lại ô kho mới (Gói +{reassignRequestedMonths} tháng) — Đang chờ Quản lý xử lý
+                      </span>
+                      <span>
+                        {eligibility?.blockedReason || 'Ô kho hiện tại đã có khách khác đặt trước, không thể gia hạn trực tiếp.'}
+                      </span>
+                      <span className="text-amber-800">
+                        Quản lý cơ sở sẽ kiểm tra và gán ô kho mới cùng loại ({contract.unitTypeName}) nếu vẫn còn trống trong khoảng thời gian này, hoặc thông báo nếu bạn cần đặt loại kho khác.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedMonths !== reassignRequestedMonths && (
+                      <button
+                        type="button"
+                        disabled={reassignLoading}
+                        onClick={handleRequestReassign}
+                        className="px-3 py-1.5 rounded-lg bg-amber-600 text-white font-semibold hover:bg-amber-700 transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                        <span>{reassignLoading ? 'Đang cập nhật...' : `Cập nhật yêu cầu sang gói +${selectedMonths} tháng`}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('checkout')}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 font-semibold hover:bg-amber-100 cursor-pointer"
+                    >
+                      Chuyển sang Hẹn trả kho
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex flex-col gap-2.5">
+                  <div className="flex items-start gap-2">
+                    <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0">block</span>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-bold">Không thể gia hạn trực tiếp trên ô kho {contract.storageUnitId}</span>
+                      <span>
+                        {eligibility?.blockedReason
+                          || (eligibility?.currentUnitFreeUntil
+                            ? `Ô kho ${contract.storageUnitId} chỉ trống đến ngày ${formatDate(eligibility.currentUnitFreeUntil)} (đã có khách khác đặt trước), không đủ cho gói +${selectedMonths} tháng. Vui lòng liên hệ Quản lý để gán ô kho mới cùng loại.`
+                            : 'Ô kho đã có khách khác đặt trước, không thể gia hạn. Vui lòng liên hệ Quản lý để gán ô kho mới cùng loại.')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={reassignLoading}
+                      onClick={handleRequestReassign}
+                      className="px-3.5 py-2 rounded-lg bg-primary hover:bg-primary-hover text-white font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                      <span>
+                        {reassignLoading
+                          ? 'Đang gửi yêu cầu...'
+                          : `Yêu cầu Quản lý gán lại ô kho mới (+${selectedMonths} tháng)`}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('checkout')}
+                      className="px-3 py-2 rounded-lg bg-white border border-red-300 text-red-700 font-semibold hover:bg-red-100 cursor-pointer"
+                    >
+                      Chuyển sang Hẹn trả kho
+                    </button>
+                  </div>
+                </div>
+              )
             )}
 
             {isTerminationPending && (
@@ -607,10 +767,10 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
             {/* Date Selection Section */}
             <label className="text-xs sm:text-sm text-slate-800 font-semibold mb-2 block" htmlFor="checkoutDateInput">
               {isOverdue
-                ? 'Hợp đồng đã quá hạn - Chọn ngày trả kho (trong 3 ngày tới):'
+                ? `Hợp đồng đã quá hạn - Chọn ngày trả kho (chậm nhất ${formatDate(maxCheckoutDate)}):`
                 : isTerminationPending
-                ? 'Chọn ngày dời trả kho sớm hơn:'
-                : 'Chọn ngày dọn đồ & trả kho:'}
+                ? `Chọn ngày dời lịch trả kho (trễ tối đa 5 ngày sau hạn HĐ — chậm nhất ${formatDate(maxCheckoutDate)}):`
+                : `Chọn ngày dọn đồ & trả kho (trễ tối đa 5 ngày sau hạn HĐ — chậm nhất ${formatDate(maxCheckoutDate)}):`}
             </label>
             <div className="relative flex items-center bg-slate-100 rounded-lg px-3.5 py-2.5 transition-all border border-slate-200">
               <div className="flex items-center gap-2.5 text-slate-800 text-sm flex-1">
@@ -625,9 +785,9 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                   required
                 />
               </div>
-              {isOverdue && (
+              {(isOverdue || isGraceOrOverdue) && (
                 <span className="text-[11px] text-red-700 bg-red-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Quá hạn (≤ 3 ngày)
+                  Trả trễ (≤ 5 ngày)
                 </span>
               )}
               {!isOverdue && isEarlyCheckout && (
@@ -641,6 +801,81 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                 </span>
               )}
             </div>
+
+            {/* Vấn đề 3A & 3B: Chiết tính chi tiết phí phạt trả kho trễ hạn (tối đa 5 ngày trước khi cưỡng chế dọn kho) */}
+            {(isGraceOrOverdue || isOverdue) && (() => {
+              const daysLate = preview?.daysPastEndDate != null
+                ? Number(preview.daysPastEndDate)
+                : (checkoutDate && contract?.endDate
+                  ? Math.max(0, Math.round((new Date(`${checkoutDate}T00:00:00`) - new Date(`${contract.endDate}T00:00:00`)) / 86400000))
+                  : 0)
+              const depositHeldNum = Number(preview?.depositHeld ?? contract?.depositHeldAmount ?? 0)
+              const dailyRent = Math.round(basePrice / 30)
+              const overstayRatePct = contract?.lateFeeWaived ? (contract?.overstayFeeWaived ? 0 : 100) : 150
+              const dailyOverstay = Math.round((basePrice * overstayRatePct) / (30 * 100))
+              const previewLateFee = preview?.lateFee != null
+                ? Number(preview.lateFee)
+                : (contract?.lateFeeWaived ? 0 : Math.min(Math.round(depositHeldNum * 0.5), Math.round(depositHeldNum * 0.1 * Math.min(daysLate, 5))))
+              const previewOverstayFee = preview?.overstayFee != null
+                ? Number(preview.overstayFee)
+                : dailyOverstay * daysLate
+              const totalLateDeduction = previewLateFee + previewOverstayFee
+              const netAfterLate = depositHeldNum - totalLateDeduction
+              return (
+                <div className="bg-[#FFF8EE] border-2 border-[#FF9600] rounded-xl p-3.5 my-3 flex flex-col gap-2.5 text-xs text-[#4B4B4B]">
+                  <div className="flex items-center justify-between gap-2 border-b border-[#FFD591] pb-2">
+                    <span className="font-black uppercase text-[#E58800] flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[18px]">warning</span>
+                      Chiết tính phí trả kho trễ hạn ({daysLate} ngày sau hạn HĐ)
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-[#FFDFDF] text-[#EA2B2B] font-black text-[10px]">
+                      Trễ tối đa 5 ngày
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-[#777777] font-semibold">
+                        Hạn hợp đồng → Ngày hẹn trả:
+                      </span>
+                      <span className="font-bold text-[#4B4B4B]">
+                        {formatDate(contract.endDate)} → {formatDate(checkoutDate)} ({daysLate} ngày trễ)
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777777] font-semibold">
+                        1. Phí phạt trễ hạn (10% cọc/ngày · trần 50% cọc {formatVND(Math.round(depositHeldNum * 0.5))}):
+                      </span>
+                      <span className="font-black text-[#EA2B2B]">
+                        {contract?.lateFeeWaived ? '0₫ (Đã miễn)' : `−${formatVND(previewLateFee)}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#777777] font-semibold">
+                        2. Phí chiếm dụng ô ({overstayRatePct}% giá thuê ngày · giá ngày = {formatVND(basePrice)}/30 = {formatVND(dailyRent)}):
+                      </span>
+                      <span className="font-black text-[#EA2B2B]">
+                        {overstayRatePct === 0 ? '0₫ (Đã miễn)' : `−${formatVND(previewOverstayFee)}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t border-dashed border-[#FFD591] pt-1.5">
+                      <span className="font-bold text-[#4B4B4B]">Tổng phí trễ &amp; chiếm dụng khấu trừ vào cọc:</span>
+                      <span className="font-black text-[#EA2B2B]">−{formatVND(totalLateDeduction)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-bold text-[#4B4B4B]">
+                        {netAfterLate >= 0 ? 'Dự kiến tiền cọc còn hoàn lại (từ cọc gốc ' + formatVND(depositHeldNum) + '):' : 'Dự kiến khoản nợ vượt cọc cần đóng thêm:'}
+                      </span>
+                      <span className={`font-black ${netAfterLate >= 0 ? 'text-[#58A700]' : 'text-[#EA2B2B]'}`}>
+                        {netAfterLate >= 0 ? formatVND(netAfterLate) : formatVND(Math.abs(netAfterLate))}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-white/90 border border-[#FFD591] p-2.5 text-[11px] font-semibold text-[#92400E] leading-relaxed">
+                    <strong>Lưu ý quy định 5 ngày:</strong> Quý khách chỉ có thể hẹn trả kho trễ tối đa <strong>5 ngày</strong> sau hạn hợp đồng (chậm nhất ngày <strong>{formatDate(maxGraceCheckoutDate)}</strong>). Sau ngày thứ 5 quá hạn, hàng hóa trong ô sẽ tự động bị cưỡng chế dọn và chuyển vào <strong>kho tổng</strong> — khi đó quý khách phải làm theo luồng nhận lại hàng từ kho tổng.
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* D-22: bảng "Bạn đã đóng − Cơ sở giữ lại = Dự kiến hoàn" — backend tính bằng đúng công thức lúc nghiệm thu,
                 dòng "Đã đóng" khớp màn hợp đồng (cọc + tiền thuê kỳ hiện tại + bảo hiểm) */}

@@ -13,4 +13,5 @@ public class TransferUnitRequest {
     private String reasonType;          // FACILITY_ISSUE / CUSTOMER_REQUEST / REARRANGE
     private String reason;              // 10–500 ký tự
     private Boolean oldUnitMaintenance; // true → ô cũ chuyển sang Bảo trì (bắt buộc khi FACILITY_ISSUE)
+    private Integer renewalMonths;      // nếu gán lại ô kho để khách gia hạn +N tháng (1, 3, 6, 12)
 }

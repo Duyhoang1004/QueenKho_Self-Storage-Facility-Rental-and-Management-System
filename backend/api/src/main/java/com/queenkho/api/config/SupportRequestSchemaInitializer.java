@@ -36,6 +36,21 @@ public class SupportRequestSchemaInitializer implements BeanPostProcessor {
                         "    ALTER TABLE support_requests ADD evidence_images NVARCHAR(MAX) NULL; " +
                         "  IF COL_LENGTH('support_requests', 'sub_category') IS NULL " +
                         "    ALTER TABLE support_requests ADD sub_category NVARCHAR(100) NULL; " +
+                        "END; " +
+                        "IF OBJECT_ID('rental_contracts', 'U') IS NOT NULL " +
+                        "BEGIN " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_request_status') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_request_status NVARCHAR(30) NULL; " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_requested_months') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_requested_months INT NULL; " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_requested_at') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_requested_at DATETIME2 NULL; " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_assigned_unit_id') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_assigned_unit_id VARCHAR(50) NULL; " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_note') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_note NVARCHAR(500) NULL; " +
+                        "  IF COL_LENGTH('rental_contracts', 'reassign_resolved_at') IS NULL " +
+                        "    ALTER TABLE rental_contracts ADD reassign_resolved_at DATETIME2 NULL; " +
                         "END"
                 );
             } catch (Exception e) {

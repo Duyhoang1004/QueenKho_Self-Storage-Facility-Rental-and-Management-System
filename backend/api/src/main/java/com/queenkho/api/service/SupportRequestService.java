@@ -313,7 +313,8 @@ public class SupportRequestService {
             staffTaskService.cancelTaskWithReason(t, taskReason); // PR-T2: lý do + báo nhân viên đang làm
         }
         staffTaskRepository.saveAll(openTasks);
-        compensationClaimService.withdrawForTicket(ticket.getId()); // BR-126: rút hồ sơ bồi thường đi kèm (nếu có)
+        // BR-126: rút hồ sơ bồi thường đi kèm (nếu có); Vấn đề 1: quyết toán đang chờ hồ sơ này sẽ tự tính lại
+        compensationClaimService.withdrawForTicket(ticket.getId(), customer.getId());
 
         activityLogService.log(
                 customer.getId(),

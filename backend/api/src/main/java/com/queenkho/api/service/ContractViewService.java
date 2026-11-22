@@ -361,6 +361,13 @@ public class ContractViewService {
         dto.setInsuranceTotalAmount(insuranceTotalAmount);
         dto.setRentPaid(actualRentPaid); // Cập nhật đúng tiền thuê thực đóng (không bị lẫn bảo hiểm vào)
 
+        dto.setReassignRequestStatus(rc.getReassignRequestStatus());
+        dto.setReassignRequestedMonths(rc.getReassignRequestedMonths());
+        dto.setReassignAssignedUnitId(rc.getReassignAssignedUnitId());
+        dto.setReassignNote(rc.getReassignNote());
+        dto.setReassignRequestedAt(rc.getReassignRequestedAt());
+        dto.setReassignResolvedAt(rc.getReassignResolvedAt());
+
         return dto;
     }
 

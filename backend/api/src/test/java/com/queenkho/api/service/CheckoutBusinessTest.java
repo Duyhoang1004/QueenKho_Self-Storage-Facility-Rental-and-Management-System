@@ -108,4 +108,27 @@ class CheckoutBusinessTest {
         service.cancelCheckout(30);
         assertEquals("OVERDUE", contract.getStatus());
     }
+
+    @Test void activeContractOnLastDayCanScheduleWithinFiveDaysAfterEndDate() {
+        LocalDate today = LocalDate.now();
+        contract.setStatus("ACTIVE");
+        contract.setEndDate(today);
+        LocalDate appointment = today.plusDays(3);
+        var res = service.requestCheckout(30, request(appointment, "CASH"));
+        assertEquals("TERMINATION_PENDING", contract.getStatus());
+        assertEquals(appointment, res.getCheckoutDate());
+    }
+
+    @Test void terminationPendingWithOverdueTaskCanRescheduleWithinFiveDaysAfterEndDate() {
+        LocalDate today = LocalDate.now();
+        contract.setStatus("TERMINATION_PENDING");
+        contract.setEndDate(today);
+        when(jdbc.queryForObject(contains("SELECT TOP 1 due_at"), eq(java.sql.Timestamp.class), eq(30)))
+                .thenReturn(java.sql.Timestamp.valueOf(today.minusDays(1).atTime(21, 0)));
+        LocalDate newAppointment = today.plusDays(2);
+        var res = service.requestCheckout(30, request(newAppointment, "CASH"));
+        assertEquals("TERMINATION_PENDING", contract.getStatus());
+        assertEquals(newAppointment, res.getCheckoutDate());
+        verify(tasks).rescheduleOpenTasks(30, "CHECK_OUT", newAppointment);
+    }
 }

@@ -127,6 +127,14 @@ public class CustomerContractResponse {
     private String voucherDiscountType;
     private Integer voucherDiscountPercent;
 
+    // Yêu cầu gán lại ô kho mới khi ô hiện tại gần hết hạn (< 3 ngày) và đã có khách khác đặt trùng
+    private String reassignRequestStatus;     // null | PENDING | ASSIGNED | OUT_OF_STOCK
+    private Integer reassignRequestedMonths;  // 1 | 3 | 6 | 12
+    private String reassignAssignedUnitId;
+    private String reassignNote;
+    private LocalDateTime reassignRequestedAt;
+    private LocalDateTime reassignResolvedAt;
+
     public CustomerContractResponse(Integer contractId, String contractCode, Integer customerId, String customerFullName,
                                     String customerPhone, String storageUnitId, String unitTypeName, BigDecimal areaSqm,
                                     String floor, String zone, String roomNumber, String status, LocalDate startDate,

@@ -163,4 +163,51 @@ class RenewalPolicyServiceTest {
         assertTrue(RenewalPolicyService.isReleasing("ACTIVE", today.plusDays(2), today));
         assertFalse(RenewalPolicyService.isReleasing("PENDING_CHECK_IN", today, today));
     }
+
+    @Test
+    @DisplayName("Sau khi FM gán ô kho mới theo yêu cầu gia hạn +1 tháng → mở khoá gia hạn cho gói +1 tháng")
+    void assignedNewUnitUnlocksApprovedPackage() {
+        contract.setEndDate(today.plusDays(1));
+        contract.getStorageUnit().setId("KV-TB-A102");
+        contract.setReassignRequestStatus("ASSIGNED");
+        contract.setReassignAssignedUnitId("KV-TB-A102");
+        contract.setReassignRequestedMonths(1);
+        freeNow(-1);
+
+        var result = service.checkEligibility(contract);
+
+        assertTrue(result.renewable());
+        assertEquals(List.of(1), result.renewablePackages());
+        assertDoesNotThrow(() -> service.assertRenewableForMonths(contract, 1));
+        ContractException ex = assertThrows(ContractException.class, () -> service.assertRenewableForMonths(contract, 3));
+        assertEquals("RENEWAL_UNIT_RESERVED", ex.getCode());
+    }
+
+    @Test
+    @DisplayName("FM báo hết loại kho (OUT_OF_STOCK) → chặn gia hạn và báo khách đặt loại kho khác")
+    void outOfStockBlocksAndAdvisesDifferentUnitType() {
+        contract.setEndDate(today.plusDays(1));
+        contract.setReassignRequestStatus("OUT_OF_STOCK");
+        contract.setReassignRequestedMonths(3);
+
+        var result = service.checkEligibility(contract);
+
+        assertFalse(result.renewable());
+        assertTrue(result.renewablePackages().isEmpty());
+        assertTrue(result.blockedReason().contains("loại kho khác"));
+    }
+
+    @Test
+    @DisplayName("Vấn đề 6: Khách đang lưu tạm ở ô kho khẩn cấp vẫn được gia hạn hợp đồng bình thường ngay cả khi loại kho đang hết suất")
+    void contractTemporarilyOnEmergencyUnitCanRenewNormally() {
+        contract.setEndDate(today.plusDays(1));
+        contract.getStorageUnit().setEmergency(true);
+        freeNow(-1); // giả lập loại kho đang thiếu suất thương mại
+
+        var result = service.checkEligibility(contract);
+
+        assertTrue(result.renewable());
+        assertEquals(List.of(1, 3, 6, 12), result.renewablePackages());
+        assertDoesNotThrow(() -> service.assertRenewableForMonths(contract, 6));
+    }
 }

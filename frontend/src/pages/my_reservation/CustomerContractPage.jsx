@@ -661,6 +661,68 @@ export default function CustomerContractPage() {
         </div>
       )}
 
+      {/* Trạng thái yêu cầu gán lại ô kho mới khi gia hạn (ô gần hết hạn < 3 ngày và đã có người đặt trùng) */}
+      {contract.reassignRequestStatus === "PENDING" && (
+        <div className="border-2 border-[#FF9600] bg-[#FFF8EE] rounded-2xl p-4 flex items-start gap-3">
+          <span className="material-symbols-outlined text-[24px] text-[#E58800] shrink-0">pending_actions</span>
+          <div className="text-xs text-[#4B4B4B] leading-relaxed">
+            <p className="font-black text-sm text-[#E58800]">
+              Đang chờ Quản lý gán lại ô kho mới để gia hạn (+{contract.reassignRequestedMonths || 1} tháng)
+            </p>
+            <p className="font-bold text-[#777777] mt-0.5">
+              Yêu cầu gán lại ô kho cùng loại ({contract.unitTypeName}) của bạn đang được Quản lý cơ sở xử lý. Bạn sẽ nhận được thông báo ngay khi Quản lý gán ô mới hoặc phản hồi.
+            </p>
+          </div>
+        </div>
+      )}
+      {contract.reassignRequestStatus === "ASSIGNED" && (
+        <div className="border-2 border-[#58CC02] bg-[#D7FFB8]/40 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-[24px] text-[#58A700] shrink-0">check_circle</span>
+            <div className="text-xs text-[#4B4B4B] leading-relaxed">
+              <p className="font-black text-sm text-[#58A700]">
+                Quản lý đã gán ô kho mới {contract.reassignAssignedUnitId || contract.storageUnitId} cho hợp đồng của bạn!
+              </p>
+              <p className="font-bold text-[#555555] mt-0.5">
+                Hợp đồng đã được chuyển sang ô kho mới cùng loại cho kỳ gia hạn +{contract.reassignRequestedMonths || 1} tháng. Bấm &quot;Gia hạn ngay&quot; để thanh toán và hoàn tất gia hạn.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setOptionsModalTab("renew");
+              setIsOptionsModalOpen(true);
+            }}
+            className="duo-btn-green px-4 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">autorenew</span>
+            Thanh toán gia hạn
+          </button>
+        </div>
+      )}
+      {contract.reassignRequestStatus === "OUT_OF_STOCK" && (
+        <div className="border-2 border-[#FF4B4B] bg-[#FFF2F2] rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-[24px] text-[#FF4B4B] shrink-0">warning</span>
+            <div className="text-xs text-[#4B4B4B] leading-relaxed">
+              <p className="font-black text-sm text-[#FF4B4B]">
+                Không còn ô kho cùng loại ({contract.unitTypeName}) để gán mới
+              </p>
+              <p className="font-bold text-[#777777] mt-0.5">
+                {contract.reassignNote || `Hiện cơ sở đã hết ô kho trống thuộc loại ${contract.unitTypeName} trong khoảng thời gian gia hạn yêu cầu. Quý khách vui lòng đặt thuê loại kho khác và hẹn ngày trả ô kho hiện tại.`}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate("/tim-kho")}
+            className="duo-btn-orange px-4 py-2.5 text-xs uppercase tracking-wider flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">search</span>
+            Đặt loại kho khác
+          </button>
+        </div>
+      )}
+
       {/* Cảnh báo quá hạn (OVERDUE) theo Business Rule — góp ý test 12/11: cả khi khách quá hạn rồi mới hẹn trả kho */}
       {(contract.status === "OVERDUE" || (contract.status === "TERMINATION_PENDING" && Number(contract.overdueDays) > 0)) && (
         <div className="bg-[#FFF2F2] border-2 border-[#FFB8B8] rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">

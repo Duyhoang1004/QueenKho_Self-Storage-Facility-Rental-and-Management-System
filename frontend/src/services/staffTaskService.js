@@ -119,6 +119,12 @@ export async function extendOverdueTask(taskId, payload) {
   return res.data
 }
 
+// Vấn đề 6: Staff đang làm task MAINTENANCE báo cáo sửa kho kéo dài và yêu cầu FM chuyển HĐ sang ô tiêu chuẩn khác
+export async function requestMaintenanceUnitTransfer(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/request-unit-transfer`, payload)
+  return res.data
+}
+
 // Báo cáo kết quả liên hệ khách hàng (No-Show workflow)
 export async function submitContactReport(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/contact-report`, payload)

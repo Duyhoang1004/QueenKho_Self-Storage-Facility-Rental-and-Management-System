@@ -142,10 +142,23 @@ public class CompensationClaimService {
     /** Khách huỷ ticket còn OPEN → rút hồ sơ */
     @Transactional
     public void withdrawForTicket(Integer ticketId) {
+        withdrawForTicket(ticketId, null);
+    }
+
+    /**
+     * Khách huỷ ticket → rút hồ sơ. Vấn đề 1 (22/11/2026): nếu hợp đồng đang tất toán và quyết toán chờ chính
+     * hồ sơ này (WAITING_CLAIM) thì tự tính lại quyết toán, tránh kẹt vĩnh viễn (FM không chốt được hồ sơ WITHDRAWN).
+     */
+    @Transactional
+    public void withdrawForTicket(Integer ticketId, Integer actorId) {
         claimRepository.findByTicketId(ticketId).ifPresent(c -> {
             if (List.of("SUBMITTED", "INSPECTED").contains(c.getStatus())) {
                 c.setStatus("WITHDRAWN");
                 claimRepository.save(c);
+                if (settlementService != null && c.getContract() != null
+                        && "SETTLEMENT_PENDING".equals(c.getContract().getStatus())) {
+                    settlementService.onClaimWithdrawn(c, actorId);
+                }
             }
         });
     }

@@ -73,4 +73,23 @@ public class RentalContract {
     // hoàn tiền thuê theo số ngày còn lại (thay công thức trả sớm PR-O2)
     @Column(name = "fault_termination", nullable = false)
     private Boolean faultTermination = false;
+
+    // Yêu cầu gán lại ô kho mới khi ô hiện tại gần hết hạn (< 3 ngày) và đã có khách khác đặt trùng
+    @Column(name = "reassign_request_status", length = 30)
+    private String reassignRequestStatus; // null | PENDING | ASSIGNED | OUT_OF_STOCK
+
+    @Column(name = "reassign_requested_months")
+    private Integer reassignRequestedMonths;
+
+    @Column(name = "reassign_requested_at")
+    private java.time.LocalDateTime reassignRequestedAt;
+
+    @Column(name = "reassign_assigned_unit_id", length = 50)
+    private String reassignAssignedUnitId;
+
+    @Column(name = "reassign_note", length = 500)
+    private String reassignNote;
+
+    @Column(name = "reassign_resolved_at")
+    private java.time.LocalDateTime reassignResolvedAt;
 }

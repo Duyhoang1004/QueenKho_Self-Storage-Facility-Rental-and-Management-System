@@ -151,6 +151,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id}/checkout-refund-preview", "CUSTOMER_RENTAL"); // UC-22 xem trước tiền hoàn
         rule("GET", "/api/v1/contracts/{id}/renewal-quote", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/contracts/{id}/renewal-eligibility", "CUSTOMER_RENTAL"); // PR-R10 / PR-R11
+        rule("POST", "/api/v1/contracts/{id}/renewal-reassign-request", "CUSTOMER_RENTAL");
         rule("POST", "/api/payments/vnpay/create-renewal", "CUSTOMER_RENTAL");
         rule("GET", "/api/v1/payments/my", "CUSTOMER_PAYMENT");
         rule("GET", "/api/v1/refunds/my", "CUSTOMER_PAYMENT");                 // D-22: khoản hoàn chờ xác nhận
@@ -172,6 +173,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id}/unit-transfers", "CONTRACT_VIEW");   // BR-122: lịch sử chuyển ô
         rule("GET", "/api/v1/contracts/{id}/transfer-options", "RESERVATION_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/transfer-unit", "RESERVATION_MANAGE");
+        rule("POST", "/api/v1/contracts/{id}/renewal-reassign-reject", "RESERVATION_MANAGE");
         rule(null, "/api/v1/contracts/{id}/overdue-contacts", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/liquidate", "CONTRACT_MANAGE");
         rule("POST", "/api/v1/contracts/{id}/refund-remaining-deposit", "CONTRACT_MANAGE");
@@ -233,6 +235,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/reopen-support", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/reset-pin", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/complete-maintenance", "TASK_MAINTENANCE");
+        rule("POST", "/api/v1/staff-tasks/{id}/request-unit-transfer", "TASK_MAINTENANCE"); // Vấn đề 6: Staff yêu cầu FM đổi ô cho khách từ task bảo trì
         rule("GET", "/api/v1/staff-tasks", "TASK_BOARD");
         rule("GET", "/api/v1/staff-tasks/{id:\\d+}", "TASK_BOARD");
         rule("POST", "/api/v1/staff-tasks/{id}/claim", "TASK_BOARD");

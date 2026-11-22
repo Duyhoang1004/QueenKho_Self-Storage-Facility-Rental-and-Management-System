@@ -282,39 +282,75 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
             )}
           </div>
 
-          {/* (08/11/2026) Ô sắp trống cùng loại — chỉ xem, bấm mã HĐ để xem hợp đồng trong popup */}
+          {/* (08/11/2026) Ô sắp trống cùng loại — cho phép gán trước nếu ngày nhận kho của đơn mới >= ngày ô trống */}
           {releasingUnits.length > 0 && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-[#4B4B4B]">Ô sắp trống cùng loại</span>
                 <span className="duo-badge bg-[#FFF0DB] text-[#E58800] border border-[#FF9600] text-[10px]">
-                  {releasingUnits.length} ô · chưa gán được
+                  {releasingUnits.length} ô sắp trống
                 </span>
               </div>
               <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                {releasingUnits.map(u => (
-                  <div key={u.id} className="flex items-center justify-between gap-3 rounded-2xl border-2 border-dashed border-[#FF9600] bg-[#FFF8EE] px-3 py-2 text-xs">
-                    <div className="flex flex-col">
-                      <span className="font-mono font-black text-[#4B4B4B]">{u.id}</span>
-                      <span className="text-[11px] font-bold text-[#E58800]">
-                        Giao được từ {formatDate(u.releaseDate)}
-                        {u.currentContract?.customerName ? ` · khách cũ ${u.currentContract.customerName}` : ''}
-                      </span>
+                {releasingUnits.map(u => {
+                  const canPreAssign = Boolean(reservation?.startDate && u.releaseDate && reservation.startDate >= u.releaseDate)
+                  const isSelected = selectedUnitId === u.id
+                  return (
+                    <div
+                      key={u.id}
+                      onClick={() => { if (canPreAssign) setSelectedUnitId(u.id) }}
+                      className={`flex items-center justify-between gap-3 rounded-2xl border-2 px-3 py-2 text-xs transition-all ${
+                        isSelected
+                          ? 'border-[#1899D6] bg-[#DDF4FF] cursor-pointer'
+                          : canPreAssign
+                          ? 'border-dashed border-[#FF9600] bg-[#FFF8EE] hover:bg-[#FFF0DB] cursor-pointer'
+                          : 'border-dashed border-[#FF9600] bg-[#FFF8EE]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {canPreAssign && (
+                          <input
+                            type="radio"
+                            name="unit_select"
+                            checked={isSelected}
+                            onChange={() => setSelectedUnitId(u.id)}
+                            className="w-4 h-4 accent-[#1CB0F6] cursor-pointer"
+                          />
+                        )}
+                        <div className="flex flex-col">
+                          <span className="font-mono font-black text-[#4B4B4B]">{u.id}</span>
+                          <span className="text-[11px] font-bold text-[#E58800]">
+                            Giao được từ {formatDate(u.releaseDate)}
+                            {u.currentContract?.customerName ? ` · khách cũ ${u.currentContract.customerName}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {canPreAssign && (
+                          <span className={`duo-badge text-[10px] ${
+                            isSelected ? 'bg-[#DDF4FF] text-[#1CB0F6] border border-[#84D8FF]' : 'bg-[#FFF0DB] text-[#E58800] border border-[#FF9600]'
+                          }`}>
+                            {isSelected ? 'Đang chọn' : 'Gán trước được'}
+                          </span>
+                        )}
+                        {u.currentContract && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setPeekContractId(u.currentContract.contractId) }}
+                            title="Xem hợp đồng đang giữ ô"
+                            className="font-black text-[#1CB0F6] hover:underline whitespace-nowrap cursor-pointer"
+                          >
+                            HĐ {u.currentContract.contractCode}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {u.currentContract && (
-                      <button
-                        type="button"
-                        onClick={() => setPeekContractId(u.currentContract.contractId)}
-                        title="Xem hợp đồng đang giữ ô"
-                        className="font-black text-[#1CB0F6] hover:underline whitespace-nowrap"
-                      >
-                        HĐ {u.currentContract.contractCode}
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-              <p className="text-[11px] font-bold text-[#AFAFAF]">Ô chỉ gán được sau khi khách cũ trả kho / bị cưỡng chế dọn kho xong (PR-R11).</p>
+              <p className="text-[11px] font-bold text-[#AFAFAF]">
+                Ô đã qua hạn chót gia hạn ưu tiên (&lt; 3 ngày) có thể gán trước cho đơn nhận kho từ ngày giao được (PR-R11).
+              </p>
             </div>
           )}
 

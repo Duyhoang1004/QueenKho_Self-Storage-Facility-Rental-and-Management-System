@@ -1,7 +1,7 @@
 // (10/11/2026) Nội dung chi tiết hợp đồng dùng chung cho trang /manager/contracts/:id
 // và popup ContractDetailModal (xem hợp đồng không phải mở tab mới → không mất phiên đăng nhập).
 import { useEffect, useState } from 'react'
-import { getContractDetail } from '../services/contractService'
+import { getContractDetail, rejectRenewalReassign } from '../services/contractService'
 import SimulationButton from './SimulationButton'
 import TransferUnitModal from './TransferUnitModal'
 import ContractHandoverSection from './ContractHandoverSection'
@@ -77,13 +77,38 @@ export default function ContractDetailView({ contractId, initialTransfer = false
   const [notice, setNotice] = useState('')
   // D-18: ô cũ vào bảo trì nhưng còn khách khác đã gán trước → nhắc FM đổi ô tiếp cho họ
   const [affected, setAffected] = useState([])
+  const [showRejectBox, setShowRejectBox] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectingReassign, setRejectingReassign] = useState(false)
 
   useEffect(() => {
     getContractDetail(id)
-      .then(setContract)
+      .then((data) => {
+        setContract(data)
+        if (data?.unitTypeName) {
+          setRejectReason(
+            `Hiện cơ sở đã hết ô kho trống thuộc loại ${data.unitTypeName} trong khoảng thời gian gia hạn +${data.reassignRequestedMonths || 1} tháng. Quý khách vui lòng đặt thuê loại kho khác và hẹn ngày trả ô kho hiện tại.`
+          )
+        }
+      })
       .catch(() => setError('Không tìm thấy hợp đồng hoặc đã xảy ra lỗi.'))
       .finally(() => setLoading(false))
   }, [id, reloadTick])
+
+  const handleConfirmRejectReassign = async () => {
+    if (!contract) return
+    setRejectingReassign(true)
+    try {
+      const res = await rejectRenewalReassign(contract.contractId, { reason: rejectReason })
+      setShowRejectBox(false)
+      setNotice(res?.message || 'Đã thông báo hết loại kho này cho khách hàng.')
+      setReloadTick((t) => t + 1)
+    } catch (err) {
+      setNotice(err.response?.data?.message || 'Không thể gửi thông báo, vui lòng thử lại.')
+    } finally {
+      setRejectingReassign(false)
+    }
+  }
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -185,6 +210,106 @@ export default function ContractDetailView({ contractId, initialTransfer = false
             onRun={() => simulateOverdue(contract.contractId, 5)}
             onDone={() => setReloadTick((t) => t + 1)}
           />
+        </div>
+      )}
+
+      {/* Khung xử lý yêu cầu gán lại ô kho mới khi khách muốn gia hạn mà ô hiện tại đã có người đặt trùng */}
+      {contract.reassignRequestStatus === 'PENDING' && (
+        <div className="bg-[#FFF8EE] border-2 border-[#FF9600] rounded-2xl p-5 mb-6 shadow-xs flex flex-col gap-3.5">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#FF9600] border-b-2 border-[#E58800] text-white flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[24px]">swap_horiz</span>
+            </div>
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-black text-[#4B4B4B] uppercase tracking-wide">
+                  Yêu cầu gán lại ô kho mới để gia hạn (+{contract.reassignRequestedMonths || 1} tháng)
+                </h3>
+                <span className="duo-badge bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[10px]">
+                  Chờ Quản lý xử lý
+                </span>
+              </div>
+              <p className="text-xs font-bold text-[#777777] mt-1">
+                Khách hàng <strong>{contract.customerFullName}</strong> muốn gia hạn hợp đồng thêm{' '}
+                <strong>+{contract.reassignRequestedMonths || 1} tháng</strong>, nhưng ô hiện tại{' '}
+                <strong className="font-mono">{contract.storageUnitId}</strong> gần hết hạn và đã có khách khác đặt trùng.
+              </p>
+              <p className="text-xs font-bold text-[#777777] mt-1">
+                • Nếu cơ sở vẫn còn ô trống thuộc loại <strong>{contract.unitTypeName}</strong> suốt thời gian gia hạn (+{contract.reassignRequestedMonths || 1} tháng), hãy bấm <strong>Gán ô kho mới cùng loại</strong>.
+                <br />• Nếu đã hết loại kho này, hãy bấm <strong>Thông báo hết loại kho này</strong> để báo khách đặt loại kho khác.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 pl-0 sm:pl-14">
+            <button
+              type="button"
+              onClick={() => setTransferOpen(true)}
+              className="duo-btn-orange px-4 py-2 text-xs gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+              Gán ô kho mới cùng loại (+{contract.reassignRequestedMonths || 1} tháng)
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRejectBox((v) => !v)}
+              className="duo-btn-white px-4 py-2 text-xs gap-1.5 text-[#FF4B4B] border-[#FFDFDF]"
+            >
+              <span className="material-symbols-outlined text-[18px] text-[#FF4B4B]">block</span>
+              Thông báo hết loại kho này (Khách đặt loại kho khác)
+            </button>
+          </div>
+
+          {showRejectBox && (
+            <div className="sm:ml-14 bg-white border-2 border-[#FFDFDF] rounded-2xl p-4 flex flex-col gap-2.5">
+              <span className="text-[11px] font-black uppercase text-[#FF4B4B]">
+                Nội dung thông báo gửi cho khách hàng:
+              </span>
+              <textarea
+                rows={2}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="duo-input text-xs resize-none"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRejectBox(false)}
+                  className="duo-btn-white px-3.5 py-1.5 text-xs"
+                >
+                  Huỷ
+                </button>
+                <button
+                  type="button"
+                  disabled={rejectingReassign}
+                  onClick={handleConfirmRejectReassign}
+                  className="px-4 py-1.5 rounded-xl bg-[#FF4B4B] border-b-2 border-[#EA2B2B] text-white font-black text-xs hover:brightness-95 cursor-pointer disabled:opacity-50"
+                >
+                  {rejectingReassign ? 'Đang gửi...' : 'Xác nhận thông báo hết loại kho'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {contract.reassignRequestStatus === 'ASSIGNED' && (
+        <div className="bg-[#D7FFB8]/40 border-2 border-[#58CC02] rounded-2xl p-4 mb-6 flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#58A700] text-[24px]">check_circle</span>
+          <div className="text-xs font-bold text-[#4B4B4B]">
+            <span className="font-black text-[#58A700]">Đã gán lại ô kho mới ({contract.reassignAssignedUnitId || contract.storageUnitId}):</span>{' '}
+            Đã xử lý yêu cầu gán ô cho kỳ gia hạn +{contract.reassignRequestedMonths || 1} tháng. Đang chờ khách thanh toán gia hạn.
+          </div>
+        </div>
+      )}
+
+      {contract.reassignRequestStatus === 'OUT_OF_STOCK' && (
+        <div className="bg-[#FFF2F2] border-2 border-[#FFDFDF] rounded-2xl p-4 mb-6 flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#FF4B4B] text-[24px]">info</span>
+          <div className="text-xs font-bold text-[#4B4B4B]">
+            <span className="font-black text-[#FF4B4B]">Đã thông báo hết loại kho ({contract.unitTypeName}):</span>{' '}
+            {contract.reassignNote || 'Đã báo khách đặt loại kho khác và hẹn trả ô kho hiện tại.'}
+          </div>
         </div>
       )}
 
@@ -400,6 +525,11 @@ export default function ContractDetailView({ contractId, initialTransfer = false
           setTransferOpen(false)
           setNotice(`Đã chuyển hợp đồng sang ô ${result.toUnitId}, khách đã nhận thông báo + email.`)
           setAffected(result.affectedContracts || [])
+          setReloadTick((t) => t + 1)
+        }}
+        onRejected={(result) => {
+          setTransferOpen(false)
+          setNotice(result?.message || 'Đã thông báo hết loại kho này cho khách hàng.')
           setReloadTick((t) => t + 1)
         }}
       />

@@ -46,6 +46,9 @@ public class RenewalPolicyService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private UnitScheduleService unitScheduleService;
+
     public RenewalPolicyService(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
@@ -179,18 +182,83 @@ public class RenewalPolicyService {
             packages.add(new RenewalEligibilityResponse.PackageEndDate(months, base.plusMonths(months)));
         }
 
+        String reassignStatus = contract.getReassignRequestStatus();
+        Integer reassignMonths = contract.getReassignRequestedMonths();
+        String reassignUnitId = contract.getReassignAssignedUnitId();
+        String reassignNote = contract.getReassignNote();
+        LocalDate freeUntil = nextBookingStartOnUnit(contract);
+
+        List<Integer> fitsOnUnit = packages.stream()
+                .filter(p -> freeUntil == null || !p.newEndDate().plusDays(CLEANUP_DAYS_AFTER_LIQUIDATION).isAfter(freeUntil))
+                .map(RenewalEligibilityResponse.PackageEndDate::months)
+                .toList();
+
         boolean releasing = isReleasing(status, endDate, today);
         if (!releasing) {
+            boolean canRenewInPriority = !fitsOnUnit.isEmpty();
+            String priorityBlocked = canRenewInPriority ? null
+                    : "Ô kho này đã có lịch nhận kho của khách khác từ ngày " + formatDate(freeUntil)
+                    + ". Vui lòng gửi yêu cầu để Quản lý gán sang ô kho mới cùng loại.";
             return new RenewalEligibilityResponse(contract.getId(), status, endDate, deadline, daysUntilDeadline,
-                    "PRIORITY", true, false, null, packages);
+                    "PRIORITY", canRenewInPriority, false, priorityBlocked, packages,
+                    reassignStatus, reassignMonths, reassignUnitId, reassignNote, freeUntil, fitsOnUnit);
         }
 
-        String blocked = unitNeededByOthers(contract)
-                ? "Đã quá hạn chót gia hạn ưu tiên (" + formatDate(deadline) + ") và ô kho này đã có khách khác đặt trước. "
-                + "Vui lòng hẹn trả kho hoặc liên hệ cơ sở để chuyển sang ô khác."
-                : null;
+        boolean isAssignedNewUnit = "ASSIGNED".equalsIgnoreCase(reassignStatus)
+                && contract.getStorageUnit() != null
+                && contract.getStorageUnit().getId() != null
+                && contract.getStorageUnit().getId().equals(reassignUnitId);
+
+        if ("OUT_OF_STOCK".equalsIgnoreCase(reassignStatus)) {
+            String msg = "Quản lý cơ sở đã kiểm tra: hiện không còn ô kho trống cùng loại trong khoảng thời gian quý khách yêu cầu gia hạn"
+                    + (reassignMonths != null ? " (+" + reassignMonths + " tháng)" : "")
+                    + ". Quý khách vui lòng đặt đơn mới với loại kho khác và hẹn trả ô kho hiện tại.";
+            return new RenewalEligibilityResponse(contract.getId(), status, endDate, deadline, daysUntilDeadline,
+                    "LATE", false, true, msg, packages,
+                    reassignStatus, reassignMonths, reassignUnitId, reassignNote, freeUntil, List.of());
+        }
+
+        if (isAssignedNewUnit) {
+            boolean poolStillTight = unitNeededByOthers(contract);
+            List<Integer> allowedPackages = fitsOnUnit.stream()
+                    .filter(m -> !poolStillTight || reassignMonths == null || m <= reassignMonths)
+                    .toList();
+            boolean ok = !allowedPackages.isEmpty();
+            String msg = ok ? null
+                    : "Ô kho mới " + reassignUnitId + " không đủ khoảng trống cho gói gia hạn. Vui lòng gửi yêu cầu gán ô khác hoặc hẹn trả kho.";
+            return new RenewalEligibilityResponse(contract.getId(), status, endDate, deadline, daysUntilDeadline,
+                    "LATE", ok, true, msg, packages,
+                    reassignStatus, reassignMonths, reassignUnitId, reassignNote, freeUntil, allowedPackages);
+        }
+
+        boolean poolNeedsUnit = unitNeededByOthers(contract);
+        boolean unitHasFutureBooking = freeUntil != null;
+        if (poolNeedsUnit || unitHasFutureBooking) {
+            String blocked = "Đã quá hạn chót gia hạn ưu tiên (" + formatDate(deadline) + ") và ô kho này đã có khách khác đặt trước"
+                    + (freeUntil != null ? " (nhận kho ngày " + formatDate(freeUntil) + ")" : "")
+                    + ". Vui lòng gửi yêu cầu để Quản lý gán lại ô kho mới cùng loại hoặc hẹn trả kho.";
+            return new RenewalEligibilityResponse(contract.getId(), status, endDate, deadline, daysUntilDeadline,
+                    "LATE", false, true, blocked, packages,
+                    reassignStatus, reassignMonths, reassignUnitId, reassignNote, freeUntil, List.of());
+        }
+
         return new RenewalEligibilityResponse(contract.getId(), status, endDate, deadline, daysUntilDeadline,
-                "LATE", blocked == null, true, blocked, packages);
+                "LATE", true, true, null, packages,
+                reassignStatus, reassignMonths, reassignUnitId, reassignNote, freeUntil, fitsOnUnit);
+    }
+
+    private LocalDate nextBookingStartOnUnit(RentalContract contract) {
+        if (unitScheduleService == null || contract == null
+                || contract.getStorageUnit() == null || contract.getStorageUnit().getId() == null) {
+            return null;
+        }
+        LocalDate today = today();
+        return unitScheduleService.bookingsOfUnit(contract.getStorageUnit().getId()).stream()
+                .filter(b -> contract.getId() == null || !contract.getId().equals(b.contractId()))
+                .map(UnitScheduleService.Booking::startDate)
+                .filter(d -> d != null && d.isAfter(today))
+                .min(LocalDate::compareTo)
+                .orElse(null);
     }
 
     /** Gọi trước khi tạo link VNPAY gia hạn: chặn 409 RENEWAL_UNIT_RESERVED nếu ô đã có người cần */
@@ -201,20 +269,61 @@ public class RenewalPolicyService {
         }
     }
 
+    /** Kiểm tra gia hạn theo đúng gói số tháng khách chọn (xét khoảng trống trên ô kho hiện tại / ô mới vừa gán) */
+    public void assertRenewableForMonths(RentalContract contract, Integer months) {
+        RenewalEligibilityResponse result = checkEligibility(contract);
+        if (!result.renewable()) {
+            throw new ContractException(HttpStatus.CONFLICT, "RENEWAL_UNIT_RESERVED",
+                    result.blockedReason() != null ? result.blockedReason() : "Ô kho đã có khách khác đặt trước, không thể gia hạn.");
+        }
+        if (months != null && result.renewablePackages() != null && !result.renewablePackages().contains(months)) {
+            String msg = result.currentUnitFreeUntil() != null
+                    ? "Ô kho hiện tại chỉ trống đến ngày " + formatDate(result.currentUnitFreeUntil())
+                      + " (đã có khách khác đặt nhận kho sau đó), không đủ cho gói +" + months + " tháng. Vui lòng chọn gói ngắn hơn hoặc gửi yêu cầu để Quản lý gán lại ô kho mới."
+                    : "Gói gia hạn +" + months + " tháng vượt quá thời hạn đã được duyệt gán ô. Vui lòng chọn gói đã duyệt hoặc gửi yêu cầu gán lại ô kho mới cho gói +" + months + " tháng.";
+            throw new ContractException(HttpStatus.CONFLICT, "RENEWAL_UNIT_RESERVED", msg);
+        }
+    }
+
     /**
      * Có đơn đang trông vào ô này không: số đơn đang giữ suất > ô trống + các ô sắp trống KHÁC.
-     * Không xét ngày nhận của từng đơn (ước tính an toàn cho khách mới).
+     * Nếu có UnitScheduleService, xét thêm trường hợp đơn giữ suất có thời hạn dài bắt buộc phải lấy ô sắp trống này
+     * (vì các ô AVAILABLE khác đã có hợp đồng tương lai chặn sau đó).
      */
     boolean unitNeededByOthers(RentalContract contract) {
         if (contract.getStorageUnit() == null || contract.getStorageUnit().getFacility() == null
                 || contract.getStorageUnit().getUnitType() == null) {
             return false;
         }
+        // Vấn đề 6 / BR-140: ô khẩn cấp không mở bán cho đơn đặt mới → không bao giờ bị đơn giữ suất thương mại chiếm;
+        // khách đang lưu tạm ở ô khẩn cấp vẫn gia hạn hợp đồng bình thường, việc chuyển ô do Staff/FM xử lý ở task MAINTENANCE.
+        if (contract.getStorageUnit().isEmergencyUnit()) {
+            return false;
+        }
         Integer facilityId = contract.getStorageUnit().getFacility().getId();
         Integer unitTypeId = contract.getStorageUnit().getUnitType().getId();
         int freeNow = freeSlotsNow(facilityId, unitTypeId);
         int otherReleasing = releaseDates(facilityId, unitTypeId, contract.getId()).size();
-        return freeNow + otherReleasing < 0;
+        if (freeNow + otherReleasing < 0) {
+            return true;
+        }
+        if (unitScheduleService != null && contract.getStorageUnit().getId() != null) {
+            List<Map<String, Object>> holdRows = jdbcTemplate.queryForList(
+                    "SELECT start_date, duration_months FROM reservations " +
+                            "WHERE facility_id = ? AND unit_type_id = ? AND storage_unit_id IS NULL " +
+                            "  AND (status = 'DEPOSIT_PAID' OR (status = 'PENDING' AND created_at > DATEADD(MINUTE, -15, SYSDATETIME())))",
+                    facilityId, unitTypeId);
+            if (holdRows != null) {
+                for (Map<String, Object> row : holdRows) {
+                    LocalDate s = row.get("start_date") instanceof Date d ? d.toLocalDate() : null;
+                    int m = row.get("duration_months") instanceof Number n ? Math.max(n.intValue(), 1) : 1;
+                    if (s != null && unitScheduleService.freeSlots(facilityId, unitTypeId, s, m) <= 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static String formatDate(LocalDate date) {

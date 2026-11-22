@@ -287,6 +287,19 @@ public class StaffTaskController {
         }
     }
 
+    // Vấn đề 6 (22/11/2026): Staff báo cáo sự cố bảo trì kéo dài & yêu cầu FM chuyển hợp đồng của khách sang ô tiêu chuẩn khác
+    // POST /api/v1/staff-tasks/{id}/request-unit-transfer
+    @PostMapping("/{id}/request-unit-transfer")
+    public ResponseEntity<?> requestMaintenanceUnitTransfer(@PathVariable Integer id,
+                                                            @RequestBody(required = false) Map<String, Object> body) {
+        try {
+            String reason = body != null && body.get("reason") != null ? String.valueOf(body.get("reason")) : null;
+            return ResponseEntity.ok(staffTaskService.requestMaintenanceUnitTransfer(id, currentUser.require().id(), reason));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     private ResponseEntity<?> toError(StaffTaskException e) {
         return ResponseEntity.status(e.getStatus()).body(Map.of("error", e.getCode(), "message", e.getMessage()));
     }

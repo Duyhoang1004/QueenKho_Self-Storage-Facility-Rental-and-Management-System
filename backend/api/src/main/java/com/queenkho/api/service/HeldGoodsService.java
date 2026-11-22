@@ -343,7 +343,8 @@ public class HeldGoodsService {
             return false;
         }
         Integer refundTasks = jdbcTemplate.queryForObject(
-                "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND'", Integer.class, contract.getId());
+                "SELECT COUNT(1) FROM facility_tasks WHERE contract_id = ? AND task_type = 'REFUND' AND status <> 'CANCELLED'",
+                Integer.class, contract.getId());
         return refundTasks == null || refundTasks == 0;
     }
 

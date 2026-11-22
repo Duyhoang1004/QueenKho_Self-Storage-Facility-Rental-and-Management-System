@@ -521,8 +521,15 @@ export default function PendingReservationsPage() {
 
                             {/* PR-X3: Đếm số lần liên hệ thất bại và chỉ báo đủ điều kiện */}
                             <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                              {/* PR-X3 (08/11/2026): đủ điều kiện mà chưa đủ 2 lần thất bại = khách đã từ chối tới */}
-                              {r.noShowEligible && (r.failedContactCount || 0) < 2 ? (
+                              {r.hasDraftHandover ? (
+                                <span
+                                  title="Khách đã từng tới nhận kho / đã lập biên bản nháp nhưng chưa hoàn tất trước hạn — hãy bấm Dời lịch để mở lại task check-in"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">assignment_late</span>
+                                  Đang làm thủ tục dở dang
+                                </span>
+                              ) : r.noShowEligible && (r.failedContactCount || 0) < 2 ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border bg-[#FFDFDF] text-[#EA2B2B] border-[#FFB8B8]">
                                   <span className="material-symbols-outlined text-[12px]">block</span>
                                   Khách từ chối tới
@@ -538,7 +545,12 @@ export default function PendingReservationsPage() {
                                 </span>
                               )}
 
-                              {r.noShowEligible ? (
+                              {r.hasDraftHandover ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#FFF8E6] text-[#B26B00] border border-[#FFD591]">
+                                  <span className="material-symbols-outlined text-[12px]">edit_calendar</span>
+                                  Cần dời lịch nhận kho
+                                </span>
+                              ) : r.noShowEligible ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#EBFBF0] text-[#188838] border border-[#A3E5B5]">
                                   <span className="material-symbols-outlined text-[12px]">check_circle</span>
                                   Đủ ĐK vắng mặt
@@ -567,16 +579,19 @@ export default function PendingReservationsPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setNoShowTarget(r)}
+                              disabled={!!r.hasDraftHandover}
+                              onClick={() => { if (!r.hasDraftHandover) setNoShowTarget(r) }}
                               className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-2xl border-2 border-b-4 transition-colors ${
-                                r.noShowEligible === false
-                                  ? 'border-[#FFA39E] bg-[#FFF1F0] text-[#CF1322] hover:bg-[#FFCCC7]'
-                                  : 'border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e]'
+                                r.hasDraftHandover
+                                  ? 'border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] cursor-not-allowed opacity-70'
+                                  : r.noShowEligible === false
+                                    ? 'border-[#FFA39E] bg-[#FFF1F0] text-[#CF1322] hover:bg-[#FFCCC7]'
+                                    : 'border-[#CC0000] bg-[#FF4B4B] text-white hover:bg-[#e03e3e]'
                               }`}
-                              title={r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý khách vắng mặt'}
+                              title={r.hasDraftHandover ? 'Khách đã tới làm thủ tục — chỉ áp dụng Dời lịch, không phạt No-Show' : r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý khách vắng mặt'}
                             >
                               <span className="material-symbols-outlined text-[14px] mr-1 align-middle">
-                                {r.noShowEligible === false ? 'info' : 'person_off'}
+                                {r.hasDraftHandover ? 'lock' : r.noShowEligible === false ? 'info' : 'person_off'}
                               </span>
                               Khách vắng mặt
                             </button>

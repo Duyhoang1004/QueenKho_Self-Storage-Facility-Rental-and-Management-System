@@ -232,7 +232,8 @@ public class PolicySummaryService {
         List<Row> rows = new ArrayList<>();
         rows.add(row("Phí trễ hạn", latePerDay, ratePct.stripTrailingZeros().toPlainString() + "% cọc / ngày · tối đa "
                 + vnd(lateCap) + " (" + maxPct.stripTrailingZeros().toPlainString() + "% cọc)", "KEEP"));
-        rows.add(row("Phí chiếm dụng ô", overstayPerDay, overstayPct + "% giá thuê ngày · mỗi ngày quá hạn, không giới hạn", "KEEP"));
+        rows.add(row("Phí chiếm dụng ô", overstayPerDay,
+                overstayPct + "% giá thuê ngày · mỗi ngày quá hạn, không giới hạn\n(Phí thuê ngày là tiền thuê kho 1 tháng / 30)", "KEEP"));
         if (liquidationDays > 3) {
             BigDecimal fees3 = latePerDay.multiply(BigDecimal.valueOf(3)).min(lateCap).add(overstayPerDay.multiply(BigDecimal.valueOf(3)));
             rows.add(row("Ví dụ quá hạn 3 ngày", fees3,

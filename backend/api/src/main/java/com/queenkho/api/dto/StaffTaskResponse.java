@@ -40,6 +40,8 @@ public class StaffTaskResponse {
     private Integer contractId;
     private String contractCode;
     private String contractStatus;
+    private boolean checkInNeedsManager; // báo cáo bàn giao đang chờ FM ngay trên bảng công việc
+    private String checkInEscalationStatus; // CI_BLOCKER / CI_FAULT
 
     // 4. Thông tin Khách hàng & Ô kho
     private String customerName;

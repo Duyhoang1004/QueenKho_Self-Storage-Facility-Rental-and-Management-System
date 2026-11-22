@@ -92,6 +92,7 @@ class AccessPolicyTest {
     @DisplayName("Khách: đặt kho, hợp đồng của mình, thanh toán — không vào được việc nội bộ")
     void customerScope() {
         assertTrue(allowed("CUSTOMER", "POST", "/api/v1/reservations"));
+        assertTrue(allowed("CUSTOMER", "POST", "/api/v1/reservations/7/request-replacement-unit"));
         assertTrue(allowed("CUSTOMER", "GET", "/api/v1/payments/my"));
         assertTrue(allowed("CUSTOMER", "POST", "/api/payments/vnpay/create-debt"));
         assertTrue(allowed("CUSTOMER", "GET", "/api/v1/contracts/7"));
@@ -107,6 +108,8 @@ class AccessPolicyTest {
         assertTrue(allowed("STAFF", "GET", "/api/v1/staff-tasks"));
         assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/check-in"));
         assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/withdraw-check-in"));
+        assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/report-check-in-blocker"));
+        assertFalse(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/confirm-unit-issue"));
         assertTrue(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/claim"));
         assertFalse(allowed("STAFF", "POST", "/api/v1/staff-tasks/3/assign"));
         assertFalse(allowed("STAFF", "POST", "/api/v1/reservations/3/assign"));

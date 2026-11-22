@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
-import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile } from '../../services/staffTaskService'
+import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile, getStaffTasks } from '../../services/staffTaskService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
 import { assignLockedUntil } from '../../utils/taskWindow'
 import DateInput from '../../components/DateInput'
@@ -277,6 +277,23 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [checkInEscalations, setCheckInEscalations] = useState([])
+  const [escalationError, setEscalationError] = useState('')
+
+  useEffect(() => {
+    if (initialTypeFilter === 'REFUND' || !user.facilityId) return
+    let active = true
+    const refresh = () => getStaffTasks(user.facilityId)
+      .then(rows => {
+        if (!active) return
+        setCheckInEscalations((rows || []).filter(task => task.taskType === 'CHECK_IN' && task.checkInNeedsManager))
+        setEscalationError('')
+      })
+      .catch(() => { if (active) setEscalationError('Chưa tải được danh sách check-in chờ FM.') })
+    refresh()
+    const timer = setInterval(refresh, 60000)
+    return () => { active = false; clearInterval(timer) }
+  }, [user.facilityId, initialTypeFilter, reloadKey])
 
   const closeToast = useCallback(() => setToast(null), [])
 
@@ -643,6 +660,23 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         </div>
       )}
 
+      {!isRefundMode && user.facilityId && <section className="duo-card border-2 border-[#FF9600] bg-[#FFF8EE] p-5 mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="material-symbols-outlined text-[#E58800]">priority_high</span>
+          <h2 className="text-sm font-black text-[#4B4B4B]">Check-in chờ FM xử lý ({checkInEscalations.length})</h2>
+        </div>
+        {escalationError && <p className="text-xs font-bold text-[#EA2B2B]">{escalationError}</p>}
+        {!escalationError && checkInEscalations.length === 0 && <p className="text-xs font-bold text-[#777777]">Chưa có báo cáo bàn giao cần FM xử lý.</p>}
+        <div className="flex flex-col gap-2">
+          {checkInEscalations.map(task => <Link key={task.id} to={`/manager/tasks/${task.id}`}
+            className="rounded-xl border border-[#FF9600] bg-white px-4 py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-[#FFF4CC]">
+            <span className="text-xs font-black text-[#4B4B4B]">Task #{task.id} · {task.contractCode || 'Hợp đồng'} · ô {task.storageUnitId || '—'}</span>
+            <span className="text-xs font-bold text-[#777777]">{task.customerName || 'Khách hàng'} · {task.staffName || 'Chưa giao Staff'}</span>
+            <span className="text-xs font-black text-[#E58800]">{task.checkInEscalationStatus === 'CI_FAULT' ? 'Đã xác nhận lỗi cơ sở' : 'Chờ FM xem báo cáo'} →</span>
+          </Link>)}
+        </div>
+      </section>}
+
       {user.facilityId ? (
         <TaskBoard
           key={initialTypeFilter}
@@ -885,7 +919,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                           try {
                             const res = await uploadImageFile(file);
                             if (res?.url) setEvidenceImageUrl(res.url);
-                          } catch (err) {
+                          } catch {
                             setRefundError('Không thể tải file ảnh lên máy chủ, vui lòng thử lại.');
                           }
                           e.target.value = '';

@@ -66,6 +66,11 @@ export async function rescheduleForUnitIssue(reservationId, newStartDate) {
   return response.data
 }
 
+export async function requestReplacementUnit(reservationId, note) {
+  const response = await api.post(`/reservations/${reservationId}/request-replacement-unit`, { note })
+  return response.data
+}
+
 // D-18: số ô còn trống cho đúng khoảng ngày khách chọn (trang đặt kho, không cần đăng nhập)
 export async function checkRangeAvailability({ facilityId, unitTypeId, startDate, durationMonths }) {
   const response = await api.get('/reservations/availability', {

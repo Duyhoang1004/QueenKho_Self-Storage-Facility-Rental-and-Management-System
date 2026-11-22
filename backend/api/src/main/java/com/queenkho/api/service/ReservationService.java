@@ -324,6 +324,26 @@ public class ReservationService {
         }
     }
 
+    @Transactional
+    public void requestReplacementUnit(Integer reservationId, Integer customerId, String note) {
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new ReservationException(HttpStatus.NOT_FOUND, "RESERVATION_NOT_FOUND", "Không tìm thấy đơn"));
+        if (reservation.getCustomer() == null || !reservation.getCustomer().getId().equals(customerId))
+            throw new ReservationException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Bạn chỉ gửi yêu cầu cho đơn của mình");
+        if (!hasUnitIssue(reservation))
+            throw new ReservationException(HttpStatus.CONFLICT, "UNIT_NOT_IN_ISSUE", "Ô chưa được xác nhận gặp sự cố");
+        String detail = note == null ? "" : note.trim();
+        if (detail.length() > 300)
+            throw new ReservationException(HttpStatus.BAD_REQUEST, "NOTE_TOO_LONG", "Ghi chú tối đa 300 ký tự");
+        String message = "Khách đề nghị đổi ô cho đơn " + reservation.getReservationCode()
+                + (detail.isEmpty() ? "." : ". Ghi chú: " + detail);
+        jdbcTemplate.update("INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) " +
+                "VALUES (?, ?, 'reservations', ?, SYSDATETIME())", customerId, message, reservationId);
+        if (notificationService != null) notificationService.notifyFacilityManagers(
+                reservation.getFacility() != null ? reservation.getFacility().getId() : null,
+                "Khách đề nghị đổi ô do sự cố", message, "BOOKING", "/manager/customers");
+    }
+
     // UC-13: FM xem các đơn đã đặt cọc nhưng chưa được gán ô kho.
     // Truyền facilityId trực tiếp, hoặc managerId để hệ thống tự lấy cơ sở của quản
     // lý đó.

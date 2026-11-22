@@ -54,6 +54,11 @@ export async function withdrawCheckInHandover(taskId) {
   return res.data
 }
 
+export async function reportCheckInBlocker(taskId, payload) {
+  const res = await api.post(`/staff-tasks/${taskId}/report-check-in-blocker`, payload)
+  return res.data
+}
+
 export async function reopenCheckInHandover(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/reopen-check-in`, payload)
   return res.data

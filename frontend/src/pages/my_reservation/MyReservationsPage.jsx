@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { getMyReservations } from "../../services/reservationService";
+import { getMyReservations, requestReplacementUnit } from "../../services/reservationService";
 import { getMyRefundReceipts } from "../../services/refundReceiptService";
 import RefundReceiptList from "../../components/RefundReceiptList";
 import api from "../../services/api";
@@ -222,6 +222,9 @@ export default function MyReservationsPage() {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   // BR-141: ô đã gán gặp sự cố → khách dời ngày nhận kho
   const [unitIssueTarget, setUnitIssueTarget] = useState(null);
+  const [replacementNotes, setReplacementNotes] = useState({});
+  const [replacementFeedback, setReplacementFeedback] = useState({});
+  const [requestingReplacementId, setRequestingReplacementId] = useState(null);
   const userId = readUserId();
   const navigate = useNavigate();
 
@@ -697,6 +700,22 @@ export default function MyReservationsPage() {
               Nếu đã mang hàng tới, vui lòng liên hệ cơ sở qua hotline {r.facilityHotline || "được cung cấp"} để được hỗ trợ.
             </div>
             <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+              <div className="flex flex-col gap-1">
+                <input type="text" maxLength={300} value={replacementNotes[r.id] || ''}
+                  onChange={(e) => setReplacementNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                  placeholder="Ghi chú nếu muốn đổi ô" className="duo-input text-xs" />
+                <button type="button" className="duo-btn-white px-4 py-2 text-xs" disabled={requestingReplacementId === r.id}
+                  onClick={async () => {
+                    try {
+                      setRequestingReplacementId(r.id);
+                      await requestReplacementUnit(r.id, replacementNotes[r.id] || '');
+                      setReplacementFeedback((prev) => ({ ...prev, [r.id]: 'Đã gửi đề nghị đổi ô cho FM. Chờ FM kiểm tra ô phù hợp và xác nhận.' }));
+                    } catch (err) {
+                      setReplacementFeedback((prev) => ({ ...prev, [r.id]: err.response?.data?.message || 'Chưa gửi được đề nghị đổi ô.' }));
+                    } finally { setRequestingReplacementId(null); }
+                  }}>Đề nghị đổi ô</button>
+                {replacementFeedback[r.id] && <p className="text-[11px] font-bold text-[#4B4B4B]">{replacementFeedback[r.id]}</p>}
+              </div>
               <button type="button" onClick={() => setUnitIssueTarget(r)} className="duo-btn-blue px-4 py-2 text-xs">
                 Dời ngày nhận kho
               </button>
@@ -766,11 +785,6 @@ export default function MyReservationsPage() {
                   const actualMonths = getActualMonths(r);
                   const isRenewed =
                     r.endDate && actualMonths > Number(r.durationMonths || 0);
-
-                  // 2. Tính tiền: Tiền cọc = 1 tháng, Tiền thuê = cọc * số tháng thực tế
-                  const deposit = Number(r.depositAmount || 0);
-                  const rentTotal = deposit * actualMonths;
-                  const totalPaid = deposit + rentTotal;
 
                   const isHighlighted = Boolean(
                     activeHighlightCode &&

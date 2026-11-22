@@ -153,11 +153,12 @@ export default function ContractHandoverSection({ contractId, reloadKey, custome
           {attempts[0]?.status === 'REJECTED' && <p className="text-xs text-[#777777]">
             {attempts[0]?.facility_fault_confirmed
               ? 'Quản lý đã xác nhận lỗi cơ sở. Bạn có thể chọn dời lịch miễn phí hoặc hủy hoàn 100% tại trang Kho của tôi.'
-              : 'Quản lý đang kiểm tra lý do từ chối. Hợp đồng chưa kích hoạt và bạn không bị tính là vắng mặt.'}
+              : 'Nhân viên đang xử lý lý do từ chối và sẽ gửi biên bản mới. Hợp đồng chưa kích hoạt.'}
           </p>}
+          {attempts[0]?.status === 'BLOCKED_FM' && <p className="text-xs text-[#777777]">Vấn đề bàn giao đã được chuyển cho quản lý cơ sở. Biên bản cũ không còn chờ xác nhận.</p>}
           {attempts.map(a => (
             <div key={a.id} className="rounded-xl border border-[#E5E5E5] p-3 text-xs text-[#4B4B4B]">
-              <b>Ô {a.storage_unit_id}</b> · {a.status === 'ACCEPTED' ? 'Khách đồng ý' : a.status === 'REJECTED' ? 'Khách từ chối' : a.status === 'WITHDRAWN' ? 'Nhân viên đã hoàn tác' : a.status === 'PENDING_CUSTOMER' ? 'Chờ khách xác nhận' : 'Biên bản đã thay thế'}
+              <b>Ô {a.storage_unit_id}</b> · {a.status === 'ACCEPTED' ? 'Khách đồng ý' : a.status === 'REJECTED' ? 'Khách từ chối' : a.status === 'BLOCKED_FM' ? 'Chờ quản lý xử lý' : a.status === 'WITHDRAWN' ? 'Nhân viên đã hoàn tác' : a.status === 'PENDING_CUSTOMER' ? 'Chờ khách xác nhận' : 'Biên bản đã thay thế'}
               <span> · Nhân viên #{a.staff_id} lập lúc {formatDateTime(a.created_at)}</span>
               {a.decided_at && <span> · {formatDateTime(a.decided_at)}</span>}
               {a.notes && <p className="mt-1">Ghi chú biên bản: {a.notes}</p>}

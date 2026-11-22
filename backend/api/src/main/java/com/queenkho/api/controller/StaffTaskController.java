@@ -118,6 +118,11 @@ public class StaffTaskController {
         return ResponseEntity.ok(staffTaskService.withdrawCheckIn(id, currentUser.require()));
     }
 
+    @PostMapping("/{id}/report-check-in-blocker")
+    public ResponseEntity<?> reportCheckInBlocker(@PathVariable Integer id, @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(staffTaskService.reportCheckInBlocker(id, currentUser.require(), body));
+    }
+
     @PostMapping("/{id}/confirm-unit-issue")
     public ResponseEntity<?> confirmCheckInIssue(@PathVariable Integer id, @RequestBody Map<String, String> body) {
         return ResponseEntity.ok(staffTaskService.confirmCheckInIssue(id, currentUser.require(), body.get("note")));
@@ -132,7 +137,14 @@ public class StaffTaskController {
 
     @PostMapping("/{id}/reopen-check-in")
     public ResponseEntity<?> reopenCheckIn(@PathVariable Integer id, @RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(staffTaskService.reopenCheckIn(id, currentUser.require(), body.get("note"), body.get("evidenceImageUrl")));
+        java.math.BigDecimal resolvedValue;
+        try {
+            resolvedValue = body.get("resolvedGoodsValue") == null || body.get("resolvedGoodsValue").isBlank()
+                    ? null : new java.math.BigDecimal(body.get("resolvedGoodsValue"));
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_GOODS_VALUE", "message", "Giá trị hàng không hợp lệ"));
+        }
+        return ResponseEntity.ok(staffTaskService.reopenCheckIn(id, currentUser.require(), body.get("note"), body.get("evidenceImageUrl"), resolvedValue));
     }
 
     // UC-23 & UC-24: Staff nghiệm thu trả kho + ghi nhận sự cố hư hỏng (nếu có)

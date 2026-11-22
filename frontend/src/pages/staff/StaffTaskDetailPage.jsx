@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import {
   prepareCheckInHandover,
   withdrawCheckInHandover,
+  reportCheckInBlocker,
   checkInStaffTask,
   reopenCheckInHandover,
-  resolveCheckInIssues,
+  confirmCheckInUnitIssue,
   checkOutStaffTask,
   completeMaintenanceTask,
   completeRefundTask,
@@ -268,6 +269,10 @@ function blockedReason(task, userId) {
     default:
       if (task.staffId !== userId) return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
       if (new Date(task.dueAt) <= new Date()) return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản.';
+      if (task.taskType === 'CHECK_IN' && task.dueAt && localTodayIso() < String(task.dueAt).slice(0, 10)) {
+        const [y, m, d] = String(task.dueAt).slice(0, 10).split('-');
+        return `Khách hẹn nhận kho ngày ${d}/${m}/${y}. Chưa được check-in trước ngày hẹn.`;
+      }
       // UC-23 (góp ý test 13/11): chưa tới ngày khách hẹn trả kho thì chưa nghiệm thu (BE chặn CHECK_OUT_TOO_EARLY)
       // D-21: task kiểm tra lại quyết toán ([RECHECK]) làm được ngay, không theo ngày hẹn
       if (task.taskType === 'CHECK_OUT' && task.dueAt && !String(task.note || '').startsWith('[RECHECK]')) {
@@ -737,17 +742,17 @@ export default function StaffTaskDetailPage() {
   const [checkInEvidence, setCheckInEvidence] = useState({}); // multiple photos per item
   const [withdrawingCheckIn, setWithdrawingCheckIn] = useState(false);
   const [reopenNote, setReopenNote] = useState('');
-  const [issueNote, setIssueNote] = useState('');
   const [reopenPhotos, setReopenPhotos] = useState([]);
+  const [blockerNote, setBlockerNote] = useState('');
+  const [blockerType, setBlockerType] = useState('FACILITY_ISSUE');
+  const [blockerPhotos, setBlockerPhotos] = useState([]);
+  const [reportingBlocker, setReportingBlocker] = useState(false);
+  const [managerGoodsValue, setManagerGoodsValue] = useState('');
   const [goodsValueAssessment, setGoodsValueAssessment] = useState('MATCHED');
   const [assessedGoodsValue, setAssessedGoodsValue] = useState('');
   const [goodsValueAssessmentNote, setGoodsValueAssessmentNote] = useState('');
   const [fmResolvedGoodsValue, setFmResolvedGoodsValue] = useState('');
   const [fmResolvedGoodsValueNote, setFmResolvedGoodsValueNote] = useState('');
-  const [goodsResolutionValue, setGoodsResolutionValue] = useState('');
-  const [goodsResolutionNote, setGoodsResolutionNote] = useState('');
-  const [otherResolutionNote, setOtherResolutionNote] = useState('');
-  const [resolvingCheckIn, setResolvingCheckIn] = useState(false);
 
   // State cho Check-out & Damage Cases (UC-23 & UC-24)
   const [coChecks, setCoChecks] = useState(INITIAL_CHECKOUT_CHECKS);
@@ -758,7 +763,6 @@ export default function StaffTaskDetailPage() {
 
   // State cho Refund (UC-25)
   const [evidenceImageUrl, setEvidenceImageUrl] = useState('');
-  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [refundNotes, setRefundNotes] = useState('');
   const [copiedField, setCopiedField] = useState(null);
 
@@ -773,7 +777,6 @@ export default function StaffTaskDetailPage() {
   const [cleaningImages, setCleaningImages] = useState([]);
   const [confirmSupportOpen, setConfirmSupportOpen] = useState(false);
   const [incidentReportModalOpen, setIncidentReportModalOpen] = useState(false);
-  const [selectedTemplateKey, setSelectedTemplateKey] = useState('');
   const [editResolutionOpen, setEditResolutionOpen] = useState(false);
   const [editResolutionNote, setEditResolutionNote] = useState('');
   const [editResolutionImages, setEditResolutionImages] = useState([]);
@@ -813,6 +816,10 @@ export default function StaffTaskDetailPage() {
         if (data.taskType === 'CHECK_IN' && data.contractId) {
           const latestHandover = await getCheckInHandover(data.contractId);
           setHandover(latestHandover);
+          if (latestHandover?.status === 'REJECTED') {
+            setChecks(EMPTY_CHECKIN_CHECKS);
+            setCheckInEvidence({});
+          }
           const resolvedValue = latestHandover?.issueResolution?.resolvedGoodsValue;
           if (Number(resolvedValue) > 0) {
             setFmResolvedGoodsValue(String(resolvedValue));
@@ -1403,14 +1410,12 @@ export default function StaffTaskDetailPage() {
     : (STATUS_META[checkInDisplayStatus] || { label: checkInDisplayStatus, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
   const reason = blockedReason(task, userId) || (task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
     ? handover?.status === 'PENDING_CUSTOMER' ? 'Đã gửi biên bản. Khách cần kiểm tra ô và xác nhận trên tài khoản.'
-      : handover?.status === 'REJECTED' ? 'Khách từ chối ô. Quản lý xử lý, đổi ô hoặc dời lịch rồi mở lại để kiểm tra cùng khách.' : null
+      : handover?.status === 'BLOCKED_FM' ? 'Vấn đề bàn giao đang chờ quản lý xử lý. Task check-in vẫn mở; chưa gửi biên bản mới.'
+      : null
     : null);
   const record = task.handoverRecord;
   const isCheckOut = task.taskType === 'CHECK_OUT';
   const rejectedIssueTypes = handover?.rejectionTypes?.length ? handover.rejectionTypes : ['UNIT_CONDITION'];
-  const needsUnitResolution = rejectedIssueTypes.includes('UNIT_CONDITION');
-  const needsGoodsValueResolution = rejectedIssueTypes.includes('GOODS_VALUE');
-  const needsOtherResolution = rejectedIssueTypes.some(type => ['GOODS_INFORMATION', 'OTHER'].includes(type));
 
   return (
     <div className="max-w-[1240px] mx-auto px-8 py-8">
@@ -2816,83 +2821,24 @@ export default function StaffTaskDetailPage() {
                     }
                   }}>Hoàn tác biên bản đã gửi</button>
               )}
-              {isManager && task.taskType === 'CHECK_IN' && ['PENDING_CUSTOMER', 'REJECTED'].includes(handover?.status) && (
-                <div className="w-full max-w-md flex flex-col gap-3 text-left mt-2">
-                  {handover?.status === 'REJECTED' && <div className="rounded-2xl border-2 border-[#FFB4B4] bg-[#FFF4F4] p-4 flex flex-col gap-2">
-                    <p className="text-xs font-black text-[#B42318]">Khách không đồng ý biên bản ô {handover.storage_unit_id}</p>
-                    <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">Lý do: {handover.rejection_reason || 'Không có lý do'}</p>
-                    <p className="text-xs font-black text-[#B42318]">Nội dung cần xử lý: {rejectedIssueTypes.map(type => ({ UNIT_CONDITION: 'Ô kho/cơ sở', GOODS_VALUE: 'Giá trị hàng', GOODS_INFORMATION: 'Hàng/chứng từ', OTHER: 'Khác' }[type] || type)).join(', ')}</p>
-                    {handover.customerEvidenceImages?.length > 0 ? <>
-                      <p className="text-xs font-black text-[#777777]">Ảnh khách cung cấp</p>
-                      <PhotoGrid images={handover.customerEvidenceImages} />
-                    </> : <p className="text-xs text-[#777777]">Khách không gửi ảnh bổ sung.</p>}
-                  </div>}
-                  {handover?.status === 'REJECTED' && <div className="rounded-2xl border border-[#E5E5E5] p-4 flex flex-col gap-3">
-                    <p className="text-xs font-black text-[#4B4B4B]">Bước 1 · FM xử lý toàn bộ nội dung khách từ chối</p>
-                    {handover?.issuesResolved ? <div className="rounded-xl border-2 border-[#58CC02] bg-[#D7FFB8] p-3 text-xs font-bold text-[#58A700]">
-                      Đã ghi nhận xử lý đầy đủ. Có thể mở lại check-in để staff lập biên bản mới.
-                    </div> : <>
-                      {needsUnitResolution && <label className="flex flex-col gap-1">
-                        <span className="text-[11px] font-black uppercase text-[#777777]">Cách xử lý ô kho *</span>
-                        <textarea className="duo-input text-xs" value={issueNote} onChange={e => setIssueNote(e.target.value)}
-                          placeholder="Đã sửa, vệ sinh hoặc đổi sang ô phù hợp... (10–500 ký tự)" maxLength={500} />
-                      </label>}
-                      {needsGoodsValueResolution && <div className="rounded-xl border-2 border-[#FFC800] bg-[#FFFBEA] p-3 flex flex-col gap-2">
-                        <p className="text-xs font-black text-[#4B4B4B]">Đối chiếu giá trị hàng</p>
-                        <p className="text-xs">Khách khai: <b>{formatCurrency(handover.declaredGoodsValue || task.declaredGoodsValue || 0)}</b> · Staff đề xuất: <b className="text-[#1CB0F6]">{formatCurrency(handover.assessedGoodsValue || 0)}</b></p>
-                        <input type="number" min="1" max="10000000000" step="100000" className="duo-input text-xs"
-                          value={goodsResolutionValue} onChange={e => setGoodsResolutionValue(e.target.value)} placeholder="Giá trị FM kết luận / đề xuất mới" />
-                        <textarea className="duo-input text-xs" value={goodsResolutionNote} onChange={e => setGoodsResolutionNote(e.target.value)}
-                          placeholder="Căn cứ kết luận giá trị (10–1000 ký tự)" maxLength={1000} />
-                      </div>}
-                      {needsOtherResolution && <textarea className="duo-input text-xs" value={otherResolutionNote}
-                        onChange={e => setOtherResolutionNote(e.target.value)} placeholder="Cách xử lý thông tin/chứng từ hoặc lý do khác (10–500 ký tự)" maxLength={500} />}
-                      <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos}
-                        label="Ảnh/chứng từ sau xử lý" hint="Ảnh ô sau sửa/đổi hoặc chứng từ dùng để kết luận giá trị." maxPhotos={10} />
-                      <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={resolvingCheckIn || reopenPhotos.length === 0
-                        || (needsUnitResolution && issueNote.trim().length < 10)
-                        || (needsGoodsValueResolution && (Number(goodsResolutionValue) <= 0 || goodsResolutionNote.trim().length < 10))
-                        || (needsOtherResolution && otherResolutionNote.trim().length < 10)}
-                        onClick={async () => {
-                          try {
-                            setResolvingCheckIn(true);
-                            await resolveCheckInIssues(task.id, {
-                              resolvedIssueTypes: rejectedIssueTypes,
-                              unitResolutionNote: issueNote.trim(),
-                              resolvedGoodsValue: needsGoodsValueResolution ? Number(goodsResolutionValue) : undefined,
-                              goodsValueResolutionNote: goodsResolutionNote.trim(),
-                              otherResolutionNote: otherResolutionNote.trim(),
-                              evidenceImages: reopenPhotos,
-                            });
-                            await loadTask();
-                            setToast({ type: 'success', message: 'Đã xử lý đầy đủ các nội dung khách từ chối.' });
-                          } catch (err) {
-                            setToast({ type: 'error', message: err.response?.data?.message || 'Không lưu được kết quả xử lý.' });
-                          } finally {
-                            setResolvingCheckIn(false);
-                          }
-                        }}>Lưu kết quả xử lý</button>
-                    </>}
-                  </div>}
-                  <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-3">
-                    <p className="text-xs font-black text-[#0369A1]">Bước 2 · Mở lại sau khi tất cả vấn đề đã xử lý</p>
-                    <p className="text-xs text-[#4B4B4B]">Staff sẽ kiểm tra lại ô, hàng và giá trị rồi lập biên bản mới để khách xác nhận lần nữa.</p>
-                    <textarea className="duo-input text-xs" value={reopenNote} onChange={e => setReopenNote(e.target.value)}
-                      placeholder="Tóm tắt kết quả để staff kiểm tra lại (10–500 ký tự)" maxLength={500} />
-                  <button type="button" className="duo-btn-blue px-4 py-2 text-xs"
-                    disabled={reopenNote.trim().length < 10 || (handover?.status === 'REJECTED' && (!handover?.issuesResolved || reopenPhotos.length === 0))}
-                    onClick={async () => {
-                  try {
-                    await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null });
-                    await loadTask();
-                    setToast({ type: 'success', message: 'Đã mở lại task. Nhân viên cần kiểm tra ô và lập biên bản mới.' });
-                  } catch (err) {
-                    setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được task.' });
-                  }
-                }}>Mở lại check-in sau khi xử lý</button>
-                  </div>
-                </div>
-              )}
+              {task.taskType === 'CHECK_IN' && handover?.status === 'BLOCKED_FM' && <div className="w-full max-w-lg rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4 text-left flex flex-col gap-3">
+                <p className="text-xs font-black text-[#B45309]">{handover.blockerType !== 'FACILITY_ISSUE' ? 'Bất đồng cần FM thống nhất với khách' : `Báo cáo không thể bàn giao ô ${handover.blockedUnitId || task.storageUnitId}`}</p>
+                <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">{handover.blockerReason}</p>
+                {handover.blockerEvidenceImages?.length > 0 && <PhotoGrid images={handover.blockerEvidenceImages} />}
+                {handover.customerRejectionReason && <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">Khách từ chối trước đó: {handover.customerRejectionReason}</p>}
+                {handover.customerRejectionImages?.length > 0 && <PhotoGrid images={handover.customerRejectionImages} />}
+                {isManager ? <>
+                  <p className="text-xs font-bold text-[#4B4B4B]">{handover.blockerType !== 'FACILITY_ISSUE' ? 'Liên hệ khách, thống nhất phương án tiếp tục hoặc huỷ theo chính sách. Không tự áp dụng hoàn 100% vì bất đồng.' : 'Kiểm tra sự cố, thống nhất với khách phương án đổi ô, dời lịch hoặc huỷ do lỗi cơ sở.'}</p>
+                  {handover.blockerType === 'FACILITY_ISSUE' && task.contractId && <Link className="duo-btn-white px-4 py-2 text-xs" to={`/manager/contracts/${task.contractId}?transfer=1`}>Đổi ô cho khách</Link>}
+                  <textarea className="duo-input text-xs" value={reopenNote} onChange={e => setReopenNote(e.target.value)} maxLength={500} placeholder="Kết luận và phương án đã thống nhất với khách (10–500 ký tự)" />
+                  {handover.blockerType === 'GOODS_VALUE_DISPUTE' && <input type="number" min="1" max="10000000000" value={managerGoodsValue} onChange={e => setManagerGoodsValue(e.target.value)} className="duo-input text-xs" placeholder="Giá trị hàng FM thống nhất với khách *" />}
+                  {handover.blockerType === 'FACILITY_ISSUE' && !handover.facilityFaultConfirmed && <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10}
+                    onClick={async () => { try { await confirmCheckInUnitIssue(task.id, reopenNote.trim()); await loadTask(); setToast({ type: 'success', message: 'Đã xác nhận lỗi cơ sở; khách có thể dời lịch hoặc huỷ hoàn 100%.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' }); } }}>Xác nhận lỗi cơ sở, mở phương án dời/huỷ cho khách</button>}
+                  {handover.blockerType === 'FACILITY_ISSUE' && <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos} label="Ảnh ô sau khắc phục hoặc ô thay thế" maxPhotos={10} />}
+                  <button type="button" className="duo-btn-blue px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10 || (handover.blockerType === 'GOODS_VALUE_DISPUTE' && Number(managerGoodsValue) <= 0) || (handover.blockerType === 'FACILITY_ISSUE' && reopenPhotos.length === 0)}
+                    onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>
+                </> : <p className="text-xs font-bold text-[#777777]">Quản lý đang kiểm tra và thống nhất phương án với khách.</p>}
+              </div>}
             </div>
           ) : isCheckOut ? (
             /* ================== FORM NGHIỆM THU TRẢ KHO & SỰ CỐ (UC-23 & UC-24) ================== */
@@ -3451,6 +3397,30 @@ export default function StaffTaskDetailPage() {
                 </button>}
               </div>
 
+              {handover?.status === 'REJECTED' && <div className="rounded-2xl border-2 border-[#FFB4B4] bg-[#FFF4F4] p-4 flex flex-col gap-2">
+                <p className="text-sm font-black text-[#B42318]">Khách từ chối biên bản — xử lý trên task check-in này</p>
+                <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">Lý do: {handover.rejection_reason || 'Không có lý do'}</p>
+                <p className="text-xs font-bold text-[#4B4B4B]">Nội dung: {rejectedIssueTypes.map(type => ({ UNIT_CONDITION: 'Ô kho/cơ sở', GOODS_VALUE: 'Giá trị hàng', GOODS_INFORMATION: 'Hàng/chứng từ', OTHER: 'Khác' }[type] || type)).join(', ')}</p>
+                {handover.customerEvidenceImages?.length > 0 && <PhotoGrid images={handover.customerEvidenceImages} />}
+                <p className="text-xs font-bold text-[#777777]">Kiểm tra và xử lý cùng khách, cập nhật ảnh hoặc giá trị hàng rồi gửi biên bản mới để khách xác nhận.</p>
+              </div>}
+
+              {!isManager && handover?.status !== 'ACCEPTED' && <details className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4">
+                <summary className="cursor-pointer text-xs font-black text-[#B45309]">Không thể bàn giao hoặc không thống nhất? Báo Quản lý</summary>
+                <div className="mt-3 flex flex-col gap-3">
+                  <select className="duo-input text-xs" value={blockerType} onChange={e => setBlockerType(e.target.value)}>
+                    <option value="FACILITY_ISSUE">Ô gặp sự cố, không thể bàn giao</option>
+                    <option value="GOODS_VALUE_DISPUTE">Không thống nhất giá trị hàng</option>
+                    <option value="OTHER_DISPUTE">Không thể thống nhất nội dung khác</option>
+                  </select>
+                  <p className="text-xs font-bold text-[#4B4B4B]">Công việc bàn giao sẽ chờ Quản lý quyết định; không cấp quyền vào kho.</p>
+                  <textarea className="duo-input text-xs" value={blockerNote} onChange={e => setBlockerNote(e.target.value)} maxLength={500} placeholder="Mô tả sự cố và vì sao không thể bàn giao (10–500 ký tự)" />
+                  <HandoverPhotoPicker images={blockerPhotos} onChange={setBlockerPhotos} label={blockerType === 'FACILITY_ISSUE' ? 'Ảnh sự cố *' : 'Ảnh/chứng từ nếu có'} maxPhotos={10} />
+                  <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reportingBlocker || blockerNote.trim().length < 10 || (blockerType === 'FACILITY_ISSUE' && blockerPhotos.length === 0)}
+                    onClick={async () => { try { setReportingBlocker(true); await reportCheckInBlocker(task.id, { note: blockerNote.trim(), issueType: blockerType, evidenceImages: blockerPhotos }); await loadTask(); setToast({ type: 'success', message: 'Đã báo Quản lý; công việc bàn giao đang chờ phương án xử lý.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không gửi được báo cáo.' }); } finally { setReportingBlocker(false); } }}>Gửi Quản lý xử lý</button>
+                </div>
+              </details>}
+
               {handover?.resolutionNote && <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-2">
                 <p className="text-xs font-black text-[#0369A1]">FM đã mở lại check-in · ô {handover.resolvedUnitId || task.storageUnitId}</p>
                 <p className="text-xs text-[#4B4B4B]">{handover.resolutionNote}</p>
@@ -3620,7 +3590,7 @@ export default function StaffTaskDetailPage() {
                 className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[20px]">how_to_reg</span>
-                {handover?.status === 'ACCEPTED' ? 'Hoàn tất check-in và cấp quyền truy cập' : 'Gửi biên bản cho khách xác nhận'}
+                {handover?.status === 'ACCEPTED' ? 'Hoàn tất bàn giao và cấp quyền truy cập' : 'Gửi biên bản cho khách xác nhận'}
               </button>
               {!canSubmitCheckIn && !submitting && (
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">

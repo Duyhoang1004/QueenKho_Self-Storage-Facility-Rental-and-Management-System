@@ -174,6 +174,14 @@ public class ReservationController {
     }
 
     // BR-141 (12/11/2026): khách tự dời ngày nhận kho khi ô đã gán gặp sự cố — body { "newStartDate": "yyyy-MM-dd" }
+    @PostMapping("/{reservationId}/request-replacement-unit")
+    public ResponseEntity<?> requestReplacementUnit(@PathVariable Integer reservationId,
+                                                    @RequestBody(required = false) Map<String, String> body) {
+        reservationService.requestReplacementUnit(reservationId, currentUser.require().id(),
+                body != null ? body.get("note") : null);
+        return ResponseEntity.ok(Map.of("message", "Đã gửi yêu cầu đổi ô cho quản lý cơ sở"));
+    }
+
     @PostMapping("/{reservationId}/reschedule-unit-issue")
     public ResponseEntity<?> rescheduleForUnitIssue(
             @PathVariable Integer reservationId,

@@ -144,6 +144,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/reservations/{id}/cancel-preview", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/reservations/{id}/cancel", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/reservations/{id}/reschedule-unit-issue", "CUSTOMER_BOOKING"); // BR-141: ô sự cố → khách dời lịch
+        rule("POST", "/api/v1/reservations/{id}/request-replacement-unit", "CUSTOMER_BOOKING");
         rule("POST", "/api/payments/vnpay/create", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/contracts/{id}/request-checkout", "CUSTOMER_RENTAL");
         rule("POST", "/api/v1/contracts/{id}/cancel-checkout", "CUSTOMER_RENTAL");
@@ -222,6 +223,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/prepare-check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/withdraw-check-in", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/report-check-in-blocker", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-check-in-issues", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/reopen-check-in", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/confirm-unit-issue", "TASK_MANAGE");

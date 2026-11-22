@@ -2836,7 +2836,7 @@ export default function StaffTaskDetailPage() {
                     onClick={async () => { try { await confirmCheckInUnitIssue(task.id, reopenNote.trim()); await loadTask(); setToast({ type: 'success', message: 'Đã xác nhận lỗi cơ sở; khách có thể dời lịch hoặc huỷ hoàn 100%.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' }); } }}>Xác nhận lỗi cơ sở, mở phương án dời/huỷ cho khách</button>}
                   {handover.blockerType === 'FACILITY_ISSUE' && <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos} label="Ảnh ô sau khắc phục hoặc ô thay thế" maxPhotos={10} />}
                   <button type="button" className="duo-btn-blue px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10 || (handover.blockerType === 'GOODS_VALUE_DISPUTE' && Number(managerGoodsValue) <= 0) || (handover.blockerType === 'FACILITY_ISSUE' && reopenPhotos.length === 0)}
-                    onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao kho; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao kho.' }); } }}>Cho tiếp tục bàn giao kho sau khi xử lý</button>
+                    onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>
                 </> : <p className="text-xs font-bold text-[#777777]">Quản lý đang kiểm tra và thống nhất phương án với khách.</p>}
               </div>}
             </div>
@@ -3406,18 +3406,18 @@ export default function StaffTaskDetailPage() {
               </div>}
 
               {!isManager && handover?.status !== 'ACCEPTED' && <details className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4">
-                <summary className="cursor-pointer text-xs font-black text-[#B45309]">Không thể bàn giao hoặc không thống nhất? Báo quản lý cơ sở</summary>
+                <summary className="cursor-pointer text-xs font-black text-[#B45309]">Không thể bàn giao hoặc không thống nhất? Báo Quản lý</summary>
                 <div className="mt-3 flex flex-col gap-3">
                   <select className="duo-input text-xs" value={blockerType} onChange={e => setBlockerType(e.target.value)}>
                     <option value="FACILITY_ISSUE">Ô gặp sự cố, không thể bàn giao</option>
                     <option value="GOODS_VALUE_DISPUTE">Không thống nhất giá trị hàng</option>
                     <option value="OTHER_DISPUTE">Không thể thống nhất nội dung khác</option>
                   </select>
-                  <p className="text-xs font-bold text-[#4B4B4B]">Công việc bàn giao kho sẽ chờ quản lý cơ sở quyết định; không cấp quyền vào kho.</p>
+                  <p className="text-xs font-bold text-[#4B4B4B]">Công việc bàn giao sẽ chờ Quản lý quyết định; không cấp quyền vào kho.</p>
                   <textarea className="duo-input text-xs" value={blockerNote} onChange={e => setBlockerNote(e.target.value)} maxLength={500} placeholder="Mô tả sự cố và vì sao không thể bàn giao (10–500 ký tự)" />
                   <HandoverPhotoPicker images={blockerPhotos} onChange={setBlockerPhotos} label={blockerType === 'FACILITY_ISSUE' ? 'Ảnh sự cố *' : 'Ảnh/chứng từ nếu có'} maxPhotos={10} />
                   <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reportingBlocker || blockerNote.trim().length < 10 || (blockerType === 'FACILITY_ISSUE' && blockerPhotos.length === 0)}
-                    onClick={async () => { try { setReportingBlocker(true); await reportCheckInBlocker(task.id, { note: blockerNote.trim(), issueType: blockerType, evidenceImages: blockerPhotos }); await loadTask(); setToast({ type: 'success', message: 'Đã báo quản lý cơ sở; công việc bàn giao kho đang chờ phương án xử lý.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không gửi được báo cáo.' }); } finally { setReportingBlocker(false); } }}>Gửi quản lý cơ sở xử lý</button>
+                    onClick={async () => { try { setReportingBlocker(true); await reportCheckInBlocker(task.id, { note: blockerNote.trim(), issueType: blockerType, evidenceImages: blockerPhotos }); await loadTask(); setToast({ type: 'success', message: 'Đã báo Quản lý; công việc bàn giao đang chờ phương án xử lý.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không gửi được báo cáo.' }); } finally { setReportingBlocker(false); } }}>Gửi Quản lý xử lý</button>
                 </div>
               </details>}
 
@@ -3590,7 +3590,7 @@ export default function StaffTaskDetailPage() {
                 className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[20px]">how_to_reg</span>
-                {handover?.status === 'ACCEPTED' ? 'Hoàn tất bàn giao kho và cấp quyền truy cập' : 'Gửi biên bản cho khách xác nhận'}
+                {handover?.status === 'ACCEPTED' ? 'Hoàn tất bàn giao và cấp quyền truy cập' : 'Gửi biên bản cho khách xác nhận'}
               </button>
               {!canSubmitCheckIn && !submitting && (
                 <p className="text-[11px] font-bold text-[#AFAFAF] text-center -mt-3">

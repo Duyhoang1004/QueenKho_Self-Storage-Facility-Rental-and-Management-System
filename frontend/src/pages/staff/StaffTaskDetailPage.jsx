@@ -385,6 +385,12 @@ function DamageCaseList({ cases, onPreview }) {
 function maintenanceBlockedReason(task, userId, isManager) {
   if (task.status === 'COMPLETED') return null;
   if (task.status === 'CANCELLED') return 'Task bảo trì đã bị huỷ.';
+  const note = task.note || '';
+  const hasTransferReq = note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH');
+  const transferDone = note.includes('[FM đã chuyển HĐ sang ô');
+  if (hasTransferReq && !transferDone) {
+    return 'Đã gửi yêu cầu Quản lý cơ sở (FM) chuyển ô kho cho khách. Cần đợi FM hoàn tất chuyển hợp đồng sang ô mới trước khi có thể hoàn tất bảo trì ô kho.';
+  }
   if (isManager) return null;
   if (!task.staffId) {
     return task.status === 'OVERDUE'
@@ -825,7 +831,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
-            disabled={!noteValid || Boolean(inventoryError) || uploading || submitting}
+            disabled={!noteValid || Boolean(inventoryError) || uploading || submitting || (typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô'))}
             className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[20px]">task_alt</span>
@@ -856,6 +862,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
 
       {fmTransferOpen && task.contractId && (
         <TransferUnitModal
+          open={fmTransferOpen}
           contract={{
             contractId: task.contractId,
             contractCode: task.contractCode,
@@ -957,6 +964,9 @@ export default function StaffTaskDetailPage() {
   const [reopenSupportReason, setReopenSupportReason] = useState('');
   const [reopeningSupport, setReopeningSupport] = useState(false);
   const [pinResetting, setPinResetting] = useState(false);
+  const [supportTransferOpen, setSupportTransferOpen] = useState(false);
+  const [supportTransferReason, setSupportTransferReason] = useState('');
+  const [sendingSupportTransferReq, setSendingSupportTransferReq] = useState(false);
   const [extendDueDate, setExtendDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -1382,7 +1392,17 @@ export default function StaffTaskDetailPage() {
   // BR-126: ticket hàng hư / mất → task hỗ trợ là kiểm tra hiện trường (bắt buộc ảnh + nguyên nhân sơ bộ)
   const claim = task?.claim;
   const isClaimInspection = isSupport && Boolean(claim);
+  const isTransferUnitSupport = Boolean(
+    task?.subCategory?.toLowerCase().includes('đổi ô') ||
+    task?.subCategory?.toLowerCase().includes('chuyển ô') ||
+    task?.subCategory?.toLowerCase().includes('chuyển đồ') ||
+    task?.subCategory?.toLowerCase().includes('chuyển kho') ||
+    (typeof task?.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH'))
+  );
+  const transferDone = typeof task?.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô');
+  const hasPendingSupportTransfer = isTransferUnitSupport && !transferDone;
   const canSubmitSupport =
+    !hasPendingSupportTransfer &&
     resolutionNote.trim().length >= (isClaimInspection ? 10 : 1) && resolutionNote.trim().length <= NOTES_MAX && !submitting
     && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause)))
     && (task?.issueType !== 'SECURITY' || (Boolean(securityLockStatus) && securityImages.length > 0))
@@ -1390,6 +1410,13 @@ export default function StaffTaskDetailPage() {
     && (task?.issueType !== 'CLEANING' || cleaningImages.length > 0);
 
   const handleResolveSupportSubmit = () => {
+    if (hasPendingSupportTransfer) {
+      setToast({
+        type: 'error',
+        message: 'Yêu cầu hỗ trợ đổi ô kho đang chờ Quản lý cơ sở (FM) chuyển ô mới. Không thể hoàn tất lúc này.'
+      });
+      return;
+    }
     setSubmitting(true);
     const resolvedImages = isClaimInspection
       ? inspectionImages
@@ -2438,7 +2465,7 @@ export default function StaffTaskDetailPage() {
 
                   {task.issueType === 'LOCK_ISSUE' && (
                     task.subCategory && (task.subCategory.includes('RFID') || task.subCategory.includes('thẻ')) ? (
-                      <CodeBox icon="badge" label="Mã thẻ từ RFID ô kho" value={task.rfidCardCode || `RF-${task.storageUnitId || 'TB01'}-09`} big />
+                      <CodeBox icon="badge" label="Mã thẻ từ RFID ô kho" value={task.rfidCardCode || 'Chưa cấp thẻ'} big />
                     ) : task.accessPinCode ? (
                       <CodeBox icon="pin" label="Mã PIN SmartLock hiện tại của hợp đồng" value={task.accessPinCode} big />
                     ) : null
@@ -2575,7 +2602,7 @@ export default function StaffTaskDetailPage() {
                             <div className="px-3 py-1.5 rounded-xl bg-white border-2 border-[#BAE6FD] flex items-center gap-2">
                               <span className="text-[10px] font-black uppercase text-[#0284C7]">Thẻ RFID ô:</span>
                               <span className="font-mono text-sm font-black tracking-wider text-[#0F172A]">
-                                {task.rfidCardCode || `RF-${task.storageUnitId || 'TB01'}-09`}
+                                {task.rfidCardCode || 'Chưa cấp'}
                               </span>
                             </div>
                           </div>
@@ -2603,13 +2630,13 @@ export default function StaffTaskDetailPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const newRfidCode = `RF-${task.storageUnitId || 'TB01'}-${Math.floor(1000 + Math.random() * 9000)}`;
-                                  reissueSupportContractRfid(task.id, userId, newRfidCode)
+                                  reissueSupportContractRfid(task.id, userId, null)
                                     .then(data => {
                                       setTask(data);
+                                      const newRfid = data.rfidCardCode;
                                       setToast({
                                         type: 'success',
-                                        message: `Đã cấp phát và cập nhật thẻ từ RFID mới (${data.rfidCardCode || newRfidCode}) vào hợp đồng ${data.contractCode || ''} thành công!`
+                                        message: `Đã cấp phát và cập nhật thẻ từ RFID mới (${newRfid}) vào hợp đồng ${data.contractCode || ''} thành công!`
                                       });
                                       const now = new Date();
                                       const pad = n => String(n).padStart(2, '0');
@@ -2625,9 +2652,9 @@ export default function StaffTaskDetailPage() {
 • Nguyên nhân sơ bộ: Hỏng vi mạch thẻ từ do va chạm cơ học trong quá trình sử dụng.
 • Biện pháp xử lý kỹ thuật:
   - Vô hiệu hóa mã thẻ RFID cũ trong bộ nhớ điều khiển khóa ô kho.
-  - Cấp mới thẻ từ RFID mã số ${data.rfidCardCode || newRfidCode} và kích hoạt quyền truy cập mở khóa ô kho.
+  - Cấp mới thẻ từ RFID mã số ${newRfid} và kích hoạt quyền truy cập mở khóa ô kho.
   - Thử quẹt thẻ 03 lần liên tiếp: đầu đọc báo đèn xanh và mở chốt êm ái 100%.
-• Kết quả nghiệm thu: Đã bàn giao thẻ từ RFID mới (${data.rfidCardCode || newRfidCode}) cho khách hàng, kiểm tra mở khóa hoạt động hoàn hảo.`);
+• Kết quả nghiệm thu: Đã bàn giao thẻ từ RFID mới (${newRfid}) cho khách hàng, kiểm tra mở khóa hoạt động hoàn hảo.`);
                                     })
                                     .catch(err => {
                                       setToast({
@@ -2965,6 +2992,143 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
+                  {/* Xử lý yêu cầu hỗ trợ khác (OTHER) & Đổi ô kho */}
+                  {(task.issueType === 'OTHER' || (task.contractId && (task.subCategory?.includes('đổi') || task.subCategory?.includes('chuyển') || task.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')))) && (
+                    <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4 flex flex-col gap-3">
+                      {(() => {
+                        const noteStr = typeof task.note === 'string' ? task.note : '';
+                        const alreadyRequested = noteStr.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH');
+                        const alreadyTransferred = noteStr.includes('[FM đã chuyển HĐ sang ô');
+                        return (
+                          <>
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">swap_horiz</span>
+                                <div>
+                                  <h3 className="text-xs font-black uppercase text-[#E58800]">
+                                    Điều phối &amp; Đổi ô kho cho khách hàng (HĐ {task.contractCode || '—'})
+                                  </h3>
+                                  <p className="text-xs font-bold text-[#777777] mt-0.5">
+                                    {isManager
+                                      ? 'Quản lý cơ sở (FM) có thể thực hiện chuyển hợp đồng của khách sang ô tiêu chuẩn khác đang trống theo yêu cầu từ nhân viên hoặc khách hàng.'
+                                      : 'Khách hàng có nhu cầu đổi vị trí hoặc diện tích ô kho. Nhân viên gửi yêu cầu để Quản lý cơ sở (FM) chuyển đổi hợp đồng sang ô mới trên hệ thống.'}
+                                  </p>
+                                </div>
+                              </div>
+                              {alreadyTransferred ? (
+                                <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
+                                  FM đã chuyển sang ô mới
+                                </span>
+                              ) : alreadyRequested ? (
+                                <span className="duo-badge bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[10px]">
+                                  Chờ FM chuyển ô cho khách
+                                </span>
+                              ) : (
+                                <span className="duo-badge bg-[#F0F9FF] text-[#0284C7] border border-[#BAE6FD] text-[10px]">
+                                  Yêu cầu đổi ô kho
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#FF9600]/30 text-xs font-bold text-[#4B4B4B]">
+                              <span>
+                                Ô hiện tại: <strong className="font-mono text-[#E58800]">{task.storageUnitId || '—'}</strong> ({task.unitTypeName || '—'})
+                              </span>
+                              {isManager ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSupportTransferOpen(true)}
+                                  className="duo-btn-orange px-4 py-2 text-xs gap-1.5"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                                  Chuyển hợp đồng sang ô khác
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {!isManager && (
+                              <div className="flex flex-col gap-2">
+                                {alreadyRequested && !alreadyTransferred && (
+                                  <div className="rounded-xl bg-[#FFF5E6] border border-[#FF9600] p-3 text-xs font-bold text-[#D96B00] flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-[20px] text-[#E58800] shrink-0">hourglass_top</span>
+                                    <span>
+                                      Bạn đã gửi yêu cầu chuyển ô kho sang Quản lý cơ sở (FM). Hệ thống đang tạm khóa thao tác hoàn tất yêu cầu cho đến khi Quản lý duyệt và hoàn tất chuyển ô cho khách.
+                                    </span>
+                                  </div>
+                                )}
+                                {alreadyTransferred && (
+                                  <div className="rounded-xl bg-[#E8F5E9] border border-[#4CAF50] p-3 text-xs font-bold text-[#2E7D32] flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-[20px] text-[#4CAF50] shrink-0">check_circle</span>
+                                    <span>
+                                      Quản lý cơ sở (FM) đã hoàn tất chuyển hợp đồng sang ô kho mới. Hãy hướng dẫn khách hàng và điền biên bản nghiệm thu để hoàn tất yêu cầu hỗ trợ.
+                                    </span>
+                                  </div>
+                                )}
+                                <textarea
+                                  rows={2}
+                                  maxLength={500}
+                                  value={supportTransferReason}
+                                  onChange={e => setSupportTransferReason(e.target.value)}
+                                  placeholder="Mô tả nhu cầu đổi ô kho của khách & đề xuất FM chuyển sang kho khác (10–500 ký tự, VD: Khách đề nghị chuyển từ ô A101 lên ô B205 tầng 2 do nhu cầu nâng diện tích lưu trữ)..."
+                                  className="duo-input text-xs bg-white resize-none"
+                                />
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-[#AFAFAF]">
+                                    {supportTransferReason.trim().length}/500 ký tự (tối thiểu 10)
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const sample = INCIDENT_REPORT_TEMPLATES.OTHER?.find(t => t.id === 'OTHER_TRANSFER_UNIT') || findMatchingTemplate(task);
+                                        setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                                        setToast({
+                                          type: 'success',
+                                          message: 'Đã áp dụng mẫu biên bản đổi ô kho / chuyển đồ chuẩn.'
+                                        });
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl bg-white border border-[#FF9600] hover:bg-[#FFF3E0] text-[11px] font-black text-[#E58800] flex items-center gap-1 cursor-pointer transition-colors"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">description</span>
+                                      Áp dụng biên bản đổi ô kho
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={sendingSupportTransferReq || supportTransferReason.trim().length < 10}
+                                      onClick={() => {
+                                        setSendingSupportTransferReq(true);
+                                        requestMaintenanceUnitTransfer(task.id, { reason: supportTransferReason.trim() })
+                                          .then(updated => {
+                                            setTask(updated);
+                                            setSupportTransferReason('');
+                                            setToast({
+                                              type: 'success',
+                                              message: `Đã gửi yêu cầu Quản lý cơ sở chuyển kho cho HĐ ${task.contractCode}.`,
+                                            });
+                                          })
+                                          .catch(err => {
+                                            setToast({
+                                              type: 'error',
+                                              message: err.response?.data?.message || 'Không gửi được yêu cầu đổi kho.',
+                                            });
+                                          })
+                                          .finally(() => setSendingSupportTransferReq(false));
+                                      }}
+                                      className="duo-btn-orange px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">send</span>
+                                      {sendingSupportTransferReq ? 'Đang gửi...' : alreadyRequested ? 'Gửi bổ sung yêu cầu FM đổi kho' : 'Gửi yêu cầu FM chuyển ô kho'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
                   {/* Form nhập kết quả xử lý (PR-S5) */}
                   <div className="flex flex-col gap-3">
                     <div>
@@ -3072,14 +3236,52 @@ export default function StaffTaskDetailPage() {
                       </span>
                     </label>
 
+                    {hasPendingSupportTransfer && (
+                      <div className="rounded-2xl bg-[#FFF5E6] border-2 border-[#FF9600] p-4 text-xs font-bold text-[#D96B00] flex items-start gap-3">
+                        <span className="material-symbols-outlined text-[26px] text-[#E58800] shrink-0 mt-0.5">lock_clock</span>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-black text-sm text-[#E58800]">
+                            Đang khóa task — Chờ Quản lý cơ sở (FM) thực hiện chuyển ô kho
+                          </span>
+                          <span className="text-[#8A4800] leading-relaxed">
+                            {task?.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')
+                              ? 'Bạn đã gửi yêu cầu đổi ô kho sang Quản lý cơ sở (FM). Hệ thống tạm khóa thao tác hoàn tất cho đến khi FM thực hiện chuyển hợp đồng sang ô mới trên hệ thống. Sau khi FM chuyển ô xong, hệ thống sẽ mở khóa để bạn hoàn tất task.'
+                              : 'Yêu cầu hỗ trợ này liên quan đến đổi ô kho / chuyển đồ cho khách hàng. Vui lòng bấm "Gửi yêu cầu FM chuyển ô kho" ở khối trên và chờ FM hoàn tất chuyển hợp đồng sang ô mới trước khi có thể hoàn tất yêu cầu hỗ trợ.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {isTransferUnitSupport && transferDone && (
+                      <div className="rounded-2xl bg-[#E8F5E9] border-2 border-[#4CAF50] p-4 text-xs font-bold text-[#2E7D32] flex items-start gap-3">
+                        <span className="material-symbols-outlined text-[26px] text-[#4CAF50] shrink-0 mt-0.5">check_circle</span>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-black text-sm text-[#2E7D32]">
+                            Quản lý cơ sở (FM) đã chuyển ô kho thành công
+                          </span>
+                          <span className="leading-relaxed">
+                            Hợp đồng đã được FM chuyển sang ô mới. Bạn có thể kiểm tra lại hiện trường, hướng dẫn khách và bấm hoàn tất để gửi kết quả xử lý.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       disabled={!canSubmitSupport}
                       onClick={() => setConfirmSupportOpen(true)}
-                      className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className={`px-5 py-3 text-sm gap-2 rounded-2xl font-black flex items-center justify-center transition-all ${
+                        canSubmitSupport
+                          ? 'duo-btn-green cursor-pointer'
+                          : 'bg-[#E5E5E5] text-[#AFAFAF] border-2 border-[#D4D4D4] cursor-not-allowed opacity-75'
+                      }`}
                     >
-                      <span className="material-symbols-outlined text-[20px]">task_alt</span>
-                      Xác nhận hoàn tất xử lý &amp; Gửi phản hồi cho khách
+                      <span className="material-symbols-outlined text-[20px]">
+                        {hasPendingSupportTransfer ? 'lock' : 'task_alt'}
+                      </span>
+                      {hasPendingSupportTransfer
+                        ? 'Đang khóa task — Chờ Quản lý cơ sở (FM) chuyển ô kho mới'
+                        : 'Xác nhận hoàn tất xử lý & Gửi phản hồi cho khách'}
                     </button>
                   </div>
                 </div>
@@ -4560,6 +4762,30 @@ export default function StaffTaskDetailPage() {
           }
         }}
       />
+
+      {supportTransferOpen && task?.contractId && (
+        <TransferUnitModal
+          open={supportTransferOpen}
+          contract={{
+            contractId: task.contractId,
+            contractCode: task.contractCode,
+            storageUnitId: task.storageUnitId,
+            unitTypeName: task.unitTypeName,
+            status: task.contractStatus,
+            customerFullName: task.customerName,
+          }}
+          managerId={userId}
+          onClose={() => setSupportTransferOpen(false)}
+          onDone={(res) => {
+            setSupportTransferOpen(false);
+            loadTask();
+            setToast({
+              type: 'success',
+              message: `Đã chuyển HĐ ${task.contractCode} sang ô ${res?.toUnitId || res?.newUnitId || 'mới'} thành công! Task hỗ trợ đã được cập nhật.`,
+            });
+          }}
+        />
+      )}
 
       <TaskToast toast={toast} onClose={closeToast} />
     </div>

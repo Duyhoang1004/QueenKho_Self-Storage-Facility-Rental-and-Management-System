@@ -34,6 +34,8 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     boolean existsByRfidCardCodeAndStatusIn(String rfidCardCode, List<String> statuses);
 
+    boolean existsByRfidCardCode(String rfidCardCode);
+
     // Tự động chuyển các hợp đồng ACTIVE có ngày kết thúc trước hôm nay sang OVERDUE
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.transaction.annotation.Transactional

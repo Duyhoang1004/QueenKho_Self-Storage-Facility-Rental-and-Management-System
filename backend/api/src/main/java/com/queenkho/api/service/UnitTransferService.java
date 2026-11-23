@@ -314,29 +314,29 @@ public class UnitTransferService {
                     "Bảo trì khắc phục sự cố ô " + oldUnit.getId() + " (HĐ " + contract.getContractCode()
                             + " đã chuyển sang ô " + newUnit.getId() + (toEmergency ? " [khẩn cấp tạm thời]" : "") + "): " + reason);
         }
-        // Nếu FM vừa chuyển khách sang ô tiêu chuẩn mới theo yêu cầu từ task bảo trì → ghi nhận lên task và báo nhân viên
-        if (!toEmergency) {
-            try {
-                jdbcTemplate.queryForList(
-                        "SELECT id, staff_id, note FROM facility_tasks WHERE contract_id = ? AND task_type = 'MAINTENANCE' " +
-                                "AND status IN ('OPEN','IN_PROGRESS','OVERDUE')",
-                        contract.getId()).forEach(row -> {
-                    String note = row.get("note") != null ? String.valueOf(row.get("note")) : "";
-                    if (note.contains("[YÊU CẦU FM ĐỔI KHO CHO KHÁCH")) {
-                        Integer tid = ((Number) row.get("id")).intValue();
-                        String updatedNote = truncate(note + " | [FM đã chuyển HĐ sang ô tiêu chuẩn " + newUnit.getId() + "]", 1000);
-                        jdbcTemplate.update("UPDATE facility_tasks SET note = ? WHERE id = ?", updatedNote, tid);
-                        if (row.get("staff_id") instanceof Number staffNum && notificationService != null) {
-                            notificationService.notifyStaff(staffNum.intValue(),
-                                    "FM đã chuyển ô chính thức cho HĐ " + contract.getContractCode(),
-                                    "Quản lý đã chuyển HĐ " + contract.getContractCode() + " từ ô " + oldUnit.getId()
-                                            + " sang ô tiêu chuẩn " + newUnit.getId() + " theo đề xuất từ task bảo trì #" + tid + ".",
-                                    "TASK", "/staff/tasks/" + tid, true);
-                        }
+        // Nếu FM vừa chuyển khách sang ô mới theo yêu cầu từ task bảo trì hoặc task hỗ trợ → ghi nhận lên task và báo nhân viên
+        try {
+            jdbcTemplate.queryForList(
+                    "SELECT id, staff_id, note, task_type FROM facility_tasks WHERE contract_id = ? AND task_type IN ('MAINTENANCE', 'SUPPORT') " +
+                            "AND status IN ('OPEN','IN_PROGRESS','OVERDUE')",
+                    contract.getId()).forEach(row -> {
+                String note = row.get("note") != null ? String.valueOf(row.get("note")) : "";
+                if (note.contains("[YÊU CẦU FM ĐỔI KHO CHO KHÁCH")) {
+                    Integer tid = ((Number) row.get("id")).intValue();
+                    String taskType = row.get("task_type") != null ? String.valueOf(row.get("task_type")) : "MAINTENANCE";
+                    String label = "SUPPORT".equals(taskType) ? "task hỗ trợ" : "task bảo trì";
+                    String updatedNote = truncate(note + " | [FM đã chuyển HĐ sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + "]", 1000);
+                    jdbcTemplate.update("UPDATE facility_tasks SET note = ? WHERE id = ?", updatedNote, tid);
+                    if (row.get("staff_id") instanceof Number staffNum && notificationService != null) {
+                        notificationService.notifyStaff(staffNum.intValue(),
+                                "FM đã chuyển ô chính thức cho HĐ " + contract.getContractCode(),
+                                "Quản lý đã chuyển HĐ " + contract.getContractCode() + " từ ô " + oldUnit.getId()
+                                        + " sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + " theo đề xuất từ " + label + " #" + tid + ".",
+                                "TASK", "/staff/tasks/" + tid, true);
                     }
-                });
-            } catch (Exception ignored) {
-            }
+                }
+            });
+        } catch (Exception ignored) {
         }
 
         // D-18: ô cũ vào bảo trì mà còn khách khác đã gán trước (nhận kho sau) → trả danh sách để FM đổi ô tiếp cho họ

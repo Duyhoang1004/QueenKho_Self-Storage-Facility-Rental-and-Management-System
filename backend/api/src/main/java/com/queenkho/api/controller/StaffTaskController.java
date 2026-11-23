@@ -84,6 +84,17 @@ public class StaffTaskController {
         }
     }
 
+    // Gợi ý mã thẻ RFID dạng RFID-12345 (5 số ngẫu nhiên chưa bị dùng trên bất kỳ hợp đồng nào)
+    // GET /api/v1/staff-tasks/rfid-suggestion
+    @GetMapping("/rfid-suggestion")
+    public ResponseEntity<?> suggestRfid() {
+        try {
+            return ResponseEntity.ok(Map.of("rfidCardCode", staffTaskService.suggestRfid()));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     // UC-18 / UC-23 / UC-27: chi tiết task (kèm biên bản, sự cố hoặc ticket hỗ trợ)
     // GET /api/v1/staff-tasks/12?userId=5
     @GetMapping("/{id:\\d+}")

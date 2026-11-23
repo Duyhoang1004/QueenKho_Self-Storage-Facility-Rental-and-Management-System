@@ -134,7 +134,7 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4 bg-black/40 backdrop-blur-xs" onClick={onClose}>
-      <div className="duo-card bg-white w-full max-w-[1240px] max-h-[94vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="duo-card bg-white w-full max-w-[1400px] h-[92vh] shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="px-4 sm:px-6 py-4 border-b-2 border-[#E5E5E5] bg-[#FAFAFA] flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -213,8 +213,10 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
           </div>
         )}
 
-        {/* Lưới lịch */}
-        <div className="flex-1 overflow-auto border-t-2 border-[#F0F0F0]">
+        {/* Thân chính: Lưới lịch bên trái + Chi tiết hợp đồng / đơn chờ gán bên phải */}
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row border-t-2 border-[#F0F0F0] overflow-hidden">
+          {/* Lưới lịch */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-auto">
           {loading && !data ? (
             <div className="py-16 flex flex-col items-center gap-2 text-[#AFAFAF]">
               <span className="material-symbols-outlined animate-spin text-[28px] text-[#1CB0F6]">sync</span>
@@ -356,23 +358,25 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
               })}
             </div>
           )}
-        </div>
+          </div>
 
-        {/* Chi tiết ô / hợp đồng đang chọn + đơn chưa gán */}
-        <div className="border-t-2 border-[#E5E5E5] bg-[#FAFAFA] px-4 sm:px-6 py-3 max-h-[34vh] overflow-y-auto">
-          {selectedRow ? (
-            <UnitDetail
-              row={selectedRow}
-              booking={selectedBooking}
-              today={today}
-              selectable={selectableIds ? selectableIds.has(selectedRow.unitId) : false}
-              onSelectUnit={onSelectUnit}
-              onPickBooking={(contractId) => setSelected({ unitId: selectedRow.unitId, contractId })}
-              onOpenContract={setPeek}
-            />
-          ) : (
-            <PendingDemand items={data?.pendingReservations || []} />
-          )}
+          {/* Chi tiết ô / hợp đồng đang chọn + đơn chưa gán (cột phải cuộn độc lập) */}
+          <div className="w-full lg:w-[360px] xl:w-[400px] shrink-0 border-t-2 lg:border-t-0 lg:border-l-2 border-[#E5E5E5] bg-[#FAFAFA] p-4 max-h-[38vh] lg:max-h-none overflow-y-auto">
+            {selectedRow ? (
+              <UnitDetail
+                row={selectedRow}
+                booking={selectedBooking}
+                today={today}
+                selectable={selectableIds ? selectableIds.has(selectedRow.unitId) : false}
+                onSelectUnit={onSelectUnit}
+                onPickBooking={(contractId) => setSelected({ unitId: selectedRow.unitId, contractId })}
+                onOpenContract={setPeek}
+                onClearSelection={() => setSelected(null)}
+              />
+            ) : (
+              <PendingDemand items={data?.pendingReservations || []} />
+            )}
+          </div>
         </div>
       </div>
       {peek && (
@@ -387,27 +391,45 @@ function ScheduleBoard({ onClose, unitTypeId = null, highlight = null, selectabl
   )
 }
 
-function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooking, onOpenContract }) {
+function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooking, onOpenContract, onClearSelection }) {
   const free = row.freeRanges || []
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-sm font-black text-[#4B4B4B]">{row.unitId}</span>
-        <span className="text-[11px] font-bold text-[#AFAFAF]">
-          {row.unitTypeName} · {row.floor || '—'} · Khu {row.zone || '—'} · P.{row.roomNumber || '—'}
-        </span>
-        {onSelectUnit && (
-          selectable ? (
-            <button type="button" onClick={() => onSelectUnit(row.unitId)} className="duo-btn-green ml-auto px-4 py-1.5 text-xs gap-1">
-              <span className="material-symbols-outlined text-[16px]">check</span>Chọn ô này
-            </button>
-          ) : (
-            <span className="ml-auto text-[11px] font-bold text-[#FF4B4B]">Ô này không trống suốt thời gian thuê của đơn</span>
-          )
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-start justify-between gap-2 pb-2.5 border-b border-[#E5E5E5]">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-sm font-black text-[#4B4B4B]">{row.unitId}</span>
+            {row.conflict && <span className="material-symbols-outlined text-[16px] text-[#FF4B4B]">warning</span>}
+          </div>
+          <span className="block text-[11px] font-bold text-[#777777] mt-0.5">
+            {row.unitTypeName} · {row.floor || '—'} · Khu {row.zone || '—'} · P.{row.roomNumber || '—'}
+          </span>
+        </div>
+        {onClearSelection && (
+          <button
+            type="button"
+            onClick={onClearSelection}
+            className="w-7 h-7 rounded-lg text-[#AFAFAF] hover:text-[#4B4B4B] hover:bg-[#E5E5E5] flex items-center justify-center shrink-0"
+            title="Đóng chi tiết ô (xem đơn chờ gán)"
+          >
+            <span className="material-symbols-outlined text-[18px]">close</span>
+          </button>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {onSelectUnit && (
+        selectable ? (
+          <button type="button" onClick={() => onSelectUnit(row.unitId)} className="duo-btn-green w-full px-4 py-2 text-xs gap-1">
+            <span className="material-symbols-outlined text-[16px]">check</span>Chọn ô này
+          </button>
+        ) : (
+          <span className="rounded-xl bg-[#FFF5F5] border border-[#FFDFDF] px-3 py-2 text-[11px] font-bold text-[#FF4B4B]">
+            Ô này không trống suốt thời gian thuê của đơn
+          </span>
+        )
+      )}
+
+      <div className="flex flex-col gap-3.5">
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Khoảng trống</span>
           {row.status === 'MAINTENANCE' && (
@@ -417,17 +439,19 @@ function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooki
             <span className="text-xs font-bold text-[#AFAFAF]">Không còn khoảng trống trong thời gian đang xem.</span>
           )}
           {free.map(r => (
-            <span key={r.from} className="text-xs font-bold text-[#58A700] flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-[16px]">event_available</span>
-              {r.to
-                ? `${fmt(r.from)} → ${fmt(addDays(r.to, -1))} · ${r.days} ngày${r.from <= today ? ' (trống từ hôm nay)' : ''}`
-                : `Từ ${fmt(r.from)} — chưa ai đặt sau đó`}
+            <span key={r.from} className="text-xs font-bold text-[#58A700] flex items-start gap-1.5">
+              <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">event_available</span>
+              <span>
+                {r.to
+                  ? `${fmt(r.from)} → ${fmt(addDays(r.to, -1))} · ${r.days} ngày${r.from <= today ? ' (trống từ hôm nay)' : ''}`
+                  : `Từ ${fmt(r.from)} — chưa ai đặt sau đó`}
+              </span>
             </span>
           ))}
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Hợp đồng trên ô</span>
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Hợp đồng trên ô ({(row.bookings || []).length})</span>
           {(row.bookings || []).length === 0 && <span className="text-xs font-bold text-[#AFAFAF]">Chưa có khách đặt.</span>}
           {(row.bookings || []).map(b => {
             const meta = STATUS[b.status] || STATUS.ACTIVE
@@ -436,31 +460,33 @@ function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooki
             return (
               <div key={b.contractId}
                 onClick={() => onPickBooking(b.contractId)}
-                className={`rounded-xl border-2 px-3 py-2 cursor-pointer ${active ? 'bg-white border-[#1CB0F6]' : 'bg-white border-[#E5E5E5] hover:border-[#BDBDBD]'} ${b.conflict ? 'border-[#FF4B4B]' : ''}`}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: meta.color }} />
+                className={`rounded-xl border-2 px-3 py-2.5 cursor-pointer transition-colors ${active ? 'bg-white border-[#1CB0F6] shadow-xs' : 'bg-white border-[#E5E5E5] hover:border-[#BDBDBD]'} ${b.conflict ? 'border-[#FF4B4B]' : ''}`}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: meta.color }} />
                   <span className="text-xs font-black text-[#4B4B4B]">{b.contractCode}</span>
-                  <span className="text-[11px] font-bold text-[#777777]">{b.customerName}</span>
-                  <span className="text-[10px] font-black" style={{ color: meta.dark }}>{meta.label}</span>
+                  <span className="text-[10px] font-black ml-auto" style={{ color: meta.dark }}>{meta.label}</span>
                 </div>
-                <div className="text-[11px] font-bold text-[#777777] mt-0.5">
+                {b.customerName && (
+                  <div className="text-xs font-bold text-[#4B4B4B] mt-1">{b.customerName}</div>
+                )}
+                <div className="text-[11px] font-bold text-[#777777] mt-0.5 leading-relaxed">
                   {fmt(b.startDate)} → {fmt(b.endDate)}
                   {b.freeFrom && ` · ô giao lại từ ${fmt(b.freeFrom)}`}
                   {b.status !== 'PENDING_CHECK_IN' && daysLeft !== null && daysLeft > 0 && ` · còn ${daysLeft} ngày nữa ô trống`}
                   {b.status === 'PENDING_CHECK_IN' && b.startDate > today && ` · còn ${daysBetween(today, b.startDate)} ngày tới ngày nhận`}
                 </div>
                 {b.note && (
-                  <div className={`text-[11px] font-bold mt-1 ${b.conflict ? 'text-[#FF4B4B]' : 'text-[#E58800]'}`}>{b.note}</div>
+                  <div className={`text-[11px] font-bold mt-1.5 leading-snug ${b.conflict ? 'text-[#FF4B4B]' : 'text-[#E58800]'}`}>{b.note}</div>
                 )}
                 {active && b.contractId && (
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-2 mt-2.5 pt-2 border-t border-[#F0F0F0]" onClick={e => e.stopPropagation()}>
                     <button type="button" onClick={() => onOpenContract({ id: b.contractId, transfer: false })}
-                      className="duo-btn-white px-3 py-1 text-[11px] gap-1">
+                      className="duo-btn-white px-3 py-1.5 text-[11px] gap-1">
                       <span className="material-symbols-outlined text-[14px]">description</span>Mở hợp đồng
                     </button>
                     {['PENDING_CHECK_IN', 'ACTIVE', 'TERMINATION_PENDING'].includes(b.status) && (
                       <button type="button" onClick={() => onOpenContract({ id: b.contractId, transfer: true })}
-                        className="duo-btn-orange px-3 py-1 text-[11px] gap-1">
+                        className="duo-btn-orange px-3 py-1.5 text-[11px] gap-1">
                         <span className="material-symbols-outlined text-[14px]">swap_horiz</span>Đổi ô cho khách
                       </button>
                     )}
@@ -477,16 +503,29 @@ function UnitDetail({ row, booking, today, selectable, onSelectUnit, onPickBooki
 
 function PendingDemand({ items }) {
   if (items.length === 0) {
-    return <p className="text-[11px] font-bold text-[#AFAFAF]">Không có đơn đã cọc đang chờ gán ô. Bấm vào 1 ô để xem khoảng trống chi tiết.</p>
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Chi tiết lịch ô</span>
+        <p className="text-xs font-bold text-[#AFAFAF] leading-relaxed">
+          Không có đơn đã cọc đang chờ gán ô. Bấm vào 1 ô hoặc thanh hợp đồng bên trái để xem khoảng trống và thao tác đổi ô.
+        </p>
+      </div>
+    )
   }
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Đơn đã cọc, chưa gán ô ({items.length}) — chọn ô có khoảng trống phủ kín thời gian thuê</span>
-      <div className="flex flex-wrap gap-2">
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] font-black uppercase text-[#AFAFAF]">Đơn đã cọc, chưa gán ô ({items.length})</span>
+      <p className="text-[11px] font-bold text-[#777777]">Chọn ô có khoảng trống phủ kín thời gian thuê của đơn.</p>
+      <div className="flex flex-col gap-2">
         {items.map(p => (
-          <span key={p.reservationId} className="rounded-xl border-2 border-[#E5E5E5] bg-white px-3 py-1.5 text-[11px] font-bold text-[#4B4B4B]">
-            <span className="font-black text-[#1CB0F6]">{p.reservationCode}</span> · {p.customerName} · {p.unitTypeName} · {fmt(p.startDate)} → {fmt(p.endDate)}
-          </span>
+          <div key={p.reservationId} className="rounded-xl border-2 border-[#E5E5E5] bg-white px-3 py-2 text-[11px] font-bold text-[#4B4B4B] flex flex-col gap-0.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-black text-[#1CB0F6]">{p.reservationCode}</span>
+              <span className="text-[10px] text-[#777777]">{p.unitTypeName}</span>
+            </div>
+            <span className="text-xs font-bold text-[#4B4B4B]">{p.customerName}</span>
+            <span className="text-[11px] text-[#777777]">{fmt(p.startDate)} → {fmt(p.endDate)}</span>
+          </div>
         ))}
       </div>
     </div>

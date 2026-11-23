@@ -856,6 +856,34 @@ public class StaffTaskService {
                 "Không sinh được mã PIN, vui lòng thử lại");
     }
 
+    @Transactional(readOnly = true)
+    public String suggestRfid() {
+        return suggestRfidExcluding(null);
+    }
+
+    private String suggestRfidExcluding(String currentRfid) {
+        for (int i = 0; i < 200; i++) {
+            String rfid = String.format("RFID-%05d", RANDOM.nextInt(100_000));
+            if (currentRfid != null && currentRfid.equals(rfid)) {
+                continue;
+            }
+            if (!rentalContractRepository.existsByRfidCardCode(rfid)) {
+                return rfid;
+            }
+        }
+        for (int i = 0; i < 200; i++) {
+            String rfid = String.format("RFID-%05d", RANDOM.nextInt(100_000));
+            if (currentRfid != null && currentRfid.equals(rfid)) {
+                continue;
+            }
+            if (!rentalContractRepository.existsByRfidCardCodeAndStatusIn(rfid, LIVE_CONTRACT_STATUSES)) {
+                return rfid;
+            }
+        }
+        throw new StaffTaskException(HttpStatus.CONFLICT, "RFID_UNAVAILABLE",
+                "Không sinh được mã thẻ RFID mới ngẫu nhiên, vui lòng thử lại");
+    }
+
     // Flow 2: use immutable handover records as an event trail; facility_tasks keeps its original statuses.
     private void lockCheckInTask(Integer taskId) {
         List<Integer> ids = jdbcTemplate.queryForList(
@@ -1783,6 +1811,30 @@ public class StaffTaskService {
                     "Task này không phải task hỗ trợ khách hàng (SUPPORT)");
         }
 
+        boolean transferDone = task.getNote() != null && task.getNote().contains("[FM đã chuyển HĐ sang ô");
+        boolean hasTransferReq = task.getNote() != null && task.getNote().contains("[YÊU CẦU FM ĐỔI KHO CHO KHÁCH");
+        boolean isTransferUnit = false;
+        if (task.getSupportRequestId() != null && supportRequestRepository != null) {
+            SupportRequest sr = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            if (sr != null && sr.getSubCategory() != null) {
+                String sub = sr.getSubCategory().toLowerCase();
+                if (sub.contains("đổi ô") || sub.contains("chuyển ô") || sub.contains("chuyển đồ") || sub.contains("chuyển kho")) {
+                    isTransferUnit = true;
+                }
+            }
+        }
+        if (!isTransferUnit && task.getNote() != null) {
+            String noteLower = task.getNote().toLowerCase();
+            if (noteLower.contains("đổi ô") || noteLower.contains("chuyển ô kho") || noteLower.contains("chuyển đồ") || noteLower.contains("chuyển kho")) {
+                isTransferUnit = true;
+            }
+        }
+        if ((hasTransferReq || isTransferUnit) && !transferDone) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "PENDING_UNIT_TRANSFER",
+                    "Yêu cầu hỗ trợ chuyển ô kho này đang chờ Quản lý cơ sở (FM) thực hiện chuyển hợp đồng sang ô kho mới trên hệ thống. "
+                    + "Cần Quản lý cơ sở chuyển ô kho cho khách trước khi hoàn tất yêu cầu hỗ trợ.");
+        }
+
         String resolutionNote = (request != null && request.getResolutionNote() != null)
                 ? request.getResolutionNote().trim()
                 : "";
@@ -2177,10 +2229,20 @@ public class StaffTaskService {
                     "Hợp đồng không còn hiệu lực để cấp đổi thẻ từ RFID");
         }
 
-        String unitId = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "TB01";
-        String newRfid = (customRfid != null && !customRfid.isBlank())
-                ? customRfid.trim()
-                : String.format("RF-%s-%04d", unitId, RANDOM.nextInt(10000));
+        String newRfid;
+        if (customRfid != null && !customRfid.isBlank()) {
+            newRfid = customRfid.trim();
+            if (!newRfid.matches("RFID-\\d{5}")) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_RFID",
+                        "Mã thẻ RFID phải có dạng RFID-12345 (RFID- và đúng 5 chữ số)");
+            }
+            if (rentalContractRepository.existsByRfidCardCode(newRfid)) {
+                throw new StaffTaskException(HttpStatus.CONFLICT, "RFID_TAKEN",
+                        "Mã thẻ RFID " + newRfid + " hiện đang được sử dụng trên một hợp đồng khác");
+            }
+        } else {
+            newRfid = suggestRfidExcluding(contract.getRfidCardCode());
+        }
 
         contract.setRfidCardCode(newRfid);
         rentalContractRepository.save(contract);
@@ -2602,6 +2664,16 @@ public class StaffTaskService {
         // D-21 / PR-O22: khách đang khiếu nại quyết toán → giữ hiện trường, chưa đóng bảo trì
         if (settlementService != null) settlementService.assertNotDisputed(task.getContract() != null ? task.getContract().getId() : null);
 
+        // Vấn đề 6: nếu task đang chờ FM chuyển ô cho khách, không được bấm hoàn tất bảo trì trước khi FM chuyển ô xong
+        boolean pendingTransfer = task.getNote() != null
+                && task.getNote().contains("[YÊU CẦU FM ĐỔI KHO CHO KHÁCH")
+                && !task.getNote().contains("[FM đã chuyển HĐ sang ô");
+        if (pendingTransfer) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "PENDING_UNIT_TRANSFER",
+                    "Task bảo trì này đang chờ Quản lý cơ sở (FM) thực hiện chuyển hợp đồng của khách sang ô tiêu chuẩn khác. "
+                    + "Cần chuyển ô kho cho khách trước khi hoàn tất bảo trì ô cũ.");
+        }
+
         String workNote = request != null && request.getNote() != null ? request.getNote().trim() : "";
         if (workNote.length() < 10 || workNote.length() > 1000) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
@@ -2734,26 +2806,26 @@ public class StaffTaskService {
         String role = actor.getRole() != null ? actor.getRole().getName() : "";
         if (!"STAFF".equals(role) && !"FACILITY_MANAGER".equals(role)) {
             throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN_ROLE",
-                    "Chỉ nhân viên kỹ thuật hoặc quản lý cơ sở mới được gửi yêu cầu chuyển ô từ task bảo trì");
+                    "Chỉ nhân viên cơ sở hoặc quản lý cơ sở mới được gửi yêu cầu chuyển ô kho");
         }
         StaffTask task = findTaskInFacility(taskId, actor.getFacilityId());
-        if (!"MAINTENANCE".equals(task.getTaskType())) {
-            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_MAINTENANCE",
-                    "Chỉ task bảo trì ô kho (MAINTENANCE) mới sử dụng chức năng yêu cầu đổi kho này");
+        if (!"MAINTENANCE".equals(task.getTaskType()) && !"SUPPORT".equals(task.getTaskType())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_ALLOWED",
+                    "Chỉ task bảo trì (MAINTENANCE) hoặc hỗ trợ khách hàng (SUPPORT) mới sử dụng chức năng yêu cầu đổi kho này");
         }
         if ("COMPLETED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_ALREADY_CLOSED",
-                    "Task bảo trì đã đóng, không thể gửi yêu cầu đổi kho");
+                    "Task đã đóng, không thể gửi yêu cầu đổi kho");
         }
         RentalContract contract = task.getContract();
         if (contract == null) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "NO_LINKED_CONTRACT",
-                    "Task bảo trì này không gắn với hợp đồng đang thuê để yêu cầu chuyển ô");
+                    "Task này không gắn với hợp đồng đang thuê để yêu cầu chuyển ô");
         }
         String cleanReason = reason != null ? reason.trim() : "";
         if (cleanReason.length() < 10 || cleanReason.length() > 500) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
-                    "Vui lòng nhập lý do sự cố kéo dài & đề xuất chuyển kho từ 10 đến 500 ký tự");
+                    "Vui lòng nhập lý do & đề xuất chuyển kho từ 10 đến 500 ký tự");
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -2764,11 +2836,12 @@ public class StaffTaskService {
         String unitCode = contract.getStorageUnit() != null ? contract.getStorageUnit().getId() : "—";
         boolean inEmergency = contract.getStorageUnit() != null && contract.getStorageUnit().isEmergencyUnit();
 
+        String taskTypeLabel = "SUPPORT".equals(task.getTaskType()) ? "hỗ trợ khách hàng" : "bảo trì";
+        String taskTypeTag = "SUPPORT".equals(task.getTaskType()) ? "[SUPPORT_TRANSFER_REQ] " : "[MAINTENANCE_TRANSFER_REQ] ";
         activityLogService.log(
                 actor.getId(),
-                "[MAINTENANCE_TRANSFER_REQ] " + actor.getFullName() + " báo cáo bảo trì kéo dài ở task #" + taskId
-                        + ", yêu cầu FM chuyển HĐ " + contract.getContractCode() + " (đang ở ô " + unitCode
-                        + (inEmergency ? " - khẩn cấp" : "") + ") sang ô tiêu chuẩn khác: " + cleanReason,
+                taskTypeTag + actor.getFullName() + " yêu cầu FM chuyển HĐ " + contract.getContractCode()
+                        + " (đang ở ô " + unitCode + (inEmergency ? " - khẩn cấp" : "") + ") sang ô tiêu chuẩn khác ở task #" + taskId + ": " + cleanReason,
                 "facility_tasks",
                 String.valueOf(taskId)
         );
@@ -2776,8 +2849,8 @@ public class StaffTaskService {
         if (notificationService != null) {
             notificationService.notifyFacilityManagers(
                     task.getFacilityId(),
-                    "Yêu cầu đổi kho từ bảo trì — HĐ " + contract.getContractCode(),
-                    "Nhân viên " + actor.getFullName() + " báo cáo việc sửa kho (Task #" + taskId + ") cần nhiều thời gian hơn và đề xuất chuyển HĐ "
+                    "Yêu cầu đổi kho từ " + taskTypeLabel + " — HĐ " + contract.getContractCode(),
+                    "Nhân viên " + actor.getFullName() + " gửi yêu cầu chuyển ô kho (Task #" + taskId + ") cho HĐ "
                             + contract.getContractCode() + " (hiện ở ô " + unitCode + (inEmergency ? " — ô khẩn cấp tạm thời" : "")
                             + ") sang ô tiêu chuẩn khác. Lý do: " + cleanReason,
                     "TASK",

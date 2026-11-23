@@ -308,7 +308,9 @@ export default function CreateReservationPage() {
   const selectedPlan = insurancePlans.find((p) => p.code === insurancePlan) || insurancePlans[0]
   const insuranceTotal = Number(selectedPlan.monthlyPremium || 0) * selectedMonths
   const declaredNumber = Number(declaredValue || 0)
-  const coverageCap = declaredNumber > 0 ? Math.min(declaredNumber, Number(selectedPlan.coverageLimit)) : 0
+  const planCoverageLimit = Number(selectedPlan.coverageLimit)
+  const coverageCap = declaredNumber > 0 ? Math.min(declaredNumber, planCoverageLimit) : 0
+  const excessGoodsValue = declaredNumber > planCoverageLimit ? declaredNumber - planCoverageLimit : 0
   const totalPayment = netRent + deposit - voucherApplied.discount + insuranceTotal
   const needsGoodsNote = goodsCategories.some((c) => c.requiresNote && goodsCodes.includes(c.code))
 
@@ -487,12 +489,19 @@ export default function CreateReservationPage() {
     }
   }
 
-  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-  const effectiveAvailableFrom = [availableFrom, unit?.availableFrom, range?.minStartDate]
+  const tomorrowStr = isoDate(new Date(Date.now() + 86400000))
+  const minStartDate = [tomorrowStr, availableFrom, unit?.availableFrom, range?.minStartDate]
     .filter(Boolean)
     .sort()
-    .pop() || ''
-  const minStartDate = effectiveAvailableFrom && effectiveAvailableFrom > tomorrowStr ? effectiveAvailableFrom : tomorrowStr
+    .pop()
+  // Chỉ coi là đặt trước "ô sắp trống" khi thực sự hết ô trống hiện tại (có from / unit.availableFrom,
+  // hoặc BE đẩy minStartDate xa hơn ngày mai) — tránh hiện nhầm khi kho vẫn còn ô AVAILABLE
+  const isPrebookingSlot = Boolean(
+    availableFrom
+    || unit?.availableFrom
+    || (range?.minStartDate && range.minStartDate > tomorrowStr)
+  )
+  const effectiveAvailableFrom = isPrebookingSlot ? minStartDate : ''
   const maxStartDate = (() => {
     const [y, m, d] = tomorrowStr.split('-').map(Number)
     return isoDate(new Date(y, m - 1, d + MAX_LEAD_DAYS - 1)) // hôm nay + 90 ngày
@@ -726,6 +735,15 @@ export default function CreateReservationPage() {
                 <span className="text-[11px] font-bold text-[#777777]">
                   Trần bồi thường dự kiến: <strong className="text-[#1CB0F6]">{formatVND(coverageCap)}</strong> — không vượt giá trị hai bên xác nhận và trần gói.
                 </span>
+                {excessGoodsValue > 0 && (
+                  <div className="rounded-xl border-2 border-[#FF9600] bg-[#FFF8EE] px-3.5 py-2.5 text-xs font-bold text-[#B45309] flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-[#FF9600] shrink-0 mt-0.5">warning</span>
+                    <div className="leading-relaxed">
+                      Giá trị hàng bạn khai báo (<strong>{formatVND(declaredNumber)}</strong>) đang vượt trần gói <strong>{selectedPlan.label}</strong>. Nếu xảy ra sự cố, mức đền bù tối đa sẽ là <strong className="text-[#D97706]">{formatVND(planCoverageLimit)}</strong>, phần chênh lệch vượt trần (<strong className="text-[#FF4B4B]">{formatVND(excessGoodsValue)}</strong>) quý khách sẽ tự chịu rủi ro.
+                      {selectedPlan.code !== 'PREMIUM' && ' Bạn có thể cân nhắc chọn gói bảo hiểm cao hơn để tăng mức bảo vệ.'}
+                    </div>
+                  </div>
+                )}
               </label>
               <div className="rounded-2xl border-2 border-dashed border-[#84D8FF] bg-[#F4FBFF] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1093,7 +1111,7 @@ export default function CreateReservationPage() {
               </div>
 
               {/* D-22: chính sách bằng số tiền của chính đơn này (thay mục "Chính sách hủy" chỉ ghi %) */}
-              <details className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[#4B4B4B]" open>
+              <details className="rounded-2xl border-2 border-[#84D8FF] bg-[#DDF4FF] p-3 text-[#4B4B4B]">
                 <summary className="cursor-pointer text-[11px] font-black uppercase text-[#1899D6]">Bảng phí & hoàn tiền của đơn này</summary>
                 <div className="mt-2">
                   {policySummary ? (

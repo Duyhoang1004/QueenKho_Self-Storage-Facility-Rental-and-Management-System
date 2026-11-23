@@ -234,6 +234,7 @@ public class AccessPolicy {
         rule("PUT", "/api/v1/staff-tasks/{id}/update-support-resolution", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/reopen-support", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/reset-pin", "TASK_EXECUTE");
+        rule("POST", "/api/v1/staff-tasks/{id}/reissue-rfid", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/complete-maintenance", "TASK_MAINTENANCE");
         rule("POST", "/api/v1/staff-tasks/{id}/request-unit-transfer", "TASK_MAINTENANCE"); // Vấn đề 6: Staff yêu cầu FM đổi ô cho khách từ task bảo trì
         rule("GET", "/api/v1/staff-tasks", "TASK_BOARD");

@@ -1213,6 +1213,9 @@ public class StaffTaskService {
                 || !task.getFacilityId().equals(actor.facilityId())
                 || !"PENDING_CHECK_IN".equals(task.getContract().getStatus()))
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_READY", "Task check-in không còn thuộc nhân viên này");
+        if ("MAINTENANCE".equalsIgnoreCase(task.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô đang bảo trì từ sự cố trước. Cần hoàn tất task bảo trì và mở ô trước khi báo sự cố check-in mới");
         String note = text(body, "note");
         if (!validLength(note, 10, 500)) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "ISSUE_NOTE_REQUIRED", "Mô tả sự cố trong 10–500 ký tự");
         String requestedType = text(body, "issueType");
@@ -1266,6 +1269,9 @@ public class StaffTaskService {
         String unitId = text(eventData(blocker), "unitId");
         if (!unitId.equals(checkIn.getContract().getStorageUnit().getId()))
             throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã thay đổi; cần kiểm tra lại báo cáo sự cố");
+        if ("MAINTENANCE".equalsIgnoreCase(checkIn.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô đã bị khóa bảo trì. Hoàn tất task bảo trì của sự cố trước, không giao thêm task sửa ô check-in");
         StaffTask repair = createMaintenanceTask(checkIn.getContract(), "CHECKIN_REPAIR",
                 "[CHECKIN_UNIT=" + unitId + "] Xử lý sự cố trước bàn giao: " + text(eventData(blocker), "note"),
                 true, checkIn.getStaff());
@@ -1293,6 +1299,9 @@ public class StaffTaskService {
         String unitId = text(eventData(blocker), "unitId");
         if (!unitId.equals(checkIn.getContract().getStorageUnit().getId()))
             throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã thay đổi; không thể duyệt ảnh của ô cũ");
+        if ("MAINTENANCE".equalsIgnoreCase(checkIn.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô vẫn đang khóa bảo trì từ sự cố trước. Hoàn tất task bảo trì để mở ô rồi mới xác nhận xử lý check-in");
         List<StaffTask> repairs = staffTaskRepository.findByContractIdAndTaskTypeAndStatusIn(
                 checkIn.getContract().getId(), "MAINTENANCE", List.of("COMPLETED"));
         StaffTask repair = repairs.stream().filter(t -> "CHECKIN_REPAIR".equals(t.getMaintenanceReason()))
@@ -1304,24 +1313,6 @@ public class StaffTaskService {
         if (repair == null || repair.getEvidenceImageUrl() == null || repair.getEvidenceImageUrl().isBlank()
                 || repair.getCreatedAt() == null || reportTime == null || repair.getCreatedAt().isBefore(reportTime))
             throw new StaffTaskException(HttpStatus.CONFLICT, "REPAIR_NOT_DONE", "Staff phải hoàn tất task cùng ảnh sau xử lý trước khi FM xác nhận");
-        StorageUnit repairedUnit = checkIn.getContract().getStorageUnit();
-        if ("MAINTENANCE".equalsIgnoreCase(repairedUnit.getStatus())) {
-            if (repair.getCompletedAt() == null || repairedUnit.getMaintenanceSince() != null
-                    && repairedUnit.getMaintenanceSince().isAfter(repair.getCompletedAt()))
-                throw new StaffTaskException(HttpStatus.CONFLICT, "NEW_UNIT_FAULT", "Ô phát sinh sự cố mới sau khi Staff hoàn tất; cần kiểm tra lại");
-            Integer openRepairs = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM facility_tasks t JOIN rental_contracts c ON c.id = t.contract_id " +
-                            "WHERE c.storage_unit_id = ? AND t.task_type = 'MAINTENANCE' " +
-                            "AND t.status IN ('OPEN','IN_PROGRESS','OVERDUE') AND t.id <> ?",
-                    Integer.class, unitId, repair.getId());
-            if (openRepairs != null && openRepairs > 0)
-                throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_REPAIR_PENDING", "Ô còn task bảo trì khác chưa hoàn tất; chưa thể xác nhận đạt");
-            repairedUnit.setStatus(repairedUnit.idleStatus());
-            repairedUnit.setMaintenanceNote(null);
-            repairedUnit.setMaintenanceSince(null);
-            storageUnitRepository.save(repairedUnit);
-            unitScheduleService.refreshUnitStatus(repairedUnit);
-        }
         assertUnitReadyForCheckIn(checkIn.getContract());
         addCheckInEvent(checkIn.getContract(), actor.id(), "CI_REOPEN",
                 Map.of("draftId", eventDraftId(blocker), "note", note.trim(), "unitId", unitId,
@@ -1584,8 +1575,12 @@ public class StaffTaskService {
         jdbcTemplate.update("UPDATE facility_tasks SET status = 'CANCELLED', completed_at = SYSDATETIME() " +
                         "WHERE contract_id = ? AND task_type = 'MAINTENANCE' AND maintenance_reason = 'CHECKIN_REPAIR' " +
                         "AND status IN ('OPEN','IN_PROGRESS','OVERDUE')", task.getContract().getId());
-        createMaintenanceTask(task.getContract(), "CHECKIN_FAULT",
-                "[CHECKIN_UNIT=" + reportedUnitId + "] Khắc phục ô không thể bàn giao đúng hẹn: " + note.trim());
+        StaffTask maintenance = createMaintenanceTask(task.getContract(), "CHECKIN_FAULT",
+                "[CHECKIN_UNIT=" + reportedUnitId + "] Khắc phục ô không thể bàn giao đúng hẹn: " + note.trim(),
+                false, null);
+        if (maintenance == null)
+            throw new StaffTaskException(HttpStatus.CONFLICT, "MAINTENANCE_TASK_NOT_CREATED",
+                    "Không tạo được task bảo trì cho ô lỗi. Kiểm tra task bảo trì đang mở rồi xác nhận lại sự cố");
         if (notificationService != null) notificationService.notifyCustomer(task.getContract().getCustomer().getId(),
                 "Cơ sở xác nhận sự cố ô kho",
                 "Ô " + task.getContract().getStorageUnit().getId() + " chưa thể bàn giao. Cơ sở đang xử lý; bạn có thể xem phương án dời lịch hoặc hủy hoàn tiền tại Kho của tôi.",

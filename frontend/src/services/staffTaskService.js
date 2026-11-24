@@ -109,7 +109,8 @@ export async function resetSupportContractPin(taskId, staffId) {
 
 // UC-27 / PR-S7: Staff cấp đổi thẻ từ RFID mới cho ticket LOCK_ISSUE
 export async function reissueSupportContractRfid(taskId, staffId, rfidCardCode) {
-  const res = await api.post(`/staff-tasks/${taskId}/reissue-rfid`, { rfidCardCode }, { params: { staffId } })
+  const payload = rfidCardCode ? { rfidCardCode } : {}
+  const res = await api.post(`/staff-tasks/${taskId}/reissue-rfid`, payload, { params: { staffId } })
   return res.data
 }
 

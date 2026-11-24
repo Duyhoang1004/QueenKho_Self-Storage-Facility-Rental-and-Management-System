@@ -234,7 +234,9 @@ export default function TaskBoard({
   }
 
   const scopedTasks = useMemo(() => {
-    return forceStaffId ? tasks.filter(t => t.staffId === forceStaffId) : tasks
+    return forceStaffId
+      ? tasks.filter(t => t.staffId === forceStaffId || (t.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !t.note?.includes('[FM đã chuyển HĐ sang ô')))
+      : tasks
   }, [tasks, forceStaffId])
 
   const stats = useMemo(() => {
@@ -667,6 +669,12 @@ export default function TaskBoard({
                                 KHẨN
                               </span>
                             )}
+                            {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô') && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[9px] font-black uppercase flex items-center gap-0.5 shrink-0 animate-pulse">
+                                <span className="material-symbols-outlined text-[11px]">swap_horiz</span>
+                                CẦN FM ĐỔI Ô
+                              </span>
+                            )}
                           </div>
                           <p className="text-[11px] font-bold text-[#AFAFAF] mt-0.5 truncate">
                             Task #{task.id} · <span className="font-mono text-[#1CB0F6] font-black">{codeLabel}</span>
@@ -921,6 +929,12 @@ export default function TaskBoard({
                               <span className="px-2 py-0.5 rounded-lg bg-[#FF4B4B] text-white text-[10px] font-black uppercase flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[12px]">priority_high</span>
                                 KHẨN
+                              </span>
+                            )}
+                            {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô') && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[9px] font-black uppercase flex items-center gap-0.5 shrink-0 animate-pulse">
+                                <span className="material-symbols-outlined text-[11px]">swap_horiz</span>
+                                CẦN FM ĐỔI Ô
                               </span>
                             )}
                           </div>

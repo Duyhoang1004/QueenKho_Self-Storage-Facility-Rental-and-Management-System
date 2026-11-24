@@ -49,6 +49,10 @@ export default function StaffTaskBoardPage() {
     const canMaintain = task.taskType === 'MAINTENANCE' && task.staffId === user.userId
       && ['IN_PROGRESS', 'OVERDUE'].includes(task.status);
     const isOverdue = task.status === 'OVERDUE' || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) < new Date());
+    const hasPendingTransfer = typeof task.note === 'string'
+      && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')
+      && !task.note.includes('[FM đã chuyển HĐ sang ô');
+
     return (
       <>
         {/* Nút xem chi tiết (Dòng trên) */}
@@ -96,36 +100,49 @@ export default function StaffTaskBoardPage() {
           </button>
         )}
 
-        {canHandover && (
+        {hasPendingTransfer ? (
           <Link
             to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+            className="w-full py-1.5 px-2 text-[11px] font-black gap-1 flex items-center justify-center whitespace-normal text-center leading-tight break-words rounded-xl bg-[#FFF0D6] text-[#E58800] border-2 border-[#FF9600] animate-pulse"
+            title="Đang khóa chờ Quản lý cơ sở thực hiện chuyển ô kho"
           >
-            <span className="material-symbols-outlined text-[17px]">
-              {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
-            </span>
-            {task.taskType === 'CHECK_OUT' ? 'Nghiệm thu trả kho' : 'Lập biên bản'}
+            <span className="material-symbols-outlined text-[15px]">hourglass_top</span>
+            Chờ FM chuyển ô
           </Link>
-        )}
+        ) : (
+          <>
+            {canHandover && (
+              <Link
+                to={`/staff/tasks/${task.id}`}
+                className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[17px]">
+                  {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
+                </span>
+                {task.taskType === 'CHECK_OUT' ? 'Nghiệm thu trả kho' : 'Lập biên bản'}
+              </Link>
+            )}
 
-        {canResolveSupport && (
-          <Link
-            to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[17px]">support_agent</span>
-            Xử lý hỗ trợ
-          </Link>
-        )}
+            {canResolveSupport && (
+              <Link
+                to={`/staff/tasks/${task.id}`}
+                className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[17px]">support_agent</span>
+                Xử lý hỗ trợ
+              </Link>
+            )}
 
-        {canMaintain && (
-          <Link
-            to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[17px]">build</span>
-            Mở phiếu bảo trì
-          </Link>
+            {canMaintain && (
+              <Link
+                to={`/staff/tasks/${task.id}`}
+                className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[17px]">build</span>
+                Mở phiếu bảo trì
+              </Link>
+            )}
+          </>
         )}
       </>
     );

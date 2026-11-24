@@ -454,6 +454,31 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const renderActions = task => {
     const detailUrl = task.taskType === 'REFUND' ? `/manager/refunds/${task.id}` : `/manager/tasks/${task.id}`
 
+    // Task có yêu cầu Quản lý chuyển ô kho từ nhân viên (hỗ trợ hoặc bảo trì)
+    const hasTransferReq = typeof task.note === 'string'
+      && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')
+      && !task.note.includes('[FM đã chuyển HĐ sang ô')
+    if (hasTransferReq) {
+      return (
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-orange w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer animate-pulse"
+          >
+            <span className="material-symbols-outlined text-[17px]">swap_horiz</span>
+            Chuyển ô cho khách
+          </Link>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
+            Xem chi tiết
+          </Link>
+        </>
+      )
+    }
+
     // Task REFUND: Manager xem chi tiết (dòng 1) + xác nhận đã thực hiện hoàn tiền (dòng 2)
     if (task.taskType === 'REFUND') {
       if (['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)) {

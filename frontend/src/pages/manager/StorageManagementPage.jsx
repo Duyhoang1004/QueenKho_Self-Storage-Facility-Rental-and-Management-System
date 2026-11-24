@@ -11,6 +11,7 @@ import {
 import { getAllUnitTypes } from '../../services/facilityService';
 import PaginationBar, { ListBoxHeader } from '../../components/PaginationBar';
 import FloorPlanBoard from '../../components/FloorPlanBoard';
+import CentralWarehouseCard from '../../components/CentralWarehouseCard';
 import UnitPositionPicker from '../../components/UnitPositionPicker';
 import { DISPLAY_STATES, daysFromToday, formatReleaseDate, getDisplayState } from '../../utils/unitDisplayState';
 import UnitScheduleModal from '../../components/UnitScheduleModal';
@@ -956,6 +957,11 @@ export default function StorageManagementPage() {
                 <aside className="hidden xl:flex xl:w-[320px] xl:shrink-0 border-l-2 border-[#E5E5E5] p-5 flex-col items-center justify-center text-center gap-2">
                   <span className="material-symbols-outlined text-[36px] text-[#E5E5E5]">touch_app</span>
                   <p className="text-xs font-bold text-[#AFAFAF]">Bấm vào một ô trên sơ đồ để xem chi tiết và thao tác</p>
+                  {/* BR-134a: kho tổng phụ trách cơ sở — nơi chuyển hàng khi cưỡng chế dọn kho */}
+                  <div className="w-full mt-4 text-left">
+                    <CentralWarehouseCard facilityId={facilityId}
+                      note="Cưỡng chế dọn kho: hàng của khách chuyển về kho này (chọn sẵn trong form dọn kho)." />
+                  </div>
                 </aside>
               )}
             </div>

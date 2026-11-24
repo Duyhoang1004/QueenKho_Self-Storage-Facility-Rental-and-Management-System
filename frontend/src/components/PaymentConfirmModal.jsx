@@ -23,7 +23,7 @@ function PaymentConfirmBody({ title, subtitle, lines, total, note, confirmLabel,
   const shown = lines.filter((l) => l && Number(l.amount || 0) !== 0)
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40" onClick={submitting ? undefined : onCancel}>
-      <div className="duo-card bg-white w-full max-w-[460px] p-6 flex flex-col gap-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="duo-card bg-white w-full max-w-[460px] p-6 flex flex-col gap-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-[#58CC02] border-b-2 border-[#58A700] text-white flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-[24px]">payments</span>

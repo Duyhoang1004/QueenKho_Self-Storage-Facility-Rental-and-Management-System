@@ -323,11 +323,11 @@ function ClaimDetail({ claimId }) {
 
       {claim.status === 'INSPECTED' && !bom && <DecisionForm claim={claim} onDone={refresh} />}
       {['APPROVED', 'PAID', 'REJECTED'].includes(claim.status) && <DecisionSummary claim={claim} />}
-      {claim.status === 'APPROVED' && !bom && (claim.settlementId || claim.contractStatus === 'SETTLEMENT_PENDING') ? (
+      {claim.status === 'APPROVED' && !bom && (claim.settlementId || ['SETTLEMENT_PENDING', 'TERMINATION_PENDING'].includes(claim.contractStatus)) ? (
         /* D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường gộp vào quyết toán, không chi riêng */
         <Card icon="receipt_long" title="Chi trả qua quyết toán trả kho">
           <p className="text-xs font-bold text-[#4B4B4B] leading-relaxed">
-            Hợp đồng {claim.contractCode} đã nghiệm thu trả kho. {formatVND(claim.totalCompensation)} bồi thường được cộng vào bảng quyết toán;
+            Hợp đồng {claim.contractCode} {claim.contractStatus === 'TERMINATION_PENDING' ? 'đã hẹn trả kho (chưa nghiệm thu)' : 'đã nghiệm thu trả kho'}. {formatVND(claim.totalCompensation)} bồi thường được cộng vào bảng quyết toán khi nhân viên nghiệm thu;
             khách xác nhận xong, khoản này được chi trong task hoàn tiền trả kho (dòng "Bồi thường hàng hư / mất"), hoặc cấn trừ vào phần khách phải trả.
           </p>
           {/* D-23 / PR-O30: đi thẳng tới task hoàn tiền chứa khoản bồi thường */}
@@ -339,7 +339,9 @@ function ClaimDetail({ claimId }) {
             <p className="text-xs font-bold text-[#B07A00]">
               {claim.settlementStatus === 'AWAITING_PAYMENT'
                 ? 'Quyết toán âm: bồi thường đã cấn trừ vào khoản khách phải trả.'
-                : 'Chưa có task hoàn tiền — chờ khách xác nhận bảng quyết toán.'}
+                : claim.contractStatus === 'TERMINATION_PENDING'
+                  ? 'Chưa nghiệm thu trả kho — sau nghiệm thu, bảng quyết toán có dòng "Bồi thường hàng hư / mất".'
+                  : 'Chưa có task hoàn tiền — chờ khách xác nhận bảng quyết toán.'}
             </p>
           )}
           <a href="/manager/settlements?tab=ALL" className="duo-btn-blue px-4 py-2 text-xs self-start">Mở quyết toán trả kho</a>
@@ -387,7 +389,12 @@ function DecisionSummary({ claim }) {
           </span>
         }
       />
-      <Row label="Tiền hàng (≤ trần)" value={<strong className="text-[#4B4B4B]">{formatVND(claim.goodsCompensation)}</strong>} />
+      <Row label="Tiền hàng được bồi thường" value={
+        <span className="text-right">
+          <strong className="text-[#4B4B4B]">{formatVND(claim.goodsCompensation)}</strong>
+          <span className="text-[10px] text-[#777777] block font-normal">= giá trị thiệt hại hàng hư hỏng ({formatVND(goodsLoss)}), tối đa trần {formatVND(claim.coverageCap)}</span>
+        </span>
+      } />
       {isCapped && claim.liableParty === 'FACILITY' && (
         <div className="p-2.5 rounded-xl bg-[#FFF8E6] border border-[#FFE0A3] text-[#D96B00] text-[11px] font-semibold leading-relaxed flex items-start gap-1.5">
           <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-[#E58800]">info</span>
@@ -396,7 +403,12 @@ function DecisionSummary({ claim }) {
           </div>
         </div>
       )}
-      <Row label={claim.resolution === 'TERMINATE' ? "Phạt vi phạm (hủy HĐ)" : "Phạt vi phạm (tiếp tục thuê: 0đ)"} value={formatVND(claim.penaltyAmount)} />
+      <Row label={claim.resolution === 'TERMINATE' ? "Đền bù thêm theo hợp đồng (cơ sở chịu)" : "Đền bù thêm theo hợp đồng (tiếp tục thuê: 0đ)"} value={
+        <span className="text-right">
+          {formatVND(claim.penaltyAmount)}
+          {claim.resolution === 'TERMINATE' && <span className="text-[10px] text-[#777777] block font-normal">1 tháng tiền thuê vì chấm dứt hợp đồng</span>}
+        </span>
+      } />
       <Row label={`Hoàn tiền thuê (${claim.unusableDays ?? 0} ngày)`} value={formatVND(claim.rentRefundAmount)} />
       <Row label="Tổng bồi thường" value={<strong className="text-[#58A700] text-sm">{formatVND(claim.totalCompensation)}</strong>} />
       <Row label="Hướng xử lý" value={claim.resolution === 'TERMINATE' ? 'Chấm dứt hợp đồng không phí phá HĐ' : 'Tiếp tục thuê (có thể chuyển ô cùng loại)'} />
@@ -524,10 +536,20 @@ function DecisionForm({ claim, onDone }) {
             </div>
           )}
 
-          <Row label="Tiền hàng được bồi thường (≤ trần)" value={<strong className="text-[#4B4B4B]">{formatVND(quote.goodsCompensation)}</strong>} />
+          <Row label="Tiền hàng được bồi thường" value={
+            <span className="text-right">
+              <strong className="text-[#4B4B4B]">{formatVND(quote.goodsCompensation)}</strong>
+              <span className="text-[10px] text-[#777777] block font-normal">= giá trị thiệt hại hàng hư hỏng ({formatVND(quote.goodsLoss)}), tối đa trần {formatVND(quote.coverageCap)}</span>
+            </span>
+          } />
           <Row
-            label={form.resolution === 'TERMINATE' ? "Phạt vi phạm hợp đồng (1 tháng tiền thuê do hủy HĐ)" : "Phạt vi phạm hợp đồng (Tiếp tục thuê: 0đ)"}
-            value={formatVND(quote.penaltyAmount)}
+            label={form.resolution === 'TERMINATE' ? "Đền bù thêm theo hợp đồng (cơ sở chịu)" : "Đền bù thêm theo hợp đồng (tiếp tục thuê: 0đ)"}
+            value={
+              <span className="text-right">
+                {formatVND(quote.penaltyAmount)}
+                {form.resolution === 'TERMINATE' && <span className="text-[10px] text-[#777777] block font-normal">1 tháng tiền thuê vì chấm dứt hợp đồng</span>}
+              </span>
+            }
           />
           <Row label={`Hoàn tiền thuê (${form.unusableDays || 0} ngày ô gián đoạn)`} value={formatVND(quote.rentRefundAmount)} />
 
@@ -570,7 +592,9 @@ function PaymentForm({ claim, onDone }) {
   const [cashConfirmed, setCashConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const ready = method === 'BANK_TRANSFER' ? images.length > 0 : (cashConfirmed || images.length > 0)
+  // BR-128a (24/11/2026): chuyển khoản cần tài khoản khách đã nhập trên hồ sơ
+  const hasAccount = Boolean(claim.payoutAccountNumber)
+  const ready = method === 'BANK_TRANSFER' ? hasAccount && images.length > 0 : (cashConfirmed || images.length > 0)
 
   const submit = () => {
     setBusy(true)
@@ -596,6 +620,16 @@ function PaymentForm({ claim, onDone }) {
           </button>
         ))}
       </div>
+      {method === 'BANK_TRANSFER' && (hasAccount ? (
+        <div className="rounded-xl border-2 border-[#84D8FF] bg-[#F5FBFF] px-3 py-2 text-xs font-bold text-[#4B4B4B] flex flex-col gap-0.5">
+          <span className="text-[10px] font-black uppercase text-[#1899D6]">Tài khoản khách nhận tiền</span>
+          <span>{claim.payoutBankName} · <span className="font-mono">{claim.payoutAccountNumber}</span> · {claim.payoutAccountName}</span>
+        </div>
+      ) : (
+        <div className="rounded-xl border-2 border-[#FFE0A3] bg-[#FFF8E6] px-3 py-2 text-xs font-bold text-[#D96B00]">
+          Khách chưa nhập tài khoản nhận tiền bồi thường (mục Hỗ trợ của khách). Nhắc khách nhập, hoặc chọn chi tiền mặt tại quầy.
+        </div>
+      ))}
       <HandoverPhotoPicker
         images={images}
         onChange={(list) => setImages(list.slice(-1))}

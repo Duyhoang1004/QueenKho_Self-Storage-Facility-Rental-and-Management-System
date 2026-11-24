@@ -1230,3 +1230,20 @@ Không đổi schema.
 - `GET /api/v1/facilities/{id}/policy-summary`, `GET /api/v1/contracts/{id}/policy-summary`: mục ⑤ có thêm dòng "Giá thuê ngày (căn cứ tính phí)".
 - Điều khoản lưu `reservations.terms_version = 'v7'` cho đơn mới.
 
+## Cập nhật 23/11/2026 — Góp ý test
+
+- `POST /api/v1/claims/{id}/pay`: thêm 409 `CLAIM_IN_SETTLEMENT` khi hợp đồng đang `TERMINATION_PENDING` (đã hẹn trả kho) — bồi thường đi theo quyết toán (PR-O19a).
+- `GET /api/v1/reservations/my` (Kho của tôi) trả thêm `cancelledAt`, `cancellationTier`, `cancellationPenaltyAmount`, `cancellationRefundAmount` (PR-B13).
+- `GET /api/v1/staff-tasks/rfid-suggestion` đã được khai báo trong `AccessPolicy` (`TASK_EXECUTE`) — trước đó trả 403 `API_NOT_DECLARED`.
+- 🆕 `GET /api/v1/facilities/{id}/central-warehouse` (PUBLIC, BR-134a): kho tổng phụ trách cơ sở (cùng thành phố). Trả `{ facilityId, facilityName, facilityCity, warehouse }`; `warehouse = null` khi thành phố chưa có kho tổng đang hoạt động. 404 `NOT_FOUND` nếu không có cơ sở.
+- Kho tổng (`GET /central-warehouses`, `/bom/central-warehouses`) trả thêm `city`. `POST` / `PUT /bom/central-warehouses` **bắt buộc** `city`, phải trùng thành phố của một cơ sở (400 `INVALID_INPUT`), lưu theo đúng cách viết trong bảng cơ sở. Schema: `sql_script/Update_kho_tong_theo_thanh_pho.sql`.
+
+## Cập nhật 24/11/2026 — Góp ý test
+
+- `GET /api/v1/reservations/my` trả thêm `paymentLines` (`[{ group, label, amount, note }]`, số âm = khoản giảm; tổng = số khách đóng lúc đặt kho) và `paymentTransactions` (`[{ code, type, method, amount, paidAt }]`, giao dịch `DEPOSIT` thành công) (PR-B14).
+- `GET /api/v1/contracts/{id}/checkout-refund-preview`: `lines` thêm dòng `ADDED` "Bồi thường đã duyệt (BT-…)" cho hồ sơ `APPROVED` chưa chi; `netAmount` gồm khoản này. Dòng giữ lại khi chấm dứt do lỗi cơ sở có `note` dạng "N ngày đã dùng × X/ngày (tiền kỳ ÷ số ngày của kỳ)" (PR-O19b).
+- 🆕 `PUT /api/v1/claims/{id}/payout-account` (`CUSTOMER_SUPPORT`, chỉ chủ hồ sơ): body `{ bankName, bankAccountNumber, bankAccountName }` → `CompensationClaimResponse`. 400 `INVALID_INPUT` (số tài khoản 6–20 chữ số), 403 `FORBIDDEN`, 409 `CLAIM_STATUS_INVALID` khi hồ sơ đã chi / bị từ chối / rút (BR-128a).
+- `CompensationClaimResponse` thêm `payoutBankName`, `payoutAccountNumber`, `payoutAccountName`, `payoutAccountUpdatedAt`.
+- `POST /api/v1/claims/{id}/pay` với `BANK_TRANSFER`: thêm 409 `PAYOUT_ACCOUNT_REQUIRED` khi khách chưa nhập tài khoản.
+- Schema: `sql_script/Update_gop_y_test_24_11.sql`; dữ liệu mặt bằng: `sql_script/Update_mat_bang_4_tang.sql`.
+- `POST /api/v1/dev/simulation/tasks/{id}/checkout-today` (nút ⚡ "Khách tới trả đúng ngày hẹn"): vẫn mở hạn task về hôm nay, giờ trả thêm `simulatedCheckoutDate` (ngày hẹn gốc, `null` nếu đã tới ngày hẹn). Nghiệm thu task này chốt quyết toán theo ngày đó (PR-O31a). Task (`StaffTaskResponse` / `StaffTaskDetailResponse`) trả thêm `simulatedCheckoutDate`.

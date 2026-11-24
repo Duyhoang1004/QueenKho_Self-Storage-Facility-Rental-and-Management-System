@@ -15,6 +15,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -165,8 +166,8 @@ public class DemoSimulationService {
     @Transactional
     public Map<String, Object> checkoutToday(Integer taskId, CurrentUser actor) {
         requireEnabled();
-        Map<String, Object> task = row("SELECT id, task_type, status, contract_id, facility_id FROM facility_tasks WHERE id = ?",
-                taskId, "Không tìm thấy task");
+        Map<String, Object> task = row("SELECT id, task_type, status, contract_id, facility_id, due_at, simulated_checkout_date " +
+                        "FROM facility_tasks WHERE id = ?", taskId, "Không tìm thấy task");
         requireSameFacility(actor, toInt(task.get("facility_id")));
         if (!"CHECK_OUT".equals(task.get("task_type"))) {
             throw notApplicable("Chỉ giả lập được cho task nghiệm thu trả kho (CHECK_OUT)");
@@ -183,14 +184,23 @@ public class DemoSimulationService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime dueAt = now.toLocalTime().isBefore(CLOSING_TIME)
                 ? LocalDate.now().atTime(CLOSING_TIME) : LocalDate.now().plusDays(1).atTime(CLOSING_TIME);
+        // PR-O31a (24/11/2026): giữ ngày khách đã hẹn — nghiệm thu chốt tiền theo ngày này (khớp số khách thấy lúc hẹn),
+        // chỉ mở hạn task về hôm nay để nghiệm thu được ngay. Bấm lại nhiều lần vẫn giữ ngày hẹn gốc đầu tiên.
+        LocalDate appointment = toLocalDate(task.get("simulated_checkout_date"));
+        if (appointment == null) appointment = toLocalDate(task.get("due_at"));
+        LocalDate simulated = appointment != null && appointment.isAfter(dueAt.toLocalDate()) ? appointment : null;
         jdbcTemplate.update(
-                "UPDATE facility_tasks SET due_at = ?, status = CASE WHEN status = 'OVERDUE' " +
+                "UPDATE facility_tasks SET due_at = ?, simulated_checkout_date = ?, status = CASE WHEN status = 'OVERDUE' " +
                         "THEN (CASE WHEN staff_id IS NULL THEN 'OPEN' ELSE 'IN_PROGRESS' END) ELSE status END WHERE id = ?",
-                Timestamp.valueOf(dueAt), taskId);
+                Timestamp.valueOf(dueAt), simulated, taskId);
 
-        log(actor, "Khách tới trả kho hôm nay — HĐ " + contract.get("contract_code") + ", task #" + taskId,
-                "facility_tasks", taskId);
-        return result("Đã dời ngày trả kho về hôm nay, có thể nghiệm thu ngay", "dueAt", dueAt);
+        String dateText = simulated != null ? simulated.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : null;
+        log(actor, "Khách tới trả đúng ngày hẹn" + (dateText != null ? " " + dateText : "") + " — HĐ "
+                        + contract.get("contract_code") + ", task #" + taskId, "facility_tasks", taskId);
+        return result(simulated != null
+                        ? "Đã giả lập tới ngày hẹn " + dateText + ": nghiệm thu được ngay, quyết toán chốt theo ngày " + dateText
+                        : "Hôm nay đã tới ngày hẹn, có thể nghiệm thu ngay",
+                "dueAt", dueAt, "simulatedCheckoutDate", simulated);
     }
 
     // ---------- 5b. Flow 6: FM đã gọi khách quá hạn 3 lần không được ----------
@@ -536,7 +546,22 @@ public class DemoSimulationService {
         return result;
     }
 
+    private static Map<String, Object> result(String message, String key, Object value, String key2, Object value2) {
+        Map<String, Object> result = result(message, key, value);
+        result.put(key2, value2);
+        return result;
+    }
+
     private static int toInt(Object value) {
         return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    // Cột DATE / DATETIME2 đọc qua JdbcTemplate (java.sql.Date / Timestamp / LocalDate) → LocalDate
+    static LocalDate toLocalDate(Object value) {
+        if (value instanceof LocalDate d) return d;
+        if (value instanceof java.sql.Date d) return d.toLocalDate();
+        if (value instanceof Timestamp t) return t.toLocalDateTime().toLocalDate();
+        if (value instanceof LocalDateTime dt) return dt.toLocalDate();
+        return null;
     }
 }

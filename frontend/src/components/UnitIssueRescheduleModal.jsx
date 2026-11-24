@@ -41,7 +41,7 @@ export default function UnitIssueRescheduleModal({ reservation, onClose, onDone 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-      <div className="duo-card bg-white w-full max-w-[460px] p-6 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+      <div className="duo-card bg-white w-full max-w-[460px] p-6 flex flex-col gap-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-base font-black text-[#4B4B4B]">Dời ngày nhận kho — đơn {reservation.reservationCode}</h2>
         <p className="text-xs font-bold text-[#777777] leading-relaxed">
           Ô kho đã gán cho bạn đang bảo trì do sự cố của cơ sở. Chọn ngày nhận kho mới (từ ngày mai, tối đa {MAX_LEAD_DAYS} ngày);

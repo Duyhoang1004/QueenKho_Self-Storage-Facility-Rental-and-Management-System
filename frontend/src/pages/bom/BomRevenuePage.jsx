@@ -963,7 +963,9 @@ export default function BomRevenuePage() {
                             : tx.paymentType === 'OVERSTAY_FEE'
                             ? 'Phí chiếm dụng'
                             : tx.paymentType === 'DAMAGE_FEE'
-                            ? 'Bồi thường'
+                            ? 'Phí sự cố'
+                            : tx.paymentType === 'COMPENSATION'
+                            ? 'Chi bồi thường'
                             : 'Hoàn tiền'}
                         </span>
                       </td>
@@ -986,10 +988,11 @@ export default function BomRevenuePage() {
                       <td className="py-3.5 px-5 text-right whitespace-nowrap">
                         <span
                           className={`text-sm font-black ${
-                            tx.paymentType === 'REFUND' ? 'text-[#FF4B4B]' : 'text-[#58CC02]'
+                            ['REFUND', 'COMPENSATION'].includes(tx.paymentType) ? 'text-[#FF4B4B]' : 'text-[#58CC02]'
                           }`}
                         >
-                          {tx.paymentType === 'REFUND' ? '-' : '+'}
+                          {/* 23/11/2026: hoàn tiền và chi bồi thường đều là tiền cơ sở chi ra */}
+                          {['REFUND', 'COMPENSATION'].includes(tx.paymentType) ? '-' : '+'}
                           {formatVND(tx.amount)}
                         </span>
                       </td>
@@ -1023,7 +1026,7 @@ export default function BomRevenuePage() {
         {/* 7. Modal Chi Tiết Đối Soát Chứng Từ (PR-O15 & PR-M7) */}
         {selectedTransaction && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl border-2 border-b-4 border-[#E5E5E5] shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4">
+            <div className="bg-white rounded-3xl border-2 border-b-4 border-[#E5E5E5] shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between pb-3 border-b-2 border-[#E5E5E5]">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[24px] text-[#1CB0F6]">verified</span>

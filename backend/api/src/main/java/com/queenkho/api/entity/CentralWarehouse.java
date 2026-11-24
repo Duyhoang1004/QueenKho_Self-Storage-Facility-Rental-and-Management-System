@@ -30,6 +30,10 @@ public class CentralWarehouse {
     @Column(length = 500)
     private String note;
 
+    // BR-134a (23/11/2026): thành phố kho tổng phụ trách (khớp facilities.city) — mỗi thành phố một kho tổng
+    @Column(length = 100)
+    private String city;
+
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE"; // ACTIVE / INACTIVE
 

@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -59,4 +60,5 @@ public class StaffTaskResponse {
     private String ticketDescription;
     private String resolutionNote;
     private String cancelReason;     // PR-T2: lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
+    private LocalDate simulatedCheckoutDate; // PR-O31a: ngày hẹn gốc khi demo "khách tới đúng ngày hẹn"
 }

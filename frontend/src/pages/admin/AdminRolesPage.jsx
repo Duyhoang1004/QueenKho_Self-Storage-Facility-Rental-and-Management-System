@@ -73,7 +73,7 @@ function EditDescriptionModal({ role, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div className="duo-card bg-white w-full max-w-[520px] shadow-2xl p-6 flex flex-col gap-4">
+      <div className="duo-card bg-white w-full max-w-[520px] shadow-2xl p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-2xl bg-[#CE82FF] border-b-2 border-[#A559D9] text-white flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-[24px]">edit_note</span>

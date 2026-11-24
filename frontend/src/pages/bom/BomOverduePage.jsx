@@ -114,7 +114,7 @@ export default function BomOverduePage() {
         const tFee = getOverdueFeeBreakdown(target)
         return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setTarget(null)}>
-          <div className="duo-card bg-white w-full max-w-[480px] p-6 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+          <div className="duo-card bg-white w-full max-w-[480px] p-6 flex flex-col gap-3 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-base font-black text-[#4B4B4B]">Miễn phí trễ HĐ {target.contractCode}</h2>
             <p className="text-xs font-bold text-[#777777]">
               {target.facilityName} · quá hạn {target.overdueDays} ngày · tổng phạt {formatVND(tFee.totalPenalty)}

@@ -33,7 +33,7 @@ import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simu
 import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
-import { getCentralWarehouses } from '../../services/catalogService';
+import { getCentralWarehouses, getFacilityCentralWarehouse } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 import IncidentReportModal from '../../components/IncidentReportModal';
 import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate, getPresetsForTask } from '../../utils/incidentTemplates';
@@ -436,16 +436,24 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   );
   const isContractActive = task.contractStatus === 'ACTIVE';
 
+  // BR-134a (23/11/2026): chọn sẵn kho tổng phụ trách cơ sở (cùng thành phố); FM chỉ đổi khi kho đó đầy
+  const [defaultWarehouseId, setDefaultWarehouseId] = useState(null);
   useEffect(() => {
     if (!isLiquidation) return;
-    getCentralWarehouses()
-      .then(list => {
+    Promise.all([
+      getCentralWarehouses(),
+      task.facilityId ? getFacilityCentralWarehouse(task.facilityId).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([list, mine]) => {
         const items = Array.isArray(list) ? list : [];
         setWarehouses(items);
-        if (items.length === 1) setWarehouseId(String(items[0].id));
+        const defId = mine?.warehouse?.id && items.some(w => w.id === mine.warehouse.id) ? mine.warehouse.id : null;
+        setDefaultWarehouseId(defId);
+        if (defId) setWarehouseId(prev => prev || String(defId));
+        else if (items.length === 1) setWarehouseId(prev => prev || String(items[0].id));
       })
       .catch(() => setWarehouses([]));
-  }, [isLiquidation]);
+  }, [isLiquidation, task.facilityId]);
   const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
   const blocked = maintenanceBlockedReason(task, userId, isManager);
   const noteValid = note.trim().length >= MAINTENANCE_NOTE_MIN && note.trim().length <= NOTES_MAX;
@@ -473,7 +481,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
       setInventoryNote('12 thùng carton đồ gia dụng (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp, 1 túi quần áo.');
       setWitnessNote('Nhân viên kho + Quản lý cơ sở, có đại diện tổ dân phố chứng kiến');
       setStorageLocation('Dãy B - kệ 3');
-      if (!warehouseId && warehouses.length) setWarehouseId(String(warehouses[0].id));
+      if (!warehouseId && warehouses.length) setWarehouseId(String(defaultWarehouseId || warehouses[0].id));
       setInventoryImages([
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (1)'),
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
@@ -775,8 +783,18 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
                       <span className="text-[11px] font-black uppercase text-[#777777]">Kho tổng nhận hàng *</span>
                       <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="duo-input text-xs">
                         <option value="">— Chọn kho tổng —</option>
-                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        {warehouses.map(w => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}{w.city ? ` (${w.city})` : ''}{w.id === defaultWarehouseId ? ' — phụ trách cơ sở này' : ''}
+                          </option>
+                        ))}
                       </select>
+                      {defaultWarehouseId && warehouseId && Number(warehouseId) !== defaultWarehouseId && (
+                        <span className="text-[11px] font-bold text-[#E58800]">Khác kho tổng phụ trách cơ sở — chỉ chọn khi kho phụ trách đã đầy.</span>
+                      )}
+                      {!defaultWarehouseId && warehouses.length > 0 && (
+                        <span className="text-[11px] font-bold text-[#E58800]">Thành phố của cơ sở chưa có kho tổng — chọn kho gần nhất.</span>
+                      )}
                     </label>
                     <label className="flex flex-col gap-1 sm:col-span-2">
                       <span className="text-[11px] font-black uppercase text-[#777777]">Vị trí kệ trong kho tổng *</span>
@@ -1741,13 +1759,26 @@ export default function StaffTaskDetailPage() {
         </div>
       )}
 
-      {/* Demo: khách tới trả kho hôm nay / khách không tới trả kho (task nghiệm thu đang mở) */}
+      {/* PR-O31a: đã giả lập tới ngày hẹn → nhắc quyết toán chốt theo ngày hẹn gốc */}
+      {task.taskType === 'CHECK_OUT' && task.simulatedCheckoutDate && !task.completedAt && (
+        <div className="mb-4 flex items-start gap-2 rounded-2xl border-2 border-[#CE82FF] bg-[#FAF5FF] px-4 py-3 text-xs font-bold text-[#7C3AED]">
+          <span className="material-symbols-outlined text-[20px]">event_available</span>
+          <span>
+            Đang giả lập khách tới đúng ngày hẹn <strong>{formatDate(task.simulatedCheckoutDate)}</strong>: nghiệm thu ngay hôm nay,
+            bảng quyết toán tính theo ngày {formatDate(task.simulatedCheckoutDate)} (khớp số khách thấy lúc hẹn trả kho).
+          </span>
+        </div>
+      )}
+
+      {/* Demo: khách tới trả đúng ngày hẹn / khách không tới trả kho (task nghiệm thu đang mở) */}
       {task.taskType === 'CHECK_OUT' && task.contractStatus === 'TERMINATION_PENDING'
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           <SimulationButton
-            label="Khách tới trả kho hôm nay"
-            description="Dời ngày hẹn trả kho về hôm nay (hạn 21:00) để nghiệm thu ngay, không phải chờ đúng ngày hẹn."
+            label={task.dueAt && !task.simulatedCheckoutDate
+              ? `Khách tới trả đúng ngày hẹn (${formatDate(String(task.dueAt).slice(0, 10))})`
+              : 'Khách tới trả đúng ngày hẹn'}
+            description="Tua tới ngày khách đã hẹn: nghiệm thu được ngay hôm nay, nhưng quyết toán chốt theo NGÀY HẸN (số ngày đã dùng, phí...) — khớp đúng số khách thấy lúc hẹn trả kho."
             onRun={() => simulateCheckoutToday(task.id)}
             onDone={() => loadTask()}
           />
@@ -2251,7 +2282,11 @@ export default function StaffTaskDetailPage() {
                   {task.receiptStatus === 'DISPUTED' && (
                     <div className="rounded-xl border-2 border-[#FFB8B8] bg-[#FFF2F2] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
                       <span className="font-black text-[#FF4B4B]">Khách báo chưa nhận được tiền: “{task.receiptDisputeReason}”</span>
-                      <span>Mở <Link to="/manager/refunds" className="text-[#1CB0F6] underline">Bảng hoàn tiền</Link> → “Xử lý: khách báo chưa nhận” để chọn giao dịch đúng hoặc chuyển bổ sung.</span>
+                      <span>Chọn "Giao dịch đã chuyển đúng" (giải thích + ảnh sao kê nếu có) hoặc "Chuyển bổ sung" (số tiền + biên lai).</span>
+                      {/* 23/11/2026: mở thẳng modal xử lý ở Bảng hoàn tiền, không phải tự tìm task */}
+                      <Link to={`/manager/refunds?resolveTaskId=${task.id}`} className="duo-btn-red px-4 py-2 text-xs self-start flex items-center gap-1.5 mt-1">
+                        <span className="material-symbols-outlined text-[16px]">report</span>Xử lý ngay: khách báo chưa nhận
+                      </Link>
                     </div>
                   )}
 

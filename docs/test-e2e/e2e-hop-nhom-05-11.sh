@@ -126,7 +126,7 @@ check "⚡ Hết hạn lưu giữ cũng không bán được" "$(code POST $FM "
 echo "== BR-134: BOM quản lý kho tổng"
 check "Hotline sai → 400" "$(call POST $BOM "$API/bom/central-warehouses" '{"name":"E2E Kho tong","address":"1 Duong E2E","hotline":"abc"}' | jget 'o.error')" "INVALID_INPUT"
 check "FM không quản lý kho tổng → 403" "$(code POST $FM "$API/bom/central-warehouses" '{"name":"x","address":"y"}')" "403"
-WH=$(call POST $BOM "$API/bom/central-warehouses" "{\"name\":\"E2E Kho tong $STAMP\",\"address\":\"1 Duong E2E\",\"hotline\":\"0900000999\"}" | jget 'o.id')
+WH=$(call POST $BOM "$API/bom/central-warehouses" "{\"name\":\"E2E Kho tong $STAMP\",\"address\":\"1 Duong E2E\",\"hotline\":\"0900000999\",\"city\":\"TP.HCM\"}" | jget 'o.id')
 check "BOM thêm rồi ngừng kho tổng" "$(call PATCH $BOM "$API/bom/central-warehouses/$WH/status" '{"status":"INACTIVE"}' | jget 'o.status')" "INACTIVE"
 check "Kho tổng đã ngừng không hiện để chọn" "$(call GET $FM "$API/central-warehouses" | jget "o.some(w=>w.id===$WH)")" "false"
 

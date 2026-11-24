@@ -164,8 +164,53 @@ class CompensationWorkflowBusinessTest {
 
     @Test void transferPayoutRequiresEvidenceBeforeWritingMoney() {
         claim.setStatus("APPROVED");
+        claim.setPayoutAccountNumber("0123456789");
         ClaimPaymentRequest r = new ClaimPaymentRequest(); r.setPaymentMethod("BANK_TRANSFER");
         assertEquals("PAYMENT_EVIDENCE_REQUIRED", assertThrows(StaffTaskException.class,
+                () -> service.pay(40, 6, r)).getCode());
+        verifyNoInteractions(jdbc);
+    }
+
+    // BR-128a (24/11/2026): chuyển khoản mà khách chưa nhập tài khoản → không ghi tiền
+    @Test void transferPayoutRequiresCustomerAccount() {
+        claim.setStatus("APPROVED");
+        ClaimPaymentRequest r = new ClaimPaymentRequest(); r.setPaymentMethod("BANK_TRANSFER");
+        r.setEvidenceImageUrl("https://example.invalid/unc.jpg");
+        assertEquals("PAYOUT_ACCOUNT_REQUIRED", assertThrows(StaffTaskException.class,
+                () -> service.pay(40, 6, r)).getCode());
+        verifyNoInteractions(jdbc);
+    }
+
+    @Test void customerSavesPayoutAccountForOwnClaim() {
+        claim.setStatus("APPROVED");
+        Integer owner = claim.getCustomer().getId();
+        CompensationClaimResponse res = service.updatePayoutAccount(40, owner, " Vietcombank ", "0123 456 789", "nguyen van a");
+        assertAll(() -> assertEquals("Vietcombank", res.getPayoutBankName()),
+                () -> assertEquals("0123456789", res.getPayoutAccountNumber()),
+                () -> assertEquals("NGUYEN VAN A", res.getPayoutAccountName()));
+        verify(claims).save(claim);
+    }
+
+    @Test void payoutAccountRejectsOtherCustomerBadNumberAndClosedClaim() {
+        claim.setStatus("APPROVED");
+        Integer owner = claim.getCustomer().getId();
+        assertEquals("FORBIDDEN", assertThrows(StaffTaskException.class,
+                () -> service.updatePayoutAccount(40, owner + 1000, "VCB", "0123456789", "A")).getCode());
+        assertEquals("INVALID_INPUT", assertThrows(StaffTaskException.class,
+                () -> service.updatePayoutAccount(40, owner, "VCB", "12ab", "A")).getCode());
+        claim.setStatus("PAID");
+        assertEquals("CLAIM_STATUS_INVALID", assertThrows(StaffTaskException.class,
+                () -> service.updatePayoutAccount(40, owner, "VCB", "0123456789", "A")).getCode());
+        verify(claims, never()).save(any());
+    }
+
+    // PR-O19a (23/11/2026): khách đã hẹn trả kho / đã nghiệm thu → bồi thường đi theo quyết toán, FM không chi riêng
+    @ParameterizedTest @ValueSource(strings = {"TERMINATION_PENDING", "SETTLEMENT_PENDING"})
+    void compensationGoesThroughSettlementOnceCheckoutIsScheduled(String contractStatus) {
+        claim.setStatus("APPROVED");
+        contract.setStatus(contractStatus);
+        ClaimPaymentRequest r = new ClaimPaymentRequest(); r.setPaymentMethod("CASH"); r.setCashReceiptConfirmed(true);
+        assertEquals("CLAIM_IN_SETTLEMENT", assertThrows(StaffTaskException.class,
                 () -> service.pay(40, 6, r)).getCode());
         verifyNoInteractions(jdbc);
     }

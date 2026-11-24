@@ -8,6 +8,7 @@ import CancelReservationModal from "../../components/CancelReservationModal";
 import UnitIssueRescheduleModal from "../../components/UnitIssueRescheduleModal";
 import { formatDateVN } from "../../utils/date";
 import AssetTermsModal from "../../components/AssetTermsModal";
+import BookingPaidModal from "../../components/BookingPaidModal";
 import { createVnpayPayment } from "../../services/vnpayService";
 import SimulationButton from "../../components/SimulationButton";
 import { simulateExpireHold } from "../../services/simulationService";
@@ -138,10 +139,45 @@ function statusMetaOf(r) {
   return STATUS_META[r.status] || { label: r.status, className: "bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]" };
 }
 
+// PR-B13 (23/11/2026): mức huỷ đơn đã áp dụng — khách xem lại số tiền sẽ nhận sau khi gửi huỷ
+const CANCEL_TIER_LABELS = {
+  BOOKING_GRACE: "Huỷ trong 30 phút sau khi thanh toán — hoàn 100%",
+  FULL_REFUND: "Huỷ trước giờ hẹn từ 48 giờ — hoàn 100%",
+  HALF_DEPOSIT: "Huỷ trước giờ hẹn 24–48 giờ — giữ 50% tiền cọc",
+  FULL_DEPOSIT: "Huỷ dưới 24 giờ trước giờ hẹn — giữ 100% tiền cọc",
+  AFTER_APPOINTMENT: "Huỷ sau giờ hẹn nhận kho — giữ cọc + 1 tháng tiền thuê",
+  HANDOVER_IN_PROGRESS: "Đã tới nhận kho nhưng chưa bàn giao xong — giữ 100% tiền cọc",
+  HANDOVER_FAILED: "Bàn giao không thành sau 2 lần từ chối biên bản — hoàn 100%",
+  FACILITY_FAULT: "Cơ sở không bàn giao được ô — hoàn 100%",
+  NO_SHOW: "Không đến nhận kho (No-Show) — giữ cọc + 1 tháng tiền thuê",
+  NO_SHOW_WAIVED: "No-Show được miễn phạt — hoàn 100%",
+  UNPAID: "Đơn chưa thanh toán",
+};
+
+function CancellationDetail({ r }) {
+  if (!r.cancelledAt) return null;
+  const paid = Number(r.totalPaid || 0);
+  const penalty = Number(r.cancellationPenaltyAmount || 0);
+  const refund = Number(r.cancellationRefundAmount || 0);
+  return (
+    <div className="border-2 border-[#FFD966] bg-[#FFFBEB] rounded-2xl p-3 flex flex-col gap-1.5 text-xs font-bold text-[#4B4B4B]">
+      <p className="text-[11px] font-black uppercase tracking-wider text-[#B07A00]">Chi tiết huỷ đơn</p>
+      <span>Huỷ lúc: <strong>{new Date(r.cancelledAt).toLocaleString("vi-VN")}</strong></span>
+      {r.cancellationTier && <span>Mức áp dụng: <strong>{CANCEL_TIER_LABELS[r.cancellationTier] || r.cancellationTier}</strong></span>}
+      <div className="flex justify-between gap-3 border-t border-[#FFD966] pt-1.5 mt-0.5"><span>Đã thanh toán</span><strong>{formatVND(paid)}</strong></div>
+      <div className="flex justify-between gap-3"><span>Cơ sở giữ lại</span><strong className="text-[#FF4B4B]">{penalty > 0 ? "− " : ""}{formatVND(penalty)}</strong></div>
+      <div className="flex justify-between gap-3 text-sm"><span className="font-black">Số tiền hoàn cho bạn</span><strong className="text-[#58A700]">{formatVND(refund)}</strong></div>
+    </div>
+  );
+}
+
 // Đơn chưa có hợp đồng (chờ thanh toán / đã cọc chờ gán ô / đã huỷ trước khi gán ô): bấm mã đơn → tóm tắt đơn
 function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms, onChanged }) {
   const meta = statusMetaOf(r);
   const waitingUnit = ["PENDING", "DEPOSIT_PAID"].includes(r.status);
+  // PR-B14 (24/11/2026): bấm số tiền đã thanh toán → popup bảng tính số tiền đã đóng lúc đặt kho
+  const [paidOpen, setPaidOpen] = useState(false);
+  const canExplainPaid = Number(r.totalPaid || 0) > 0 && (r.paymentLines || []).length > 0;
   const rows = [
     ["Cơ sở", r.facilityName],
     ["Địa chỉ", r.facilityAddress],
@@ -149,11 +185,17 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms, onChang
     ["Ngày nhận kho", formatDate(r.startDate)],
     ["Thời hạn", `${r.durationMonths || 1} tháng`],
     ["Tiền cọc", formatVND(r.depositAmount)],
-    ["Đã thanh toán", formatVND(r.totalPaid)],
+    ["Đã thanh toán", canExplainPaid ? (
+      <button type="button" onClick={() => setPaidOpen(true)} title="Xem cách tính số tiền đã đóng"
+        className="inline-flex items-center gap-1 text-[#1CB0F6] hover:underline cursor-pointer">
+        {formatVND(r.totalPaid)}
+        <span className="material-symbols-outlined text-[16px]">receipt_long</span>
+      </button>
+    ) : formatVND(r.totalPaid)],
   ];
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-3xl border-2 border-[#E5E5E5] w-full max-w-md p-6 flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-3xl border-2 border-[#E5E5E5] w-full max-w-md p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-bold text-[#AFAFAF] uppercase tracking-wider">Đơn đặt chỗ</p>
@@ -174,6 +216,7 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms, onChang
             ? "Đơn chưa có hợp đồng. Hợp đồng được tạo khi cơ sở gán ô kho cho bạn — lúc đó bấm mã đơn sẽ mở trang hợp đồng."
             : "Đơn đã đóng trước khi cơ sở gán ô kho nên không phát sinh hợp đồng."}
         </p>
+        <CancellationDetail r={r} />
         {/* PR-O32: khoản hoàn của đơn — khách bấm "Đã nhận được" / "Chưa nhận được" ngay tại đây */}
         {["REFUND_PENDING", "REFUNDED"].includes(r.status) && (
           <RefundReceiptList reservationCode={r.reservationCode} title="Tiền hoàn của đơn" onChanged={onChanged} />
@@ -207,6 +250,9 @@ function ReservationSummaryModal({ reservation: r, onClose, onOpenTerms, onChang
           <button type="button" onClick={onOpenTerms} className="duo-btn-white px-4 py-2 text-xs">Điều khoản thuê kho</button>
           <button type="button" onClick={onClose} className="duo-btn-blue px-4 py-2 text-xs">Đóng</button>
         </div>
+        {/* Đặt trong khung (đã chặn click lan ra nền) để đóng popup con không đóng luôn popup đơn */}
+        <BookingPaidModal open={paidOpen} reservationCode={r.reservationCode} lines={r.paymentLines || []}
+          transactions={r.paymentTransactions || []} totalPaid={r.totalPaid} onClose={() => setPaidOpen(false)} />
       </div>
     </div>
   );
@@ -943,7 +989,7 @@ export default function MyReservationsPage() {
                               onClick={() =>
                                 navigate(`/kho-cua-toi/hop-dong/${r.id}`)
                               }
-                              className="duo-btn-blue w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap"
+                              className="duo-btn-blue w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-normal text-center leading-tight break-words"
                             >
                               <span className="material-symbols-outlined text-[14px]">
                                 description
@@ -958,7 +1004,7 @@ export default function MyReservationsPage() {
                               <button
                                 onClick={() => handleRetryPayment(r)}
                                 disabled={retryingId === r.id}
-                                className="duo-btn-green w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap disabled:opacity-60"
+                                className="duo-btn-green w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-normal text-center leading-tight break-words disabled:opacity-60"
                               >
                                 {retryingId === r.id && (
                                   <span className="material-symbols-outlined text-[14px]">
@@ -973,7 +1019,7 @@ export default function MyReservationsPage() {
                                 setSelectedResToCancel(r);
                                 setIsCancelModalOpen(true);
                               }}
-                              className="duo-btn-red w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-nowrap"
+                              className="duo-btn-red w-[92px] justify-center px-2 py-1 text-[10px] gap-1 shadow-sm whitespace-normal text-center leading-tight break-words"
                             >
                               <span className="material-symbols-outlined text-[14px]">
                                 cancel

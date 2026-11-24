@@ -31,7 +31,7 @@ export default function RequireAuthModal({ isOpen, onClose, target }) {
       <div className="fixed inset-0" onClick={onClose}></div>
 
       {/* Modal Dialog Duolingo Flat 2.5D */}
-      <div className="duo-card max-w-md w-full p-6 sm:p-8 bg-white relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="duo-card max-w-md w-full p-6 sm:p-8 bg-white relative z-10 shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
         
         {/* Nút đóng góc phải */}
         <button

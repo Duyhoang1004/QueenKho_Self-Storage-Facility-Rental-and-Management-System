@@ -67,6 +67,13 @@ public class CompensationClaimController {
         return ResponseEntity.ok(claimService.decide(id, currentUser.require().id(), request));
     }
 
+    // BR-128a (24/11/2026): khách nhập tài khoản nhận tiền bồi thường cho hồ sơ của mình
+    @PutMapping("/claims/{id}/payout-account")
+    public ResponseEntity<?> payoutAccount(@PathVariable Integer id, @RequestBody Map<String, String> body) {
+        return ResponseEntity.ok(claimService.updatePayoutAccount(id, currentUser.require().id(),
+                body.get("bankName"), body.get("bankAccountNumber"), body.get("bankAccountName")));
+    }
+
     // BR-128: xác nhận đã chi trả cho khách (+ gửi hồ sơ bảo hiểm nếu gói có bảo hiểm)
     @PostMapping("/claims/{id}/pay")
     public ResponseEntity<?> pay(@PathVariable Integer id, @RequestBody ClaimPaymentRequest request) {

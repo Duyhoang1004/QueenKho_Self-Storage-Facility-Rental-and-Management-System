@@ -84,4 +84,10 @@ public class CompensationClaimResponse {
     private String insuranceRef;
     private BigDecimal insuranceAmount;
     private LocalDateTime insuranceUpdatedAt;
+
+    // BR-128a (24/11/2026): tài khoản khách nhận tiền bồi thường
+    private String payoutBankName;
+    private String payoutAccountNumber;
+    private String payoutAccountName;
+    private LocalDateTime payoutAccountUpdatedAt;
 }

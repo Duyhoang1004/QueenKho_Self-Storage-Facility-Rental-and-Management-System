@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
 import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile, getStaffTasks } from '../../services/staffTaskService'
@@ -356,7 +356,27 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       .finally(() => setSubmitting(false))
   }
 
-  const openRefundModal = (task) => {
+  // 23/11/2026: ?resolveTaskId= (từ trang chi tiết task hoàn tiền) → mở thẳng modal xử lý khách báo chưa nhận
+  const [searchParams, setSearchParams] = useSearchParams()
+  const resolveTaskId = searchParams.get('resolveTaskId')
+  useEffect(() => {
+    if (!resolveTaskId || !user.facilityId) return
+    let active = true
+    getStaffTasks(user.facilityId)
+      .then((rows) => {
+        if (!active) return
+        const found = (rows || []).find((t) => String(t.id) === String(resolveTaskId))
+        if (found) openRefundModal(found)
+        const next = new URLSearchParams(searchParams)
+        next.delete('resolveTaskId')
+        setSearchParams(next, { replace: true })
+      })
+      .catch(() => {})
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolveTaskId, user.facilityId])
+
+  function openRefundModal(task) {
     setRefundTask(task)
     const isCash = (task.note || '').toLowerCase().includes('tiền mặt')
     setRefundMethod(isCash ? 'CASH' : 'BANK_TRANSFER')
@@ -441,7 +461,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           <>
             <Link
               to={detailUrl}
-              className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+              className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
             >
               <span className="material-symbols-outlined text-[17px]">visibility</span>
               Xem chi tiết
@@ -449,7 +469,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <button
               type="button"
               onClick={() => openRefundModal(task)}
-              className={`${task.receiptStatus === 'DISPUTED' ? 'duo-btn-red' : 'duo-btn-green'} w-full py-1.5 px-2.5 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer`}
+              className={`${task.receiptStatus === 'DISPUTED' ? 'duo-btn-red' : 'duo-btn-green'} w-full py-1.5 px-2.5 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer`}
             >
               <span className="material-symbols-outlined text-[17px]">{task.receiptStatus === 'DISPUTED' ? 'report' : 'payments'}</span>
               {task.receiptStatus === 'DISPUTED' ? 'Xử lý: khách báo chưa nhận' : 'Xác nhận đã hoàn tiền'}
@@ -463,7 +483,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         <>
           <Link
             to={detailUrl}
-            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
@@ -486,7 +506,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         <>
           <Link
             to={detailUrl}
-            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
@@ -494,7 +514,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           <button
             type="button"
             onClick={() => openExtendSupportModal(task)}
-            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">more_time</span>
             Gia hạn xử lý
@@ -509,7 +529,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         <>
           <Link
             to={detailUrl}
-            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
@@ -517,7 +537,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           <button
             type="button"
             onClick={() => setAssignTask(task)}
-            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">sync_alt</span>
             Đổi người
@@ -525,7 +545,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           <button
             type="button"
             onClick={() => setConfirmTask(task)}
-            className="duo-btn-red w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-red w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">person_remove</span>
             Gỡ người nhận
@@ -540,7 +560,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         <>
           <Link
             to={detailUrl}
-            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
@@ -548,14 +568,14 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
           <button
             type="button"
             onClick={() => openExtendSupportModal(task)}
-            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">more_time</span>
             Gia hạn xử lý
           </button>
           <Link
             to={detailUrl}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">build</span>
             Hoàn tất bảo trì
@@ -570,7 +590,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         <>
           <Link
             to={detailUrl}
-            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">visibility</span>
             Xem chi tiết
@@ -590,7 +610,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             <button
               type="button"
               onClick={() => setAssignTask(task)}
-              className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+              className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
             >
               <span className="material-symbols-outlined text-[17px]">assignment_ind</span>
               Giao việc
@@ -603,7 +623,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     return (
       <Link
         to={detailUrl}
-        className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+        className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
       >
         <span className="material-symbols-outlined text-[17px]">visibility</span>
         Xem chi tiết

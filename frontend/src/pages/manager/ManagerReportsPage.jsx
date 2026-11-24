@@ -25,8 +25,11 @@ const TYPE_LABELS = {
   DAMAGE_FEE: 'Phí sự cố',
   OVERSTAY_FEE: 'Phí chiếm dụng / lưu giữ',
   REFUND: 'Hoàn tiền',
+  COMPENSATION: 'Chi bồi thường', // 23/11/2026: tiền cơ sở đền khách (hàng hư / mất)
 }
-const METHOD_LABELS = { VNPAY: 'VNPAY', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', DEPOSIT_OFFSET: 'Trừ cọc' }
+// Tiền cơ sở chi ra → hiện dấu trừ, màu đỏ
+const OUTFLOW_TYPES = ['REFUND', 'COMPENSATION']
+const METHOD_LABELS = { VNPAY: 'VNPAY', BANK_TRANSFER: 'Chuyển khoản', CASH: 'Tiền mặt', DEPOSIT_OFFSET: 'Trừ cọc', SETTLEMENT_OFFSET: 'Cấn trừ quyết toán' }
 
 function formatVND(value) {
   return `${Math.round(Number(value || 0)).toLocaleString('vi-VN')}đ`
@@ -62,7 +65,7 @@ function exportCsv(rows, fileName) {
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
   const lines = rows.map((t) => [
     t.txnRef, formatTime(t.paidAt), t.customerName, t.contractCode, TYPE_LABELS[t.paymentType] || t.paymentType,
-    METHOD_LABELS[t.paymentMethod] || t.paymentMethod, Math.round(Number(t.amount || 0)), t.status, t.bankTxnCode,
+    METHOD_LABELS[t.paymentMethod] || t.paymentMethod, (OUTFLOW_TYPES.includes(t.paymentType) ? -1 : 1) * Math.round(Number(t.amount || 0)), t.status, t.bankTxnCode,
   ].map(escape).join(','))
   // ﻿: Excel đọc đúng tiếng Việt UTF-8
   const blob = new Blob(['﻿' + [header.map(escape).join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
@@ -369,8 +372,8 @@ export default function ManagerReportsPage() {
                       <td className="px-4 py-3 font-mono text-xs font-bold text-[#777777]">{t.contractCode || '—'}</td>
                       <td className="px-4 py-3 font-bold text-[#4B4B4B]">{TYPE_LABELS[t.paymentType] || t.paymentType}</td>
                       <td className="px-4 py-3 font-bold text-[#777777]">{METHOD_LABELS[t.paymentMethod] || t.paymentMethod}</td>
-                      <td className={`px-4 py-3 font-black whitespace-nowrap ${t.paymentType === 'REFUND' ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
-                        {t.paymentType === 'REFUND' ? '−' : '+'}{formatVND(t.amount)}
+                      <td className={`px-4 py-3 font-black whitespace-nowrap ${OUTFLOW_TYPES.includes(t.paymentType) ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
+                        {OUTFLOW_TYPES.includes(t.paymentType) ? '−' : '+'}{formatVND(t.amount)}
                       </td>
                     </tr>
                   ))}

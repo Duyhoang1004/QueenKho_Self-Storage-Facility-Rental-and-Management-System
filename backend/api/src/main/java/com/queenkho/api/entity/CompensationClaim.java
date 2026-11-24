@@ -148,6 +148,19 @@ public class CompensationClaim {
     @Column(name = "settlement_id")
     private Integer settlementId;
 
+    // 24/11/2026 (BR-128a): tài khoản khách nhận tiền bồi thường khi FM chi riêng bằng chuyển khoản
+    @Column(name = "payout_bank_name", length = 100)
+    private String payoutBankName;
+
+    @Column(name = "payout_account_number", length = 30)
+    private String payoutAccountNumber;
+
+    @Column(name = "payout_account_name", length = 100)
+    private String payoutAccountName;
+
+    @Column(name = "payout_account_updated_at")
+    private LocalDateTime payoutAccountUpdatedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

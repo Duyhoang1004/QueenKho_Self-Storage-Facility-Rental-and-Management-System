@@ -8,6 +8,7 @@ import {
   setBomCentralWarehouseStatus,
   setBomGoodsCategoryStatus,
 } from '../../services/catalogService'
+import { getCities } from '../../services/facilityService'
 
 // Họp nhóm 05/11/2026 — BOM quản lý:
 //  - BR-131 danh mục loại hàng khách chọn khi đặt kho (thực phẩm chỉ cho kho lạnh / đông)
@@ -19,7 +20,7 @@ const TABS = [
 ]
 
 const EMPTY_GOODS = { code: '', name: '', description: '', requiresColdStorage: false, requiresNote: false, sortOrder: 0 }
-const EMPTY_WAREHOUSE = { name: '', address: '', hotline: '', note: '' }
+const EMPTY_WAREHOUSE = { name: '', address: '', hotline: '', note: '', city: '' }
 
 function StatusBadge({ status }) {
   return status === 'ACTIVE'
@@ -55,6 +56,12 @@ export default function BomCatalogPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // BR-134a (23/11/2026): mỗi thành phố một kho tổng — BOM chọn thành phố phụ trách trong danh sách thành phố có cơ sở
+  const [cities, setCities] = useState([])
+  useEffect(() => {
+    getCities().then((c) => setCities(Array.isArray(c) ? c : [])).catch(() => setCities([]))
+  }, [])
+
   const load = () => {
     setLoading(true)
     fetchAll()
@@ -77,7 +84,7 @@ export default function BomCatalogPage() {
         requiresNote: Boolean(item.requiresNote),
         sortOrder: item.sortOrder ?? 0,
       }
-      : { name: item.name || '', address: item.address || '', hotline: item.hotline || '', note: item.note || '' })
+      : { name: item.name || '', address: item.address || '', hotline: item.hotline || '', note: item.note || '', city: item.city || '' })
     setFormError('')
   }
 
@@ -89,6 +96,10 @@ export default function BomCatalogPage() {
   const handleSave = async () => {
     if (!form.name?.trim()) {
       setFormError(tab === 'goods' ? 'Vui lòng nhập tên loại hàng.' : 'Vui lòng nhập tên kho tổng.')
+      return
+    }
+    if (tab === 'warehouses' && !form.city) {
+      setFormError('Vui lòng chọn thành phố kho tổng phụ trách.')
       return
     }
     setSaving(true)
@@ -108,6 +119,7 @@ export default function BomCatalogPage() {
           address: form.address.trim(),
           hotline: form.hotline.trim() || null,
           note: form.note.trim() || null,
+          city: form.city,
         })
       }
       setToast(editing?.id ? `Đã cập nhật "${form.name.trim()}".` : `Đã thêm "${form.name.trim()}".`)
@@ -142,7 +154,7 @@ export default function BomCatalogPage() {
           <p className="text-xs font-bold text-[#AFAFAF] mt-1 max-w-[720px]">
             {tab === 'goods'
               ? 'Khách chọn loại hàng khi đặt kho; nhân viên đối chiếu khi nhận kho. Loại "cần kho lạnh" chỉ đặt được ở loại kho lạnh / kho đông. Ngừng một loại hàng không ảnh hưởng đơn đã đặt.'
-              : 'Hàng của khách hết hạn không gia hạn / không trả kho được chuyển vào kho tổng và giữ tới khi khách nhận lại (không bán). Khách quá hạn thấy địa chỉ + hotline kho tổng trong trang hợp đồng.'}
+              : 'Hàng của khách hết hạn không gia hạn / không trả kho được chuyển vào kho tổng cùng thành phố với cơ sở và giữ tới khi khách nhận lại (không bán). Mỗi thành phố một kho tổng. Khách quá hạn thấy địa chỉ + hotline kho tổng trong trang hợp đồng.'}
           </p>
         </div>
         <button onClick={openCreate} className="duo-btn-green px-5 py-3 text-xs tracking-wider shrink-0">
@@ -192,6 +204,7 @@ export default function BomCatalogPage() {
             ) : (
               <tr>
                 <th className="py-3 px-4">Kho tổng</th>
+                <th className="py-3 px-4">Phụ trách</th>
                 <th className="py-3 px-4">Địa chỉ</th>
                 <th className="py-3 px-4">Hotline</th>
                 <th className="py-3 px-4">Trạng thái</th>
@@ -223,6 +236,11 @@ export default function BomCatalogPage() {
                     <td className="py-3 px-4">
                       <p className="font-black">{item.name}</p>
                       {item.note && <p className="text-[11px] text-[#777777]">{item.note}</p>}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      {item.city
+                        ? <span className="duo-badge border-2 bg-[#DDF4FF] text-[#1899D6] border-[#84D8FF]">{item.city}</span>
+                        : <span className="text-[11px] text-[#FF4B4B]">Chưa gán</span>}
                     </td>
                     <td className="py-3 px-4 text-[11px]">{item.address}</td>
                     <td className="py-3 px-4">{item.hotline || '—'}</td>
@@ -292,6 +310,14 @@ export default function BomCatalogPage() {
                   Tên kho tổng *
                   <input className="duo-input text-xs" value={form.name} maxLength={150}
                     onChange={(e) => setField('name', e.target.value)} placeholder="VD: Kho tổng QueenKho Thủ Đức" />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#4B4B4B]">
+                  Thành phố phụ trách *
+                  <select className="duo-input text-xs" value={form.city} onChange={(e) => setField('city', e.target.value)}>
+                    <option value="">— Chọn thành phố —</option>
+                    {[...new Set([...cities, ...(form.city ? [form.city] : [])])].map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <span className="normal-case font-bold text-[#AFAFAF]">Mọi cơ sở trong thành phố này chuyển hàng của khách quá hạn về kho tổng này.</span>
                 </label>
                 <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#4B4B4B]">
                   Địa chỉ *

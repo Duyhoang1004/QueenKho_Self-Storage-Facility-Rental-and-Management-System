@@ -194,12 +194,23 @@ public class StaffTaskService {
     // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
     // IN_PROGRESS
     @Transactional
+    /**
+     * PR-O31a (24/11/2026): ngày chốt quyết toán khi nghiệm thu. Luồng thật = hôm nay. Task đã bấm demo
+     * "Khách tới trả đúng ngày hẹn" (hạn task dời về hôm nay) → ngày hẹn gốc, để số tiền khớp đúng số khách thấy lúc hẹn
+     * (vd hẹn 25/11 → vẫn tính 1 ngày đã dùng dù nghiệm thu ngày 24/11).
+     */
+    public static LocalDate effectiveCheckoutDate(StaffTask task, LocalDate today) {
+        LocalDate simulated = task != null ? task.getSimulatedCheckoutDate() : null;
+        return simulated != null && simulated.isAfter(today) ? simulated : today;
+    }
+
     public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
         List<StaffTask> tasks = staffTaskRepository
                 .findByContractIdAndTaskTypeAndStatusIn(contractId, taskType, OPEN_STATUSES);
         for (StaffTask task : tasks) {
             if ("CHECK_IN".equals(task.getTaskType())) lockCheckInTask(task.getId());
             task.setDueAt(computeDueAt(newAppointmentDate));
+            task.setSimulatedCheckoutDate(null); // PR-O31a: khách dời hẹn thật → bỏ ngày hẹn giả lập cũ
             if ("OVERDUE".equals(task.getStatus())) {
                 task.setStatus(task.getStaff() == null ? "OPEN" : "IN_PROGRESS");
             }
@@ -536,6 +547,7 @@ public class StaffTaskService {
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
+                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -2580,8 +2592,9 @@ public class StaffTaskService {
 
         // 7. D-21 / PR-O18 + PR-O19: bảng quyết toán vòng 1 — tính TRƯỚC khi đổi trạng thái hợp đồng
         //    (phí trễ / chiếm dụng chốt tại ngày nghiệm thu, giống màn xem trước của khách)
-        CheckoutSettlement settlement = settlementService.createInitial(contract, task, now.toLocalDate(),
-                totalDamageCost, notes, staffId);
+        //    PR-O31a (24/11/2026): task đã bấm demo "Khách tới trả đúng ngày hẹn" → chốt theo ngày hẹn gốc
+        CheckoutSettlement settlement = settlementService.createInitial(contract, task,
+                effectiveCheckoutDate(task, now.toLocalDate()), totalDamageCost, notes, staffId);
 
         // 8. Thu hồi mã PIN & thẻ RFID; hợp đồng chờ khách xác nhận kết thúc (chưa TERMINATED, đơn giữ TERMINATION_PENDING)
         contract.setStatus("SETTLEMENT_PENDING");
@@ -3298,6 +3311,10 @@ public class StaffTaskService {
                     : ("CHECK_OUT".equals(task.getTaskType())
                         ? LocalDate.now(LateFeeService.VIETNAM_ZONE)
                         : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now(LateFeeService.VIETNAM_ZONE)));
+            // PR-O31a: task nghiệm thu chưa xong đã bấm demo "đúng ngày hẹn" → xem trước theo ngày hẹn gốc
+            if ("CHECK_OUT".equals(task.getTaskType()) && task.getCompletedAt() == null) {
+                refDate = effectiveCheckoutDate(task, refDate);
+            }
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, totalDamageCost);
             depositHeld = calc.getDepositHeld();
             refundAmount = calc.getTotalRefundAmount();
@@ -3350,6 +3367,7 @@ public class StaffTaskService {
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
+                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())

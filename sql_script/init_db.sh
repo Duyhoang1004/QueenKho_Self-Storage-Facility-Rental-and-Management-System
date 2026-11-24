@@ -52,7 +52,10 @@ for script in \
     Update_checkin_goods_value_flow.sql \
     Update_them_o_kho_21_11.sql \
     Update_hoan_tien_tat_toan_d23.sql \
-    Update_gop_y_test_22_11.sql; do
+    Update_gop_y_test_22_11.sql \
+    Update_kho_tong_theo_thanh_pho.sql \
+    Update_gop_y_test_24_11.sql \
+    Update_mat_bang_4_tang.sql; do
     APPLIED=$("${SQLCMD[@]}" -d QueenKhoDB -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.docker_schema_history WHERE script_name = '$script'")
     if [[ "$APPLIED" == *1* ]]; then
         echo "[DB-INIT] Already applied: $script"
@@ -65,7 +68,8 @@ for script in \
           || "$script" == Create_unit_access_history.sql || "$script" == Update_tat_toan_tra_kho.sql \
           || "$script" == Update_hoan_tien_chinh_sach_v6.sql || "$script" == Update_checkin_goods_value_flow.sql \
           || "$script" == Update_them_o_kho_21_11.sql || "$script" == Update_hoan_tien_tat_toan_d23.sql \
-          || "$script" == Update_gop_y_test_22_11.sql ]]; then
+          || "$script" == Update_gop_y_test_22_11.sql || "$script" == Update_kho_tong_theo_thanh_pho.sql \
+          || "$script" == Update_gop_y_test_24_11.sql || "$script" == Update_mat_bang_4_tang.sql ]]; then
         echo "[DB-INIT] Applying $script..."
         "${SQLCMD[@]}" -d QueenKhoDB -i "/scripts/$script"
     fi

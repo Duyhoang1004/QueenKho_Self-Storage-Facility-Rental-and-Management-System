@@ -27,6 +27,12 @@ export async function getCentralWarehouses() {
   return res.data
 }
 
+// BR-134a (23/11/2026): kho tổng phụ trách cơ sở (cùng thành phố) → { facilityCity, warehouse | null }
+export async function getFacilityCentralWarehouse(facilityId) {
+  const res = await api.get(`/facilities/${facilityId}/central-warehouse`)
+  return res.data
+}
+
 export async function getBomCentralWarehouses() {
   const res = await api.get('/bom/central-warehouses')
   return res.data

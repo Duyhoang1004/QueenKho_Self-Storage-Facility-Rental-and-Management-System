@@ -131,13 +131,17 @@ CREATE TABLE central_warehouses (
     address    NVARCHAR(300) NOT NULL,
     hotline    NVARCHAR(20)  NULL,
     note       NVARCHAR(500) NULL,
+    city       NVARCHAR(100) NULL,                       -- 23/11/2026 (BR-134a): thành phố phụ trách, khớp facilities.city
     status     NVARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE / INACTIVE
     created_at DATETIME2 NOT NULL DEFAULT SYSDATETIME()
 );
 GO
-INSERT INTO central_warehouses (name, address, hotline, note) VALUES
+-- BR-134a (23/11/2026): mỗi thành phố một kho tổng, phụ trách mọi cơ sở cùng thành phố
+INSERT INTO central_warehouses (name, address, hotline, note, city) VALUES
 (N'Kho tổng QueenKho', N'Lô C3, KCN Tân Bình, P. Tây Thạnh, Q. Tân Phú, TP.HCM', N'0281234567',
- N'Giữ hàng của khách quá hạn hợp đồng — không bán, khách đến nhận lại sau khi thanh toán');
+ N'Giữ hàng của khách quá hạn hợp đồng — không bán, khách đến nhận lại sau khi thanh toán', N'TP.HCM'),
+(N'Kho tổng QueenKho Hà Nội', N'Lô CN5, KCN Nam Thăng Long, P. Thụy Phương, Q. Bắc Từ Liêm, Hà Nội', N'0241234567',
+ N'Giữ hàng của khách quá hạn hợp đồng — không bán, khách đến nhận lại sau khi thanh toán', N'Hà Nội');
 GO
 
 /* ---------- 5. storage_units ---------- */
@@ -549,6 +553,7 @@ CREATE TABLE facility_tasks (
     receipt_disputed_at DATETIME2 NULL,
     receipt_round       INT NOT NULL CONSTRAINT DF_facilitytasks_receipt_round DEFAULT 0,
     cancel_reason       NVARCHAR(300) NULL, -- 22/11/2026 (PR-T2): lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
+    simulated_checkout_date DATE NULL,     -- 24/11/2026 (PR-O31a): demo "khách tới đúng ngày hẹn" — nghiệm thu chốt tiền theo ngày này
     CONSTRAINT FK_facilitytasks_customer FOREIGN KEY (customer_id) REFERENCES users(id),
     CONSTRAINT CK_facilitytasks_receipt CHECK (receipt_status IS NULL OR receipt_status IN ('WAITING_CUSTOMER', 'CONFIRMED', 'AUTO_CONFIRMED', 'DISPUTED')),
     CONSTRAINT FK_facilitytasks_facility FOREIGN KEY (facility_id)        REFERENCES facilities(id),
@@ -703,6 +708,10 @@ CREATE INDEX IX_settlements_contract_status ON checkout_settlements(contract_id,
 ALTER TABLE compensation_claims ADD settlement_id INT NULL;
 GO
 ALTER TABLE compensation_claims ADD CONSTRAINT FK_claims_settlement FOREIGN KEY (settlement_id) REFERENCES checkout_settlements(id);
+GO
+-- 24/11/2026 (PR-B14 / BR-128a): tài khoản khách nhận tiền bồi thường chi riêng
+ALTER TABLE compensation_claims ADD payout_bank_name NVARCHAR(100) NULL, payout_account_number VARCHAR(30) NULL,
+    payout_account_name NVARCHAR(100) NULL, payout_account_updated_at DATETIME2 NULL;
 GO
 
 /* ---------- 15. notifications (thông báo trong chuông, lưu DB) ---------- */

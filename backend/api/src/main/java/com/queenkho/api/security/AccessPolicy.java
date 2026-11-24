@@ -205,6 +205,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/claims/{id}/quote", "CLAIM_MANAGE");
         rule("POST", "/api/v1/claims/{id}/decide", "CLAIM_MANAGE");
         rule("POST", "/api/v1/claims/{id}/pay", "CLAIM_MANAGE");
+        rule("PUT", "/api/v1/claims/{id}/payout-account", "CUSTOMER_SUPPORT"); // BR-128a: khách nhập STK nhận bồi thường
 
         // Đơn đặt chỗ phía quản lý
         rule("GET", "/api/v1/reservations/pending", "RESERVATION_MANAGE");
@@ -222,6 +223,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/extend", "TASK_MANAGE"); // PR-S4 mở rộng: gia hạn task SUPPORT / MAINTENANCE
         rule("POST", "/api/v1/staff-tasks/{id}/complete-refund", "TASK_MANAGE");
         rule("GET", "/api/v1/staff-tasks/pin-suggestion", "TASK_EXECUTE");
+        rule("GET", "/api/v1/staff-tasks/rfid-suggestion", "TASK_EXECUTE"); // 23/11/2026: #154 thêm API gợi ý mã RFID nhưng thiếu khai báo quyền
         rule("POST", "/api/v1/staff-tasks/{id}/check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/prepare-check-in", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/withdraw-check-in", "TASK_EXECUTE");
@@ -267,6 +269,7 @@ public class AccessPolicy {
         rule(null, "/api/v1/bom/goods-categories/**", "BOM_CATALOG");   // BR-131
         rule(null, "/api/v1/bom/central-warehouses/**", "BOM_CATALOG"); // BR-134
         rule("GET", "/api/v1/central-warehouses", AUTHENTICATED);         // BR-134: FM / Staff chọn kho tổng
+        rule("GET", "/api/v1/facilities/{id:\\d+}/central-warehouse", PUBLIC); // BR-134a: kho tổng phụ trách cơ sở
 
         // Admin
         rule(null, "/api/v1/admin/users/**", "ADMIN_ACCOUNTS");

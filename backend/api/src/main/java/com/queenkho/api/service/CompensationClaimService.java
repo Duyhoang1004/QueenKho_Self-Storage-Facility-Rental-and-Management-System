@@ -389,10 +389,14 @@ public class CompensationClaimService {
                     "Chỉ chi trả hồ sơ đã được chấp nhận (hiện tại: " + claim.getStatus() + ")");
         }
         // D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường đi theo bảng quyết toán, không chi riêng
-        if (claim.getSettlementId() != null || "SETTLEMENT_PENDING".equals(claim.getContract().getStatus())) {
+        // (sửa 23/11/2026 — PR-O19a) chặn từ lúc khách đã HẸN trả kho (TERMINATION_PENDING): trước đây FM chi riêng được
+        // nên bảng quyết toán không có dòng bồi thường, khách không thấy tiền đền ở đâu
+        String contractStatus = claim.getContract().getStatus();
+        if (claim.getSettlementId() != null || "SETTLEMENT_PENDING".equals(contractStatus)
+                || "TERMINATION_PENDING".equals(contractStatus)) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_IN_SETTLEMENT",
-                    "Hợp đồng đã nghiệm thu trả kho — hồ sơ " + claim.getClaimCode()
-                            + " được chi trả qua quyết toán trả kho, không chi riêng");
+                    "Hợp đồng " + claim.getContract().getContractCode() + " đã hẹn trả kho — hồ sơ " + claim.getClaimCode()
+                            + " được cộng vào bảng quyết toán trả kho và chi trong task hoàn tiền, không chi riêng");
         }
         String method = request != null && request.getPaymentMethod() != null ? request.getPaymentMethod().trim().toUpperCase() : "";
         if (!List.of("BANK_TRANSFER", "CASH").contains(method)) {
@@ -401,6 +405,12 @@ public class CompensationClaimService {
         String evidence = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()
                 ? request.getEvidenceImageUrl().trim() : null;
         // Như PR-O15: chuyển khoản bắt buộc ảnh ủy nhiệm chi; tiền mặt bắt buộc khách ký nhận
+        // BR-128a (24/11/2026): chuyển khoản phải biết tài khoản khách — khách nhập trên hồ sơ (Hỗ trợ của tôi)
+        if ("BANK_TRANSFER".equals(method) && (claim.getPayoutAccountNumber() == null || claim.getPayoutAccountNumber().isBlank())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "PAYOUT_ACCOUNT_REQUIRED",
+                    "Khách chưa nhập tài khoản nhận tiền bồi thường cho hồ sơ " + claim.getClaimCode()
+                            + " — nhắc khách nhập ở mục Hỗ trợ, hoặc chi tiền mặt");
+        }
         if ("BANK_TRANSFER".equals(method) && evidence == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "PAYMENT_EVIDENCE_REQUIRED",
                     "Chuyển khoản bắt buộc ảnh / link ủy nhiệm chi");
@@ -422,6 +432,44 @@ public class CompensationClaimService {
                 contract.getId(), method, claim.getTotalCompensation(), ft);
 
         markPaid(claim, method, evidence, ft, managerId);
+        return toResponse(claim);
+    }
+
+    /**
+     * BR-128a (24/11/2026): khách nhập / sửa tài khoản nhận tiền bồi thường của hồ sơ mình.
+     * Cho sửa tới khi hồ sơ đã chi (PAID) hoặc bị từ chối / rút.
+     */
+    @Transactional
+    public CompensationClaimResponse updatePayoutAccount(Integer claimId, Integer customerId, String bankName,
+                                                         String accountNumber, String accountName) {
+        CompensationClaim claim = claimRepository.findDetailById(claimId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CLAIM_NOT_FOUND", "Không tìm thấy hồ sơ bồi thường"));
+        if (claim.getCustomer() == null || !claim.getCustomer().getId().equals(customerId)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không phải hồ sơ của bạn");
+        }
+        if (!List.of("SUBMITTED", "INSPECTED", "APPROVED").contains(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Hồ sơ " + claim.getClaimCode() + " đã kết thúc, không đổi tài khoản nhận tiền được");
+        }
+        String bank = bankName != null ? bankName.trim() : "";
+        String number = accountNumber != null ? accountNumber.replaceAll("\\s", "") : "";
+        String name = accountName != null ? accountName.trim().toUpperCase() : "";
+        if (bank.isEmpty() || bank.length() > 100) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Nhập tên ngân hàng (tối đa 100 ký tự)");
+        }
+        if (!number.matches("\\d{6,20}")) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Số tài khoản gồm 6–20 chữ số");
+        }
+        if (name.isEmpty() || name.length() > 100) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Nhập tên chủ tài khoản (tối đa 100 ký tự)");
+        }
+        claim.setPayoutBankName(bank);
+        claim.setPayoutAccountNumber(number);
+        claim.setPayoutAccountName(name);
+        claim.setPayoutAccountUpdatedAt(LocalDateTime.now());
+        claimRepository.save(claim);
+        activityLogService.log(customerId, "[CLAIM_PAYOUT_ACCOUNT] Khách cập nhật tài khoản nhận bồi thường hồ sơ "
+                + claim.getClaimCode() + ": " + bank + " · " + number, "compensation_claims", String.valueOf(claim.getId()));
         return toResponse(claim);
     }
 
@@ -707,6 +755,10 @@ public class CompensationClaimService {
                 .insuranceRef(c.getInsuranceRef())
                 .insuranceAmount(c.getInsuranceAmount())
                 .insuranceUpdatedAt(c.getInsuranceUpdatedAt())
+                .payoutBankName(c.getPayoutBankName())
+                .payoutAccountNumber(c.getPayoutAccountNumber())
+                .payoutAccountName(c.getPayoutAccountName())
+                .payoutAccountUpdatedAt(c.getPayoutAccountUpdatedAt())
                 .build();
     }
 

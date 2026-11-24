@@ -8,6 +8,7 @@ import {
   getEligibleSupportContracts,
   reopenSupportTicket,
 } from '../../services/supportService';
+import { updateClaimPayoutAccount } from '../../services/claimService';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import SimulationButton from '../../components/SimulationButton';
 import { simulateTicketAutoClose } from '../../services/simulationService';
@@ -133,6 +134,89 @@ function formatVND(v) {
 
 const LIABLE_LABELS = { CUSTOMER: 'Lỗi do khách', FACILITY: 'Lỗi do cơ sở', FORCE_MAJEURE: 'Bất khả kháng' };
 
+// BR-128a (24/11/2026): tài khoản khách nhận tiền bồi thường khi cơ sở chi riêng bằng chuyển khoản.
+// Đã hẹn trả kho thì tiền bồi thường đi cùng tiền hoàn trả kho (PR-O19a) → không cần nhập ở đây.
+const PAYOUT_EDITABLE = ['SUBMITTED', 'INSPECTED', 'APPROVED'];
+const SETTLEMENT_CONTRACT = ['TERMINATION_PENDING', 'SETTLEMENT_PENDING'];
+
+function ClaimPayoutAccount({ claim: initial }) {
+  const [claim, setClaim] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ bankName: '', bankAccountNumber: '', bankAccountName: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const hasAccount = Boolean(claim.payoutAccountNumber);
+  const viaSettlement = Boolean(claim.settlementId) || SETTLEMENT_CONTRACT.includes(claim.contractStatus);
+
+  if (claim.status === 'PAID' && hasAccount) {
+    return <span className="text-[#777777]">Tài khoản nhận: {claim.payoutBankName} · {claim.payoutAccountNumber} · {claim.payoutAccountName}</span>;
+  }
+  if (!PAYOUT_EDITABLE.includes(claim.status)) return null;
+  if (viaSettlement) {
+    return (
+      <span className="text-[#1899D6]">Bạn đã hẹn trả kho: tiền bồi thường được cộng vào bảng quyết toán và chuyển cùng tiền hoàn trả kho.</span>
+    );
+  }
+
+  const openForm = () => {
+    setForm({
+      bankName: claim.payoutBankName || '',
+      bankAccountNumber: claim.payoutAccountNumber || '',
+      bankAccountName: claim.payoutAccountName || '',
+    });
+    setError('');
+    setEditing(true);
+  };
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const updated = await updateClaimPayoutAccount(claim.id, form);
+      setClaim(updated);
+      setEditing(false);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Không lưu được tài khoản.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="rounded-xl border-2 border-[#84D8FF] bg-[#F5FBFF] p-3 flex flex-col gap-2">
+        <span className="font-black text-[#1899D6]">Tài khoản nhận tiền bồi thường</span>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input className="duo-input text-xs" placeholder="Ngân hàng (VD: Vietcombank)" maxLength={100}
+            value={form.bankName} onChange={(e) => setForm((f) => ({ ...f, bankName: e.target.value }))} />
+          <input className="duo-input text-xs" placeholder="Số tài khoản" inputMode="numeric" maxLength={20}
+            value={form.bankAccountNumber} onChange={(e) => setForm((f) => ({ ...f, bankAccountNumber: e.target.value.replace(/\D/g, '') }))} />
+          <input className="duo-input text-xs uppercase" placeholder="Tên chủ tài khoản" maxLength={100}
+            value={form.bankAccountName} onChange={(e) => setForm((f) => ({ ...f, bankAccountName: e.target.value.toUpperCase() }))} />
+        </div>
+        {error && <span className="text-[#FF4B4B]">{error}</span>}
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setEditing(false)} disabled={saving} className="duo-btn-gray px-3 py-1.5 text-[11px]">Huỷ</button>
+          <button type="button" onClick={save} disabled={saving} className="duo-btn-blue px-3 py-1.5 text-[11px]">
+            {saving ? 'Đang lưu...' : 'Lưu tài khoản'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return hasAccount ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#F5FBFF] border border-[#84D8FF] px-3 py-2">
+      <span>Tài khoản nhận bồi thường: <strong>{claim.payoutBankName} · {claim.payoutAccountNumber} · {claim.payoutAccountName}</strong></span>
+      <button type="button" onClick={openForm} className="text-[#1CB0F6] font-black hover:underline">Sửa</button>
+    </div>
+  ) : (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FFF8E6] border border-[#FFE0A3] px-3 py-2">
+      <span className="text-[#D96B00]">Chưa có tài khoản nhận tiền bồi thường — nhập để cơ sở chuyển khoản khi hồ sơ được duyệt.</span>
+      <button type="button" onClick={openForm} className="duo-btn-blue px-3 py-1.5 text-[11px]">Nhập tài khoản</button>
+    </div>
+  );
+}
+
 function CustomerClaimSummary({ claim }) {
   const meta = CLAIM_STATUS_META[claim.status] || CLAIM_STATUS_META.SUBMITTED;
   const decided = ['APPROVED', 'PAID', 'REJECTED'].includes(claim.status);
@@ -159,7 +243,7 @@ function CustomerClaimSummary({ claim }) {
           {Number(claim.totalCompensation) > 0 && (
             <span>
               Bồi thường <strong className="text-[#58A700]">{formatVND(claim.totalCompensation)}</strong> = hàng {formatVND(claim.goodsCompensation)}
-              {Number(claim.penaltyAmount) > 0 && ` + phạt vi phạm ${formatVND(claim.penaltyAmount)}`}
+              {Number(claim.penaltyAmount) > 0 && ` + đền bù thêm theo hợp đồng (cơ sở chịu) ${formatVND(claim.penaltyAmount)}`}
               {Number(claim.rentRefundAmount) > 0 && ` + hoàn tiền thuê ${formatVND(claim.rentRefundAmount)}`}
             </span>
           )}
@@ -170,6 +254,7 @@ function CustomerClaimSummary({ claim }) {
           {claim.paidAt && <span>Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {formatDateTimeVN(claim.paidAt)}</span>}
         </div>
       )}
+      <ClaimPayoutAccount key={claim.id} claim={claim} />
     </div>
   );
 }

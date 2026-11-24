@@ -29,12 +29,11 @@ import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
 import SettlementPanel from '../../components/SettlementPanel';
 import UnitLocationMap from '../../components/UnitLocationMap';
-import SeparateCompensationBox from '../../components/SeparateCompensationBox';
 import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
-import { getCentralWarehouses, getFacilityCentralWarehouse } from '../../services/catalogService';
+import { getCentralWarehouses } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 import IncidentReportModal from '../../components/IncidentReportModal';
 import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate, getPresetsForTask } from '../../utils/incidentTemplates';
@@ -249,8 +248,9 @@ function withMockHandoverPhoto(photos, task, action) {
 }
 
 // Vì sao người đang xem không lập được biên bản (null = lập được)
-function blockedReason(task, userId) {
+function blockedReason(task, userId, isManager) {
   if (task.taskType === 'MAINTENANCE') return null; // xét riêng trong MaintenancePanel (FM được đóng thẳng)
+  if (isManager) return null; // Quản lý cơ sở luôn có quyền xem toàn bộ nội dung và thực hiện điều phối / chuyển ô kho
   if (task.taskType === 'REFUND') {
     if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
     return null;
@@ -437,24 +437,16 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   );
   const isContractActive = task.contractStatus === 'ACTIVE';
 
-  // BR-134a (23/11/2026): chọn sẵn kho tổng phụ trách cơ sở (cùng thành phố); FM chỉ đổi khi kho đó đầy
-  const [defaultWarehouseId, setDefaultWarehouseId] = useState(null);
   useEffect(() => {
     if (!isLiquidation) return;
-    Promise.all([
-      getCentralWarehouses(),
-      task.facilityId ? getFacilityCentralWarehouse(task.facilityId).catch(() => null) : Promise.resolve(null),
-    ])
-      .then(([list, mine]) => {
+    getCentralWarehouses()
+      .then(list => {
         const items = Array.isArray(list) ? list : [];
         setWarehouses(items);
-        const defId = mine?.warehouse?.id && items.some(w => w.id === mine.warehouse.id) ? mine.warehouse.id : null;
-        setDefaultWarehouseId(defId);
-        if (defId) setWarehouseId(prev => prev || String(defId));
-        else if (items.length === 1) setWarehouseId(prev => prev || String(items[0].id));
+        if (items.length === 1) setWarehouseId(String(items[0].id));
       })
       .catch(() => setWarehouses([]));
-  }, [isLiquidation, task.facilityId]);
+  }, [isLiquidation]);
   const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
   const blocked = maintenanceBlockedReason(task, userId, isManager);
   const noteValid = note.trim().length >= MAINTENANCE_NOTE_MIN && note.trim().length <= NOTES_MAX;
@@ -482,7 +474,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
       setInventoryNote('12 thùng carton đồ gia dụng (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp, 1 túi quần áo.');
       setWitnessNote('Nhân viên kho + Quản lý cơ sở, có đại diện tổ dân phố chứng kiến');
       setStorageLocation('Dãy B - kệ 3');
-      if (!warehouseId && warehouses.length) setWarehouseId(String(defaultWarehouseId || warehouses[0].id));
+      if (!warehouseId && warehouses.length) setWarehouseId(String(warehouses[0].id));
       setInventoryImages([
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (1)'),
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
@@ -612,7 +604,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
       {!isLiquidation && task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus)
         && task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && (() => {
           const alreadyRequested = typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH');
-          const alreadyTransferred = typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô tiêu chuẩn');
+          const alreadyTransferred = typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô');
           return (
             <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4 flex flex-col gap-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -784,18 +776,8 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
                       <span className="text-[11px] font-black uppercase text-[#777777]">Kho tổng nhận hàng *</span>
                       <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="duo-input text-xs">
                         <option value="">— Chọn kho tổng —</option>
-                        {warehouses.map(w => (
-                          <option key={w.id} value={w.id}>
-                            {w.name}{w.city ? ` (${w.city})` : ''}{w.id === defaultWarehouseId ? ' — phụ trách cơ sở này' : ''}
-                          </option>
-                        ))}
+                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                       </select>
-                      {defaultWarehouseId && warehouseId && Number(warehouseId) !== defaultWarehouseId && (
-                        <span className="text-[11px] font-bold text-[#E58800]">Khác kho tổng phụ trách cơ sở — chỉ chọn khi kho phụ trách đã đầy.</span>
-                      )}
-                      {!defaultWarehouseId && warehouses.length > 0 && (
-                        <span className="text-[11px] font-bold text-[#E58800]">Thành phố của cơ sở chưa có kho tổng — chọn kho gần nhất.</span>
-                      )}
                     </label>
                     <label className="flex flex-col gap-1 sm:col-span-2">
                       <span className="text-[11px] font-black uppercase text-[#777777]">Vị trí kệ trong kho tổng *</span>
@@ -847,14 +829,52 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
             </div>
           </div>
 
+          {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô') && (
+            <div className="rounded-2xl bg-[#FFF5E6] border-2 border-[#FF9600] p-4 text-xs font-bold text-[#D96B00] flex items-start gap-3">
+              <span className="material-symbols-outlined text-[26px] text-[#E58800] shrink-0 mt-0.5">lock_clock</span>
+              <div className="flex flex-col gap-1">
+                <span className="font-black text-sm text-[#E58800]">
+                  Đang khóa task — Chờ Quản lý cơ sở (FM) thực hiện chuyển ô kho cho khách
+                </span>
+                <span className="text-[#8A4800] leading-relaxed">
+                  Bạn đã gửi yêu cầu Quản lý cơ sở (FM) chuyển hợp đồng của khách sang ô tiêu chuẩn khác. Hệ thống tạm khóa thao tác hoàn tất bảo trì ô cũ cho đến khi Quản lý cơ sở hoàn tất chuyển hợp đồng của khách sang ô mới trên hệ thống.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô') && (
+            <div className="rounded-2xl bg-[#E8F5E9] border-2 border-[#4CAF50] p-4 text-xs font-bold text-[#2E7D32] flex items-start gap-3">
+              <span className="material-symbols-outlined text-[26px] text-[#4CAF50] shrink-0 mt-0.5">check_circle</span>
+              <div className="flex flex-col gap-1">
+                <span className="font-black text-sm text-[#2E7D32]">
+                  Quản lý cơ sở (FM) đã chuyển ô kho thành công
+                </span>
+                <span className="leading-relaxed">
+                  Hợp đồng của khách đã được FM chuyển sang ô mới. Bạn có thể tiến hành hoàn tất bảo trì ô cũ.
+                </span>
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
             disabled={!noteValid || Boolean(inventoryError) || uploading || submitting || (typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô'))}
-            className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`px-5 py-3 text-sm gap-2 rounded-2xl font-black flex items-center justify-center transition-all ${
+              !noteValid || Boolean(inventoryError) || uploading || submitting || (typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô'))
+                ? 'bg-[#E5E5E5] text-[#AFAFAF] border-2 border-[#D4D4D4] cursor-not-allowed opacity-75'
+                : 'duo-btn-green cursor-pointer'
+            }`}
           >
-            <span className="material-symbols-outlined text-[20px]">task_alt</span>
-            {isFromSupport && isContractActive
+            <span className="material-symbols-outlined text-[20px]">
+              {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô')
+                ? 'lock'
+                : 'task_alt'}
+            </span>
+            {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô')
+              ? 'Đang khóa task — Chờ Quản lý cơ sở (FM) chuyển ô kho mới'
+              : isFromSupport && isContractActive
               ? `${doneLabel} — Hoàn tất bảo trì ô kho`
               : `${doneLabel} — mở lại ô cho thuê`}
           </button>
@@ -983,6 +1003,8 @@ export default function StaffTaskDetailPage() {
   const [reopenSupportReason, setReopenSupportReason] = useState('');
   const [reopeningSupport, setReopeningSupport] = useState(false);
   const [pinResetting, setPinResetting] = useState(false);
+  const [supportRfidDigits, setSupportRfidDigits] = useState('');
+  const [reissuingRfid, setReissuingRfid] = useState(false);
   const [supportTransferOpen, setSupportTransferOpen] = useState(false);
   const [supportTransferReason, setSupportTransferReason] = useState('');
   const [sendingSupportTransferReq, setSendingSupportTransferReq] = useState(false);
@@ -1411,15 +1433,13 @@ export default function StaffTaskDetailPage() {
   // BR-126: ticket hàng hư / mất → task hỗ trợ là kiểm tra hiện trường (bắt buộc ảnh + nguyên nhân sơ bộ)
   const claim = task?.claim;
   const isClaimInspection = isSupport && Boolean(claim);
-  const isTransferUnitSupport = Boolean(
-    task?.subCategory?.toLowerCase().includes('đổi ô') ||
-    task?.subCategory?.toLowerCase().includes('chuyển ô') ||
-    task?.subCategory?.toLowerCase().includes('chuyển đồ') ||
-    task?.subCategory?.toLowerCase().includes('chuyển kho') ||
-    (typeof task?.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH'))
+  const hasRequestedSupportTransfer = Boolean(
+    typeof task?.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')
   );
-  const transferDone = typeof task?.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô');
-  const hasPendingSupportTransfer = isTransferUnitSupport && !transferDone;
+  const transferDone = Boolean(
+    typeof task?.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô')
+  );
+  const hasPendingSupportTransfer = hasRequestedSupportTransfer && !transferDone;
   const canSubmitSupport =
     !hasPendingSupportTransfer &&
     resolutionNote.trim().length >= (isClaimInspection ? 10 : 1) && resolutionNote.trim().length <= NOTES_MAX && !submitting
@@ -1665,7 +1685,7 @@ export default function StaffTaskDetailPage() {
   const status = isRefund && task.status === 'OPEN'
     ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
     : (STATUS_META[checkInDisplayStatus] || { label: checkInDisplayStatus, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
-  const reason = blockedReason(task, userId) || (task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
+  const reason = blockedReason(task, userId, isManager) || (task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
     ? handover?.status === 'PENDING_CUSTOMER' ? 'Đã gửi biên bản. Khách cần kiểm tra ô và xác nhận trên tài khoản.'
       : handover?.status === 'BLOCKED_FM' ? 'Vấn đề bàn giao đang chờ quản lý xử lý. Task check-in vẫn mở; chưa gửi biên bản mới.'
       : null
@@ -1760,26 +1780,13 @@ export default function StaffTaskDetailPage() {
         </div>
       )}
 
-      {/* PR-O31a: đã giả lập tới ngày hẹn → nhắc quyết toán chốt theo ngày hẹn gốc */}
-      {task.taskType === 'CHECK_OUT' && task.simulatedCheckoutDate && !task.completedAt && (
-        <div className="mb-4 flex items-start gap-2 rounded-2xl border-2 border-[#CE82FF] bg-[#FAF5FF] px-4 py-3 text-xs font-bold text-[#7C3AED]">
-          <span className="material-symbols-outlined text-[20px]">event_available</span>
-          <span>
-            Đang giả lập khách tới đúng ngày hẹn <strong>{formatDate(task.simulatedCheckoutDate)}</strong>: nghiệm thu ngay hôm nay,
-            bảng quyết toán tính theo ngày {formatDate(task.simulatedCheckoutDate)} (khớp số khách thấy lúc hẹn trả kho).
-          </span>
-        </div>
-      )}
-
-      {/* Demo: khách tới trả đúng ngày hẹn / khách không tới trả kho (task nghiệm thu đang mở) */}
+      {/* Demo: khách tới trả kho hôm nay / khách không tới trả kho (task nghiệm thu đang mở) */}
       {task.taskType === 'CHECK_OUT' && task.contractStatus === 'TERMINATION_PENDING'
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           <SimulationButton
-            label={task.dueAt && !task.simulatedCheckoutDate
-              ? `Khách tới trả đúng ngày hẹn (${formatDate(String(task.dueAt).slice(0, 10))})`
-              : 'Khách tới trả đúng ngày hẹn'}
-            description="Tua tới ngày khách đã hẹn: nghiệm thu được ngay hôm nay, nhưng quyết toán chốt theo NGÀY HẸN (số ngày đã dùng, phí...) — khớp đúng số khách thấy lúc hẹn trả kho."
+            label="Khách tới trả kho hôm nay"
+            description="Dời ngày hẹn trả kho về hôm nay (hạn 21:00) để nghiệm thu ngay, không phải chờ đúng ngày hẹn."
             onRun={() => simulateCheckoutToday(task.id)}
             onDone={() => loadTask()}
           />
@@ -2283,11 +2290,7 @@ export default function StaffTaskDetailPage() {
                   {task.receiptStatus === 'DISPUTED' && (
                     <div className="rounded-xl border-2 border-[#FFB8B8] bg-[#FFF2F2] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
                       <span className="font-black text-[#FF4B4B]">Khách báo chưa nhận được tiền: “{task.receiptDisputeReason}”</span>
-                      <span>Chọn "Giao dịch đã chuyển đúng" (giải thích + ảnh sao kê nếu có) hoặc "Chuyển bổ sung" (số tiền + biên lai).</span>
-                      {/* 23/11/2026: mở thẳng modal xử lý ở Bảng hoàn tiền, không phải tự tìm task */}
-                      <Link to={`/manager/refunds?resolveTaskId=${task.id}`} className="duo-btn-red px-4 py-2 text-xs self-start flex items-center gap-1.5 mt-1">
-                        <span className="material-symbols-outlined text-[16px]">report</span>Xử lý ngay: khách báo chưa nhận
-                      </Link>
+                      <span>Mở <Link to="/manager/refunds" className="text-[#1CB0F6] underline">Bảng hoàn tiền</Link> → “Xử lý: khách báo chưa nhận” để chọn giao dịch đúng hoặc chuyển bổ sung.</span>
                     </div>
                   )}
 
@@ -2614,8 +2617,59 @@ export default function StaffTaskDetailPage() {
                   </Link>
                 </div>
               ) : (
-                /* Nhân viên đang giữ task IN_PROGRESS xử lý yêu cầu hỗ trợ */
+                /* Nhân viên đang giữ task IN_PROGRESS hoặc Quản lý cơ sở (FM) vào điều phối */
                 <div className="flex flex-col gap-5">
+                  {/* Banner YÊU CẦU ĐỔI Ô KHO CẦN FM DUYỆT (Hiện nổi bật cho FM & Staff) */}
+                  {typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô') && (
+                    <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-5 flex flex-col gap-3 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-[#E58800] text-[32px] shrink-0 mt-0.5">swap_horiz</span>
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="duo-badge bg-[#FFF0D6] text-[#E58800] border border-[#FF9600] text-[10px] font-black">
+                                YÊU CẦU CHUYỂN Ô KHO TỪ NHÂN VIÊN
+                              </span>
+                              <span className="text-xs font-black text-[#4B4B4B]">HĐ {task.contractCode}</span>
+                            </div>
+                            <h3 className="text-sm font-black text-[#D96B00]">
+                              Nhân viên {task.staffName || 'cơ sở'} đề xuất Quản lý chuyển ô kho cho khách hàng
+                            </h3>
+                            <p className="text-xs font-bold text-[#777777] mt-1">
+                              Ô hiện tại: <strong className="font-mono text-[#E58800]">{task.storageUnitId || '—'}</strong> ({task.unitTypeName || '—'}).
+                              {isManager
+                                ? ' Bấm nút bên cạnh để chọn ô mới và hoàn tất chuyển đổi hợp đồng cho khách ngay lập tức.'
+                                : ' Hệ thống tạm khóa thao tác hoàn tất của nhân viên cho đến khi Quản lý cơ sở thực hiện chuyển ô.'}
+                            </p>
+                          </div>
+                        </div>
+                        {isManager && (
+                          <button
+                            type="button"
+                            onClick={() => setSupportTransferOpen(true)}
+                            className="duo-btn-orange px-5 py-2.5 text-xs gap-1.5 font-black shadow-sm cursor-pointer flex items-center shrink-0"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
+                            Thực hiện chuyển sang ô mới ngay
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô') && (
+                    <div className="rounded-2xl bg-[#E8F5E9] border-2 border-[#4CAF50] p-4 text-xs font-bold text-[#2E7D32] flex items-start gap-3">
+                      <span className="material-symbols-outlined text-[26px] text-[#4CAF50] shrink-0 mt-0.5">check_circle</span>
+                      <div className="flex flex-col gap-1">
+                        <span className="font-black text-sm text-[#2E7D32]">
+                          Quản lý cơ sở (FM) đã chuyển ô kho thành công
+                        </span>
+                        <span className="leading-relaxed">
+                          Hợp đồng của khách đã được chuyển sang ô mới. {isManager ? 'Nhân viên có thể tiếp tục hoàn tất xử lý hỗ trợ.' : 'Bạn có thể tiếp tục hoàn tất xử lý hỗ trợ.'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {/* Xử lý sự cố KHÓA & MÃ PIN (LOCK_ISSUE) - Phân nhánh chính xác theo mục khách chọn */}
                   {task.issueType === 'LOCK_ISSUE' && (() => {
                     const isRfidIssue = task.subCategory && (task.subCategory.includes('RFID') || task.subCategory.includes('thẻ'));
@@ -2645,31 +2699,66 @@ export default function StaffTaskDetailPage() {
 
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#BAE6FD]/60">
                             <span className="text-[11px] font-bold text-[#0369A1]">
-                              * Nạp lại mã thẻ vào bộ nhớ đầu đọc hoặc cấp phát thẻ RFID mới và đồng bộ ngay vào hợp đồng khách hàng.
+                              * Nạp lại mã thẻ vào bộ nhớ đầu đọc hoặc nhập mã thẻ RFID mới để đồng bộ vào hợp đồng khách hàng.
                             </span>
-                            <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setToast({
+                                  type: 'success',
+                                  message: 'Đã nạp lại mã thẻ từ RFID vào đầu đọc SmartLock ô kho thành công! Quẹt thẻ mở chốt tức thì.'
+                                });
+                                const sample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_RFID_ERROR') || findMatchingTemplate(task);
+                                setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                              }}
+                              className="duo-btn-blue px-3.5 py-2 text-xs gap-1.5 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">sync</span>
+                              Nạp &amp; Đồng bộ lại đầu đọc thẻ
+                            </button>
+                          </div>
+
+                          {/* Nhập mã thẻ RFID mới thủ công */}
+                          <div className="mt-1 pt-3 border-t border-[#BAE6FD]/60 flex flex-col gap-2">
+                            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                              <label className="flex flex-col gap-1 max-w-[280px]">
+                                <span className="text-[11px] font-black uppercase text-[#0369A1] flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[15px]">badge</span>
+                                  Nhập mã thẻ RFID mới *
+                                </span>
+                                <div className="duo-input flex items-center gap-1 font-mono font-bold bg-white text-xs">
+                                  <span className="text-[#0284C7] select-none font-black">RFID-</span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={supportRfidDigits}
+                                    onChange={e => {
+                                      const digits = e.target.value.replace(/\D/g, '').slice(0, 5);
+                                      setSupportRfidDigits(digits);
+                                    }}
+                                    placeholder="12345"
+                                    maxLength={5}
+                                    pattern="[0-9]{5}"
+                                    className="min-w-0 flex-1 bg-transparent outline-none font-mono font-bold text-[#0F172A]"
+                                    aria-label="5 chữ số mã thẻ RFID mới"
+                                  />
+                                </div>
+                                <span className="text-[10px] font-bold text-[#64748B]">
+                                  Tiền tố RFID- cố định, nhân viên tự nhập đúng 5 chữ số (VD: RFID-23589).
+                                </span>
+                              </label>
+
                               <button
                                 type="button"
+                                disabled={supportRfidDigits.length !== 5 || reissuingRfid}
                                 onClick={() => {
-                                  setToast({
-                                    type: 'success',
-                                    message: 'Đã nạp lại mã thẻ từ RFID vào đầu đọc SmartLock ô kho thành công! Quẹt thẻ mở chốt tức thì.'
-                                  });
-                                  const sample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_RFID_ERROR') || findMatchingTemplate(task);
-                                  setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
-                                }}
-                                className="duo-btn-blue px-3.5 py-2 text-xs gap-1.5 cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">sync</span>
-                                Nạp &amp; Đồng bộ lại đầu đọc thẻ
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  reissueSupportContractRfid(task.id, userId, null)
+                                  const fullRfid = `RFID-${supportRfidDigits}`;
+                                  setReissuingRfid(true);
+                                  reissueSupportContractRfid(task.id, userId, fullRfid)
                                     .then(data => {
                                       setTask(data);
-                                      const newRfid = data.rfidCardCode;
+                                      const newRfid = data.rfidCardCode || fullRfid;
+                                      setSupportRfidDigits('');
                                       setToast({
                                         type: 'success',
                                         message: `Đã cấp phát và cập nhật thẻ từ RFID mới (${newRfid}) vào hợp đồng ${data.contractCode || ''} thành công!`
@@ -2697,12 +2786,13 @@ export default function StaffTaskDetailPage() {
                                         type: 'error',
                                         message: err.response?.data?.message || 'Không thể cấp đổi thẻ từ RFID lúc này.'
                                       });
-                                    });
+                                    })
+                                    .finally(() => setReissuingRfid(false));
                                 }}
-                                className="duo-btn-green px-3.5 py-2 text-xs gap-1.5 cursor-pointer"
+                                className="duo-btn-green px-4 py-2.5 text-xs gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                               >
                                 <span className="material-symbols-outlined text-[16px]">add_card</span>
-                                Cấp phát thẻ từ RFID mới
+                                {reissuingRfid ? 'Đang cấp thẻ...' : 'Cấp phát thẻ từ RFID mới'}
                               </button>
                             </div>
                           </div>
@@ -3028,8 +3118,14 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
-                  {/* Xử lý yêu cầu hỗ trợ khác (OTHER) & Đổi ô kho */}
-                  {(task.issueType === 'OTHER' || (task.contractId && (task.subCategory?.includes('đổi') || task.subCategory?.includes('chuyển') || task.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')))) && (
+                  {/* Xử lý yêu cầu hỗ trợ khác (OTHER) & Đổi ô kho / Chuyển ô khẩn cấp */}
+                  {Boolean(task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus) && (
+                    task.issueType === 'OTHER' ||
+                    task.issueType === 'FACILITY_DAMAGE' ||
+                    task.subCategory?.toLowerCase().includes('đổi') ||
+                    task.subCategory?.toLowerCase().includes('chuyển') ||
+                    task.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH')
+                  )) && (
                     <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4 flex flex-col gap-3">
                       {(() => {
                         const noteStr = typeof task.note === 'string' ? task.note : '';
@@ -3288,7 +3384,7 @@ export default function StaffTaskDetailPage() {
                       </div>
                     )}
 
-                    {isTransferUnitSupport && transferDone && (
+                    {transferDone && (
                       <div className="rounded-2xl bg-[#E8F5E9] border-2 border-[#4CAF50] p-4 text-xs font-bold text-[#2E7D32] flex items-start gap-3">
                         <span className="material-symbols-outlined text-[26px] text-[#4CAF50] shrink-0 mt-0.5">check_circle</span>
                         <div className="flex flex-col gap-1">
@@ -3406,11 +3502,9 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
                   <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả kho:</span>
+                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả khách:</span>
                     <span className="text-xl font-black text-[#58A700]">{formatCurrency(effectiveRefundAmount)}</span>
                   </div>
-                  {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
-                  <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                   {Number(task.excessDebtAmount) > 0 && (
                     <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex justify-between items-center text-xs">
                       <span className="font-black text-[#FF4B4B]">Khoản nợ vượt cọc khách cần đóng thêm:</span>
@@ -4119,44 +4213,20 @@ export default function StaffTaskDetailPage() {
                       <span>• Tiền thuê khách đã đóng ({cycleMonths} tháng):</span>
                       <span className="font-black">{formatCurrency(rentPaid)}</span>
                     </div>
-                    {task.faultTermination ? (() => {
-                      // BR-127 (góp ý test 24/11): chấm dứt do lỗi cơ sở → trừ đúng số ngày đã dùng, không thu 1 tháng / phí phạt
-                      const kept = (task.refundLines || []).find(l => l.group === 'KEPT' && String(l.label).startsWith('Tiền thuê'));
-                      return (
-                        <>
-                          <div className="flex justify-between gap-3 text-[11px] text-[#2B5300]/90">
-                            <span className="flex flex-col">
-                              <span>• Trừ tiền thuê những ngày đã dùng:</span>
-                              {kept?.note && <span className="text-[10px] font-bold text-[#777777]">{kept.note}</span>}
-                            </span>
-                            <span className="font-black text-[#FF4B4B] whitespace-nowrap">- {formatCurrency(kept ? kept.amount : Math.max(0, rentPaid - estimatedEarlyRentRefund))}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                            <span>• Phí phạt trả kho sớm:</span>
-                            <span className="font-black text-[#58A700]">0 đ (chấm dứt do lỗi cơ sở)</span>
-                          </div>
-                        </>
-                      );
-                    })() : (
-                      <>
-                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                          <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
-                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                          <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
-                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
-                        </div>
-                      </>
-                    )}
+                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                      <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
+                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                      <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
+                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
+                    </div>
                   </div>
                 )}
                 <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả kho:</span>
+                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả khách:</span>
                   <span className="text-xl font-black text-[#58A700]">{formatCurrency(estimatedTotalRefund)}</span>
                 </div>
-                {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
-                <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                 {estimatedExcessDebt > 0 ? (
                   <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex flex-col gap-0.5 text-xs">
                     <div className="flex justify-between items-center">

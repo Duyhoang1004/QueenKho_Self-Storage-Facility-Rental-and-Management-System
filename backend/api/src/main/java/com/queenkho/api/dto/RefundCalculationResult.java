@@ -58,6 +58,8 @@ public class RefundCalculationResult {
     private LocalDate periodStart;
     private boolean faultTermination;
     private List<MoneyLine> lines;
+    // PR-O19c (24/11/2026): tiền đền bù — khoản RIÊNG do FM chi, KHÔNG nằm trong lines / netAmount
+    private List<java.util.Map<String, Object>> separateCompensations;
     private BigDecimal paidTotal;
     private BigDecimal keptTotal;
     private BigDecimal netAmount;          // > 0 hoàn khách, < 0 khách trả thêm

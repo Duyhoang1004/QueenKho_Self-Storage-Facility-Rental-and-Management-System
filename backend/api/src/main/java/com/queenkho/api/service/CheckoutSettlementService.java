@@ -236,17 +236,15 @@ public class CheckoutSettlementService {
         }
     }
 
-    /** Bồi thường đã duyệt + trạng thái chờ chốt hồ sơ + số tiền tất toán + diễn giải */
+    /**
+     * Số tiền tất toán + diễn giải.
+     * PR-O19c (24/11/2026): tiền đền bù (hồ sơ bồi thường) là KHOẢN RIÊNG do FM chi ở màn Bồi thường hàng hoá —
+     * không cộng vào bảng quyết toán trả kho, không chờ chốt hồ sơ. Bảng quyết toán chỉ còn tiền hoàn trả kho
+     * (cọc + tiền thuê chưa dùng − phí). Bảng cũ đã lưu compensation_amount > 0 (D-21 → 23/11) giữ nguyên cách chi cũ.
+     */
     private void fillClaimsAndTotals(CheckoutSettlement s) {
-        Integer contractId = s.getContract().getId();
-        List<CompensationClaim> claims = claimRepository.findForContract(contractId);
-        BigDecimal compensation = claims.stream()
-                .filter(c -> "APPROVED".equals(c.getStatus()))
-                .map(c -> nz(c.getTotalCompensation()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        boolean waitingClaim = claims.stream().anyMatch(c -> "INSPECTED".equals(c.getStatus()));
-        s.setCompensationAmount(money(compensation));
-        s.setStatus(waitingClaim ? CheckoutSettlement.WAITING_CLAIM : CheckoutSettlement.WAITING_CUSTOMER);
+        s.setCompensationAmount(BigDecimal.ZERO);
+        s.setStatus(CheckoutSettlement.WAITING_CUSTOMER);
         Allocation a = allocate(s);
         s.setNetAmount(a.net());
         s.setBreakdownNote(buildBreakdown(s, a));
@@ -294,8 +292,8 @@ public class CheckoutSettlementService {
     @Transactional
     public void onClaimDecided(CompensationClaim claim, Integer managerId) {
         CheckoutSettlement current = findOpen(claim.getContract().getId()).orElse(null);
-        if (current == null || !List.of(CheckoutSettlement.WAITING_CLAIM, CheckoutSettlement.WAITING_CUSTOMER)
-                .contains(current.getStatus())) {
+        // PR-O19c: tiền đền bù không còn trong bảng quyết toán → chỉ tính lại bảng cũ đang chờ chốt hồ sơ
+        if (current == null || !CheckoutSettlement.WAITING_CLAIM.equals(current.getStatus())) {
             return;
         }
         CheckoutSettlement s = newRound(current, managerId, null, null, null, null,
@@ -429,9 +427,12 @@ public class CheckoutSettlementService {
         BigDecimal compRemaining = p.compensationPayout();
         BigDecimal refundToCustomer = p.refundPayout();
 
-        // Hồ sơ bồi thường gắn vào bảng này
-        List<CompensationClaim> approved = claimRepository.findForContract(contract.getId()).stream()
-                .filter(c -> "APPROVED".equals(c.getStatus())).toList();
+        // Hồ sơ bồi thường gắn vào bảng này — chỉ bảng cũ có cộng bồi thường (PR-O19c: bảng mới không gắn,
+        // hồ sơ vẫn APPROVED để FM chi riêng)
+        List<CompensationClaim> approved = nz(s.getCompensationAmount()).signum() > 0
+                ? claimRepository.findForContract(contract.getId()).stream()
+                        .filter(c -> "APPROVED".equals(c.getStatus())).toList()
+                : List.of();
         approved.forEach(c -> c.setSettlementId(s.getId()));
         claimRepository.saveAll(approved);
 
@@ -1089,7 +1090,7 @@ public class CheckoutSettlementService {
                     .map(cl -> SettlementResponse.ClaimLine.builder()
                             .id(cl.getId()).claimCode(cl.getClaimCode()).claimType(cl.getClaimType()).status(cl.getStatus())
                             .totalCompensation(cl.getTotalCompensation())
-                            .includedInSettlement("APPROVED".equals(cl.getStatus()) || Objects.equals(cl.getSettlementId(), s.getId()))
+                            .includedInSettlement(Objects.equals(cl.getSettlementId(), s.getId()))
                             .build())
                     .toList());
             List<SettlementResponse.RoundLine> history = new ArrayList<>();

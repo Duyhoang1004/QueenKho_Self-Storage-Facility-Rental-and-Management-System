@@ -29,6 +29,7 @@ import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
 import SettlementPanel from '../../components/SettlementPanel';
 import UnitLocationMap from '../../components/UnitLocationMap';
+import SeparateCompensationBox from '../../components/SeparateCompensationBox';
 import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
@@ -3405,9 +3406,11 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
                   <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả khách:</span>
+                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả kho:</span>
                     <span className="text-xl font-black text-[#58A700]">{formatCurrency(effectiveRefundAmount)}</span>
                   </div>
+                  {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
+                  <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                   {Number(task.excessDebtAmount) > 0 && (
                     <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex justify-between items-center text-xs">
                       <span className="font-black text-[#FF4B4B]">Khoản nợ vượt cọc khách cần đóng thêm:</span>
@@ -4116,20 +4119,44 @@ export default function StaffTaskDetailPage() {
                       <span>• Tiền thuê khách đã đóng ({cycleMonths} tháng):</span>
                       <span className="font-black">{formatCurrency(rentPaid)}</span>
                     </div>
-                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                      <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
-                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                      <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
-                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
-                    </div>
+                    {task.faultTermination ? (() => {
+                      // BR-127 (góp ý test 24/11): chấm dứt do lỗi cơ sở → trừ đúng số ngày đã dùng, không thu 1 tháng / phí phạt
+                      const kept = (task.refundLines || []).find(l => l.group === 'KEPT' && String(l.label).startsWith('Tiền thuê'));
+                      return (
+                        <>
+                          <div className="flex justify-between gap-3 text-[11px] text-[#2B5300]/90">
+                            <span className="flex flex-col">
+                              <span>• Trừ tiền thuê những ngày đã dùng:</span>
+                              {kept?.note && <span className="text-[10px] font-bold text-[#777777]">{kept.note}</span>}
+                            </span>
+                            <span className="font-black text-[#FF4B4B] whitespace-nowrap">- {formatCurrency(kept ? kept.amount : Math.max(0, rentPaid - estimatedEarlyRentRefund))}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                            <span>• Phí phạt trả kho sớm:</span>
+                            <span className="font-black text-[#58A700]">0 đ (chấm dứt do lỗi cơ sở)</span>
+                          </div>
+                        </>
+                      );
+                    })() : (
+                      <>
+                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                          <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
+                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                          <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
+                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả khách:</span>
+                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả kho:</span>
                   <span className="text-xl font-black text-[#58A700]">{formatCurrency(estimatedTotalRefund)}</span>
                 </div>
+                {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
+                <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                 {estimatedExcessDebt > 0 ? (
                   <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex flex-col gap-0.5 text-xs">
                     <div className="flex justify-between items-center">

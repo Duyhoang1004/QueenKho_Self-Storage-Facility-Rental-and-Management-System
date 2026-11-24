@@ -1241,9 +1241,11 @@ Không đổi schema.
 ## Cập nhật 24/11/2026 — Góp ý test
 
 - `GET /api/v1/reservations/my` trả thêm `paymentLines` (`[{ group, label, amount, note }]`, số âm = khoản giảm; tổng = số khách đóng lúc đặt kho) và `paymentTransactions` (`[{ code, type, method, amount, paidAt }]`, giao dịch `DEPOSIT` thành công) (PR-B14).
-- `GET /api/v1/contracts/{id}/checkout-refund-preview`: `lines` thêm dòng `ADDED` "Bồi thường đã duyệt (BT-…)" cho hồ sơ `APPROVED` chưa chi; `netAmount` gồm khoản này. Dòng giữ lại khi chấm dứt do lỗi cơ sở có `note` dạng "N ngày đã dùng × X/ngày (tiền kỳ ÷ số ngày của kỳ)" (PR-O19b).
+- `GET /api/v1/contracts/{id}/checkout-refund-preview`: thêm `separateCompensations` (`[{ claimId, claimCode, status: APPROVED|PAID, amount, goodsCompensation, penaltyAmount, rentRefundAmount, paidAt, paymentMethod, hasPayoutAccount }]`) — tiền đền bù là khoản riêng, **không** nằm trong `lines` / `netAmount` (PR-O19c). Dòng giữ lại khi chấm dứt do lỗi cơ sở có `note` dạng "N ngày đã dùng × X/ngày (tiền kỳ ÷ số ngày của kỳ)" (PR-O19b).
 - 🆕 `PUT /api/v1/claims/{id}/payout-account` (`CUSTOMER_SUPPORT`, chỉ chủ hồ sơ): body `{ bankName, bankAccountNumber, bankAccountName }` → `CompensationClaimResponse`. 400 `INVALID_INPUT` (số tài khoản 6–20 chữ số), 403 `FORBIDDEN`, 409 `CLAIM_STATUS_INVALID` khi hồ sơ đã chi / bị từ chối / rút (BR-128a).
 - `CompensationClaimResponse` thêm `payoutBankName`, `payoutAccountNumber`, `payoutAccountName`, `payoutAccountUpdatedAt`.
 - `POST /api/v1/claims/{id}/pay` với `BANK_TRANSFER`: thêm 409 `PAYOUT_ACCOUNT_REQUIRED` khi khách chưa nhập tài khoản.
 - Schema: `sql_script/Update_gop_y_test_24_11.sql`; dữ liệu mặt bằng: `sql_script/Update_mat_bang_4_tang.sql`.
 - `POST /api/v1/dev/simulation/tasks/{id}/checkout-today` (nút ⚡ "Khách tới trả đúng ngày hẹn"): vẫn mở hạn task về hôm nay, giờ trả thêm `simulatedCheckoutDate` (ngày hẹn gốc, `null` nếu đã tới ngày hẹn). Nghiệm thu task này chốt quyết toán theo ngày đó (PR-O31a). Task (`StaffTaskResponse` / `StaffTaskDetailResponse`) trả thêm `simulatedCheckoutDate`.
+- PR-O19c: `POST /api/v1/claims/{id}/pay` không còn chặn khi hợp đồng `TERMINATION_PENDING` / `SETTLEMENT_PENDING`; chỉ 409 `CLAIM_IN_SETTLEMENT` khi hồ sơ đã có `settlementId` (bảng quyết toán cũ). Bảng quyết toán mới luôn `compensationAmount = 0`; `claims[].includedInSettlement` chỉ true với hồ sơ đã gắn bảng. Task nghiệm thu / hoàn tiền (`StaffTaskDetailResponse`) trả thêm `separateCompensations`.
+

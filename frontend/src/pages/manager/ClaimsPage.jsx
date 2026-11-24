@@ -323,12 +323,13 @@ function ClaimDetail({ claimId }) {
 
       {claim.status === 'INSPECTED' && !bom && <DecisionForm claim={claim} onDone={refresh} />}
       {['APPROVED', 'PAID', 'REJECTED'].includes(claim.status) && <DecisionSummary claim={claim} />}
-      {claim.status === 'APPROVED' && !bom && (claim.settlementId || ['SETTLEMENT_PENDING', 'TERMINATION_PENDING'].includes(claim.contractStatus)) ? (
-        /* D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường gộp vào quyết toán, không chi riêng */
+      {claim.status === 'APPROVED' && !bom && claim.settlementId ? (
+        /* Bảng quyết toán cũ (D-21 → 23/11) đã gộp bồi thường → chi trong task hoàn tiền.
+           PR-O19c (24/11/2026): hồ sơ mới luôn chi riêng ở PaymentForm, kể cả khi khách đã hẹn trả kho */
         <Card icon="receipt_long" title="Chi trả qua quyết toán trả kho">
           <p className="text-xs font-bold text-[#4B4B4B] leading-relaxed">
-            Hợp đồng {claim.contractCode} {claim.contractStatus === 'TERMINATION_PENDING' ? 'đã hẹn trả kho (chưa nghiệm thu)' : 'đã nghiệm thu trả kho'}. {formatVND(claim.totalCompensation)} bồi thường được cộng vào bảng quyết toán khi nhân viên nghiệm thu;
-            khách xác nhận xong, khoản này được chi trong task hoàn tiền trả kho (dòng "Bồi thường hàng hư / mất"), hoặc cấn trừ vào phần khách phải trả.
+            Hồ sơ này đã nằm trong bảng quyết toán trả kho của hợp đồng {claim.contractCode} (lập trước 24/11).
+            {formatVND(claim.totalCompensation)} bồi thường được chi trong task hoàn tiền trả kho (dòng "Bồi thường hàng hư / mất"), hoặc cấn trừ vào phần khách phải trả.
           </p>
           {/* D-23 / PR-O30: đi thẳng tới task hoàn tiền chứa khoản bồi thường */}
           {claim.refundTaskId ? (

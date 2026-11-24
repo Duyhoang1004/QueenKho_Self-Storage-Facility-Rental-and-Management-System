@@ -194,23 +194,12 @@ public class StaffTaskService {
     // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
     // IN_PROGRESS
     @Transactional
-    /**
-     * PR-O31a (24/11/2026): ngày chốt quyết toán khi nghiệm thu. Luồng thật = hôm nay. Task đã bấm demo
-     * "Khách tới trả đúng ngày hẹn" (hạn task dời về hôm nay) → ngày hẹn gốc, để số tiền khớp đúng số khách thấy lúc hẹn
-     * (vd hẹn 25/11 → vẫn tính 1 ngày đã dùng dù nghiệm thu ngày 24/11).
-     */
-    public static LocalDate effectiveCheckoutDate(StaffTask task, LocalDate today) {
-        LocalDate simulated = task != null ? task.getSimulatedCheckoutDate() : null;
-        return simulated != null && simulated.isAfter(today) ? simulated : today;
-    }
-
     public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
         List<StaffTask> tasks = staffTaskRepository
                 .findByContractIdAndTaskTypeAndStatusIn(contractId, taskType, OPEN_STATUSES);
         for (StaffTask task : tasks) {
             if ("CHECK_IN".equals(task.getTaskType())) lockCheckInTask(task.getId());
             task.setDueAt(computeDueAt(newAppointmentDate));
-            task.setSimulatedCheckoutDate(null); // PR-O31a: khách dời hẹn thật → bỏ ngày hẹn giả lập cũ
             if ("OVERDUE".equals(task.getStatus())) {
                 task.setStatus(task.getStaff() == null ? "OPEN" : "IN_PROGRESS");
             }
@@ -547,7 +536,6 @@ public class StaffTaskService {
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
-                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -875,7 +863,7 @@ public class StaffTaskService {
 
     private String suggestRfidExcluding(String currentRfid) {
         for (int i = 0; i < 200; i++) {
-            String rfid = String.format("RFID-%05d", RANDOM.nextInt(100_000));
+            String rfid = String.format("RFID-%05d", 10000 + RANDOM.nextInt(90_000));
             if (currentRfid != null && currentRfid.equals(rfid)) {
                 continue;
             }
@@ -884,7 +872,7 @@ public class StaffTaskService {
             }
         }
         for (int i = 0; i < 200; i++) {
-            String rfid = String.format("RFID-%05d", RANDOM.nextInt(100_000));
+            String rfid = String.format("RFID-%05d", 10000 + RANDOM.nextInt(90_000));
             if (currentRfid != null && currentRfid.equals(rfid)) {
                 continue;
             }
@@ -2446,7 +2434,7 @@ public class StaffTaskService {
         }
 
         String newRfid;
-        if (customRfid != null && !customRfid.isBlank()) {
+        if (customRfid != null && !customRfid.isBlank() && !"null".equalsIgnoreCase(customRfid.trim())) {
             newRfid = customRfid.trim();
             if (!newRfid.matches("RFID-\\d{5}")) {
                 throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_RFID",
@@ -2457,7 +2445,8 @@ public class StaffTaskService {
                         "Mã thẻ RFID " + newRfid + " hiện đang được sử dụng trên một hợp đồng khác");
             }
         } else {
-            newRfid = suggestRfidExcluding(contract.getRfidCardCode());
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "RFID_REQUIRED",
+                    "Vui lòng nhập mã thẻ RFID mới gồm đúng 5 chữ số (dạng RFID-12345)");
         }
 
         contract.setRfidCardCode(newRfid);
@@ -2796,9 +2785,8 @@ public class StaffTaskService {
 
         // 7. D-21 / PR-O18 + PR-O19: bảng quyết toán vòng 1 — tính TRƯỚC khi đổi trạng thái hợp đồng
         //    (phí trễ / chiếm dụng chốt tại ngày nghiệm thu, giống màn xem trước của khách)
-        //    PR-O31a (24/11/2026): task đã bấm demo "Khách tới trả đúng ngày hẹn" → chốt theo ngày hẹn gốc
-        CheckoutSettlement settlement = settlementService.createInitial(contract, task,
-                effectiveCheckoutDate(task, now.toLocalDate()), totalDamageCost, notes, staffId);
+        CheckoutSettlement settlement = settlementService.createInitial(contract, task, now.toLocalDate(),
+                totalDamageCost, notes, staffId);
 
         // 8. Thu hồi mã PIN & thẻ RFID; hợp đồng chờ khách xác nhận kết thúc (chưa TERMINATED, đơn giữ TERMINATION_PENDING)
         contract.setStatus("SETTLEMENT_PENDING");
@@ -3051,6 +3039,13 @@ public class StaffTaskService {
                     "Task đã đóng, không thể gửi yêu cầu đổi kho");
         }
         RentalContract contract = task.getContract();
+        if (contract == null && task.getSupportRequestId() != null && supportRequestRepository != null) {
+            contract = supportRequestRepository.findById(task.getSupportRequestId())
+                    .map(SupportRequest::getContract).orElse(null);
+            if (contract != null) {
+                task.setContract(contract);
+            }
+        }
         if (contract == null) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "NO_LINKED_CONTRACT",
                     "Task này không gắn với hợp đồng đang thuê để yêu cầu chuyển ô");
@@ -3171,9 +3166,13 @@ public class StaffTaskService {
                 "Bạn cần bấm \"Nhận việc\" trước khi hoàn tất bảo trì");
     }
 
-    // Nối thêm 1 đoạn vào ghi chú task, cắt còn 1000 ký tự (giới hạn cột note)
+    // Nối thêm 1 đoạn vào ghi chú task, ưu tiên giữ phần mới nhất lên đầu để không bị cắt mất tag trạng thái quan trọng
     private static String appendTaskNote(String original, String suffix) {
-        String merged = (original == null || original.isBlank() ? "" : original + " | ") + suffix;
+        if (suffix == null || suffix.isBlank()) return original != null ? original : "";
+        if (original == null || original.isBlank()) {
+            return suffix.length() > 1000 ? suffix.substring(0, 997) + "..." : suffix;
+        }
+        String merged = suffix + " | " + original;
         return merged.length() > 1000 ? merged.substring(0, 997) + "..." : merged;
     }
 
@@ -3523,8 +3522,6 @@ public class StaffTaskService {
         Integer cycleMonths = null;
         BigDecimal baseMonthlyPrice = null;
         String refundBreakdownNote = null;
-        boolean faultTermination = false;         // BR-127: chấm dứt do lỗi cơ sở — hoàn theo ngày, không phí phá HĐ
-        List<MoneyLine> refundLines = null;       // bảng "đã đóng − giữ lại = hoàn" cùng công thức nghiệm thu
         String taskNote = task.getNote();
 
         if (contract != null && ("CHECK_OUT".equals(task.getTaskType()) || "REFUND".equals(task.getTaskType()))) {
@@ -3533,10 +3530,6 @@ public class StaffTaskService {
                     : ("CHECK_OUT".equals(task.getTaskType())
                         ? LocalDate.now(LateFeeService.VIETNAM_ZONE)
                         : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now(LateFeeService.VIETNAM_ZONE)));
-            // PR-O31a: task nghiệm thu chưa xong đã bấm demo "đúng ngày hẹn" → xem trước theo ngày hẹn gốc
-            if ("CHECK_OUT".equals(task.getTaskType()) && task.getCompletedAt() == null) {
-                refDate = effectiveCheckoutDate(task, refDate);
-            }
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, totalDamageCost);
             depositHeld = calc.getDepositHeld();
             refundAmount = calc.getTotalRefundAmount();
@@ -3555,8 +3548,6 @@ public class StaffTaskService {
             cycleMonths = calc.getCycleMonths();
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
             refundBreakdownNote = calc.getBreakdownDescription();
-            faultTermination = calc.isFaultTermination();
-            refundLines = calc.getLines();
 
             if ("REFUND".equals(task.getTaskType())) {
                 taskNote = buildEnrichedRefundNote(contract, taskNote, refDate);
@@ -3588,18 +3579,9 @@ public class StaffTaskService {
                     .orElse(null);
         }
 
-        // PR-O19c: tiền đền bù của hợp đồng — khoản riêng FM chi, hiện tách khỏi tiền hoàn trả kho ở task nghiệm thu / hoàn tiền
-        List<Map<String, Object>> separateCompensations = contract != null && compensationClaimService != null
-                && List.of("CHECK_OUT", "REFUND").contains(task.getTaskType())
-                ? compensationClaimService.separateCompensations(contract.getId()) : List.of();
-
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
-                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
-                .separateCompensations(separateCompensations)
-                .faultTermination(faultTermination)
-                .refundLines(refundLines)
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())

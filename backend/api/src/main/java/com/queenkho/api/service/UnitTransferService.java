@@ -325,7 +325,8 @@ public class UnitTransferService {
                     Integer tid = ((Number) row.get("id")).intValue();
                     String taskType = row.get("task_type") != null ? String.valueOf(row.get("task_type")) : "MAINTENANCE";
                     String label = "SUPPORT".equals(taskType) ? "task hỗ trợ" : "task bảo trì";
-                    String updatedNote = truncate(note + " | [FM đã chuyển HĐ sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + "]", 1000);
+                    String transferTag = "[FM đã chuyển HĐ sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + "]";
+                    String updatedNote = truncate(transferTag + " | " + note, 1000);
                     jdbcTemplate.update("UPDATE facility_tasks SET note = ? WHERE id = ?", updatedNote, tid);
                     if (row.get("staff_id") instanceof Number staffNum && notificationService != null) {
                         notificationService.notifyStaff(staffNum.intValue(),

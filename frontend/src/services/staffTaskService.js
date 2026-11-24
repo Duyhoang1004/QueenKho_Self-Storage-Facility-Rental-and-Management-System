@@ -69,6 +69,16 @@ export async function confirmCheckInUnitIssue(taskId, note) {
   return res.data
 }
 
+export async function startCheckInRepair(taskId) {
+  const res = await api.post(`/staff-tasks/${taskId}/start-check-in-repair`)
+  return res.data
+}
+
+export async function confirmCheckInRepair(taskId, note) {
+  const res = await api.post(`/staff-tasks/${taskId}/confirm-check-in-repair`, { note })
+  return res.data
+}
+
 export async function resolveCheckInIssues(taskId, payload) {
   const res = await api.post(`/staff-tasks/${taskId}/resolve-check-in-issues`, payload)
   return res.data

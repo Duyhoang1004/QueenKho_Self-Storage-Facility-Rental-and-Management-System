@@ -6,6 +6,7 @@ import RefundReceiptList from "../../components/RefundReceiptList";
 import api from "../../services/api";
 import CancelReservationModal from "../../components/CancelReservationModal";
 import UnitIssueRescheduleModal from "../../components/UnitIssueRescheduleModal";
+import DateInput from "../../components/DateInput";
 import { formatDateVN } from "../../utils/date";
 import AssetTermsModal from "../../components/AssetTermsModal";
 import BookingPaidModal from "../../components/BookingPaidModal";
@@ -263,6 +264,17 @@ function readUserId() {
   return user.userId ?? null;
 }
 
+function unitIssueChoiceMessage(choice) {
+  if (!choice) return null;
+  if (choice.option === 'CHANGE_UNIT')
+    return 'Bạn đã chọn đổi ô cùng loại. Quản lý cơ sở đang kiểm tra và bố trí ô kho phù hợp cho bạn.';
+  if (choice.option === 'RESCHEDULE')
+    return `Bạn đã chọn dời ngày nhận kho${choice.newStartDate ? ` sang ${formatDateVN(choice.newStartDate)}` : ''}. Quản lý cơ sở đang cập nhật lịch nhận kho.`;
+  if (choice.option === 'CANCEL_100')
+    return 'Bạn đã chọn hủy đơn và hoàn 100% số tiền đã thanh toán. Quản lý cơ sở đang xử lý hủy đơn và hồ sơ hoàn tiền.';
+  return 'Quản lý cơ sở đang xử lý phương án bạn đã chọn.';
+}
+
 export default function MyReservationsPage() {
   const [selectedResToCancel, setSelectedResToCancel] = useState(null);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -271,6 +283,9 @@ export default function MyReservationsPage() {
   const [replacementNotes, setReplacementNotes] = useState({});
   const [replacementFeedback, setReplacementFeedback] = useState({});
   const [requestingReplacementId, setRequestingReplacementId] = useState(null);
+  const [issueHandovers, setIssueHandovers] = useState({});
+  const [issueChoices, setIssueChoices] = useState({});
+  const [savingIssueId, setSavingIssueId] = useState(null);
   const userId = readUserId();
   const navigate = useNavigate();
 
@@ -291,6 +306,17 @@ export default function MyReservationsPage() {
   const [retryingId, setRetryingId] = useState(null);
   const [termsOpen, setTermsOpen] = useState(false);
   const [summaryRes, setSummaryRes] = useState(null);
+
+  useEffect(() => {
+    const affected = reservations.filter(r => r.unitIssue && !r.unitIssueRescheduled && r.contractId);
+    if (!affected.length) return;
+    let active = true;
+    Promise.all(affected.map(async r => {
+      try { return [r.id, (await api.get(`/contracts/${r.contractId}/check-in-handover`)).data]; }
+      catch { return [r.id, null]; }
+    })).then(rows => { if (active) setIssueHandovers(Object.fromEntries(rows)); });
+    return () => { active = false; };
+  }, [reservations]);
 
   useEffect(() => {
     if (!userId) return;
@@ -741,38 +767,50 @@ export default function MyReservationsPage() {
               <span className="block text-sm font-black text-[#B58900]">
                 Ô kho của đơn {r.reservationCode} đang gặp sự cố
               </span>
-              Ô {r.storageUnitId} chưa thể bàn giao theo lịch ngày {formatDateVN(r.startDate)}. Cơ sở đang xem xét xử lý hoặc đổi ô phù hợp.
-              Bạn có thể dời ngày nhận kho hoặc huỷ đơn để được hoàn 100% số tiền đã thanh toán.
-              Nếu đã mang hàng tới, vui lòng liên hệ cơ sở qua hotline {r.facilityHotline || "được cung cấp"} để được hỗ trợ.
+              Ô {r.storageUnitId} chưa thể bàn giao theo lịch ngày {formatDateVN(r.startDate)}.
+              {issueHandovers[r.id]?.faultNote && <p className="mt-1 text-[#4B4B4B]">Kết luận của quản lý cơ sở: {issueHandovers[r.id].faultNote}</p>}
+              {issueHandovers[r.id]?.customerChoice
+                ? <p className="mt-1 text-[#4B4B4B]">{unitIssueChoiceMessage(issueHandovers[r.id].customerChoice)}</p>
+                : <p className="mt-1">Hãy chọn một phương án bên cạnh. Quản lý cơ sở sẽ thực hiện sau khi nhận được lựa chọn của bạn.</p>}
             </div>
-            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-              <div className="flex flex-col gap-1">
-                <input type="text" maxLength={300} value={replacementNotes[r.id] || ''}
-                  onChange={(e) => setReplacementNotes((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                  placeholder="Ghi chú nếu muốn đổi ô" className="duo-input text-xs" />
-                <button type="button" className="duo-btn-white px-4 py-2 text-xs" disabled={requestingReplacementId === r.id}
+            {issueHandovers[r.id]?.status === 'BLOCKED_FM' && issueHandovers[r.id]?.facilityFaultConfirmed &&
+              <div className="flex flex-col gap-2 min-w-[250px] max-w-[330px]">
+                <select className="duo-input text-xs" value={issueChoices[r.id]?.option || issueHandovers[r.id]?.customerChoice?.option || ''}
+                  disabled={issueHandovers[r.id]?.customerChoiceExecuted}
+                  onChange={e => setIssueChoices(prev => ({ ...prev, [r.id]: { ...prev[r.id], option: e.target.value } }))}>
+                  <option value="">Chọn phương án</option>
+                  <option value="CHANGE_UNIT">Đổi ô cùng loại</option>
+                  <option value="RESCHEDULE">Dời ngày nhận kho</option>
+                  <option value="CANCEL_100">Hủy và hoàn 100%</option>
+                </select>
+                {(issueChoices[r.id]?.option || issueHandovers[r.id]?.customerChoice?.option) === 'RESCHEDULE' &&
+                  <DateInput min={new Date(Date.now() + 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })} className="duo-input w-full text-xs"
+                    value={issueChoices[r.id]?.newStartDate || ''} onChange={e => setIssueChoices(prev => ({ ...prev, [r.id]: { ...prev[r.id], newStartDate: e.target.value } }))} />}
+                {(issueChoices[r.id]?.option || issueHandovers[r.id]?.customerChoice?.option) === 'CANCEL_100' && <>
+                  <select className="duo-input text-xs" value={issueChoices[r.id]?.refundMethod || ''} onChange={e => setIssueChoices(prev => ({ ...prev, [r.id]: { ...prev[r.id], refundMethod: e.target.value } }))}>
+                    <option value="">Chọn cách nhận tiền hoàn</option><option value="CASH">Tiền mặt tại quầy</option><option value="BANK_TRANSFER">Chuyển khoản</option>
+                  </select>
+                  {issueChoices[r.id]?.refundMethod === 'BANK_TRANSFER' && ['bankName', 'bankAccountNumber', 'bankAccountName'].map((field, index) =>
+                    <input key={field} className="duo-input text-xs" maxLength={100} value={issueChoices[r.id]?.[field] || ''}
+                      placeholder={['Tên ngân hàng', 'Số tài khoản', 'Tên chủ tài khoản'][index]}
+                      onChange={e => setIssueChoices(prev => ({ ...prev, [r.id]: { ...prev[r.id], [field]: e.target.value } }))} />)}
+                </>}
+                <input className="duo-input text-xs" maxLength={300} placeholder="Ghi chú cho quản lý cơ sở (nếu có)" value={issueChoices[r.id]?.note || ''}
+                  onChange={e => setIssueChoices(prev => ({ ...prev, [r.id]: { ...prev[r.id], note: e.target.value } }))} />
+                <button type="button" className="duo-btn-blue px-4 py-2 text-xs disabled:opacity-50"
+                  disabled={savingIssueId === r.id || !issueChoices[r.id]?.option || issueHandovers[r.id]?.customerChoiceExecuted}
                   onClick={async () => {
                     try {
-                      setRequestingReplacementId(r.id);
-                      await requestReplacementUnit(r.id, replacementNotes[r.id] || '');
-                      setReplacementFeedback((prev) => ({ ...prev, [r.id]: 'Đã gửi đề nghị đổi ô cho FM. Chờ FM kiểm tra ô phù hợp và xác nhận.' }));
-                    } catch (err) {
-                      setReplacementFeedback((prev) => ({ ...prev, [r.id]: err.response?.data?.message || 'Chưa gửi được đề nghị đổi ô.' }));
-                    } finally { setRequestingReplacementId(null); }
-                  }}>Đề nghị đổi ô</button>
-                {replacementFeedback[r.id] && <p className="text-[11px] font-bold text-[#4B4B4B]">{replacementFeedback[r.id]}</p>}
-              </div>
-              <button type="button" onClick={() => setUnitIssueTarget(r)} className="duo-btn-blue px-4 py-2 text-xs">
-                Dời ngày nhận kho
-              </button>
-              <button
-                type="button"
-                onClick={() => { setSelectedResToCancel(r); setIsCancelModalOpen(true); }}
-                className="duo-btn-red px-4 py-2 text-xs"
-              >
-                Huỷ & hoàn 100%
-              </button>
-            </div>
+                      setSavingIssueId(r.id);
+                      await api.post(`/contracts/${r.contractId}/check-in-issue-choice`, issueChoices[r.id]);
+                      const latest = (await api.get(`/contracts/${r.contractId}/check-in-handover`)).data;
+                      setIssueHandovers(prev => ({ ...prev, [r.id]: latest }));
+                      setReplacementFeedback(prev => ({ ...prev, [r.id]: '' }));
+                    } catch (err) { setReplacementFeedback(prev => ({ ...prev, [r.id]: err.response?.data?.message || 'Không gửi được phương án.' })); }
+                    finally { setSavingIssueId(null); }
+                  }}>Xác nhận phương án</button>
+                {replacementFeedback[r.id] && <p role="alert" className="text-[#C53030]">{replacementFeedback[r.id]}</p>}
+              </div>}
           </div>
         ))}
         {!loading && !error && reservations.filter((r) => r.unitIssue && r.unitIssueRescheduled).map((r) => (
@@ -1014,7 +1052,7 @@ export default function MyReservationsPage() {
                                 {retryingId === r.id ? "ĐANG TẠO" : "THANH TOÁN"}
                               </button>
                             )}
-                            <button
+                            {!(r.unitIssue && issueHandovers[r.id]?.facilityFaultConfirmed) && <button
                               onClick={() => {
                                 setSelectedResToCancel(r);
                                 setIsCancelModalOpen(true);
@@ -1025,7 +1063,7 @@ export default function MyReservationsPage() {
                                 cancel
                               </span>
                               HỦY ĐƠN
-                            </button>
+                            </button>}
                             {/* Demo: tua 16 phút để thấy hệ thống tự huỷ đơn chưa cọc */}
                             {r.status === "PENDING" && (
                               <SimulationButton

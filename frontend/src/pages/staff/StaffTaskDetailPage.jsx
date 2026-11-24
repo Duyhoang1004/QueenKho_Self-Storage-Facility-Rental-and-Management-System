@@ -5,6 +5,8 @@ import {
   prepareCheckInHandover,
   withdrawCheckInHandover,
   reportCheckInBlocker,
+  startCheckInRepair,
+  confirmCheckInRepair,
   checkInStaffTask,
   reopenCheckInHandover,
   confirmCheckInUnitIssue,
@@ -24,6 +26,7 @@ import {
   uploadImageFile,
 } from '../../services/staffTaskService';
 import { getCheckInHandover } from '../../services/contractService';
+import api from '../../services/api';
 import { rescheduleReservation } from '../../services/reservationService';
 import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
@@ -427,6 +430,12 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   // Task cũ chưa có maintenanceReason: suy ra từ hợp đồng
   const isLiquidation = task.maintenanceReason === 'LIQUIDATION'
     || (!task.maintenanceReason && task.contractStatus === 'LIQUIDATED');
+  const isCheckInMaintenance = ['CHECKIN_REPAIR', 'CHECKIN_FAULT'].includes(task.maintenanceReason);
+  const checkInUnitId = task.note?.match(/^\[CHECKIN_UNIT=([^\]]+)\]/)?.[1] || task.storageUnitId;
+  const visibleNote = isCheckInMaintenance
+    ? String(task.note || '').replace(/^\[CHECKIN_UNIT=[^\]]+\]\s*/, '')
+        .replace(/^Xử lý sự cố trước bàn giao:/, 'Xử lý sự cố khi nhận kho:')
+    : task.note;
   const isFromSupport = Boolean(
     task.supportRequestId ||
     task.maintenanceReason === 'FACILITY_DAMAGE' ||
@@ -456,7 +465,9 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
       .catch(() => setWarehouses([]));
   }, [isLiquidation, task.facilityId]);
   const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
-  const blocked = maintenanceBlockedReason(task, userId, isManager);
+  const blocked = task.maintenanceReason === 'CHECKIN_REPAIR' && isManager
+    ? 'Staff hoàn tất task cùng ảnh; FM duyệt tại báo cáo sự cố của task check-in.'
+    : maintenanceBlockedReason(task, userId, isManager);
   const noteValid = note.trim().length >= MAINTENANCE_NOTE_MIN && note.trim().length <= NOTES_MAX;
   const inventoryError = !isLiquidation || noGoodsLeft ? null
     : inventoryNote.trim().length < 10 ? 'Liệt kê hàng kiểm kê (tối thiểu 10 ký tự).'
@@ -550,8 +561,12 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         <div>
           <h2 className="text-lg font-black text-[#4B4B4B]">Phiếu bảo trì ô kho</h2>
           <p className="text-xs font-bold text-[#AFAFAF]">
-            Ô {task.storageUnitId} · HĐ {task.contractCode} — {
-              isFromSupport
+            Ô {isCheckInMaintenance ? checkInUnitId : task.storageUnitId} · HĐ {task.contractCode} — {
+              isCheckInMaintenance
+                ? task.maintenanceReason === 'CHECKIN_REPAIR'
+                  ? 'Xử lý sự cố khi nhận kho; gửi ảnh sau xử lý để FM xác nhận.'
+                  : 'Khắc phục ô không thể bàn giao đúng hẹn.'
+                : isFromSupport
                 ? (isContractActive ? 'Khắc phục sự cố kỹ thuật hạ tầng cho khách đang thuê.' : 'Hoàn tất bảo trì kỹ thuật cho ô kho.')
                 : isLiquidation
                 ? 'xong việc thì ô quay về "Sẵn sàng cho thuê".'
@@ -566,7 +581,9 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
             ? (isContractActive ? 'Bảo trì kỹ thuật hạ tầng (Khách đang thuê)' : 'Bảo trì kỹ thuật hạ tầng')
             : 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]'
         }`}>
-          {isLiquidation
+          {isCheckInMaintenance
+            ? 'Xử lý sự cố khi nhận kho'
+            : isLiquidation
             ? 'Cưỡng chế dọn kho'
             : isFromSupport
             ? (isContractActive ? 'Bảo trì kỹ thuật hạ tầng (Khách đang thuê)' : 'Bảo trì kỹ thuật hạ tầng')
@@ -574,10 +591,10 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         </span>
       </div>
 
-      {task.note && (
+      {visibleNote && (
         <div className="rounded-2xl bg-[#F7F7F7] border-2 border-[#E5E5E5] p-4">
           <p className="text-[11px] font-black uppercase text-[#AFAFAF] mb-1">Yêu cầu công việc</p>
-          <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line break-words">{task.note}</p>
+          <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line break-words">{visibleNote}</p>
         </div>
       )}
 
@@ -609,7 +626,9 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
 
       {/* Vấn đề 6 (22/11/2026): Khi công việc sửa kho cần nhiều thời gian hơn (đặc biệt khi khách đang lưu tạm ở ô khẩn cấp),
           Staff yêu cầu FM chuyển hợp đồng của khách sang ô tiêu chuẩn khác; FM duyệt chuyển ô ngay tại đây */}
-      {!isLiquidation && task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus)
+      {!isLiquidation && !['CHECKIN_FAULT', 'CHECKIN_REPAIR'].includes(task.maintenanceReason)
+        && !String(task.note || '').includes('[CHECKIN_UNIT=')
+        && task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus)
         && task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && (() => {
           const alreadyRequested = typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH');
           const alreadyTransferred = typeof task.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô tiêu chuẩn');
@@ -850,14 +869,15 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
-            disabled={!noteValid || Boolean(inventoryError) || uploading || submitting || (typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô'))}
+            disabled={!noteValid || Boolean(inventoryError) || (task.maintenanceReason === 'CHECKIN_REPAIR' && !evidenceUrl) || uploading || submitting || (typeof task.note === 'string' && task.note.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && !task.note.includes('[FM đã chuyển HĐ sang ô'))}
             className="duo-btn-green px-5 py-3 text-sm gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[20px]">task_alt</span>
-            {isFromSupport && isContractActive
+            {task.maintenanceReason === 'CHECKIN_REPAIR' ? 'Hoàn tất sửa ô · gửi FM duyệt' : isFromSupport && isContractActive
               ? `${doneLabel} — Hoàn tất bảo trì ô kho`
               : `${doneLabel} — mở lại ô cho thuê`}
           </button>
+          {task.maintenanceReason === 'CHECKIN_REPAIR' && !evidenceUrl && <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">Cần ảnh sau xử lý để FM xác nhận.</p>}
           {inventoryError && noteValid && (
             <p className="text-[11px] font-bold text-[#FF4B4B] text-center -mt-3">{inventoryError}</p>
           )}
@@ -869,7 +889,9 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
         icon="build"
         title={`Xác nhận ${doneLabel.toLowerCase()}?`}
         message={
-          isFromSupport && isContractActive
+          task.maintenanceReason === 'CHECKIN_REPAIR'
+            ? `Task sửa ô #${task.id} sẽ chuyển FM duyệt cùng ảnh; check-in chỉ tiếp tục sau khi FM xác nhận.`
+            : isFromSupport && isContractActive
             ? `Task bảo trì #${task.id} sẽ đóng và sự cố kỹ thuật của ô ${task.storageUnitId} được ghi nhận hoàn tất cho khách hàng.`
             : `Task bảo trì #${task.id} sẽ đóng và ô ${task.storageUnitId} chuyển sang "Sẵn sàng cho thuê" (AVAILABLE).`
         }
@@ -1852,6 +1874,26 @@ export default function StaffTaskDetailPage() {
               {task.unitTypeName && <InfoRow label="Loại khoang" value={task.unitTypeName} />}
               <InfoRow label="Cơ sở" value={task.facilityName || 'Cơ sở hiện tại'} />
             </InfoCard>
+          )}
+
+          {!isManager && task.taskType === 'CHECK_IN' && task.contractStatus === 'PENDING_CHECK_IN'
+            && task.status === 'IN_PROGRESS' && task.staffId === userId
+            && !['BLOCKED_FM', 'ACCEPTED'].includes(handover?.status) && (
+            <details className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4">
+              <summary className="cursor-pointer text-xs font-black text-[#B45309]">Báo sự cố ô cho Quản lý</summary>
+              <div className="mt-3 flex flex-col gap-3">
+                <p className="text-xs font-bold text-[#4B4B4B]">Có thể báo trước ngày hẹn. Báo sự cố không lập biên bản bàn giao cho khách.</p>
+                <select className="duo-input text-xs" value={blockerType} onChange={e => setBlockerType(e.target.value)}>
+                  <option value="FACILITY_ISSUE">Ô gặp sự cố, không thể bàn giao</option>
+                  <option value="GOODS_VALUE_DISPUTE">Không thống nhất giá trị hàng</option>
+                  <option value="OTHER_DISPUTE">Không thể thống nhất nội dung khác</option>
+                </select>
+                <textarea className="duo-input text-xs" value={blockerNote} onChange={e => setBlockerNote(e.target.value)} maxLength={500} placeholder="Mô tả sự cố (10–500 ký tự)" />
+                <HandoverPhotoPicker images={blockerPhotos} onChange={setBlockerPhotos} label={blockerType === 'FACILITY_ISSUE' ? 'Ảnh sự cố *' : 'Ảnh/chứng từ nếu có'} maxPhotos={10} />
+                <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reportingBlocker || blockerNote.trim().length < 10 || (blockerType === 'FACILITY_ISSUE' && blockerPhotos.length === 0)}
+                  onClick={async () => { try { setReportingBlocker(true); await reportCheckInBlocker(task.id, { note: blockerNote.trim(), issueType: blockerType, evidenceImages: blockerPhotos }); await loadTask(); setToast({ type: 'success', message: 'Đã báo Quản lý; check-in chờ xử lý sự cố.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không gửi được báo cáo.' }); } finally { setReportingBlocker(false); } }}>Gửi Quản lý xử lý</button>
+              </div>
+            </details>
           )}
 
           {task.taskType === 'REFUND' ? (
@@ -3560,19 +3602,36 @@ export default function StaffTaskDetailPage() {
                 {handover.customerRejectionImages?.length > 0 && <PhotoGrid images={handover.customerRejectionImages} />}
                 {isManager ? <>
                   <p className="text-xs font-bold text-[#4B4B4B]">{handover.blockerType !== 'FACILITY_ISSUE' ? 'Liên hệ khách, thống nhất phương án tiếp tục hoặc huỷ theo chính sách. Không tự áp dụng hoàn 100% vì bất đồng.' : 'Kiểm tra sự cố, thống nhất với khách phương án đổi ô, dời lịch hoặc huỷ do lỗi cơ sở.'}</p>
-                  {handover.blockerType === 'FACILITY_ISSUE' && task.contractId && <Link className="duo-btn-white px-4 py-2 text-xs" to={`/manager/contracts/${task.contractId}?transfer=1`}>Đổi ô cho khách</Link>}
                   <textarea className="duo-input text-xs" value={reopenNote} onChange={e => setReopenNote(e.target.value)} maxLength={500} placeholder="Kết luận và phương án đã thống nhất với khách (10–500 ký tự)" />
                   {handover.blockerType === 'GOODS_VALUE_DISPUTE' && <input type="number" min="1" max="10000000000" value={managerGoodsValue} onChange={e => setManagerGoodsValue(e.target.value)} className="duo-input text-xs" placeholder="Giá trị hàng FM thống nhất với khách *" />}
                   {handover.blockerType === 'FACILITY_ISSUE' && !handover.facilityFaultConfirmed && <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10}
-                    onClick={async () => { try { await confirmCheckInUnitIssue(task.id, reopenNote.trim()); await loadTask(); setToast({ type: 'success', message: 'Đã xác nhận lỗi cơ sở; khách có thể dời lịch hoặc huỷ hoàn 100%.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' }); } }}>Xác nhận lỗi cơ sở, mở phương án dời/huỷ cho khách</button>}
-                  {handover.blockerType === 'FACILITY_ISSUE' && <HandoverPhotoPicker images={reopenPhotos} onChange={setReopenPhotos} label="Ảnh ô sau khắc phục hoặc ô thay thế" maxPhotos={10} />}
-                  <button type="button" className="duo-btn-blue px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10 || (handover.blockerType === 'GOODS_VALUE_DISPUTE' && Number(managerGoodsValue) <= 0) || (handover.blockerType === 'FACILITY_ISSUE' && reopenPhotos.length === 0)}
-                    onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>
+                    onClick={async () => { try { await confirmCheckInUnitIssue(task.id, reopenNote.trim()); await loadTask(); setToast({ type: 'success', message: 'Đã khóa ô lỗi và gửi khách chọn phương án.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được sự cố.' }); } }}>Không thể bàn giao đúng hẹn · gửi khách chọn phương án</button>}
+                  {handover.blockerType === 'FACILITY_ISSUE' && !handover.facilityFaultConfirmed && !handover.repairTaskId && <button type="button" className="duo-btn-green px-4 py-2 text-xs"
+                    onClick={async () => { try { await startCheckInRepair(task.id); await loadTask(); setToast({ type: 'success', message: 'Đã sinh task xử lý và giao nhân viên phụ trách. FM có thể đổi người trên bảng task.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không giao được task sửa ô.' }); } }}>Giao nhân viên xử lý sự cố</button>}
+                  {handover.blockerType === 'FACILITY_ISSUE' && handover.repairTaskId && !handover.facilityFaultConfirmed && <div className="rounded-xl bg-white p-3 text-xs">
+                    <p className="font-black">Task sửa ô #{handover.repairTaskId} · {handover.repairTaskStatus}</p>
+                    <p className="whitespace-pre-line">{String(handover.repairTaskNote || '').replace(/^\[CHECKIN_UNIT=[^\]]+\]\s*/, '').replace(/^Xử lý sự cố trước bàn giao:/, 'Xử lý sự cố khi nhận kho:')}</p>
+                    {handover.repairTaskEvidence && <PhotoGrid images={[handover.repairTaskEvidence]} />}
+                    <Link className="duo-btn-white px-4 py-2 text-xs mt-2" to={`/manager/tasks/${handover.repairTaskId}`}>Xem task / đổi nhân viên</Link>
+                  </div>}
+                  {handover.blockerType === 'FACILITY_ISSUE' && !handover.facilityFaultConfirmed && <button type="button" className="duo-btn-blue px-4 py-2 text-xs disabled:opacity-50"
+                    disabled={handover.repairTaskStatus !== 'COMPLETED' || !handover.repairTaskEvidence || reopenNote.trim().length < 10}
+                    onClick={async () => { try { await confirmCheckInRepair(task.id, reopenNote.trim()); await loadTask(); setToast({ type: 'success', message: 'FM đã xác nhận ô đạt; đợi đúng ngày hẹn để lập biên bản.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không xác nhận được ô.' }); } }}>Xác nhận ô đạt sau xử lý</button>}
+                  {handover.facilityFaultConfirmed && <div className="rounded-xl bg-white p-3 text-xs flex flex-col gap-2">
+                    <p className="font-black">Đã báo khách: {handover.faultNote}</p>
+                    {handover.customerChoice ? <p>Khách chọn: {handover.customerChoice.option}{handover.customerChoice.newStartDate ? ` · ${handover.customerChoice.newStartDate}` : ''}. Ghi chú: {handover.customerChoice.note || 'Không có'}</p> : <p>Đang chờ khách chọn đổi ô, dời lịch hoặc hủy hoàn 100%.</p>}
+                    {!handover.customerChoiceExecuted && handover.customerChoice?.option === 'CHANGE_UNIT' && task.contractId && <Link className="duo-btn-white px-4 py-2 text-xs" to={`/manager/contracts/${task.contractId}?transfer=1`}>Chuyển tới trang đổi ô</Link>}
+                    {!handover.customerChoiceExecuted && ['RESCHEDULE', 'CANCEL_100'].includes(handover.customerChoice?.option) && <button type="button" className={handover.customerChoice.option === 'CANCEL_100' ? 'duo-btn-red px-4 py-2 text-xs' : 'duo-btn-blue px-4 py-2 text-xs'}
+                      onClick={async () => { try { await api.post(`/reservations/${task.reservationId}/execute-check-in-issue-choice`); await loadTask(); setToast({ type: 'success', message: 'Đã thực hiện phương án khách chọn.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không thực hiện được phương án.' }); } }}>{handover.customerChoice.option === 'CANCEL_100' ? 'Hủy 100% · sinh task hoàn tiền' : 'Dời lịch theo ngày khách chọn'}</button>}
+                  </div>}
+                  {handover.blockerType !== 'FACILITY_ISSUE' && <button type="button" className="duo-btn-blue px-4 py-2 text-xs" disabled={reopenNote.trim().length < 10 || (handover.blockerType === 'GOODS_VALUE_DISPUTE' && Number(managerGoodsValue) <= 0)}
+                    onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>}
                 </> : <p className="text-xs font-bold text-[#777777]">Quản lý đang kiểm tra và thống nhất phương án với khách.</p>}
               </div>}
 
               {/* Vấn đề 2 (22/11/2026): Task CHECK_IN bị OVERDUE (kể cả khi đã lập biên bản nháp / bị từ chối) → FM dời lịch nhận kho ngay tại trang task */}
               {isManager && task.taskType === 'CHECK_IN' && task.reservationId
+                && !handover?.facilityFaultConfirmed
                 && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
                 <div className="w-full max-w-md rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5 text-left mt-2">
                   <div className="flex items-start gap-2.5">
@@ -4257,22 +4316,6 @@ export default function StaffTaskDetailPage() {
                 {handover.customerEvidenceImages?.length > 0 && <PhotoGrid images={handover.customerEvidenceImages} />}
                 <p className="text-xs font-bold text-[#777777]">Kiểm tra và xử lý cùng khách, cập nhật ảnh hoặc giá trị hàng rồi gửi biên bản mới để khách xác nhận.</p>
               </div>}
-
-              {!isManager && handover?.status !== 'ACCEPTED' && <details className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8EE] p-4">
-                <summary className="cursor-pointer text-xs font-black text-[#B45309]">Không thể bàn giao hoặc không thống nhất? Báo Quản lý</summary>
-                <div className="mt-3 flex flex-col gap-3">
-                  <select className="duo-input text-xs" value={blockerType} onChange={e => setBlockerType(e.target.value)}>
-                    <option value="FACILITY_ISSUE">Ô gặp sự cố, không thể bàn giao</option>
-                    <option value="GOODS_VALUE_DISPUTE">Không thống nhất giá trị hàng</option>
-                    <option value="OTHER_DISPUTE">Không thể thống nhất nội dung khác</option>
-                  </select>
-                  <p className="text-xs font-bold text-[#4B4B4B]">Công việc bàn giao sẽ chờ Quản lý quyết định; không cấp quyền vào kho.</p>
-                  <textarea className="duo-input text-xs" value={blockerNote} onChange={e => setBlockerNote(e.target.value)} maxLength={500} placeholder="Mô tả sự cố và vì sao không thể bàn giao (10–500 ký tự)" />
-                  <HandoverPhotoPicker images={blockerPhotos} onChange={setBlockerPhotos} label={blockerType === 'FACILITY_ISSUE' ? 'Ảnh sự cố *' : 'Ảnh/chứng từ nếu có'} maxPhotos={10} />
-                  <button type="button" className="duo-btn-red px-4 py-2 text-xs" disabled={reportingBlocker || blockerNote.trim().length < 10 || (blockerType === 'FACILITY_ISSUE' && blockerPhotos.length === 0)}
-                    onClick={async () => { try { setReportingBlocker(true); await reportCheckInBlocker(task.id, { note: blockerNote.trim(), issueType: blockerType, evidenceImages: blockerPhotos }); await loadTask(); setToast({ type: 'success', message: 'Đã báo Quản lý; công việc bàn giao đang chờ phương án xử lý.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không gửi được báo cáo.' }); } finally { setReportingBlocker(false); } }}>Gửi Quản lý xử lý</button>
-                </div>
-              </details>}
 
               {handover?.resolutionNote && <div className="rounded-2xl border border-[#84D8FF] bg-[#F0F9FF] p-4 flex flex-col gap-2">
                 <p className="text-xs font-black text-[#0369A1]">FM đã mở lại check-in · ô {handover.resolvedUnitId || task.storageUnitId}</p>

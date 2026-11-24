@@ -3,22 +3,23 @@ import { useState } from 'react'
 // 22/11/2026 (góp ý test — PR-B12): xác nhận số tiền trước khi chuyển sang VNPAY.
 // Dùng chung cho đặt kho, gia hạn, trả phần âm khi quyết toán, trả nợ phí sự cố.
 // lines: [{ label, amount, note?, minus? }] — minus = khoản giảm (ưu đãi, voucher)
+// info: [{ label, value, note? }] — thông tin khách khai báo để soát lại (không cộng vào tổng), vd giá trị hàng
 
 function formatVND(v) {
   return Number(v || 0).toLocaleString('vi-VN') + '₫'
 }
 
-export default function PaymentConfirmModal({ open, title = 'Xác nhận thanh toán', subtitle, lines = [], total, note,
+export default function PaymentConfirmModal({ open, title = 'Xác nhận thanh toán', subtitle, lines = [], total, note, info = [],
   confirmLabel, submitting = false, onConfirm, onCancel }) {
   if (!open) return null
   return (
-    <PaymentConfirmBody title={title} subtitle={subtitle} lines={lines} total={total} note={note}
+    <PaymentConfirmBody title={title} subtitle={subtitle} lines={lines} total={total} note={note} info={info}
       confirmLabel={confirmLabel} submitting={submitting} onConfirm={onConfirm} onCancel={onCancel} />
   )
 }
 
 // Tách thân modal để ô tick "đồng ý" luôn bắt đầu chưa tick mỗi lần mở
-function PaymentConfirmBody({ title, subtitle, lines, total, note, confirmLabel, submitting, onConfirm, onCancel }) {
+function PaymentConfirmBody({ title, subtitle, lines, total, note, info, confirmLabel, submitting, onConfirm, onCancel }) {
   const [agreed, setAgreed] = useState(false)
   const shown = lines.filter((l) => l && Number(l.amount || 0) !== 0)
   return (
@@ -51,6 +52,21 @@ function PaymentConfirmBody({ title, subtitle, lines, total, note, confirmLabel,
             <span className="text-2xl font-black text-[#FF9600]">{formatVND(total)}</span>
           </div>
         </div>
+
+        {info.length > 0 && (
+          <div className="rounded-xl bg-[#F5FBFF] border-2 border-[#84D8FF] px-4 py-2 flex flex-col gap-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#1899D6]">Bạn khai báo — soát lại trước khi thanh toán</span>
+            {info.map((r, i) => (
+              <div key={i} className="flex items-start justify-between gap-3">
+                <span className="flex flex-col">
+                  <span className="text-xs font-bold text-[#4B4B4B]">{r.label}</span>
+                  {r.note && <span className="text-[10px] font-bold text-[#AFAFAF]">{r.note}</span>}
+                </span>
+                <span className="text-sm font-black text-[#1899D6] whitespace-nowrap">{r.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {note && <p className="text-xs font-bold text-[#777777] leading-relaxed">{note}</p>}
 

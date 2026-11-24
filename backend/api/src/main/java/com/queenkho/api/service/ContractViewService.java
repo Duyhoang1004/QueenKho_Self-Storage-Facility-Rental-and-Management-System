@@ -1,11 +1,9 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.dto.CustomerContractResponse;
-import com.queenkho.api.dto.MoneyLine;
 import com.queenkho.api.dto.RefundCalculationResult;
 import com.queenkho.api.entity.HeldGoods;
 import com.queenkho.api.entity.RentalContract;
-import com.queenkho.api.repository.CompensationClaimRepository;
 import com.queenkho.api.repository.HeldGoodsRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.security.CurrentUser;
@@ -19,7 +17,6 @@ import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -70,7 +67,7 @@ public class ContractViewService {
     private HeldGoodsService heldGoodsService;
 
     @Autowired
-    private CompensationClaimRepository compensationClaimRepository;
+    private CompensationClaimService compensationClaimService;
 
     // ── Truy vấn ────────────────────────────────────────────────────────────
 
@@ -83,25 +80,12 @@ public class ContractViewService {
     }
 
     /**
-     * Góp ý test 24/11 (PR-O19b): hồ sơ bồi thường đã duyệt nhưng chưa chi được cộng vào quyết toán lúc nghiệm thu
-     * (PR-O19a) → màn hẹn trả kho hiện luôn dòng "Cơ sở trả thêm" để số dự kiến khớp số khách sẽ nhận.
-     * Chỉ áp cho API xem trước; số đối chiếu lúc nghiệm thu (expected_net, PR-O31) vẫn không gồm bồi thường.
+     * PR-O19c (24/11/2026, thay PR-O19b): tiền đền bù là khoản RIÊNG do FM chi ở màn Bồi thường hàng hoá — không cộng
+     * vào bảng "đã đóng − giữ lại = hoàn". Trả kèm danh sách để màn hẹn trả kho hiện thành 1 khối riêng (chờ chi / đã chi).
      */
     private RefundCalculationResult withApprovedCompensation(RentalContract rc, RefundCalculationResult calc) {
-        if (calc == null || calc.getLines() == null) return calc;
-        List<MoneyLine> extra = compensationClaimRepository.findForContract(rc.getId()).stream()
-                .filter(c -> "APPROVED".equals(c.getStatus()) && c.getTotalCompensation() != null
-                        && c.getTotalCompensation().signum() > 0)
-                .map(c -> new MoneyLine(MoneyLine.ADDED, "Bồi thường đã duyệt (" + c.getClaimCode() + ")",
-                        c.getTotalCompensation().setScale(0, RoundingMode.HALF_UP),
-                        "Cơ sở chưa chi riêng — cộng vào quyết toán trả kho"))
-                .toList();
-        if (extra.isEmpty()) return calc;
-        List<MoneyLine> lines = new ArrayList<>(calc.getLines());
-        lines.addAll(extra);
-        RefundBreakdown.Totals totals = RefundBreakdown.totals(lines);
-        calc.setLines(lines);
-        calc.setNetAmount(totals.net());
+        if (calc == null) return null;
+        calc.setSeparateCompensations(compensationClaimService.separateCompensations(rc.getId()));
         return calc;
     }
 

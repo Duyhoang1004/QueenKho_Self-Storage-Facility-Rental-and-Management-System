@@ -204,11 +204,26 @@ class CompensationWorkflowBusinessTest {
         verify(claims, never()).save(any());
     }
 
-    // PR-O19a (23/11/2026): khách đã hẹn trả kho / đã nghiệm thu → bồi thường đi theo quyết toán, FM không chi riêng
+    // PR-O19c (24/11/2026, thay PR-O19a): tiền đền bù là khoản riêng — FM vẫn chi được khi khách đã hẹn trả kho / đang quyết toán
     @ParameterizedTest @ValueSource(strings = {"TERMINATION_PENDING", "SETTLEMENT_PENDING"})
-    void compensationGoesThroughSettlementOnceCheckoutIsScheduled(String contractStatus) {
+    void compensationIsPaidSeparatelyEvenWhenCheckoutIsScheduled(String contractStatus) {
         claim.setStatus("APPROVED");
         contract.setStatus(contractStatus);
+        ClaimPaymentRequest r = new ClaimPaymentRequest(); r.setPaymentMethod("CASH"); r.setCashReceiptConfirmed(true);
+        try {
+            service.pay(40, 6, r);
+        } catch (StaffTaskException e) {
+            assertNotEquals("CLAIM_IN_SETTLEMENT", e.getCode());
+        } catch (RuntimeException ignored) {
+            // phần ghi sổ sau khi qua kiểm tra (markPaid) không mock đủ — chỉ cần không bị chặn
+        }
+        verify(jdbc).update(contains("'COMPENSATION'"), any(Object[].class));
+    }
+
+    // Hồ sơ đã nằm trong bảng quyết toán cũ (D-21 → 23/11) → chi trong task hoàn tiền, không chi riêng
+    @Test void claimAlreadyInOldSettlementIsNotPaidTwice() {
+        claim.setStatus("APPROVED");
+        claim.setSettlementId(77);
         ClaimPaymentRequest r = new ClaimPaymentRequest(); r.setPaymentMethod("CASH"); r.setCashReceiptConfirmed(true);
         assertEquals("CLAIM_IN_SETTLEMENT", assertThrows(StaffTaskException.class,
                 () -> service.pay(40, 6, r)).getCode());

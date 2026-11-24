@@ -123,4 +123,11 @@ public class StaffTaskDetailResponse {
 
     // PR-O31a: ngày hẹn gốc khi đã bấm demo "Khách tới trả đúng ngày hẹn" (quyết toán chốt theo ngày này)
     private LocalDate simulatedCheckoutDate;
+
+    // PR-O19c: tiền đền bù của hợp đồng — khoản riêng FM chi, không nằm trong tiền hoàn trả kho
+    private List<java.util.Map<String, Object>> separateCompensations;
+
+    // Góp ý test 24/11: trả sớm do lỗi cơ sở (BR-127) → bảng tính hiện "trừ N ngày đã dùng", không phải "1 tháng + phí phạt"
+    private boolean faultTermination;
+    private List<MoneyLine> refundLines;
 }

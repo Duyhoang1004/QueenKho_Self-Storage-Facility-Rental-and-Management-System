@@ -135,9 +135,8 @@ function formatVND(v) {
 const LIABLE_LABELS = { CUSTOMER: 'Lỗi do khách', FACILITY: 'Lỗi do cơ sở', FORCE_MAJEURE: 'Bất khả kháng' };
 
 // BR-128a (24/11/2026): tài khoản khách nhận tiền bồi thường khi cơ sở chi riêng bằng chuyển khoản.
-// Đã hẹn trả kho thì tiền bồi thường đi cùng tiền hoàn trả kho (PR-O19a) → không cần nhập ở đây.
+// PR-O19c: tiền đền bù luôn là khoản riêng; chỉ hồ sơ đã nằm trong bảng quyết toán cũ mới đi cùng tiền hoàn trả kho.
 const PAYOUT_EDITABLE = ['SUBMITTED', 'INSPECTED', 'APPROVED'];
-const SETTLEMENT_CONTRACT = ['TERMINATION_PENDING', 'SETTLEMENT_PENDING'];
 
 function ClaimPayoutAccount({ claim: initial }) {
   const [claim, setClaim] = useState(initial);
@@ -146,7 +145,7 @@ function ClaimPayoutAccount({ claim: initial }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const hasAccount = Boolean(claim.payoutAccountNumber);
-  const viaSettlement = Boolean(claim.settlementId) || SETTLEMENT_CONTRACT.includes(claim.contractStatus);
+  const viaSettlement = Boolean(claim.settlementId);
 
   if (claim.status === 'PAID' && hasAccount) {
     return <span className="text-[#777777]">Tài khoản nhận: {claim.payoutBankName} · {claim.payoutAccountNumber} · {claim.payoutAccountName}</span>;
@@ -154,7 +153,7 @@ function ClaimPayoutAccount({ claim: initial }) {
   if (!PAYOUT_EDITABLE.includes(claim.status)) return null;
   if (viaSettlement) {
     return (
-      <span className="text-[#1899D6]">Bạn đã hẹn trả kho: tiền bồi thường được cộng vào bảng quyết toán và chuyển cùng tiền hoàn trả kho.</span>
+      <span className="text-[#1899D6]">Hồ sơ này nằm trong bảng quyết toán trả kho: tiền bồi thường chuyển cùng tiền hoàn trả kho.</span>
     );
   }
 

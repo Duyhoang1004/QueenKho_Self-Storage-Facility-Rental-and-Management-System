@@ -308,10 +308,16 @@ export default function SettlementPanel({ contractId, viewer, onChanged, onLoade
       {(s.claims || []).length > 0 && (
         <div className="flex flex-col gap-1.5">
           <p className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Hồ sơ bồi thường hàng</p>
+          {/* PR-O19c (24/11/2026): tiền đền bù là khoản riêng — chỉ bảng cũ (trước 24/11) mới cộng vào quyết toán */}
+          {s.claims.some((c) => !c.includedInSettlement && ['APPROVED', 'PAID'].includes(c.status)) && (
+            <p className="text-[11px] font-bold text-[#A560E8]">
+              Tiền đền bù là khoản riêng, không nằm trong bảng quyết toán này — quản lý cơ sở chi riêng theo hồ sơ.
+            </p>
+          )}
           {s.claims.map((c) => (
             <div key={c.id} className="flex flex-wrap justify-between gap-2 text-xs font-bold text-[#4B4B4B] border-2 border-[#F0F0F0] rounded-xl px-3 py-2">
               <span className="font-mono">{c.claimCode} · {c.claimType === 'GOODS_LOSS' ? 'Mất hàng' : 'Hư hàng'}</span>
-              <span>{{ INSPECTED: 'Chờ quản lý chốt', APPROVED: 'Đã duyệt', PAID: 'Đã chi trả', REJECTED: 'Không bồi thường' }[c.status] || c.status}{c.totalCompensation ? ` · ${formatVND(c.totalCompensation)}` : ''}</span>
+              <span>{{ INSPECTED: 'Chờ quản lý chốt', APPROVED: c.includedInSettlement ? 'Đã duyệt · trong quyết toán' : 'Đã duyệt · chờ chi riêng', PAID: 'Đã chi trả', REJECTED: 'Không bồi thường' }[c.status] || c.status}{c.totalCompensation ? ` · ${formatVND(c.totalCompensation)}` : ''}</span>
             </div>
           ))}
         </div>

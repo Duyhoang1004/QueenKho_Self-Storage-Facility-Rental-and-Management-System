@@ -4,6 +4,7 @@ import { createVnpayRenewal } from '../services/vnpayService'
 import { getCustomerSupportTickets } from '../services/supportService'
 import DateInput from './DateInput'
 import MoneyBreakdownTable from './MoneyBreakdownTable'
+import SeparateCompensationBox from './SeparateCompensationBox'
 import PaymentConfirmModal from './PaymentConfirmModal'
 import { getOverdueFeeBreakdown } from '../utils/overdueFee'
 
@@ -896,6 +897,8 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                     Đang tính số tiền theo ngày bạn chọn...
                   </div>
                 )}
+                {/* PR-O19c: tiền đền bù là khoản riêng FM chi — không cộng vào số dự kiến hoàn trả kho */}
+                <SeparateCompensationBox items={preview?.separateCompensations} viewer="CUSTOMER" />
                 <p className="text-[11px] font-semibold text-[#777777] leading-relaxed">
                   Số chốt cuối cùng theo biên bản nghiệm thu (phí sự cố lỗi khách nếu có). Sau nghiệm thu bạn nhận bảng quyết toán cùng bố cục này và xác nhận để kết thúc hợp đồng.
                 </p>

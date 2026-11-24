@@ -139,6 +139,8 @@ public class ReservationController {
     @PostMapping("/{reservationId}/cancel")
     public ResponseEntity<?> cancelReservation(@PathVariable Integer reservationId, @RequestBody com.queenkho.api.dto.CancelReservationRequest request) {
         ownershipGuard.checkReservation(reservationId);
+        if (reservationService.hasConfirmedCheckInIssue(reservationId))
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "FM_ACTION_REQUIRED", "message", "Ô gặp sự cố đã xác nhận: hãy chọn phương án trong Kho của tôi để FM thực hiện"));
         try {
             com.queenkho.api.dto.CancelPreviewResponse cancellation =
                     reservationService.cancelReservation(reservationId, request);
@@ -187,6 +189,8 @@ public class ReservationController {
             @PathVariable Integer reservationId,
             @RequestBody Map<String, String> body) {
         ownershipGuard.checkReservation(reservationId);
+        if (reservationService.hasConfirmedCheckInIssue(reservationId))
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "FM_ACTION_REQUIRED", "message", "Hãy chọn ngày mới trong phương án sự cố để FM thực hiện"));
         try {
             String raw = body != null ? body.get("newStartDate") : null;
             java.time.LocalDate newStartDate = raw != null && !raw.isBlank() ? java.time.LocalDate.parse(raw.trim()) : null;
@@ -199,6 +203,12 @@ public class ReservationController {
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", "INVALID_INPUT", "message", e.getMessage()));
         }
+    }
+
+    @PostMapping("/{reservationId}/execute-check-in-issue-choice")
+    public ResponseEntity<?> executeCheckInIssueChoice(@PathVariable Integer reservationId) {
+        ownershipGuard.checkReservation(reservationId);
+        return ResponseEntity.ok(reservationService.executeCheckInIssueChoice(reservationId, currentUser.require()));
     }
 
     // Hỗ trợ khách dời ngày hẹn nhận kho

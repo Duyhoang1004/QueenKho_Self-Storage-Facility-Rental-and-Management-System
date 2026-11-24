@@ -239,6 +239,11 @@ public class ContractController {
         return ResponseEntity.ok(staffTaskService.checkInHandoverHistory(id, currentUser.require()));
     }
 
+    @PostMapping("/{id}/check-in-issue-choice")
+    public ResponseEntity<?> chooseCheckInIssue(@PathVariable Integer id, @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(staffTaskService.chooseCheckInIssue(id, currentUser.require(), body));
+    }
+
     @PostMapping("/{id}/check-in-handover/{draftId}/decision")
     public ResponseEntity<?> decideCheckInHandover(@PathVariable Integer id, @PathVariable Integer draftId,
                                                    @RequestBody Map<String, Object> body) {

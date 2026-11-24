@@ -15,6 +15,7 @@ import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.StorageUnit;
 import com.queenkho.api.exception.ReservationException;
 import com.queenkho.api.exception.StaffTaskException;
+import com.queenkho.api.security.CurrentUser;
 import org.springframework.http.HttpStatus;
 import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.Reservation;
@@ -299,6 +300,16 @@ public class ReservationService {
                         "AND NOT EXISTS (SELECT 1 FROM handover_records x WHERE x.contract_id = c.id " +
                         "AND x.record_type IN ('CI_REOPEN','CHECK_IN') AND x.id > a.id)))",
                 Integer.class, reservation.getId());
+        return count != null && count > 0;
+    }
+
+    public boolean hasConfirmedCheckInIssue(Integer reservationId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rental_contracts c WHERE c.reservation_id = ? " +
+                        "AND EXISTS (SELECT 1 FROM handover_records f WHERE f.contract_id = c.id AND f.record_type = 'CI_FAULT' " +
+                        "AND NOT EXISTS (SELECT 1 FROM handover_records x WHERE x.contract_id = c.id " +
+                        "AND x.id > f.id AND x.record_type IN ('CI_REOPEN','CI_CHOICE_DONE','CHECK_IN'))) ",
+                Integer.class, reservationId);
         return count != null && count > 0;
     }
 
@@ -1566,6 +1577,8 @@ public class ReservationService {
             LocalDate newTo = UnitScheduleService.rangeEnd(newFrom, durationOf(reservation));
             List<UnitScheduleService.Block> clashes = unitScheduleService.conflicts(
                     assignedContract.getStorageUnit(), newFrom, newTo, assignedContract.getId());
+            if (hasUnitIssue(reservation)) clashes = clashes.stream()
+                    .filter(block -> !"MAINTENANCE".equals(block.reason())).toList();
             if (!clashes.isEmpty()) {
                 throw new ReservationException(HttpStatus.CONFLICT, "UNIT_SCHEDULE_CONFLICT",
                         "Không dời được: ô " + assignedContract.getStorageUnit().getId() + " " + UnitScheduleService.describe(clashes.get(0))
@@ -1595,6 +1608,50 @@ public class ReservationService {
                         + UnitScheduleService.formatDate(oldDate) + "). Vui lòng mang CCCD khi đến nhận.",
                 "BOOKING",
                 "/kho-cua-toi");
+    }
+
+    @Transactional
+    public Map<String, Object> executeCheckInIssueChoice(Integer reservationId, CurrentUser actor) {
+        Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
+                .orElseThrow(() -> new ReservationException(HttpStatus.NOT_FOUND, "RESERVATION_NOT_FOUND", "Không tìm thấy đơn"));
+        if (!actor.hasRole("FACILITY_MANAGER") || reservation.getFacility() == null
+                || !reservation.getFacility().getId().equals(actor.facilityId()))
+            throw new ReservationException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ FM của cơ sở được xử lý");
+        RentalContract contract = rentalContractRepository.findByReservationId(reservationId)
+                .orElseThrow(() -> new ReservationException(HttpStatus.CONFLICT, "CONTRACT_NOT_FOUND", "Đơn chưa có hợp đồng"));
+        Map<String, Object> choice = staffTaskService.pendingCheckInIssueChoice(contract.getId(), actor);
+        String option = String.valueOf(choice.get("option"));
+        if ("CHANGE_UNIT".equals(option))
+            throw new ReservationException(HttpStatus.CONFLICT, "TRANSFER_REQUIRED", "Hãy chuyển ô tại trang hợp đồng");
+        if ("RESCHEDULE".equals(option)) {
+            com.queenkho.api.dto.RescheduleReservationRequest request = new com.queenkho.api.dto.RescheduleReservationRequest();
+            request.setManagerId(actor.id());
+            request.setNewStartDate(LocalDate.parse(String.valueOf(choice.get("newStartDate"))));
+            request.setReason("Sự cố cơ sở; khách đã chọn dời lịch. " + choice.getOrDefault("note", ""));
+            staffTaskService.completeCheckInIssueChoice(contract.getId(), actor, option);
+            rescheduleReservation(reservationId, request);
+            jdbcTemplate.update("UPDATE facility_tasks SET due_at = ? WHERE contract_id = ? " +
+                            "AND task_type = 'MAINTENANCE' AND maintenance_reason = 'CHECKIN_FAULT' " +
+                            "AND status IN ('OPEN','IN_PROGRESS','OVERDUE')",
+                    request.getNewStartDate().atTime(8, 30), contract.getId());
+            return Map.of("status", "RESCHEDULED", "newStartDate", request.getNewStartDate().toString());
+        }
+        if ("CANCEL_100".equals(option)) {
+            CancelPreviewResponse preview = previewCancel(reservationId);
+            if (preview.getTotalPaid().compareTo(preview.getRefundAmount()) != 0)
+                throw new ReservationException(HttpStatus.CONFLICT, "REFUND_NOT_FULL", "Chính sách chưa tính hoàn 100%; không thể hủy theo phương án này");
+            CancelReservationRequest request = new CancelReservationRequest();
+            request.setReason("FACILITY_FAULT");
+            request.setOtherReason("Cơ sở không thể bàn giao ô đúng hẹn. " + choice.getOrDefault("note", ""));
+            request.setRefundMethod(String.valueOf(choice.get("refundMethod")));
+            request.setBankName((String) choice.get("bankName"));
+            request.setBankAccountNumber((String) choice.get("bankAccountNumber"));
+            request.setBankAccountName((String) choice.get("bankAccountName"));
+            staffTaskService.completeCheckInIssueChoice(contract.getId(), actor, option);
+            CancelPreviewResponse cancellation = cancelReservation(reservationId, request);
+            return Map.of("status", "REFUND_PENDING", "refundAmount", cancellation.getRefundAmount());
+        }
+        throw new ReservationException(HttpStatus.BAD_REQUEST, "INVALID_CHOICE", "Phương án không hợp lệ");
     }
 
     /** Đổi ngày nhận kho của đơn + hợp đồng chờ nhận kho (hạn hợp đồng, task check-in, trạng thái ô đi theo) */

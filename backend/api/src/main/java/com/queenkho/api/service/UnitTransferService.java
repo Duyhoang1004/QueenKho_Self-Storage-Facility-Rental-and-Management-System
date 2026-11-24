@@ -376,6 +376,9 @@ public class UnitTransferService {
         }
 
         if ("PENDING_CHECK_IN".equals(contract.getStatus())) {
+            if (staffTaskService != null)
+                staffTaskService.onCheckInIssueUnitTransferred(contract.getId(), managerId, facilityId,
+                        oldUnit.getId(), newUnit.getId(), reasonType);
             jdbcTemplate.queryForList(
                     "SELECT staff_id, id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' " +
                     "AND status IN ('OPEN','IN_PROGRESS','OVERDUE') AND staff_id IS NOT NULL",

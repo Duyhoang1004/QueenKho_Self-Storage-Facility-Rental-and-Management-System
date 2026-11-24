@@ -145,6 +145,7 @@ public class AccessPolicy {
         rule("POST", "/api/v1/reservations/{id}/cancel", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/reservations/{id}/reschedule-unit-issue", "CUSTOMER_BOOKING"); // BR-141: ô sự cố → khách dời lịch
         rule("POST", "/api/v1/reservations/{id}/request-replacement-unit", "CUSTOMER_BOOKING");
+        rule("POST", "/api/v1/reservations/{id}/execute-check-in-issue-choice", "RESERVATION_MANAGE");
         rule("POST", "/api/payments/vnpay/create", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/contracts/{id}/request-checkout", "CUSTOMER_RENTAL");
         rule("POST", "/api/v1/contracts/{id}/cancel-checkout", "CUSTOMER_RENTAL");
@@ -169,6 +170,7 @@ public class AccessPolicy {
         rule("GET", "/api/v1/contracts/{id}/handover-records", "CONTRACT_VIEW"); // BR-121: biên bản + ảnh
         rule("GET", "/api/v1/contracts/{id}/check-in-handover", "CONTRACT_VIEW");
         rule("GET", "/api/v1/contracts/{id}/check-in-handover/history", "CONTRACT_VIEW");
+        rule("POST", "/api/v1/contracts/{id}/check-in-issue-choice", "CUSTOMER_BOOKING");
         rule("POST", "/api/v1/contracts/{id}/check-in-handover/{attemptId}/decision", "CUSTOMER_BOOKING");
         rule("GET", "/api/v1/contracts/{id}/unit-transfers", "CONTRACT_VIEW");   // BR-122: lịch sử chuyển ô
         rule("GET", "/api/v1/contracts/{id}/transfer-options", "RESERVATION_MANAGE");
@@ -231,6 +233,8 @@ public class AccessPolicy {
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-check-in-issues", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/reopen-check-in", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/confirm-unit-issue", "TASK_MANAGE");
+        rule("POST", "/api/v1/staff-tasks/{id}/start-check-in-repair", "TASK_MANAGE");
+        rule("POST", "/api/v1/staff-tasks/{id}/confirm-check-in-repair", "TASK_MANAGE");
         rule("POST", "/api/v1/staff-tasks/{id}/check-out", "TASK_EXECUTE");
         rule("POST", "/api/v1/staff-tasks/{id}/resolve-support", "TASK_EXECUTE");
         rule("PUT", "/api/v1/staff-tasks/{id}/update-support-resolution", "TASK_EXECUTE");

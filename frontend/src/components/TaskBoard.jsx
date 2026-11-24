@@ -12,6 +12,11 @@ import TimeFilterBar from './TimeFilterBar'
 const REFRESH_MS = 60000 // khớp với job quá hạn chạy mỗi phút ở backend
 const PAGE_SIZE = 5 // Cập nhật: 5 task mỗi trang để giao diện gọn gàng, không phải cuộn xa
 
+const visibleTaskNote = (task) => ['CHECKIN_REPAIR', 'CHECKIN_FAULT'].includes(task.maintenanceReason)
+  ? String(task.note || '').replace(/^\[CHECKIN_UNIT=[^\]]+\]\s*/, '')
+      .replace(/^Xử lý sự cố trước bàn giao:/, 'Xử lý sự cố khi nhận kho:')
+  : task.note
+
 const TYPE_META = {
   CHECK_IN:    { label: 'Check-in',    icon: 'login',         cls: 'bg-[#D7FFB8] text-[#58A700] border-[#58CC02]' },
   CHECK_OUT:   { label: 'Check-out',   icon: 'logout',        cls: 'bg-[#FFE8CC] text-[#E58800] border-[#FF9600]' },
@@ -829,8 +834,8 @@ export default function TaskBoard({
                             <span className="text-[10px] font-black uppercase text-[#777777] shrink-0 bg-[#EAEAEA] px-1.5 py-0.5 rounded">
                               Ghi chú
                             </span>
-                            <span className="text-[11px] font-bold text-[#555555] truncate" title={task.note}>
-                              {task.note}
+                            <span className="text-[11px] font-bold text-[#555555] truncate" title={visibleTaskNote(task)}>
+                              {visibleTaskNote(task)}
                             </span>
                           </div>
                         ) : null}
@@ -1039,7 +1044,7 @@ export default function TaskBoard({
                     ) : task.note ? (
                       <p className="text-[11px] font-bold text-[#777777] leading-relaxed line-clamp-2">
                         <span className="font-black text-[#AFAFAF] uppercase mr-1">Ghi chú:</span>
-                        {task.note}
+                        {visibleTaskNote(task)}
                       </p>
                     ) : null}
 

@@ -139,6 +139,24 @@ public class StaffTaskController {
         return ResponseEntity.ok(staffTaskService.confirmCheckInIssue(id, currentUser.require(), body.get("note")));
     }
 
+    @PostMapping("/{id}/start-check-in-repair")
+    public ResponseEntity<?> startCheckInRepair(@PathVariable Integer id) {
+        try {
+            return ResponseEntity.ok(staffTaskService.startCheckInRepair(id, currentUser.require()));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/{id}/confirm-check-in-repair")
+    public ResponseEntity<?> confirmCheckInRepair(@PathVariable Integer id, @RequestBody Map<String, String> body) {
+        try {
+            return ResponseEntity.ok(staffTaskService.confirmCheckInRepair(id, currentUser.require(), body.get("note")));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
     @PostMapping("/{id}/resolve-check-in-issues")
     public ResponseEntity<?> resolveCheckInIssues(@PathVariable Integer id,
                                                    @RequestBody(required = false) Map<String, Object> body) {

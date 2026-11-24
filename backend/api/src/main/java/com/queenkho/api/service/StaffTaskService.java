@@ -1078,6 +1078,24 @@ public class StaffTaskService {
             result.put("customerRejectionReason", data.get("customerRejectionReason"));
             result.put("customerRejectionImages", data.getOrDefault("customerRejectionImages", List.of()));
             result.put("facilityFaultConfirmed", "CI_FAULT".equals(blocker.get("record_type")));
+            if ("CI_FAULT".equals(blocker.get("record_type"))) result.put("faultNote", data.get("note"));
+            List<Map<String, Object>> repairTasks = jdbcTemplate.queryForList(
+                    "SELECT TOP 1 id, status, note, evidence_image_url, completed_at FROM facility_tasks " +
+                    "WHERE contract_id = ? AND task_type = 'MAINTENANCE' AND maintenance_reason = 'CHECKIN_REPAIR' " +
+                    "AND created_at >= ? ORDER BY id DESC", contractId, blocker.get("created_at"));
+            if (!repairTasks.isEmpty()) {
+                Map<String, Object> repair = repairTasks.get(0);
+                result.put("repairTaskId", repair.get("id"));
+                result.put("repairTaskStatus", repair.get("status"));
+                result.put("repairTaskNote", repair.get("note"));
+                result.put("repairTaskEvidence", repair.get("evidence_image_url"));
+                result.put("repairTaskCompletedAt", repair.get("completed_at"));
+            }
+            Map<String, Object> choice = checkInEvent(contractId, "CI_CHOICE", "CI_CHOICE_DONE");
+            if (choice != null && eventId(choice) > eventId(blocker)) {
+                result.put("customerChoice", eventData(choice));
+                result.put("customerChoiceExecuted", "CI_CHOICE_DONE".equals(choice.get("record_type")));
+            }
             return result;
         }
         List<Map<String, Object>> history = checkInHandoverHistory(contractId, actor);
@@ -1090,6 +1108,102 @@ public class StaffTaskService {
     }
 
     @Transactional
+    public Map<String, Object> chooseCheckInIssue(Integer contractId, CurrentUser actor, Map<String, Object> body) {
+        RentalContract contract = checkInContract(contractId, actor);
+        if (!actor.hasRole("CUSTOMER") || !Objects.equals(contract.getCustomer().getId(), actor.id()))
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ khách của hợp đồng được chọn phương án");
+        Map<String, Object> fault = checkInEvent(contractId, "CI_BLOCKER", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE", "CI_DRAFT", "CI_ACCEPT", "CI_REJECT");
+        if (fault == null || !"CI_FAULT".equals(fault.get("record_type")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "NO_CONFIRMED_FAULT", "FM chưa xác nhận ô không thể bàn giao đúng hẹn");
+        String option = text(body, "option");
+        if (!List.of("CHANGE_UNIT", "RESCHEDULE", "CANCEL_100").contains(option))
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_CHOICE", "Chọn đổi ô, dời lịch hoặc hủy hoàn 100%");
+        String note = text(body, "note");
+        if (note.length() > 300) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "NOTE_TOO_LONG", "Ghi chú tối đa 300 ký tự");
+        Map<String, Object> previous = checkInEvent(contractId, "CI_CHOICE", "CI_CHOICE_DONE");
+        if (previous != null && eventId(previous) > eventId(fault)
+                && "CI_CHOICE_DONE".equals(previous.get("record_type")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CHOICE_EXECUTED", "Phương án trước đã được FM thực hiện");
+        Map<String, Object> choice = new LinkedHashMap<>();
+        choice.put("option", option);
+        choice.put("note", note);
+        choice.put("actorId", actor.id());
+        if ("RESCHEDULE".equals(option)) {
+            LocalDate day;
+            try { day = LocalDate.parse(text(body, "newStartDate")); }
+            catch (Exception ex) { throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_DATE", "Chọn ngày nhận kho mới hợp lệ"); }
+            if (!day.isAfter(LocalDate.now())) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_DATE", "Ngày nhận kho mới phải từ ngày mai");
+            ReservationService.assertWithinBookingLead(day);
+            choice.put("newStartDate", day.toString());
+        }
+        if ("CANCEL_100".equals(option)) {
+            String method = text(body, "refundMethod");
+            if (!List.of("CASH", "BANK_TRANSFER").contains(method))
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REFUND_METHOD_REQUIRED", "Chọn cách nhận tiền hoàn");
+            choice.put("refundMethod", method);
+            if ("BANK_TRANSFER".equals(method)) {
+                for (String field : List.of("bankName", "bankAccountNumber", "bankAccountName")) {
+                    String value = text(body, field);
+                    if (value.isBlank() || value.length() > 100)
+                        throw new StaffTaskException(HttpStatus.BAD_REQUEST, "BANK_INFO_REQUIRED", "Điền đầy đủ thông tin tài khoản nhận hoàn tiền");
+                    choice.put(field, value);
+                }
+            }
+        }
+        addCheckInEvent(contract, actor.id(), "CI_CHOICE", choice, null, null);
+        List<Integer> checkInIds = jdbcTemplate.queryForList(
+                "SELECT TOP 1 id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' ORDER BY id DESC",
+                Integer.class, contractId);
+        if (notificationService != null) notificationService.notifyFacilityManagers(contract.getStorageUnit().getFacility().getId(),
+                "Khách đã chọn phương án cho ô sự cố " + contract.getStorageUnit().getId(),
+                "Khách chọn " + option + (note.isBlank() ? "" : ". Ghi chú: " + note), "BOOKING",
+                checkInIds.isEmpty() ? "/manager/tasks" : "/manager/tasks/" + checkInIds.get(0));
+        return Map.of("status", "WAITING_FM", "option", option);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> pendingCheckInIssueChoice(Integer contractId, CurrentUser actor) {
+        RentalContract contract = checkInContract(contractId, actor);
+        if (!actor.hasRole("FACILITY_MANAGER") || !Objects.equals(contract.getStorageUnit().getFacility().getId(), actor.facilityId()))
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ FM của cơ sở được thực hiện phương án");
+        Map<String, Object> fault = checkInEvent(contractId, "CI_BLOCKER", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE", "CI_DRAFT", "CI_ACCEPT", "CI_REJECT");
+        Map<String, Object> choice = checkInEvent(contractId, "CI_CHOICE", "CI_CHOICE_DONE");
+        if (fault == null || !"CI_FAULT".equals(fault.get("record_type")) || choice == null
+                || !"CI_CHOICE".equals(choice.get("record_type")) || eventId(choice) <= eventId(fault))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "NO_PENDING_CHOICE", "Khách chưa chọn phương án cần FM thực hiện");
+        return eventData(choice);
+    }
+
+    @Transactional
+    public void completeCheckInIssueChoice(Integer contractId, CurrentUser actor, String option) {
+        Map<String, Object> choice = pendingCheckInIssueChoice(contractId, actor);
+        if (!option.equals(choice.get("option"))) throw new StaffTaskException(HttpStatus.CONFLICT, "CHOICE_CHANGED", "Khách đã đổi phương án");
+        RentalContract contract = checkInContract(contractId, actor);
+        addCheckInEvent(contract, actor.id(), "CI_CHOICE_DONE", choice, null, null);
+    }
+
+    @Transactional
+    public void onCheckInIssueUnitTransferred(Integer contractId, Integer managerId, Integer facilityId,
+                                              String oldUnitId, String newUnitId, String reasonType) {
+        CurrentUser actor = new CurrentUser(managerId, "FACILITY_MANAGER", facilityId, null, null);
+        Map<String, Object> active = checkInEvent(contractId, "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE", "CI_DRAFT", "CI_ACCEPT", "CI_REJECT");
+        if (active == null || !"CI_FAULT".equals(active.get("record_type"))) return;
+        if (!"FACILITY_ISSUE".equals(reasonType))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "FACILITY_REASON_REQUIRED", "Sự cố trước bàn giao phải chuyển ô với lý do lỗi cơ sở");
+        Map<String, Object> choice = pendingCheckInIssueChoice(contractId, actor);
+        if (!"CHANGE_UNIT".equals(choice.get("option")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CHOICE_MISMATCH", "Khách đã chọn phương án khác, chưa đồng ý đổi ô");
+        Map<String, Object> fault = checkInEvent(contractId, "CI_FAULT");
+        if (fault == null || !oldUnitId.equals(text(eventData(fault), "unitId")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô lỗi không khớp báo cáo khách đã xác nhận");
+        RentalContract contract = checkInContract(contractId, actor);
+        completeCheckInIssueChoice(contractId, actor, "CHANGE_UNIT");
+        addCheckInEvent(contract, managerId, "CI_REOPEN", Map.of(
+                "draftId", eventDraftId(fault), "actorId", managerId, "unitId", newUnitId,
+                "note", "FM đã đổi ô lỗi " + oldUnitId + " sang ô " + newUnitId + "; Staff cần kiểm tra và lập biên bản mới"), null, null);
+    }
+
+    @Transactional
     public Map<String, Object> reportCheckInBlocker(Integer taskId, CurrentUser actor, Map<String, Object> body) {
         if (!actor.hasRole("STAFF")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ nhân viên phụ trách được báo sự cố bàn giao");
         lockCheckInTask(taskId);
@@ -1099,6 +1213,9 @@ public class StaffTaskService {
                 || !task.getFacilityId().equals(actor.facilityId())
                 || !"PENDING_CHECK_IN".equals(task.getContract().getStatus()))
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_READY", "Task check-in không còn thuộc nhân viên này");
+        if ("MAINTENANCE".equalsIgnoreCase(task.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô đang bảo trì từ sự cố trước. Cần hoàn tất task bảo trì và mở ô trước khi báo sự cố check-in mới");
         String note = text(body, "note");
         if (!validLength(note, 10, 500)) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "ISSUE_NOTE_REQUIRED", "Mô tả sự cố trong 10–500 ký tự");
         String requestedType = text(body, "issueType");
@@ -1137,6 +1254,73 @@ public class StaffTaskService {
                         + ". Quản lý cơ sở sẽ liên hệ để thống nhất phương án; biên bản cũ không còn hiệu lực.",
                 "BOOKING", "/kho-cua-toi/hop-dong/" + task.getContract().getReservation().getId());
         return Map.of("status", "BLOCKED_FM", "message", "Đã báo quản lý; task check-in chờ phương án xử lý");
+    }
+
+    @Transactional
+    public Map<String, Object> startCheckInRepair(Integer taskId, CurrentUser actor) {
+        if (!actor.hasRole("FACILITY_MANAGER")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ quản lý cơ sở được giao xử lý");
+        lockCheckInTask(taskId);
+        StaffTask checkIn = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        if (!Objects.equals(checkIn.getFacilityId(), actor.facilityId())) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Khác cơ sở");
+        Map<String, Object> blocker = checkInEvent(checkIn.getContract().getId(), "CI_BLOCKER", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE", "CI_DRAFT", "CI_ACCEPT", "CI_REJECT");
+        if (blocker == null || !"CI_BLOCKER".equals(blocker.get("record_type"))
+                || !"FACILITY_ISSUE".equals(eventData(blocker).get("issueType")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "ISSUE_NOT_REPORTED", "Không có sự cố ô đang chờ FM xử lý");
+        String unitId = text(eventData(blocker), "unitId");
+        if (!unitId.equals(checkIn.getContract().getStorageUnit().getId()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã thay đổi; cần kiểm tra lại báo cáo sự cố");
+        if ("MAINTENANCE".equalsIgnoreCase(checkIn.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô đã bị khóa bảo trì. Hoàn tất task bảo trì của sự cố trước, không giao thêm task sửa ô check-in");
+        StaffTask repair = createMaintenanceTask(checkIn.getContract(), "CHECKIN_REPAIR",
+                "[CHECKIN_UNIT=" + unitId + "] Xử lý sự cố trước bàn giao: " + text(eventData(blocker), "note"),
+                true, checkIn.getStaff());
+        if (repair == null) throw new StaffTaskException(HttpStatus.CONFLICT, "REPAIR_TASK_EXISTS", "Đã có task bảo trì đang mở cho hợp đồng này");
+        LocalDateTime appointment = checkIn.getContract().getReservation() != null
+                ? checkIn.getContract().getReservation().getExpectedAppointmentTime() : null;
+        if (appointment != null && appointment.isAfter(LocalDateTime.now())) {
+            repair.setDueAt(appointment.toLocalDate().atTime(CLOSING_TIME));
+            staffTaskRepository.save(repair);
+        }
+        return Map.of("taskId", repair.getId(), "status", repair.getStatus(), "message", "Đã giao xử lý sự cố ô kho");
+    }
+
+    @Transactional
+    public Map<String, Object> confirmCheckInRepair(Integer taskId, CurrentUser actor, String note) {
+        if (!actor.hasRole("FACILITY_MANAGER")) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Chỉ quản lý cơ sở được xác nhận ô đạt");
+        lockCheckInTask(taskId);
+        StaffTask checkIn = staffTaskRepository.findDetailById(taskId).orElseThrow();
+        if (!Objects.equals(checkIn.getFacilityId(), actor.facilityId())) throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Khác cơ sở");
+        if (!validLength(note, 10, 500)) throw new StaffTaskException(HttpStatus.BAD_REQUEST, "RESOLUTION_NOTE_REQUIRED", "Ghi kết luận kiểm tra trong 10–500 ký tự");
+        Map<String, Object> blocker = checkInEvent(checkIn.getContract().getId(), "CI_BLOCKER", "CI_FAULT", "CI_REOPEN", "CI_RESCHEDULE", "CI_DRAFT", "CI_ACCEPT", "CI_REJECT");
+        if (blocker == null || !"CI_BLOCKER".equals(blocker.get("record_type"))
+                || !"FACILITY_ISSUE".equals(eventData(blocker).get("issueType")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "ISSUE_NOT_REPORTED", "Sự cố không còn chờ xác nhận");
+        String unitId = text(eventData(blocker), "unitId");
+        if (!unitId.equals(checkIn.getContract().getStorageUnit().getId()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã thay đổi; không thể duyệt ảnh của ô cũ");
+        if ("MAINTENANCE".equalsIgnoreCase(checkIn.getContract().getStorageUnit().getStatus()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
+                    "Ô vẫn đang khóa bảo trì từ sự cố trước. Hoàn tất task bảo trì để mở ô rồi mới xác nhận xử lý check-in");
+        List<StaffTask> repairs = staffTaskRepository.findByContractIdAndTaskTypeAndStatusIn(
+                checkIn.getContract().getId(), "MAINTENANCE", List.of("COMPLETED"));
+        StaffTask repair = repairs.stream().filter(t -> "CHECKIN_REPAIR".equals(t.getMaintenanceReason()))
+                .filter(t -> t.getNote() != null && t.getNote().startsWith("[CHECKIN_UNIT=" + unitId + "]"))
+                .max(Comparator.comparing(StaffTask::getId)).orElse(null);
+        Object reportedAt = blocker.get("created_at");
+        LocalDateTime reportTime = reportedAt instanceof java.sql.Timestamp ts ? ts.toLocalDateTime()
+                : reportedAt instanceof LocalDateTime dt ? dt : null;
+        if (repair == null || repair.getEvidenceImageUrl() == null || repair.getEvidenceImageUrl().isBlank()
+                || repair.getCreatedAt() == null || reportTime == null || repair.getCreatedAt().isBefore(reportTime))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "REPAIR_NOT_DONE", "Staff phải hoàn tất task cùng ảnh sau xử lý trước khi FM xác nhận");
+        assertUnitReadyForCheckIn(checkIn.getContract());
+        addCheckInEvent(checkIn.getContract(), actor.id(), "CI_REOPEN",
+                Map.of("draftId", eventDraftId(blocker), "note", note.trim(), "unitId", unitId,
+                        "repairTaskId", repair.getId(), "actorId", actor.id()), repair.getEvidenceImageUrl(), null);
+        if (notificationService != null && checkIn.getStaff() != null) notificationService.notifyStaff(checkIn.getStaff().getId(),
+                "Ô đã đạt sau xử lý", "FM đã xác nhận ô " + unitId + ". Chỉ lập biên bản vào ngày khách hẹn nhận kho.",
+                "ASSIGNED", "/staff/tasks/" + taskId);
+        return Map.of("status", "RESOLVED", "message", "Ô đã đạt; check-in tiếp tục theo ngày hẹn");
     }
 
     @Transactional(readOnly = true)
@@ -1376,6 +1560,9 @@ public class StaffTaskService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "ISSUE_NOT_REPORTED", "Chưa có báo cáo không thể bàn giao cần xác nhận");
         if (!"FACILITY_ISSUE".equals(eventData(latest).get("issueType")))
             throw new StaffTaskException(HttpStatus.CONFLICT, "NOT_FACILITY_FAULT", "Bất đồng chưa xác định là lỗi cơ sở để hoàn 100%");
+        String reportedUnitId = text(eventData(latest), "unitId");
+        if (!reportedUnitId.equals(task.getContract().getStorageUnit().getId()))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã đổi; không thể xác nhận lỗi lên ô thay thế");
         addCheckInEvent(task.getContract(), actor.id(), "CI_FAULT",
                 Map.of("draftId", eventDraftId(latest), "note", note.trim(), "actorId", actor.id(),
                         "unitId", task.getContract().getStorageUnit().getId()),
@@ -1385,6 +1572,15 @@ public class StaffTaskService {
         affectedUnit.setMaintenanceNote(note.trim());
         if (affectedUnit.getMaintenanceSince() == null) affectedUnit.setMaintenanceSince(LocalDateTime.now());
         storageUnitRepository.save(affectedUnit);
+        jdbcTemplate.update("UPDATE facility_tasks SET status = 'CANCELLED', completed_at = SYSDATETIME() " +
+                        "WHERE contract_id = ? AND task_type = 'MAINTENANCE' AND maintenance_reason = 'CHECKIN_REPAIR' " +
+                        "AND status IN ('OPEN','IN_PROGRESS','OVERDUE')", task.getContract().getId());
+        StaffTask maintenance = createMaintenanceTask(task.getContract(), "CHECKIN_FAULT",
+                "[CHECKIN_UNIT=" + reportedUnitId + "] Khắc phục ô không thể bàn giao đúng hẹn: " + note.trim(),
+                false, null);
+        if (maintenance == null)
+            throw new StaffTaskException(HttpStatus.CONFLICT, "MAINTENANCE_TASK_NOT_CREATED",
+                    "Không tạo được task bảo trì cho ô lỗi. Kiểm tra task bảo trì đang mở rồi xác nhận lại sự cố");
         if (notificationService != null) notificationService.notifyCustomer(task.getContract().getCustomer().getId(),
                 "Cơ sở xác nhận sự cố ô kho",
                 "Ô " + task.getContract().getStorageUnit().getId() + " chưa thể bàn giao. Cơ sở đang xử lý; bạn có thể xem phương án dời lịch hoặc hủy hoàn tiền tại Kho của tôi.",
@@ -1406,6 +1602,9 @@ public class StaffTaskService {
         Map<String, Object> latest = checkInEvent(task.getContract().getId(), "CI_DRAFT", "CI_ACCEPT", "CI_REJECT", "CI_FAULT", "CI_BLOCKER", "CI_RESOLUTION", "CI_REOPEN", "CI_RESCHEDULE", "CI_WITHDRAW");
         if (latest == null || "CI_REOPEN".equals(latest.get("record_type")) || "CI_RESCHEDULE".equals(latest.get("record_type")))
             throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_NOT_PENDING", "Không có biên bản cần mở lại");
+        if ("CI_BLOCKER".equals(latest.get("record_type"))
+                && "FACILITY_ISSUE".equals(eventData(latest).get("issueType")))
+            throw new StaffTaskException(HttpStatus.CONFLICT, "REPAIR_APPROVAL_REQUIRED", "Cần Staff hoàn tất task sửa ô và FM xác nhận ô đạt");
         int draftId = "CI_DRAFT".equals(latest.get("record_type")) ? eventId(latest) : eventDraftId(latest);
         if (draftId < 0 && !"CI_FAULT".equals(latest.get("record_type")) && !"CI_BLOCKER".equals(latest.get("record_type")))
             throw new StaffTaskException(HttpStatus.CONFLICT, "HANDOVER_STALE", "Biên bản không hợp lệ");
@@ -2662,6 +2861,8 @@ public class StaffTaskService {
         if (!"MAINTENANCE".equals(task.getTaskType())) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "TASK_NOT_MAINTENANCE", "Task này không phải task bảo trì ô kho");
         }
+        if ("CHECKIN_REPAIR".equals(task.getMaintenanceReason()) && isManager)
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "STAFF_REPAIR_REQUIRED", "Staff phải hoàn tất task sửa ô; FM xác nhận kết quả ở báo cáo sự cố");
         // D-21 / PR-O22: khách đang khiếu nại quyết toán → giữ hiện trường, chưa đóng bảo trì
         if (settlementService != null) settlementService.assertNotDisputed(task.getContract() != null ? task.getContract().getId() : null);
 
@@ -2682,6 +2883,8 @@ public class StaffTaskService {
         }
         String evidence = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()
                 ? request.getEvidenceImageUrl().trim() : null;
+        if ("CHECKIN_REPAIR".equals(task.getMaintenanceReason()) && evidence == null)
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "REPAIR_PHOTO_REQUIRED", "Cần ảnh ô sau xử lý để FM xác nhận");
         if (evidence != null && evidence.length() > 1000) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Link ảnh sau sửa tối đa 1000 ký tự");
         }
@@ -2709,6 +2912,10 @@ public class StaffTaskService {
 
         StaffTask done = staffTaskRepository.findDetailById(taskId).orElseThrow();
         StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
+        if (List.of("CHECKIN_REPAIR", "CHECKIN_FAULT").contains(done.getMaintenanceReason()) && done.getNote() != null) {
+            Matcher unitMarker = java.util.regex.Pattern.compile("\\[CHECKIN_UNIT=([^\\]]+)\\]").matcher(done.getNote());
+            if (unitMarker.find()) unit = storageUnitRepository.findById(unitMarker.group(1)).orElse(unit);
+        }
         if (unit != null && !"MAINTENANCE".equals(unit.getStatus()) && done.getContract() != null) {
             // Vấn đề 6: nếu HĐ đã chuyển tạm sang ô khẩn cấp / ô khác khi ô cũ vào bảo trì, mở lại chính ô cũ đó
             try {
@@ -2724,7 +2931,8 @@ public class StaffTaskService {
             } catch (Exception ignored) {
             }
         }
-        if (unit != null && "MAINTENANCE".equals(unit.getStatus())) {
+        if (unit != null && "MAINTENANCE".equals(unit.getStatus())
+                && !"CHECKIN_REPAIR".equals(done.getMaintenanceReason())) {
             unit.setStatus(unit.idleStatus());
             unit.setMaintenanceNote(null);
             unit.setMaintenanceSince(null);
@@ -2751,11 +2959,18 @@ public class StaffTaskService {
         // BR-111: nhân viên làm xong thì FM được báo (FM tự đóng thì không cần)
         if (notificationService != null && !isManager) notificationService.notifyFacilityManagers(
                 task.getFacilityId(),
-                (cleanup ? "Đã cưỡng chế dọn kho xong" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
+                ("CHECKIN_REPAIR".equals(done.getMaintenanceReason()) ? "Staff đã gửi kết quả sửa ô để FM duyệt"
+                        : cleanup ? "Đã cưỡng chế dọn kho xong" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
                 user.getFullName() + " hoàn tất task #" + taskId + ": " + workNote
-                        + (unit != null ? ". Ô đã mở lại cho thuê." : ""),
+                        + ("CHECKIN_REPAIR".equals(done.getMaintenanceReason())
+                        ? ". Xem ảnh và xác nhận ô đạt tại báo cáo sự cố check-in."
+                        : unit != null ? ". Ô đã mở lại cho thuê." : ""),
                 "TASK",
-                "/manager/tasks/" + taskId
+                "CHECKIN_REPAIR".equals(done.getMaintenanceReason()) && done.getContract() != null
+                        ? "/manager/tasks/" + jdbcTemplate.queryForList(
+                            "SELECT TOP 1 id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' ORDER BY id DESC",
+                            Integer.class, done.getContract().getId()).stream().findFirst().orElse(taskId)
+                        : "/manager/tasks/" + taskId
         );
 
         // Nếu task bảo trì xuất phát từ yêu cầu hỗ trợ -> cập nhật ticket sang RESOLVED

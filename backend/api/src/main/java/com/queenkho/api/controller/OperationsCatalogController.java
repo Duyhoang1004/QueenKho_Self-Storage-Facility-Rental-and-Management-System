@@ -60,6 +60,12 @@ public class OperationsCatalogController {
         return ResponseEntity.ok(catalogService.listWarehouses(true));
     }
 
+    // BR-134a (23/11/2026): kho tổng phụ trách cơ sở (cùng thành phố) — hiện cạnh bản đồ cơ sở, chọn sẵn khi dọn kho
+    @GetMapping("/facilities/{facilityId}/central-warehouse")
+    public ResponseEntity<?> facilityWarehouse(@PathVariable Integer facilityId) {
+        return ResponseEntity.ok(catalogService.warehouseForFacility(facilityId));
+    }
+
     @GetMapping("/bom/central-warehouses")
     public ResponseEntity<?> allWarehouses() {
         return ResponseEntity.ok(catalogService.listWarehouses(false));

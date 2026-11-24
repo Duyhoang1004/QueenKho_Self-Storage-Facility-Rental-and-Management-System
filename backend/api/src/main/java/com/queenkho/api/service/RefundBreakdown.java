@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -130,9 +131,10 @@ public final class RefundBreakdown {
         if (basis != null) {
             BigDecimal rentKept = rentPaid.subtract(currentRefund).max(BigDecimal.ZERO);
             if (basis.early() && basis.fault()) {
-                lines.add(new MoneyLine(MoneyLine.KEPT, "Tiền thuê + bảo hiểm những ngày đã dùng",
-                        money(rentPaid.add(insurance).subtract(currentRefund).max(BigDecimal.ZERO)),
-                        "Chấm dứt do lỗi cơ sở: không phí phá hợp đồng, hoàn theo số ngày còn lại (BR-127)"));
+                BigDecimal usedAmount = money(rentPaid.add(insurance).subtract(currentRefund).max(BigDecimal.ZERO));
+                lines.add(new MoneyLine(MoneyLine.KEPT,
+                        insurance.signum() > 0 ? "Tiền thuê + bảo hiểm những ngày đã dùng" : "Tiền thuê những ngày đã dùng",
+                        usedAmount, faultDaysNote(basis, rentPaid.add(insurance), usedAmount)));
             } else if (basis.early() && nz(basis.breakFee()).signum() == 0) {
                 lines.add(new MoneyLine(MoneyLine.KEPT, "Tiền thuê kỳ hiện tại", money(rentKept),
                         "Trả trong tháng cuối của kỳ: không hoàn tiền thuê, không thu phí phá hợp đồng (PR-O2a)"));
@@ -179,6 +181,24 @@ public final class RefundBreakdown {
             lines.add(new MoneyLine(MoneyLine.ADDED, "Bồi thường hàng hư / mất", money(compensation), "Hồ sơ đã được duyệt"));
         }
         return lines;
+    }
+
+    /**
+     * Góp ý test 24/11: ghi rõ phép tính "N ngày × đơn giá/ngày (tiền kỳ ÷ số ngày của kỳ)" thay vì chỉ "hoàn theo số ngày còn lại",
+     * vd 1 ngày × 88.750đ (8.165.000đ ÷ 92 ngày). Số ngày đã dùng suy ngược từ số tiền giữ lại (cùng công thức
+     * StaffTaskService.faultTerminationReturn) nên luôn khớp số tiền.
+     */
+    static String faultDaysNote(RentBasis basis, BigDecimal periodTotal, BigDecimal usedAmount) {
+        String rule = "Chấm dứt do lỗi cơ sở: không phí phá hợp đồng, hoàn theo số ngày còn lại (BR-127)";
+        if (basis.periodStart() == null || basis.periodMonths() <= 0 || nz(periodTotal).signum() <= 0) return rule;
+        long totalDays = ChronoUnit.DAYS.between(basis.periodStart(),
+                basis.periodStart().plusMonths(basis.periodMonths()));
+        if (totalDays <= 0) return rule;
+        BigDecimal daily = periodTotal.divide(BigDecimal.valueOf(totalDays), 0, RoundingMode.HALF_UP);
+        long usedDays = daily.signum() > 0
+                ? usedAmount.divide(daily, 0, RoundingMode.HALF_UP).longValue() : 0;
+        return usedDays + " ngày đã dùng × " + vnd(daily) + "/ngày (" + vnd(periodTotal) + " ÷ " + totalDays
+                + " ngày của kỳ) · " + rule;
     }
 
     private static void addInsuranceKept(List<MoneyLine> lines, BigDecimal insurance, boolean early) {

@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -92,4 +93,9 @@ public class StaffTask {
     // 22/11/2026 — PR-T2: lý do task bị huỷ (khách huỷ đơn / khách huỷ yêu cầu hỗ trợ), hiện cho nhân viên
     @Column(name = "cancel_reason", length = 300)
     private String cancelReason;
+
+    // 24/11/2026 — PR-O31a: demo "Khách tới trả đúng ngày hẹn" — ngày hẹn gốc của task nghiệm thu (hạn task đã dời về hôm nay);
+    // nghiệm thu chốt quyết toán theo ngày này để số tiền khớp đúng số khách thấy lúc hẹn. NULL = luồng thật.
+    @Column(name = "simulated_checkout_date")
+    private LocalDate simulatedCheckoutDate;
 }

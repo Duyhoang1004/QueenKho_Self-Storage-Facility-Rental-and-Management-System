@@ -361,7 +361,7 @@ function PaymentReceiptModal({ transaction, onClose }) {
                     Bồi thường thiệt hại hàng hóa
                   </span>
                   <span className="text-[10px] text-[#AFAFAF]">
-                    {damagePercent != null ? `Tỷ lệ thiệt hại ghi nhận: ${damagePercent}%` : 'Theo biên bản thẩm định hiện trường'}
+                    = giá trị thiệt hại hàng hư hỏng{damagePercent != null ? ` (tỷ lệ hư hỏng ${damagePercent}%)` : ''}, tối đa trần bồi thường
                   </span>
                 </div>
                 <span className="font-black text-[#4B4B4B]">
@@ -369,15 +369,15 @@ function PaymentReceiptModal({ transaction, onClose }) {
                 </span>
               </div>
 
-              {/* Tiền phạt vi phạm cơ sở (1 tháng tiền thuê khi lỗi cơ sở) */}
+              {/* Đền bù thêm theo hợp đồng (1 tháng tiền thuê khi chấm dứt HĐ do lỗi cơ sở) */}
               {penaltyCompensation > 0 && (
                 <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
                   <div className="flex flex-col">
                     <span className="font-bold text-[#58A700]">
-                      Tiền phạt vi phạm cơ sở (1 tháng tiền thuê)
+                      Đền bù thêm theo hợp đồng (cơ sở chịu)
                     </span>
                     <span className="text-[10px] text-[#AFAFAF]">
-                      Khoản đền bù thêm do lỗi từ phía cơ sở lưu trữ
+                      1 tháng tiền thuê vì chấm dứt hợp đồng do lỗi cơ sở
                     </span>
                   </div>
                   <span className="font-black text-[#58A700]">

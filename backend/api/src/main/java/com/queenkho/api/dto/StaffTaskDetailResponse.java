@@ -120,4 +120,7 @@ public class StaffTaskDetailResponse {
 
     // PR-T2: lý do task bị huỷ
     private String cancelReason;
+
+    // PR-O31a: ngày hẹn gốc khi đã bấm demo "Khách tới trả đúng ngày hẹn" (quyết toán chốt theo ngày này)
+    private LocalDate simulatedCheckoutDate;
 }

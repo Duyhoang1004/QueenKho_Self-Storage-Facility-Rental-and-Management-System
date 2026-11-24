@@ -524,7 +524,7 @@ export default function ManagerDashboardPage() {
       {/* Modal Báo Cáo Ngày / Xuất Tổng Kết (UC-30 Quick Report) */}
       {showReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border-4 border-[#E5E5E5] flex flex-col gap-5">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border-4 border-[#E5E5E5] flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b-2 border-[#E5E5E5]">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[#58CC02] text-2xl">summarize</span>

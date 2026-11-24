@@ -33,6 +33,12 @@ export async function decideClaim(claimId, data) {
 }
 
 // FM chi trả: data = { paymentMethod: BANK_TRANSFER | CASH, evidenceImageUrl, bankTransactionCode, cashReceiptConfirmed }
+// BR-128a (24/11/2026): khách nhập tài khoản nhận tiền bồi thường — data = { bankName, bankAccountNumber, bankAccountName }
+export async function updateClaimPayoutAccount(claimId, data) {
+  const res = await api.put(`/claims/${claimId}/payout-account`, data)
+  return res.data
+}
+
 export async function payClaim(claimId, data) {
   const res = await api.post(`/claims/${claimId}/pay`, data)
   return res.data

@@ -4,6 +4,7 @@ import com.queenkho.api.dto.CancelPreviewResponse;
 import com.queenkho.api.dto.CancelReservationRequest;
 import com.queenkho.api.dto.CreateReservationRequest;
 import com.queenkho.api.dto.CreateReservationResponse;
+import com.queenkho.api.dto.MoneyLine;
 import com.queenkho.api.dto.MyReservationResponse;
 import com.queenkho.api.dto.NoShowEligibility;
 import com.queenkho.api.dto.NoShowRequest;
@@ -29,9 +30,11 @@ import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.UnitTypeRepository;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -183,7 +186,7 @@ public class ReservationService {
                         displayStatus = "REFUNDED";
                     }
 
-                    return new MyReservationResponse(
+                    MyReservationResponse resp = new MyReservationResponse(
                             r.getId(),
                             r.getReservationCode(),
                             r.getCustomer().getFullName(),
@@ -214,8 +217,54 @@ public class ReservationService {
                             hasUnitIssue(r),
                             assignedUnit != null && assignedUnit.isEmergencyUnit(),
                             unitIssueRescheduled(r));
+                    // PR-B13: khách xem lại chi tiết huỷ đơn (mức áp dụng, phí giữ lại, số tiền hoàn)
+                    resp.setCancelledAt(r.getCancelledAt());
+                    resp.setCancellationTier(r.getCancellationTier());
+                    resp.setCancellationPenaltyAmount(r.getCancellationPenaltyAmount());
+                    resp.setCancellationRefundAmount(r.getCancellationRefundAmount());
+                    // PR-B14: bảng tính số tiền đã đóng lúc đặt kho + giao dịch thanh toán của đơn
+                    resp.setPaymentLines(bookingPaymentLines(r));
+                    resp.setPaymentTransactions(jdbcTemplate.queryForList(
+                            "SELECT transaction_code AS code, payment_type AS type, payment_method AS method, amount, paid_at AS paidAt " +
+                                    "FROM payment_transactions WHERE reservation_id = ? AND status = 'SUCCESS' " +
+                                    "AND payment_type = 'DEPOSIT' ORDER BY id", r.getId()));
+                    return resp;
                 })
                 .toList();
+    }
+
+    /**
+     * Góp ý test 24/11 (PR-B14): các dòng tạo nên số tiền khách đóng lúc đặt kho (cùng công thức lúc tạo đơn / VNPAY):
+     * tiền thuê theo giá niêm yết − ưu đãi gói − voucher + bảo hiểm + cọc. Số âm = khoản giảm.
+     */
+    static List<MoneyLine> bookingPaymentLines(Reservation r) {
+        List<MoneyLine> lines = new ArrayList<>();
+        BigDecimal price = r.getUnitType() != null && r.getUnitType().getBasePriceMonthly() != null
+                ? r.getUnitType().getBasePriceMonthly() : BigDecimal.ZERO;
+        int months = r.getDurationMonths() != null ? r.getDurationMonths() : 1;
+        int percent = r.getRentDiscountPercent() != null ? r.getRentDiscountPercent() : 0;
+        lines.add(new MoneyLine(MoneyLine.PAID, "Tiền thuê " + months + " tháng", price.multiply(BigDecimal.valueOf(months)),
+                vndText(price) + "/tháng (giá niêm yết) × " + months + " tháng"));
+        if (percent > 0) {
+            lines.add(new MoneyLine(MoneyLine.PAID, "Ưu đãi gói " + months + " tháng (−" + percent + "%)",
+                    PricingService.discountAmount(price, months, percent).negate(), "Giảm " + percent + "% tiền thuê cả gói"));
+        }
+        if (r.getVoucherDiscount() != null && r.getVoucherDiscount().signum() > 0) {
+            lines.add(new MoneyLine(MoneyLine.PAID, "Voucher" + (r.getVoucherCode() != null ? " " + r.getVoucherCode() : ""),
+                    r.getVoucherDiscount().negate(), "Giảm trực tiếp vào tiền thuê"));
+        }
+        InsurancePlan plan = InsurancePlan.of(r.getInsurancePlan());
+        BigDecimal premium = r.getInsurancePremiumMonthly() != null ? r.getInsurancePremiumMonthly() : BigDecimal.ZERO;
+        lines.add(new MoneyLine(MoneyLine.PAID, "Bảo hiểm hàng hoá — gói " + plan.label(),
+                premium.multiply(BigDecimal.valueOf(months)),
+                premium.signum() > 0 ? vndText(premium) + "/tháng × " + months + " tháng" : "Gói cơ bản miễn phí"));
+        lines.add(new MoneyLine(MoneyLine.PAID, "Tiền cọc", r.getDepositAmount() != null ? r.getDepositAmount() : BigDecimal.ZERO,
+                "Hoàn lại khi trả kho nguyên vẹn"));
+        return lines;
+    }
+
+    private static String vndText(BigDecimal v) {
+        return String.format("%,d", v.setScale(0, RoundingMode.HALF_UP).longValue()).replace(',', '.') + "đ";
     }
 
     /** PR-X5: [số biên bản bàn giao đã lập, số lần khách từ chối] của hợp đồng chờ nhận kho */

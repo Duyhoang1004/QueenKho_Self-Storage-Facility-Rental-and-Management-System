@@ -54,7 +54,7 @@ export default function StaffTaskBoardPage() {
         {/* Nút xem chi tiết (Dòng trên) */}
         <Link
           to={`/staff/tasks/${task.id}`}
-          className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+          className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           title="Xem chi tiết công việc"
         >
           <span className="material-symbols-outlined text-[17px]">visibility</span>
@@ -77,7 +77,7 @@ export default function StaffTaskBoardPage() {
           <button
             type="button"
             onClick={() => setConfirmTask(task)}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">front_hand</span>
             Nhận việc
@@ -88,7 +88,7 @@ export default function StaffTaskBoardPage() {
           <button
             type="button"
             onClick={() => setReportTask(task)}
-            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
             title="Báo cáo kết quả liên hệ khách hàng cho Quản lý"
           >
             <span className="material-symbols-outlined text-[16px]">phone_in_talk</span>
@@ -99,7 +99,7 @@ export default function StaffTaskBoardPage() {
         {canHandover && (
           <Link
             to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">
               {task.taskType === 'CHECK_OUT' ? 'fact_check' : 'assignment_turned_in'}
@@ -111,7 +111,7 @@ export default function StaffTaskBoardPage() {
         {canResolveSupport && (
           <Link
             to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">support_agent</span>
             Xử lý hỗ trợ
@@ -121,7 +121,7 @@ export default function StaffTaskBoardPage() {
         {canMaintain && (
           <Link
             to={`/staff/tasks/${task.id}`}
-            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-nowrap cursor-pointer"
+            className="duo-btn-green w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
           >
             <span className="material-symbols-outlined text-[17px]">build</span>
             Mở phiếu bảo trì

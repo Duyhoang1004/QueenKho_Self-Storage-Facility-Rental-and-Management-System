@@ -15,7 +15,7 @@
 |---|---|
 | Chạy hệ thống | Docker: `docker compose up -d` (web `http://localhost:5173`). Hoặc chạy local: backend `:8080` + frontend `:5173` |
 | Bản code | Có **PR #143** (D-23 + sửa URL VNPAY). Bản Docker thiếu PR này thì bước thanh toán báo `API_NOT_DECLARED` |
-| Giờ chạy | Làm **trước 21:00**. Nút ⚡ "Khách tới hôm nay" / "Khách tới trả kho hôm nay" đặt hạn 21:00 cùng ngày; quá giờ thì khách không xác nhận được biên bản |
+| Giờ chạy | Làm **trước 21:00**. Nút ⚡ "Khách tới hôm nay" / "Khách tới trả đúng ngày hẹn" đặt hạn 21:00 cùng ngày; quá giờ thì khách không xác nhận được biên bản |
 | Cửa sổ trình duyệt | Mở 3 cửa sổ riêng (thường / ẩn danh / profile khác): **Khách · FM · Staff**. Phiên lưu theo tab nên đừng mở tab mới trong cùng cửa sổ |
 | Thẻ VNPAY sandbox | Ngân hàng NCB · số thẻ `9704198526191432198` · tên `NGUYEN VAN A` · ngày phát hành `07/15` · OTP `123456` |
 
@@ -103,7 +103,7 @@
 | 7.1 | Khách · trang hợp đồng | ⚡ **Còn 1 ngày hết hạn** | — | Ngày hết hạn = ngày mai (xem 0.4) | — |
 | 7.2 | Như trên | **TÙY CHỌN HỢP ĐỒNG** → tab **Trả kho**: chọn ngày, cách nhận tiền → xác nhận | Ngày = **ngày mai** · Chuyển khoản: `Vietcombank` · STK `0123456789` · chủ TK `KHACH HANG 2` | Bảng **"Đã đóng − Giữ lại = Dự kiến hoàn"** ≈ hoàn đủ cọc. Hợp đồng **`TERMINATION_PENDING`**, sinh task **Check-out**, PIN vẫn dùng được | PR-O1, PR-O3, PR-O28 (D-22) |
 | 7.3 | FM · `/manager/tasks` | Task Check-out → **Giao việc** | `stafftanbinh1` | Task **`IN_PROGRESS`** | — |
-| 7.4 | Staff · mở task Check-out | ⚡ **Khách tới trả kho hôm nay** | — | Hạn nghiệm thu về hôm nay, 21:00 | BR-115 |
+| 7.4 | Staff · mở task Check-out | ⚡ **Khách tới trả đúng ngày hẹn (dd/MM)** | — | Nghiệm thu được ngay (hạn 21:00 hôm nay); quyết toán chốt theo ngày khách hẹn → số tiền khớp màn hẹn trả kho | BR-115, PR-O31a |
 | 7.5 | Như trên | Tick **5 mục** (CCCD · ô đã dọn trống · khách ký biên bản & trả thẻ RFID · ô sạch · khoá & vách nguyên vẹn), thêm ảnh hiện trạng (**+ Ảnh mẫu (demo)**) → **Xác nhận hoàn tất nghiệm thu trả kho** | Không ghi sự cố | Hợp đồng **`SETTLEMENT_PENDING`**, thu hồi PIN/RFID, có **bảng quyết toán vòng 1** chờ khách xác nhận | PR-O6, PR-O17, PR-O18, PR-O19 |
 | 7.6 | Khách · trang hợp đồng → khung **Quyết toán trả kho** | Đọc bảng tiền + khối **Đối chiếu với lúc hẹn trả kho** → **Xác nhận quyết toán** | — | Quyết toán **Chờ hoàn tiền** (`REFUNDING`). Hợp đồng **chưa kết thúc**. FM nhận thông báo + task hoàn tiền | PR-O20, PR-O29, PR-O31 (D-23) |
 | 7.7 | FM · `/manager/refunds` (hoặc `/manager/settlements` tab **Chờ hoàn tiền**) | Mở task hoàn tiền → tải ảnh biên lai, nhập mã FT → **Xác nhận đã hoàn tiền** | Ảnh ở 0.3 · mã FT `FT26112201` | Task **`COMPLETED`**; quyết toán **Chờ khách nhận tiền** (`REFUND_SENT`) | PR-O12, PR-O15, PR-O29 |

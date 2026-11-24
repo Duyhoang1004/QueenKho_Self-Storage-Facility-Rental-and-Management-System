@@ -221,7 +221,9 @@ public class CheckoutSettlementService {
      * → khớp với số khách đã thấy. Không xác định được ngày hẹn thì bỏ trống (FE ẩn khối đối chiếu).
      */
     private void fillExpected(CheckoutSettlement s, RentalContract contract, StaffTask checkOutTask) {
-        LocalDate scheduled = checkOutTask.getDueAt() != null ? checkOutTask.getDueAt().toLocalDate() : null;
+        // PR-O31a: task demo "khách tới đúng ngày hẹn" → ngày hẹn gốc (hạn task đã bị dời về hôm nay)
+        LocalDate scheduled = checkOutTask.getSimulatedCheckoutDate() != null ? checkOutTask.getSimulatedCheckoutDate()
+                : checkOutTask.getDueAt() != null ? checkOutTask.getDueAt().toLocalDate() : null;
         if (scheduled == null) return;
         try {
             RefundCalculationResult preview = staffTaskService.calculateCheckoutRefund(contract, scheduled, BigDecimal.ZERO);

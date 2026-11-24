@@ -250,8 +250,37 @@ class DemoSimulationServiceTest {
 
         service.checkoutToday(51, staff);
 
-        verify(jdbcTemplate).update(contains("WHEN status = 'OVERDUE'"), any(Timestamp.class), eq(51));
-        verify(activityLogService).log(eq(12), contains("trả kho hôm nay"), eq("facility_tasks"), eq("51"));
+        // Hạn task đã qua (OVERDUE, không có due_at tương lai) → không có ngày hẹn giả lập
+        verify(jdbcTemplate).update(contains("WHEN status = 'OVERDUE'"), any(Timestamp.class), isNull(), eq(51));
+        verify(activityLogService).log(eq(12), contains("trả đúng ngày hẹn"), eq("facility_tasks"), eq("51"));
+    }
+
+    @Test
+    @DisplayName("PR-O31a: hẹn trả ngày sau → giữ ngày hẹn gốc để quyết toán chốt theo ngày đó")
+    void checkoutTodayKeepsAppointmentDate() {
+        java.time.LocalDate appointment = java.time.LocalDate.now().plusDays(3);
+        rows("FROM facility_tasks", map("id", 51, "task_type", "CHECK_OUT", "status", "IN_PROGRESS", "contract_id", 9,
+                "facility_id", 1, "due_at", Timestamp.valueOf(appointment.atTime(21, 0))));
+        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", "TERMINATION_PENDING"));
+
+        Map<String, Object> result = service.checkoutToday(51, staff);
+
+        verify(jdbcTemplate).update(contains("simulated_checkout_date = ?"), any(Timestamp.class), eq(appointment), eq(51));
+        assertEquals(appointment, result.get("simulatedCheckoutDate"));
+    }
+
+    @Test
+    @DisplayName("PR-O31a: bấm lại vẫn giữ ngày hẹn gốc đầu tiên")
+    void checkoutTodayKeepsFirstAppointmentOnRepeat() {
+        java.time.LocalDate appointment = java.time.LocalDate.now().plusDays(2);
+        rows("FROM facility_tasks", map("id", 51, "task_type", "CHECK_OUT", "status", "IN_PROGRESS", "contract_id", 9,
+                "facility_id", 1, "due_at", Timestamp.valueOf(java.time.LocalDate.now().atTime(21, 0)),
+                "simulated_checkout_date", java.sql.Date.valueOf(appointment)));
+        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", "TERMINATION_PENDING"));
+
+        service.checkoutToday(51, staff);
+
+        verify(jdbcTemplate).update(contains("simulated_checkout_date = ?"), any(Timestamp.class), eq(appointment), eq(51));
     }
 
     @Test

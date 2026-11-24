@@ -5,6 +5,7 @@ import { getVnpayStatus } from "../../services/vnpayService";
 import ContractOptionsModal from "../../components/ContractOptionsModal";
 import AssetTermsModal from "../../components/AssetTermsModal";
 import UnitLocationMap from "../../components/UnitLocationMap";
+import CentralWarehouseCard from "../../components/CentralWarehouseCard";
 import SimulationButton from "../../components/SimulationButton";
 import ContractHandoverSection from "../../components/ContractHandoverSection";
 import ContractProtectionPanel from "../../components/ContractProtectionPanel";
@@ -856,6 +857,9 @@ export default function CustomerContractPage() {
                 Vị trí ô kho trong cơ sở
               </h3>
               <UnitLocationMap contractId={contract.contractId || contract.id} viewer="customer" />
+              {/* BR-134a: kho tổng cùng thành phố — nơi giữ hàng nếu quá hạn không gia hạn / không trả kho */}
+              <CentralWarehouseCard facilityId={contract.facilityId}
+                note="Nếu hết hạn mà không gia hạn hoặc trả kho, hàng được chuyển về đây và giữ tới khi bạn nhận lại." />
             </div>
           )}
 
@@ -1022,27 +1026,7 @@ export default function CustomerContractPage() {
                       </div>
                     </div>
                   </>
-                ) : (
-                  <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-[#4B4B4B]">
-                          Tiền cọc theo chính sách (1 tháng)
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-bold text-[#AFAFAF]">
-                          {isNoShow
-                            ? contract.noShowWaived ? "Cọc được hoàn do quản lý miễn phạt No-Show" : "Khoản cọc được giữ lại theo chính sách No-Show"
-                            : "Hoàn lại 100% khi bàn giao kho nguyên vẹn"}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="text-sm font-black text-[#1CB0F6]">
-                        {formatVND(depositAmount)}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                ) : null}
 
                 {/* 2. Tiền thuê gốc */}
                 <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
@@ -1146,10 +1130,33 @@ export default function CustomerContractPage() {
                   </span>
                 </div>
 
+                {/* Góp ý test 24/11/2026: dòng tiền cọc nằm ngay trên dòng tổng — trước đây ở đầu bảng nên khách tưởng
+                    tổng "tự cộng thêm" 1 khoản sau dòng tiền thuê thực đóng */}
+                <div className="flex items-center justify-between pb-2 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-[#4B4B4B]">
+                      Tiền cọc (đã đóng)
+                    </span>
+                    <span className="text-[10px] font-bold text-[#AFAFAF]">
+                      {isNoShow
+                        ? contract.noShowWaived ? "Cọc được hoàn do quản lý miễn phạt No-Show" : "Khoản cọc được giữ lại theo chính sách No-Show"
+                        : "Hoàn lại khi trả kho nguyên vẹn (trừ phí phát sinh nếu có)"}
+                    </span>
+                  </div>
+                  <span className="text-sm font-black text-[#1CB0F6]">
+                    {formatVND(depositAmount)}
+                  </span>
+                </div>
+
                 {/* 5. Tổng chi phí thực tế */}
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs font-black text-[#4B4B4B] uppercase">
-                    Tổng tiền đã đóng
+                  <span className="flex flex-col">
+                    <span className="text-xs font-black text-[#4B4B4B] uppercase">
+                      Tổng tiền đã đóng
+                    </span>
+                    <span className="text-[10px] font-bold text-[#AFAFAF] normal-case">
+                      = tiền thuê thực đóng + bảo hiểm + tiền cọc
+                    </span>
                   </span>
                   <span className="text-lg font-black text-[#58CC02]">
                     {formatVND(

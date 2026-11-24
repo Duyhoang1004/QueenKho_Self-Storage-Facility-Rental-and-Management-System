@@ -1,11 +1,14 @@
 package com.queenkho.api.service;
 
 import com.queenkho.api.entity.CentralWarehouse;
+import com.queenkho.api.entity.Facility;
 import com.queenkho.api.entity.GoodsCategory;
 import com.queenkho.api.entity.UnitType;
 import com.queenkho.api.exception.ReservationException;
 import com.queenkho.api.repository.CentralWarehouseRepository;
+import com.queenkho.api.repository.FacilityRepository;
 import com.queenkho.api.repository.GoodsCategoryRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,12 +30,20 @@ public class OperationsCatalogService {
     private final GoodsCategoryRepository goodsCategories;
     private final CentralWarehouseRepository warehouses;
     private final ActivityLogService activityLogService;
+    private final FacilityRepository facilities; // null trong unit test cũ
 
+    @Autowired
     public OperationsCatalogService(GoodsCategoryRepository goodsCategories, CentralWarehouseRepository warehouses,
-                                    ActivityLogService activityLogService) {
+                                    ActivityLogService activityLogService, FacilityRepository facilities) {
         this.goodsCategories = goodsCategories;
         this.warehouses = warehouses;
         this.activityLogService = activityLogService;
+        this.facilities = facilities;
+    }
+
+    public OperationsCatalogService(GoodsCategoryRepository goodsCategories, CentralWarehouseRepository warehouses,
+                                    ActivityLogService activityLogService) {
+        this(goodsCategories, warehouses, activityLogService, null);
     }
 
     // ================== LOẠI HÀNG ==================
@@ -152,12 +163,14 @@ public class OperationsCatalogService {
         if (address.isEmpty() || address.length() > 300) throw bad("Địa chỉ bắt buộc, tối đa 300 ký tự");
         String hotline = input.getHotline() != null ? input.getHotline().trim() : "";
         if (!hotline.isEmpty() && !hotline.matches("0\\d{8,10}")) throw bad("Hotline phải là số điện thoại bắt đầu bằng 0");
+        String city = canonicalCity(input.getCity());
         CentralWarehouse target = id == null ? new CentralWarehouse() : warehouses.findById(id)
                 .orElseThrow(() -> new ReservationException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy kho tổng"));
         target.setName(name);
         target.setAddress(address);
         target.setHotline(hotline.isEmpty() ? null : hotline);
         target.setNote(input.getNote() != null && !input.getNote().isBlank() ? input.getNote().trim() : null);
+        target.setCity(city);
         CentralWarehouse saved = warehouses.save(target);
         activityLogService.log(actorId, "[CENTRAL_WAREHOUSE_" + (id == null ? "CREATE" : "UPDATE") + "] " + saved.getName(),
                 "central_warehouses", String.valueOf(saved.getId()));
@@ -176,6 +189,44 @@ public class OperationsCatalogService {
         activityLogService.log(actorId, "[CENTRAL_WAREHOUSE_STATUS] " + w.getName() + " → " + next,
                 "central_warehouses", String.valueOf(id));
         return warehouses.save(w);
+    }
+
+    // BR-134a (23/11/2026): mỗi thành phố một kho tổng. Kho mặc định của cơ sở = kho tổng đang hoạt động
+    // cùng thành phố (id nhỏ nhất). Không có → null, FM chọn kho khác trong danh sách.
+    @Transactional(readOnly = true)
+    public Optional<CentralWarehouse> findWarehouseForCity(String city) {
+        String key = cityKey(city);
+        if (key.isEmpty()) return Optional.empty();
+        return listWarehouses(true).stream().filter(w -> key.equals(cityKey(w.getCity()))).findFirst();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> warehouseForFacility(Integer facilityId) {
+        if (facilities == null) throw new IllegalStateException("FacilityRepository chưa được cấu hình");
+        Facility facility = facilities.findById(facilityId)
+                .orElseThrow(() -> new ReservationException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Không tìm thấy cơ sở"));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("facilityId", facility.getId());
+        body.put("facilityName", facility.getName());
+        body.put("facilityCity", facility.getCity());
+        body.put("warehouse", findWarehouseForCity(facility.getCity()).orElse(null));
+        return body;
+    }
+
+    // Thành phố phụ trách bắt buộc và phải trùng thành phố của một cơ sở (lấy đúng cách viết trong bảng cơ sở)
+    private String canonicalCity(String input) {
+        String city = input != null ? input.trim() : "";
+        if (city.isEmpty() || city.length() > 100) throw bad("Chọn thành phố kho tổng phụ trách (tối đa 100 ký tự)");
+        if (facilities == null) return city;
+        String key = cityKey(city);
+        return facilities.findAllByOrderByIdAsc().stream().map(Facility::getCity)
+                .filter(c -> key.equals(cityKey(c))).findFirst()
+                .orElseThrow(() -> bad("Chưa có cơ sở nào ở thành phố \"" + city + "\""));
+    }
+
+    // So khớp thành phố không phân biệt hoa thường, khoảng trắng, dấu chấm ("TP.HCM" = "tp. hcm")
+    static String cityKey(String city) {
+        return city == null ? "" : city.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s.]", "");
     }
 
     private static String normalizeStatus(String status) {

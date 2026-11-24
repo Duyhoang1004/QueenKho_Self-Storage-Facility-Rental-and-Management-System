@@ -143,8 +143,9 @@ function TermsBody({ onClose, onAccept, summary }) {
 
   const allOpen = SECTIONS.every((s) => !collapsed[s.key])
 
+  // 24/11/2026: z-[70] — mở từ trong popup khác (đơn đặt chỗ z-50) phải nằm trên, không bị che
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs" onClick={onClose}>
       <div className="duo-card bg-white w-full max-w-[680px] max-h-[90vh] shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b-2 border-[#E5E5E5] flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#FFC800] border-b-2 border-[#E5A800] text-white flex items-center justify-center shrink-0">

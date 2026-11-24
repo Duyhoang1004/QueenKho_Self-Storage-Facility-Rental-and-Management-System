@@ -3303,6 +3303,8 @@ public class StaffTaskService {
         Integer cycleMonths = null;
         BigDecimal baseMonthlyPrice = null;
         String refundBreakdownNote = null;
+        boolean faultTermination = false;         // BR-127: chấm dứt do lỗi cơ sở — hoàn theo ngày, không phí phá HĐ
+        List<MoneyLine> refundLines = null;       // bảng "đã đóng − giữ lại = hoàn" cùng công thức nghiệm thu
         String taskNote = task.getNote();
 
         if (contract != null && ("CHECK_OUT".equals(task.getTaskType()) || "REFUND".equals(task.getTaskType()))) {
@@ -3333,6 +3335,8 @@ public class StaffTaskService {
             cycleMonths = calc.getCycleMonths();
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
             refundBreakdownNote = calc.getBreakdownDescription();
+            faultTermination = calc.isFaultTermination();
+            refundLines = calc.getLines();
 
             if ("REFUND".equals(task.getTaskType())) {
                 taskNote = buildEnrichedRefundNote(contract, taskNote, refDate);
@@ -3364,10 +3368,18 @@ public class StaffTaskService {
                     .orElse(null);
         }
 
+        // PR-O19c: tiền đền bù của hợp đồng — khoản riêng FM chi, hiện tách khỏi tiền hoàn trả kho ở task nghiệm thu / hoàn tiền
+        List<Map<String, Object>> separateCompensations = contract != null && compensationClaimService != null
+                && List.of("CHECK_OUT", "REFUND").contains(task.getTaskType())
+                ? compensationClaimService.separateCompensations(contract.getId()) : List.of();
+
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
                 .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
+                .separateCompensations(separateCompensations)
+                .faultTermination(faultTermination)
+                .refundLines(refundLines)
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())

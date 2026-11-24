@@ -722,16 +722,20 @@ export default function CreateReservationPage() {
               </div>
               <label className="flex flex-col gap-1.5">
                 <span className="text-[11px] font-black uppercase text-[#AFAFAF]">Giá trị hàng gửi kho <span className="text-[#FF4B4B]">*</span></span>
-                <input
-                  type="number"
-                  min="1"
-                  max="10000000000"
-                  step="100000"
-                  value={declaredValue}
-                  onChange={(e) => setDeclaredValue(e.target.value)}
-                  placeholder="VD: 30000000"
-                  className="duo-input"
-                />
+                {/* Góp ý test 24/11: ô chữ chỉ nhận số + dấu chấm — ô type="number" bị lăn chuột khi cuộn trang
+                    (mỗi nấc −100.000, làm tròn về ...001: khai 10.000.000 thành 9.600.001) */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={declaredValue ? Number(declaredValue).toLocaleString('vi-VN') : ''}
+                    onChange={(e) => setDeclaredValue(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 11))}
+                    placeholder="VD: 30.000.000"
+                    className="duo-input w-full pr-10"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-black text-[#AFAFAF]">₫</span>
+                </div>
                 <span className="text-[11px] font-bold text-[#777777]">
                   Trần bồi thường dự kiến: <strong className="text-[#1CB0F6]">{formatVND(coverageCap)}</strong> — không vượt giá trị hai bên xác nhận và trần gói.
                 </span>
@@ -990,6 +994,10 @@ export default function CreateReservationPage() {
                 { label: 'Tiền cọc', amount: deposit, note: 'Hoàn khi trả kho sau khi trừ các khoản phí (nếu có)' },
               ]}
               total={totalPayment}
+              info={[
+                { label: 'Giá trị hàng khai báo', value: formatVND(declaredNumber) },
+                { label: 'Trần bồi thường', value: formatVND(coverageCap), note: `min(giá trị khai báo, trần gói ${selectedPlan.label || ''})` },
+              ]}
               note="Đơn được giữ chỗ 15 phút trong lúc thanh toán. Huỷ trong 30 phút sau khi thanh toán (trước giờ hẹn) được hoàn 100%."
               submitting={loading}
               onConfirm={doSubmit}

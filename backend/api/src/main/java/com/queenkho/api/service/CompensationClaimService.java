@@ -388,15 +388,13 @@ public class CompensationClaimService {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
                     "Chỉ chi trả hồ sơ đã được chấp nhận (hiện tại: " + claim.getStatus() + ")");
         }
-        // D-21 / PR-O19: hợp đồng đã nghiệm thu trả kho → tiền bồi thường đi theo bảng quyết toán, không chi riêng
-        // (sửa 23/11/2026 — PR-O19a) chặn từ lúc khách đã HẸN trả kho (TERMINATION_PENDING): trước đây FM chi riêng được
-        // nên bảng quyết toán không có dòng bồi thường, khách không thấy tiền đền ở đâu
-        String contractStatus = claim.getContract().getStatus();
-        if (claim.getSettlementId() != null || "SETTLEMENT_PENDING".equals(contractStatus)
-                || "TERMINATION_PENDING".equals(contractStatus)) {
+        // PR-O19c (24/11/2026, thay PR-O19a): tiền đền bù là khoản RIÊNG — FM chi ở đây kể cả khi khách đã hẹn trả kho /
+        // đang quyết toán; bảng quyết toán chỉ có tiền hoàn trả kho. Chỉ chặn hồ sơ đã gắn vào bảng quyết toán cũ
+        // (D-21 → 23/11) vì tiền đó chi trong task hoàn tiền.
+        if (claim.getSettlementId() != null) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_IN_SETTLEMENT",
-                    "Hợp đồng " + claim.getContract().getContractCode() + " đã hẹn trả kho — hồ sơ " + claim.getClaimCode()
-                            + " được cộng vào bảng quyết toán trả kho và chi trong task hoàn tiền, không chi riêng");
+                    "Hồ sơ " + claim.getClaimCode() + " đã nằm trong bảng quyết toán trả kho của hợp đồng "
+                            + claim.getContract().getContractCode() + " — chi trong task hoàn tiền, không chi riêng");
         }
         String method = request != null && request.getPaymentMethod() != null ? request.getPaymentMethod().trim().toUpperCase() : "";
         if (!List.of("BANK_TRANSFER", "CASH").contains(method)) {
@@ -433,6 +431,35 @@ public class CompensationClaimService {
 
         markPaid(claim, method, evidence, ft, managerId);
         return toResponse(claim);
+    }
+
+    /**
+     * PR-O19c (24/11/2026): các khoản đền bù của hợp đồng — tách khỏi tiền hoàn trả kho để khách / Staff thấy 2 nguồn tiền.
+     * Hồ sơ đã duyệt (chờ FM chi) và đã chi riêng; bỏ hồ sơ đã gắn vào bảng quyết toán cũ (tiền đó nằm trong quyết toán).
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> separateCompensations(Integer contractId) {
+        if (contractId == null) return List.of();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (CompensationClaim c : claimRepository.findForContract(contractId)) {
+            if (!List.of("APPROVED", "PAID").contains(c.getStatus()) || c.getSettlementId() != null
+                    || c.getTotalCompensation() == null || c.getTotalCompensation().signum() <= 0) {
+                continue;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("claimId", c.getId());
+            m.put("claimCode", c.getClaimCode());
+            m.put("status", c.getStatus());
+            m.put("amount", c.getTotalCompensation());
+            m.put("goodsCompensation", c.getGoodsCompensation());
+            m.put("penaltyAmount", c.getPenaltyAmount());
+            m.put("rentRefundAmount", c.getRentRefundAmount());
+            m.put("paidAt", c.getPaidAt());
+            m.put("paymentMethod", c.getPaymentMethod());
+            m.put("hasPayoutAccount", c.getPayoutAccountNumber() != null && !c.getPayoutAccountNumber().isBlank());
+            out.add(m);
+        }
+        return out;
     }
 
     /**

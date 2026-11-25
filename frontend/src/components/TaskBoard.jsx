@@ -627,8 +627,12 @@ export default function TaskBoard({
               {paginatedTasks.map(task => {
                 const isRefund = task.taskType === 'REFUND'
                 const isSupport = task.taskType === 'SUPPORT'
+                const isLiquidationTask = task.taskType === 'MAINTENANCE'
+                  && (task.maintenanceReason === 'LIQUIDATION' || String(task.note || '').startsWith('Cưỡng chế dọn'))
                 const parsed = isRefund ? parseRefundNote(task.note) : null
-                const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
+                const type = isLiquidationTask
+                  ? { label: 'Dọn kho cưỡng chế', icon: 'gavel', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' }
+                  : (TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' })
                 const status = isRefund && task.status === 'OPEN'
                   ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
                   : task.status === 'CANCELLED' && task.cancelReason
@@ -657,8 +661,8 @@ export default function TaskBoard({
                         : 'border-[#E5E5E5]'
                     }`}
                   >
-                    {/* Bố cục Grid 5 cột chuẩn tỉ lệ: mở rộng cột Trạng thái & Thao tác để hiển thị đủ 2 huy hiệu trên cùng 1 hàng, lấp khoảng trống bên trái */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(200px,2.2fr)_minmax(120px,1.4fr)_minmax(120px,1.4fr)_minmax(150px,1.6fr)_minmax(280px,3.4fr)] gap-3.5 lg:gap-4 items-center">
+                    {/* Bố cục Grid 5 cột chuẩn tỉ lệ: mở rộng cột Hạn chót & Trạng thái để không bị cắt giờ 21:00 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(195px,2.1fr)_minmax(120px,1.3fr)_minmax(115px,1.2fr)_minmax(185px,1.9fr)_minmax(255px,2.9fr)] gap-3.5 lg:gap-4 items-center">
                       
                       {/* Cột 1: Loại việc & Mã số */}
                       <div className="col-span-1 sm:col-span-2 lg:col-span-1 flex items-center gap-3 min-w-0">
@@ -722,12 +726,12 @@ export default function TaskBoard({
                           <span className="material-symbols-outlined text-[13px]">schedule</span>
                           Hạn chót
                         </span>
-                        <div className="flex items-center gap-1 text-xs truncate">
-                          <span className={`font-black truncate ${task.status === 'OVERDUE' ? 'text-[#FF4B4B]' : 'text-[#4B4B4B]'}`}>
+                        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs">
+                          <span className={`font-black whitespace-nowrap ${task.status === 'OVERDUE' ? 'text-[#FF4B4B]' : 'text-[#4B4B4B]'}`}>
                             {formatDue(task.dueAt)}
                           </span>
                           {hint && (
-                            <span className={`font-black text-[10px] shrink-0 ${hint.urgent ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
+                            <span className={`font-black text-[10px] whitespace-nowrap shrink-0 ${hint.urgent ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>
                               ({hint.text})
                             </span>
                           )}
@@ -891,8 +895,12 @@ export default function TaskBoard({
               {paginatedTasks.map(task => {
                 const isRefund = task.taskType === 'REFUND'
                 const isSupport = task.taskType === 'SUPPORT'
+                const isLiquidationTask = task.taskType === 'MAINTENANCE'
+                  && (task.maintenanceReason === 'LIQUIDATION' || String(task.note || '').startsWith('Cưỡng chế dọn'))
                 const parsed = isRefund ? parseRefundNote(task.note) : null
-                const type = TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' }
+                const type = isLiquidationTask
+                  ? { label: 'Dọn kho cưỡng chế', icon: 'gavel', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-[#FF4B4B]' }
+                  : (TYPE_META[task.taskType] || { label: task.taskType, icon: 'task', cls: 'bg-[#F7F7F7] text-[#777777] border-[#E5E5E5]' })
                 const status = isRefund && task.status === 'OPEN'
                   ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
                   : task.status === 'CANCELLED' && task.cancelReason

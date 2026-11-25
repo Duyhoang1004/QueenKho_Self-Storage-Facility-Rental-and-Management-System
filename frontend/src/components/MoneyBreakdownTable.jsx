@@ -18,9 +18,24 @@ export default function MoneyBreakdownTable({ lines, viewer = 'CUSTOMER', estima
   const paid = sum('PAID')
   const kept = sum('KEPT')
   const added = sum('ADDED')
+  const hasPaid = lines.some((l) => l.group === 'PAID')
+  const hasKept = lines.some((l) => l.group === 'KEPT')
+  const hasAdded = lines.some((l) => l.group === 'ADDED')
   const net = paid - kept + added
   const pays = net < 0
   const you = viewer === 'CUSTOMER'
+  const formulaLabel = (() => {
+    const parts = []
+    if (hasPaid) parts.push('A')
+    if (hasKept) parts.push('− B')
+    if (hasAdded) parts.push('+ C')
+    if (parts.length <= 1) {
+      return hasPaid
+        ? (you ? 'Hoàn 100% khoản bạn đã đóng (không phát sinh khấu trừ)' : 'Hoàn 100% khoản khách đã đóng (không phát sinh khấu trừ)')
+        : ''
+    }
+    return `= ${parts.join(' ')}`
+  })()
 
   return (
     <div className="border-2 border-[#E5E5E5] rounded-xl overflow-hidden bg-white">
@@ -60,7 +75,7 @@ export default function MoneyBreakdownTable({ lines, viewer = 'CUSTOMER', estima
               ? (you ? 'Bạn cần trả thêm' : 'Khách cần trả thêm')
               : (you ? (estimate ? 'Dự kiến hoàn cho bạn' : 'Cơ sở hoàn cho bạn') : (estimate ? 'Dự kiến hoàn khách' : 'Cơ sở hoàn khách'))}
           </span>
-          <span className="text-[10px] font-bold text-[#AFAFAF]">= A − B{added > 0 ? ' + C' : ''}</span>
+          {formulaLabel && <span className="text-[10px] font-bold text-[#777777]">{formulaLabel}</span>}
         </div>
         <span className={`text-xl font-black ${pays ? 'text-[#FF4B4B]' : 'text-[#58A700]'}`}>{formatVND(Math.abs(net))}</span>
       </div>

@@ -324,9 +324,9 @@ export default function PendingReservationsPage() {
           )}
 
           {!loading && !error && items.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+            <div className="overflow-x-auto custom-scrollbar" role="region" aria-label="Danh sách đơn chờ gán ô" tabIndex={0}>
+              <table className="w-full min-w-[1040px] text-left border-collapse">
+                <thead className="bg-[#F7F7F7] border-b-2 border-[#E5E5E5] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                   <tr>
                     <th className="py-3.5 px-5">Mã đơn</th>
                     <th className="py-3.5 px-5">Ngày cọc</th>
@@ -456,9 +456,9 @@ export default function PendingReservationsPage() {
           )}
 
           {!overdueLoading && !overdueError && overdueItems.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#FFF5F5] border-b-2 border-[#FFDFDF] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
+            <div className="overflow-x-auto custom-scrollbar" role="region" aria-label="Danh sách đơn quá hạn nhận kho" tabIndex={0}>
+              <table className="w-full min-w-[1060px] text-left border-collapse">
+                <thead className="bg-[#FFF5F5] border-b-2 border-[#FFDFDF] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
                   <tr>
                     <th className="py-3.5 px-5">Mã đơn</th>
                     <th className="py-3.5 px-5">Khách hàng</th>

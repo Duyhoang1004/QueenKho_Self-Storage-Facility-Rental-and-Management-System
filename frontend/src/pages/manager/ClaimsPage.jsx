@@ -122,7 +122,7 @@ function ClaimList() {
         ))}
       </div>
       <TimeFilterBar value={timeFilter} onChange={setTimeFilter} fields={CLAIM_TIME_FIELDS} />
-      <div className="duo-card overflow-x-auto">
+      <div className="duo-card overflow-x-auto custom-scrollbar" role="region" aria-label="Danh sách hồ sơ bồi thường" tabIndex={0}>
         {loading ? (
           <p className="p-6 text-xs font-bold text-[#AFAFAF]">Đang tải...</p>
         ) : error ? (
@@ -130,8 +130,8 @@ function ClaimList() {
         ) : visible.length === 0 ? (
           <p className="p-6 text-xs font-bold text-[#AFAFAF]">Không có hồ sơ nào.</p>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#F7F7F7] text-[11px] font-black uppercase text-[#AFAFAF]">
+          <table className="w-full min-w-[920px] text-left text-xs">
+            <thead className="bg-[#F7F7F7] text-[11px] font-black uppercase text-[#AFAFAF] whitespace-nowrap">
               <tr>
                 <th className="py-3 px-4">Mã</th><th className="py-3 px-4">Loại</th><th className="py-3 px-4">Khách</th>
                 {bom && <th className="py-3 px-4">Cơ sở</th>}

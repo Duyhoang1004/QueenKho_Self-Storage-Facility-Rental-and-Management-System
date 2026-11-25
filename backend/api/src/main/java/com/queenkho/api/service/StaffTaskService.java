@@ -193,6 +193,16 @@ public class StaffTaskService {
     // được khách).
     // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
     // IN_PROGRESS
+    /**
+     * PR-O31a (24/11/2026): ngày chốt quyết toán khi nghiệm thu. Luồng thật = hôm nay. Task đã bấm demo
+     * "Khách tới trả đúng ngày hẹn" (hạn task dời về hôm nay) → ngày hẹn gốc, để số tiền khớp đúng số khách thấy lúc hẹn
+     * (vd hẹn 25/11 → vẫn tính 1 ngày đã dùng dù nghiệm thu ngày 24/11).
+     */
+    public static LocalDate effectiveCheckoutDate(StaffTask task, LocalDate today) {
+        LocalDate simulated = task != null ? task.getSimulatedCheckoutDate() : null;
+        return simulated != null && simulated.isAfter(today) ? simulated : today;
+    }
+
     @Transactional
     public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
         List<StaffTask> tasks = staffTaskRepository
@@ -200,6 +210,7 @@ public class StaffTaskService {
         for (StaffTask task : tasks) {
             if ("CHECK_IN".equals(task.getTaskType())) lockCheckInTask(task.getId());
             task.setDueAt(computeDueAt(newAppointmentDate));
+            task.setSimulatedCheckoutDate(null); // PR-O31a: khách dời hẹn thật → bỏ ngày hẹn giả lập cũ
             if ("OVERDUE".equals(task.getStatus())) {
                 task.setStatus(task.getStaff() == null ? "OPEN" : "IN_PROGRESS");
             }
@@ -296,7 +307,14 @@ public class StaffTaskService {
                 ? rentalContractRepository.findDetailById(contract.getId()).orElse(contract) 
                 : contract;
         if (liveContract == null || liveContract.getStorageUnit() == null) return null;
-        if (staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(liveContract.getId(), "MAINTENANCE", OPEN_STATUSES)) {
+        boolean alreadyExists = "LIQUIDATION".equals(reason)
+                ? staffTaskRepository.existsByContractIdAndTaskTypeAndMaintenanceReasonAndStatusIn(
+                        liveContract.getId(), "MAINTENANCE", "LIQUIDATION", OPEN_STATUSES)
+                : (reason != null && staffTaskRepository.existsByContractIdAndTaskTypeAndMaintenanceReasonAndStatusIn(
+                        liveContract.getId(), "MAINTENANCE", reason, OPEN_STATUSES))
+                  || (!"LIQUIDATION".equals(reason) && staffTaskRepository.existsByContractIdAndTaskTypeAndStatusIn(
+                        liveContract.getId(), "MAINTENANCE", OPEN_STATUSES));
+        if (alreadyExists) {
             return null;
         }
         Integer facilityId = (liveContract.getStorageUnit().getFacility() != null)
@@ -476,13 +494,59 @@ public class StaffTaskService {
         return toResponse(task, sr);
     }
 
+    // Xác định đúng ô kho mà task MAINTENANCE đang xử lý:
+    //  - LIQUIDATION: ô mà hợp đồng đang chiếm lúc cưỡng chế dọn kho (kể cả ô khẩn cấp tạm thời)
+    //  - DAMAGE / CHECKIN_REPAIR: ưu tiên ô cũ đang sửa được ghi trong note hoặc trong unit_transfers (tránh trỏ nhầm sang ô khẩn cấp khách mới chuyển tới)
+    private StorageUnit resolveMaintenanceUnit(StaffTask task, RentalContract contract, StorageUnit fallback) {
+        if (task == null || !"MAINTENANCE".equals(task.getTaskType())) {
+            return fallback;
+        }
+        String note = task.getNote();
+        if (note != null) {
+            Matcher checkinMarker = java.util.regex.Pattern.compile("\\[CHECKIN_UNIT=([^\\]]+)\\]").matcher(note);
+            if (checkinMarker.find() && storageUnitRepository != null) {
+                StorageUnit found = storageUnitRepository.findById(checkinMarker.group(1).trim()).orElse(null);
+                if (found != null) return found;
+            }
+            if ("LIQUIDATION".equals(task.getMaintenanceReason())) {
+                Matcher liqUnit = java.util.regex.Pattern.compile("Cưỡng chế dọn ô\\s+([A-Za-z0-9_-]+)").matcher(note);
+                if (liqUnit.find() && storageUnitRepository != null) {
+                    StorageUnit found = storageUnitRepository.findById(liqUnit.group(1).trim()).orElse(null);
+                    if (found != null) return found;
+                }
+                return fallback;
+            }
+            Matcher repairUnit = java.util.regex.Pattern.compile("(?:sự cố ô|Bảo trì ô|khắc phục ô)\\s+([A-Za-z0-9_-]+)").matcher(note);
+            if (repairUnit.find() && storageUnitRepository != null) {
+                StorageUnit found = storageUnitRepository.findById(repairUnit.group(1).trim()).orElse(null);
+                if (found != null) return found;
+            }
+        }
+        if (!"LIQUIDATION".equals(task.getMaintenanceReason()) && contract != null && contract.getId() != null
+                && jdbcTemplate != null && storageUnitRepository != null) {
+            if (fallback == null || !"MAINTENANCE".equals(fallback.getStatus()) || fallback.isEmergencyUnit()) {
+                try {
+                    List<String> oldIds = jdbcTemplate.queryForList(
+                            "SELECT TOP 1 from_unit_id FROM unit_transfers WHERE contract_id = ? AND old_unit_status = 'MAINTENANCE' ORDER BY id DESC",
+                            String.class, contract.getId());
+                    if (!oldIds.isEmpty() && oldIds.get(0) != null) {
+                        StorageUnit origUnit = storageUnitRepository.findById(oldIds.get(0)).orElse(null);
+                        if (origUnit != null) return origUnit;
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return fallback;
+    }
+
     // Entity → DTO. Không trả thẳng entity ra API vì:
     // (1) quan hệ LAZY sẽ lỗi khi Jackson serialize, (2) lộ field không cần thiết
     // (password của User...)
     private StaffTaskResponse toResponse(StaffTask task, SupportRequest sr) {
         RentalContract contract = task.getContract() != null ? task.getContract() : (sr != null ? sr.getContract() : null);
         User staff = task.getStaff();
-        StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
+        StorageUnit unit = resolveMaintenanceUnit(task, contract, contract != null ? contract.getStorageUnit() : null);
         User customer = contract != null ? contract.getCustomer() : (sr != null ? sr.getCustomer() : null);
 
         String customerName = customer != null ? customer.getFullName() : null;
@@ -536,6 +600,7 @@ public class StaffTaskService {
         return StaffTaskResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
+                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -567,6 +632,7 @@ public class StaffTaskService {
                 .ticketStatus(sr != null ? sr.getStatus() : null)
                 .ticketDescription(sr != null ? sr.getDescription() : null)
                 .resolutionNote(sr != null ? sr.getResolutionNote() : null)
+                .maintenanceReason(task.getMaintenanceReason())
                 .build();
     }
 
@@ -2780,8 +2846,9 @@ public class StaffTaskService {
 
         // 7. D-21 / PR-O18 + PR-O19: bảng quyết toán vòng 1 — tính TRƯỚC khi đổi trạng thái hợp đồng
         //    (phí trễ / chiếm dụng chốt tại ngày nghiệm thu, giống màn xem trước của khách)
-        CheckoutSettlement settlement = settlementService.createInitial(contract, task, now.toLocalDate(),
-                totalDamageCost, notes, staffId);
+        //    PR-O31a (24/11/2026): task đã bấm demo "Khách tới trả đúng ngày hẹn" → chốt theo ngày hẹn gốc
+        CheckoutSettlement settlement = settlementService.createInitial(contract, task,
+                effectiveCheckoutDate(task, now.toLocalDate()), totalDamageCost, notes, staffId);
 
         // 8. Thu hồi mã PIN & thẻ RFID; hợp đồng chờ khách xác nhận kết thúc (chưa TERMINATED, đơn giữ TERMINATION_PENDING)
         contract.setStatus("SETTLEMENT_PENDING");
@@ -2866,8 +2933,12 @@ public class StaffTaskService {
         // D-21 / PR-O22: khách đang khiếu nại quyết toán → giữ hiện trường, chưa đóng bảo trì
         if (settlementService != null) settlementService.assertNotDisputed(task.getContract() != null ? task.getContract().getId() : null);
 
-        // Vấn đề 6: nếu task đang chờ FM chuyển ô cho khách, không được bấm hoàn tất bảo trì trước khi FM chuyển ô xong
-        boolean pendingTransfer = task.getNote() != null
+        // Vấn đề 6: nếu task đang chờ FM chuyển ô cho khách (và hợp đồng vẫn còn hiệu lực), không được bấm hoàn tất bảo trì trước khi FM chuyển ô xong
+        String cStatus = task.getContract() != null ? task.getContract().getStatus() : null;
+        boolean contractStillLive = cStatus != null && !List.of("LIQUIDATED", "TERMINATED").contains(cStatus);
+        boolean pendingTransfer = contractStillLive
+                && !"LIQUIDATION".equals(task.getMaintenanceReason())
+                && task.getNote() != null
                 && task.getNote().contains("[YÊU CẦU FM ĐỔI KHO CHO KHÁCH")
                 && !task.getNote().contains("[FM đã chuyển HĐ sang ô");
         if (pendingTransfer) {
@@ -2911,26 +2982,8 @@ public class StaffTaskService {
         }
 
         StaffTask done = staffTaskRepository.findDetailById(taskId).orElseThrow();
-        StorageUnit unit = done.getContract() != null ? done.getContract().getStorageUnit() : null;
-        if (List.of("CHECKIN_REPAIR", "CHECKIN_FAULT").contains(done.getMaintenanceReason()) && done.getNote() != null) {
-            Matcher unitMarker = java.util.regex.Pattern.compile("\\[CHECKIN_UNIT=([^\\]]+)\\]").matcher(done.getNote());
-            if (unitMarker.find()) unit = storageUnitRepository.findById(unitMarker.group(1)).orElse(unit);
-        }
-        if (unit != null && !"MAINTENANCE".equals(unit.getStatus()) && done.getContract() != null) {
-            // Vấn đề 6: nếu HĐ đã chuyển tạm sang ô khẩn cấp / ô khác khi ô cũ vào bảo trì, mở lại chính ô cũ đó
-            try {
-                List<String> oldIds = jdbcTemplate.queryForList(
-                        "SELECT TOP 1 from_unit_id FROM unit_transfers WHERE contract_id = ? AND old_unit_status = 'MAINTENANCE' ORDER BY id DESC",
-                        String.class, done.getContract().getId());
-                if (!oldIds.isEmpty() && oldIds.get(0) != null) {
-                    StorageUnit origUnit = storageUnitRepository.findById(oldIds.get(0)).orElse(null);
-                    if (origUnit != null && "MAINTENANCE".equals(origUnit.getStatus())) {
-                        unit = origUnit;
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-        }
+        StorageUnit unit = resolveMaintenanceUnit(done, done.getContract(),
+                done.getContract() != null ? done.getContract().getStorageUnit() : null);
         if (unit != null && "MAINTENANCE".equals(unit.getStatus())
                 && !"CHECKIN_REPAIR".equals(done.getMaintenanceReason())) {
             unit.setStatus(unit.idleStatus());
@@ -3351,7 +3404,7 @@ public class StaffTaskService {
 
         RentalContract contract = task.getContract() != null ? task.getContract() : (sr != null ? sr.getContract() : null);
         User staff = task.getStaff();
-        StorageUnit unit = contract != null ? contract.getStorageUnit() : null;
+        StorageUnit unit = resolveMaintenanceUnit(task, contract, contract != null ? contract.getStorageUnit() : null);
         User customer = contract != null ? contract.getCustomer() : (sr != null ? sr.getCustomer() : null);
 
         String customerName = customer != null ? customer.getFullName() : null;
@@ -3525,6 +3578,10 @@ public class StaffTaskService {
                     : ("CHECK_OUT".equals(task.getTaskType())
                         ? LocalDate.now(LateFeeService.VIETNAM_ZONE)
                         : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now(LateFeeService.VIETNAM_ZONE)));
+            // PR-O31a: task nghiệm thu chưa xong đã bấm demo "đúng ngày hẹn" → xem trước theo ngày hẹn gốc
+            if ("CHECK_OUT".equals(task.getTaskType()) && task.getCompletedAt() == null) {
+                refDate = effectiveCheckoutDate(task, refDate);
+            }
             RefundCalculationResult calc = calculateCheckoutRefund(contract, refDate, totalDamageCost);
             depositHeld = calc.getDepositHeld();
             refundAmount = calc.getTotalRefundAmount();
@@ -3577,6 +3634,7 @@ public class StaffTaskService {
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
                 .cancelReason(task.getCancelReason())
+                .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())

@@ -60,5 +60,6 @@ public class StaffTaskResponse {
     private String ticketDescription;
     private String resolutionNote;
     private String cancelReason;     // PR-T2: lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
+    private String maintenanceReason; // DAMAGE / LIQUIDATION / CHECKIN_REPAIR / CHECKIN_FAULT
     private LocalDate simulatedCheckoutDate; // PR-O31a: ngày hẹn gốc khi demo "khách tới đúng ngày hẹn"
 }

@@ -83,4 +83,39 @@ class TestFeedback2411Test {
         assertEquals(0, total.compareTo(m("2050000")));
         assertEquals(3, lines.size());
     }
+
+    // Vấn đề 3 (25/11/2026): HĐ đang ở ô khẩn cấp (đã có task MAINTENANCE loại DAMAGE sửa ô gốc) bị cưỡng chế dọn kho
+    // → vẫn phải sinh thêm task MAINTENANCE loại LIQUIDATION, giữ nguyên task bảo trì cũ
+    @Test void liquidationCreatesCleanoutTaskEvenWhenDamageMaintenanceTaskIsOpen() {
+        var repo = org.mockito.Mockito.mock(com.queenkho.api.repository.StaffTaskRepository.class);
+        StaffTaskService svc = new StaffTaskService();
+        org.springframework.test.util.ReflectionTestUtils.setField(svc, "staffTaskRepository", repo);
+
+        com.queenkho.api.entity.Facility fac = new com.queenkho.api.entity.Facility();
+        fac.setId(3);
+        com.queenkho.api.entity.StorageUnit emergencyUnit = new com.queenkho.api.entity.StorageUnit();
+        emergencyUnit.setId("KC-TD-E01");
+        emergencyUnit.setFacility(fac);
+        com.queenkho.api.entity.RentalContract contract = new com.queenkho.api.entity.RentalContract();
+        contract.setId(69);
+        contract.setContractCode("HD-DE6");
+        contract.setStorageUnit(emergencyUnit);
+
+        // Giả lập: hợp đồng đang có task MAINTENANCE (DAMAGE) mở, nhưng CHƯA có task LIQUIDATION mở
+        org.mockito.Mockito.when(repo.existsByContractIdAndTaskTypeAndStatusIn(
+                org.mockito.Mockito.eq(69), org.mockito.Mockito.eq("MAINTENANCE"), org.mockito.Mockito.anyList()))
+                .thenReturn(true);
+        org.mockito.Mockito.when(repo.existsByContractIdAndTaskTypeAndMaintenanceReasonAndStatusIn(
+                org.mockito.Mockito.eq(69), org.mockito.Mockito.eq("MAINTENANCE"),
+                org.mockito.Mockito.eq("LIQUIDATION"), org.mockito.Mockito.anyList()))
+                .thenReturn(false);
+        org.mockito.Mockito.when(repo.save(org.mockito.Mockito.any(StaffTask.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        StaffTask created = svc.createMaintenanceTask(contract, "LIQUIDATION",
+                "Cưỡng chế dọn ô KC-TD-E01 của HĐ HD-DE6", true, null);
+        assertNotNull(created, "Phải tạo được task dọn kho LIQUIDATION dù đã có task bảo trì DAMAGE đang mở");
+        assertEquals("MAINTENANCE", created.getTaskType());
+        assertEquals("LIQUIDATION", created.getMaintenanceReason());
+    }
 }

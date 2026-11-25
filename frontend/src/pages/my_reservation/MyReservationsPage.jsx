@@ -32,7 +32,7 @@ const STATUS_META = {
     className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]",
   },
   DEPOSIT_PAID: {
-    label: "Đã cọc - chờ gán ô",
+    label: "Chờ gán ô",
     className: "bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]",
   },
   UNIT_ASSIGNED: {
@@ -45,7 +45,7 @@ const STATUS_META = {
   },
   // D-21: nghiệm thu xong, chờ khách xác nhận quyết toán
   SETTLEMENT_PENDING: {
-    label: "Đang tất toán trả kho",
+    label: "Chờ quyết toán",
     className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
   },
   CANCELLED: {
@@ -129,8 +129,8 @@ function getStorageLocation(r) {
 
 // 22/11/2026 (PR-O32): đơn huỷ / No-Show đã được chuyển tiền nhưng khách chưa xác nhận → nhãn theo bước nhận tiền
 const RECEIPT_META = {
-  WAITING_CUSTOMER: { label: "Đã chuyển tiền · chờ bạn xác nhận", className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]" },
-  DISPUTED: { label: "Cơ sở đang kiểm tra tiền hoàn", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
+  WAITING_CUSTOMER: { label: "Chờ xác nhận tiền", className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]" },
+  DISPUTED: { label: "Đang kiểm tra hoàn", className: "bg-[#FFE8CC] text-[#E58800] border-2 border-[#FF9600]" },
 };
 
 function statusMetaOf(r) {
@@ -823,19 +823,24 @@ export default function MyReservationsPage() {
         ))}
 
         {!loading && !error && visibleReservations.length > 0 && (
-          <div className="max-w-full overflow-x-auto bg-white custom-scrollbar pb-2">
-            <table className="w-full min-w-[1180px] table-fixed text-left border-collapse">
+          <div
+            className="max-w-full overflow-x-auto bg-white custom-scrollbar pb-2"
+            role="region"
+            aria-label="Danh sách đơn đặt chỗ"
+            tabIndex={0}
+          >
+            <table className="w-full min-w-[1190px] table-fixed text-left border-collapse">
               <colgroup>
-                <col className="w-[100px]" />
-                <col className="w-[165px]" />
-                <col className="w-[135px]" />
-                <col className="w-[135px]" />
-                <col className="w-[90px]" />
-                <col className="w-[58px]" />
-                <col className="w-[150px]" />
+                <col className="w-[96px]" />
+                <col className="w-[160px]" />
+                <col className="w-[132px]" />
+                <col className="w-[132px]" />
+                <col className="w-[88px]" />
+                <col className="w-[56px]" />
+                <col className="w-[148px]" />
                 <col className="w-[78px]" />
-                <col className="w-[155px]" />
-                <col className="w-[114px]" />
+                <col className="w-[178px]" />
+                <col className="w-[122px]" />
               </colgroup>
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
@@ -999,21 +1004,23 @@ export default function MyReservationsPage() {
                         </div>
                       </td>
 
-                      {/* Cột 9: Trạng thái (Đứng đúng cột Trạng thái) */}
-                      <td className="px-3 py-3 whitespace-nowrap">
-                        <div className="flex flex-col items-start gap-1">
+                      {/* Cột 9: Trạng thái (Đứng đúng cột Trạng thái, tự gói gọn trong ô không tràn sang cột Thao tác) */}
+                      <td className="px-3 py-3 align-middle overflow-hidden">
+                        <div className="flex flex-col items-start gap-1 max-w-full">
                           <span
-                            className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${meta.className}`}
+                            className={`inline-block max-w-full whitespace-normal text-center leading-tight break-words px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${meta.className}`}
                           >
                             {meta.label}
                           </span>
                           {isExpiringSoon && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600] animate-pulse">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600]"></span>
-                              Sắp hết hạn{" "}
-                              {diffDays <= 0
-                                ? "(Hôm nay)"
-                                : `(${diffDays} ngày)`}
+                            <span className="inline-flex items-center gap-1 max-w-full whitespace-normal leading-tight px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600] animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600] shrink-0"></span>
+                              <span>
+                                Sắp hết hạn{" "}
+                                {diffDays <= 0
+                                  ? "(Hôm nay)"
+                                  : `(${diffDays} ngày)`}
+                              </span>
                             </span>
                           )}
                         </div>

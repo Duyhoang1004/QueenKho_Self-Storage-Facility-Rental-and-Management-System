@@ -31,6 +31,10 @@ public interface StaffTaskRepository extends JpaRepository<StaffTask, Integer> {
     // UC-16: chặn sinh trùng (mỗi hợp đồng chỉ có 1 task đang mở cho mỗi loại task)
     boolean existsByContractIdAndTaskTypeAndStatusIn(Integer contractId, String taskType, List<String> statuses);
 
+    // Chặn sinh trùng theo đúng lý do bảo trì (để hợp đồng đang có task DAMAGE sửa ô cũ vẫn sinh được task LIQUIDATION dọn ô hiện tại)
+    boolean existsByContractIdAndTaskTypeAndMaintenanceReasonAndStatusIn(
+            Integer contractId, String taskType, String maintenanceReason, List<String> statuses);
+
     // UC-16: lấy task đang mở của 1 hợp đồng để hủy (khách gia hạn)
     List<StaffTask> findByContractIdAndTaskTypeAndStatusIn(Integer contractId, String taskType, List<String> statuses);
 

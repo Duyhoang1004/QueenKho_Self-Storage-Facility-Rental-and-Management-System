@@ -39,7 +39,7 @@ import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/i
 import { getCentralWarehouses, getFacilityCentralWarehouse } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 import IncidentReportModal from '../../components/IncidentReportModal';
-import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate, getPresetsForTask } from '../../utils/incidentTemplates';
+import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate } from '../../utils/incidentTemplates';
 
 // UC-18: Chi tiết task + Check-in & lập biên bản bàn giao (Handover Record)
 // UC-23: Nghiệm thu trả kho (Checkout Inspection)
@@ -1629,10 +1629,17 @@ export default function StaffTaskDetailPage() {
     resetSupportContractPin(task.id, userId)
       .then(data => {
         setTask(data);
-        if (!resolutionNote.trim()) {
-          setResolutionNote(
-            `Đã cấp lại mã PIN SmartLock 6 số mới (${data.accessPinCode}) cho khách hàng và kiểm tra khoá hoạt động ổn định.`
-          );
+        if (!resolutionNote.trim() || resolutionNote.trim().startsWith('[BIÊN BẢN XỬ LÝ SỰ CỐ')) {
+          const baseSample = INCIDENT_REPORT_TEMPLATES.LOCK_ISSUE?.find(t => t.id === 'LOCK_FORGOT_PIN') || findMatchingTemplate(data);
+          const customSample = baseSample ? {
+            ...baseSample,
+            actions: [
+              ...(baseSample.actions || []).slice(0, 2),
+              `Đã cấp mã PIN SmartLock 6 số mới (${data.accessPinCode}) trên hệ thống và thử mở cửa thành công.`,
+            ],
+            conclusion: `Khách hàng đã nhận mã PIN mới (${data.accessPinCode}), khóa SmartLock hoạt động ổn định, bàn giao quyền truy cập an toàn.`,
+          } : baseSample;
+          setResolutionNote(buildIncidentReportNote(data, customSample, repairStatus));
         }
         setToast({
           type: 'success',
@@ -3118,7 +3125,18 @@ export default function StaffTaskDetailPage() {
                         <span className="text-[11px] font-black uppercase text-[#777777]">Tình trạng chốt khóa / cửa kho *</span>
                         <select
                           value={securityLockStatus}
-                          onChange={e => setSecurityLockStatus(e.target.value)}
+                          onChange={e => {
+                            const nextLockStatus = e.target.value;
+                            setSecurityLockStatus(nextLockStatus);
+                            if (resolutionNote.trim().startsWith('[BIÊN BẢN XỬ LÝ SỰ CỐ')) {
+                              const isFullTemplate = resolutionNote.includes('• Biện pháp xử lý kỹ thuật:\n  -');
+                              setResolutionNote(
+                                isFullTemplate
+                                  ? buildIncidentReportNote(task, findMatchingTemplate(task), repairStatus, preliminaryCause, nextLockStatus)
+                                  : buildBlankIncidentReport(task, repairStatus, preliminaryCause, nextLockStatus)
+                              );
+                            }
+                          }}
                           className="duo-input text-xs bg-white"
                         >
                           <option value="">— Chọn kết luận an ninh —</option>
@@ -3140,7 +3158,7 @@ export default function StaffTaskDetailPage() {
                           type="button"
                           onClick={() => {
                             const sample = findMatchingTemplate(task);
-                            setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                            setResolutionNote(buildIncidentReportNote(task, sample, repairStatus, preliminaryCause, securityLockStatus));
                             setToast({
                               type: 'success',
                               message: `Đã áp dụng mẫu biên bản an ninh khớp với [${task.subCategory || 'An ninh'}].`
@@ -3267,13 +3285,15 @@ export default function StaffTaskDetailPage() {
                       </p>
                       {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
                       <p className="text-[11px] font-bold text-[#FF9600]">
-                        Mở ô cùng khách, chụp hiện trạng (dấu thấm, ẩm mốc, khoá, hàng hư), ước tính giá trị hàng/thiệt hại và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu với ảnh lúc nhận kho và cảm biến để kết luận.
+                        {claim.claimType === 'GOODS_LOSS'
+                          ? 'Mở ô cùng khách, chụp hiện trạng khóa SmartLock, niêm phong cửa ô và phần hàng còn lại trong ô; ước tính giá trị hàng bị thiếu và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu ảnh lúc nhận kho, lịch sử mở khóa và camera để kết luận.'
+                          : 'Mở ô cùng khách, chụp hiện trạng (dấu thấm, ẩm mốc, khoá, hàng hư), ước tính giá trị hàng/thiệt hại và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu với ảnh lúc nhận kho và cảm biến để kết luận.'}
                       </p>
                       <HandoverPhotoPicker
                         images={inspectionImages}
                         onChange={setInspectionImages}
-                        label="Ảnh kiểm tra hiện trường"
-                        mockLabel={`Hiện trường ô ${task.storageUnitId || ''}`}
+                        label={claim.claimType === 'GOODS_LOSS' ? 'Ảnh kiểm tra hiện trường mất hàng (khóa, cửa ô, hàng còn lại)' : 'Ảnh kiểm tra hiện trường'}
+                        mockLabel={claim.claimType === 'GOODS_LOSS' ? `Hiện trường khóa & ô ${task.storageUnitId || ''}` : `Hiện trường ô ${task.storageUnitId || ''}`}
                       />
                       <div className="flex flex-col gap-1.5">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3328,7 +3348,9 @@ export default function StaffTaskDetailPage() {
                             onClick={() => setStaffAssessedValue('0')}
                             className="px-2.5 py-1 rounded-lg bg-white border border-[#E5E5E5] hover:bg-[#F7F7F7] text-[10px] font-black text-[#777777] cursor-pointer"
                           >
-                            0đ (Không thiệt hại / Lỗi bảo quản)
+                            {claim.claimType === 'GOODS_LOSS'
+                              ? '0đ (Không thiếu hàng / Lỗi tự quản lý)'
+                              : '0đ (Không thiệt hại / Lỗi bảo quản)'}
                           </button>
                         </div>
                         <span className="text-[10px] font-bold text-[#777777]">
@@ -3363,9 +3385,72 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
 
-                  {/* Xử lý yêu cầu hỗ trợ khác (OTHER) & Đổi ô kho / Chuyển ô khẩn cấp */}
+                  {/* Yêu cầu hỗ trợ khác (OTHER): tách riêng Đổi ô kho vs Hợp đồng/Gia hạn vs Cước phí vs Chung */}
+                  {task.issueType === 'OTHER' &&
+                    !task.subCategory?.toLowerCase().includes('đổi') &&
+                    !task.subCategory?.toLowerCase().includes('chuyển') &&
+                    !task.note?.includes('[YÊU CẦU FM ĐỔI KHO CHO KHÁCH') && (() => {
+                      const subLower = String(task.subCategory || '').toLowerCase();
+                      const isRenewal = subLower.includes('hợp đồng') || subLower.includes('gia hạn');
+                      const isBilling = subLower.includes('cước') || subLower.includes('hóa đơn') || subLower.includes('thanh toán');
+                      const templateId = isRenewal
+                        ? 'OTHER_CONTRACT_RENEWAL'
+                        : isBilling
+                        ? 'OTHER_BILLING_INVOICE'
+                        : 'OTHER_GENERAL';
+                      const cardTitle = isRenewal
+                        ? 'Tư vấn thủ tục Hợp đồng & Gia hạn'
+                        : isBilling
+                        ? 'Giải đáp & Đối soát Cước phí / Thanh toán'
+                        : 'Xử lý Yêu cầu Hỗ trợ Chung';
+                      const cardDesc = isRenewal
+                        ? 'Kiểm tra thời hạn hợp đồng, hướng dẫn khách thao tác gia hạn trực tuyến và thanh toán VNPAY tại mục Kho của tôi.'
+                        : isBilling
+                        ? 'Đối chiếu các khoản tiền thuê, tiền cọc, hóa đơn/biên lai thanh toán và giải thích chi tiết cho khách hàng.'
+                        : 'Kiểm tra thực tế yêu cầu vận hành phát sinh của khách hàng tại ô kho và phản hồi kết quả xử lý.';
+                      const cardIcon = isRenewal ? 'description' : isBilling ? 'receipt_long' : 'support_agent';
+                      return (
+                        <div className="rounded-2xl border-2 border-[#CE82FF] bg-[#FAF5FF] p-4 flex flex-col gap-3">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="flex items-start gap-2.5">
+                              <span className="material-symbols-outlined text-[#9333EA] text-[24px] shrink-0">{cardIcon}</span>
+                              <div>
+                                <h3 className="text-xs font-black uppercase text-[#7E22CE]">
+                                  {cardTitle} {task.contractCode ? `(HĐ ${task.contractCode})` : ''}
+                                </h3>
+                                <p className="text-xs font-bold text-[#6B7280] mt-0.5">{cardDesc}</p>
+                              </div>
+                            </div>
+                            <span className="duo-badge bg-white text-[#7E22CE] border border-[#CE82FF] text-[10px]">
+                              {task.subCategory || 'Hỗ trợ khác'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#CE82FF]/40 text-xs font-bold text-[#4B4B4B]">
+                            <span>
+                              Ô kho: <strong className="font-mono text-[#7E22CE]">{task.storageUnitId || '—'}</strong> ({task.unitTypeName || '—'})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const sample = INCIDENT_REPORT_TEMPLATES.OTHER?.find(t => t.id === templateId) || findMatchingTemplate(task);
+                                setResolutionNote(buildIncidentReportNote(task, sample, repairStatus));
+                                setToast({
+                                  type: 'success',
+                                  message: `Đã áp dụng mẫu biên bản khớp với [${task.subCategory || cardTitle}].`
+                                });
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-white border border-[#9333EA] hover:bg-[#F3E8FF] text-[11px] font-black text-[#7E22CE] flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">{cardIcon}</span>
+                              Áp dụng biên bản khớp danh mục
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                  {/* Chỉ hiện khung Đổi ô kho khi là Đổi ô kho / di chuyển đồ, Hư hỏng hạ tầng (FACILITY_DAMAGE), hoặc đã có yêu cầu chuyển ô */}
                   {Boolean(task.contractId && ['ACTIVE', 'PENDING_CHECK_IN', 'TERMINATION_PENDING', 'OVERDUE'].includes(task.contractStatus) && (
-                    task.issueType === 'OTHER' ||
                     task.issueType === 'FACILITY_DAMAGE' ||
                     task.subCategory?.toLowerCase().includes('đổi') ||
                     task.subCategory?.toLowerCase().includes('chuyển') ||
@@ -3532,7 +3617,7 @@ export default function StaffTaskDetailPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setResolutionNote(buildBlankIncidentReport(task, repairStatus, preliminaryCause));
+                              setResolutionNote(buildBlankIncidentReport(task, repairStatus, preliminaryCause, securityLockStatus));
                             }}
                             className="px-3 py-1.5 rounded-xl bg-white border border-[#006699] hover:bg-[#E0F2FE] text-[11px] font-black text-[#006699] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
                             title="Tạo khung biên bản trống chuẩn để nhân viên tự điền"
@@ -3571,7 +3656,7 @@ export default function StaffTaskDetailPage() {
                           type="button"
                           onClick={() => {
                             const sampleTemplate = findMatchingTemplate(task, preliminaryCause);
-                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate, repairStatus, preliminaryCause));
+                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate, repairStatus, preliminaryCause, securityLockStatus));
                           }}
                           className="text-[10px] font-bold text-[#006699] hover:underline cursor-pointer shrink-0"
                           title="Điền dữ liệu mẫu chuẩn khớp với mục khách đã chọn"
@@ -3579,24 +3664,6 @@ export default function StaffTaskDetailPage() {
                           + Điền mẫu tham khảo (demo)
                         </button>
                       </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                      <span className="text-[10px] font-black uppercase text-[#94A3B8] mr-1 flex items-center gap-0.5">
-                        <span className="material-symbols-outlined text-[13px]">bolt</span>
-                        Gợi ý phản hồi nhanh:
-                      </span>
-                      {getPresetsForTask(task, repairStatus, preliminaryCause).map((preset, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => setResolutionNote(preset)}
-                          className="px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#38BDF8] hover:bg-[#F0F9FF] text-[11px] font-bold text-[#475569] cursor-pointer transition-colors text-left"
-                          title={preset}
-                        >
-                          + Mẫu #{idx + 1}: {preset.slice(0, 38)}...
-                        </button>
-                      ))}
                     </div>
 
                     <label className="flex flex-col gap-1.5">
@@ -5077,6 +5144,7 @@ export default function StaffTaskDetailPage() {
         task={task}
         repairStatus={repairStatus}
         preliminaryCause={preliminaryCause}
+        securityLockStatus={securityLockStatus}
         resolutionNote={editResolutionOpen ? editResolutionNote : (resolutionNote || task?.resolutionNote)}
         evidenceImages={
           editResolutionOpen

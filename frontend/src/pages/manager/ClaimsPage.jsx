@@ -148,7 +148,26 @@ function ClaimList() {
                   <td className="py-3 px-4">{c.contractCode} · {c.storageUnitId}</td>
                   <td className="py-3 px-4">{formatVND(c.claimedAmount)}</td>
                   <td className="py-3 px-4">{c.totalCompensation != null ? formatVND(c.totalCompensation) : '—'}</td>
-                  <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${STATUS_META[c.status]?.cls}`}>{STATUS_META[c.status]?.label || c.status}</span></td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-col items-start gap-1">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-black ${STATUS_META[c.status]?.cls}`}>{STATUS_META[c.status]?.label || c.status}</span>
+                      {c.status === 'INSPECTED' && c.inspectionConfirmStatus === 'PENDING_CUSTOMER' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#FFF8E6] text-[#D96B00]">Chờ khách xác nhận hiện trường</span>
+                      )}
+                      {c.status === 'INSPECTED' && c.decisionConfirmStatus === 'DISPUTED' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#FFDFDF] text-[#D93838]">Khách đề nghị thẩm định lại</span>
+                      )}
+                      {c.status === 'APPROVED' && c.decisionConfirmStatus === 'PENDING_CUSTOMER' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#FAF5FF] text-[#8B3DFF]">Chờ khách đồng ý phương án</span>
+                      )}
+                      {c.status === 'PAID' && c.receiptStatus === 'WAITING_CUSTOMER' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#FFF8E6] text-[#D96B00]">Chờ khách xác nhận nhận tiền</span>
+                      )}
+                      {c.status === 'PAID' && c.receiptStatus === 'DISPUTED' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#FFDFDF] text-[#FF4B4B]">Khách báo chưa nhận tiền</span>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -307,11 +326,37 @@ function ClaimDetail({ claimId }) {
           <>
             <Row label="Người kiểm tra" value={`${claim.inspectedByName} · ${formatDateTime(claim.inspectedAt)}`} />
             <Row label="Nguyên nhân sơ bộ" value={LIABLE_LABELS[claim.preliminaryCause] || '—'} />
+            <Row
+              label="Giá trị Staff ước tính"
+              value={claim.staffAssessedValue != null
+                ? `${formatVND(claim.staffAssessedValue)} (khách đề nghị ${formatVND(claim.claimedAmount)})`
+                : 'Chưa ghi nhận'}
+            />
             <p className="text-xs font-bold text-[#4B4B4B] bg-[#F7F7F7] rounded-xl p-3 whitespace-pre-line">{claim.inspectionNote}</p>
             <PhotoGrid images={claim.inspectionImages} />
+            {claim.inspectionConfirmStatus && (
+              <div className={`rounded-xl px-3 py-2 text-xs font-bold border ${
+                claim.inspectionConfirmStatus === 'CONFIRMED'
+                  ? 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]'
+                  : claim.inspectionConfirmStatus === 'DISPUTED'
+                    ? 'bg-[#FFDFDF] border-[#FF4B4B] text-[#D93838]'
+                    : claim.inspectionConfirmStatus === 'BYPASSED'
+                      ? 'bg-[#F7F7F7] border-[#E5E5E5] text-[#777777]'
+                      : 'bg-[#FFF8E6] border-[#FF9600] text-[#D96B00]'
+              }`}>
+                {claim.inspectionConfirmStatus === 'CONFIRMED' && `Khách đã xác nhận đúng hiện trạng kiểm tra (${formatDateTime(claim.inspectionConfirmedAt)})`}
+                {claim.inspectionConfirmStatus === 'PENDING_CUSTOMER' && `Chờ khách xác nhận đúng biên bản hiện trường (Vòng ${claim.inspectionRound || 1}/2)`}
+                {claim.inspectionConfirmStatus === 'DISPUTED' && `Khách báo sai lệch hiện trạng: ${claim.inspectionDisputeReason}`}
+                {claim.inspectionConfirmStatus === 'BYPASSED' && 'Đã chuyển tiếp sang quản lý thẩm định'}
+              </div>
+            )}
           </>
         ) : (
-          <p className="text-xs font-bold text-[#AFAFAF]">Chưa kiểm tra — nhân viên nhận task hỗ trợ của phiếu {claim.ticketCode} và lập biên bản.</p>
+          <p className="text-xs font-bold text-[#AFAFAF]">
+            {claim.inspectionConfirmStatus === 'DISPUTED'
+              ? `Khách báo sai lệch hiện trường ("${claim.inspectionDisputeReason}") — đã mở lại task hỗ trợ cho nhân viên kiểm tra lại.`
+              : `Chưa kiểm tra — nhân viên nhận task hỗ trợ của phiếu ${claim.ticketCode} và lập biên bản.`}
+          </p>
         )}
       </Card>
 
@@ -319,6 +364,16 @@ function ClaimDetail({ claimId }) {
         <Card icon="photo_library" title="Biên bản nhận kho / trả kho (đối chiếu hiện trạng ô)">
           <ContractHandoverSection contractId={claim.contractId} reloadKey={reloadKey} />
         </Card>
+      )}
+
+      {claim.status === 'INSPECTED' && claim.decisionConfirmStatus === 'DISPUTED' && claim.decisionDisputeReason && (
+        <div className="rounded-2xl border-2 border-[#FF9600] bg-[#FFF8E6] p-4 flex flex-col gap-1 text-xs">
+          <span className="font-black text-[#D96B00] uppercase flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[18px]">report_problem</span>
+            Khách đề nghị thẩm định lại phương án (Vòng {claim.decisionRound || 1}/2)
+          </span>
+          <p className="font-bold text-[#4B4B4B]">Lý do khách nêu: {claim.decisionDisputeReason}</p>
+        </div>
       )}
 
       {claim.status === 'INSPECTED' && !bom && <DecisionForm claim={claim} onDone={refresh} />}
@@ -353,6 +408,23 @@ function ClaimDetail({ claimId }) {
           <Row label="Đã chi" value={`${formatVND(claim.totalCompensation)} · ${claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'} · ${formatDateTime(claim.paidAt)}`} />
           {claim.bankTransactionCode && <Row label="Mã FT" value={claim.bankTransactionCode} />}
           {claim.paymentEvidence && <PhotoGrid images={[claim.paymentEvidence]} />}
+          {claim.receiptStatus && (
+            <div className={`rounded-xl px-3 py-2 text-xs font-bold border ${
+              claim.receiptStatus === 'CONFIRMED' || claim.receiptStatus === 'AUTO_CONFIRMED'
+                ? 'bg-[#D7FFB8] border-[#58CC02] text-[#58A700]'
+                : claim.receiptStatus === 'DISPUTED'
+                  ? 'bg-[#FFDFDF] border-[#FF4B4B] text-[#D93838]'
+                  : 'bg-[#FFF8E6] border-[#FF9600] text-[#D96B00]'
+            }`}>
+              {claim.receiptStatus === 'WAITING_CUSTOMER' && `Đang chờ khách xác nhận đã nhận tiền (tự xác nhận sau 3 ngày${claim.receiptAutoConfirmAt ? ': ' + formatDateTime(claim.receiptAutoConfirmAt) : ''})`}
+              {claim.receiptStatus === 'CONFIRMED' && `Khách đã xác nhận đã nhận tiền (${formatDateTime(claim.receiptConfirmedAt)})`}
+              {claim.receiptStatus === 'AUTO_CONFIRMED' && `Hệ thống tự xác nhận đã nhận tiền sau 3 ngày (${formatDateTime(claim.receiptConfirmedAt)})`}
+              {claim.receiptStatus === 'DISPUTED' && `KHÁCH BÁO CHƯA NHẬN ĐƯỢC TIỀN (Lần ${claim.receiptRound || 1}): ${claim.receiptDisputeReason}`}
+            </div>
+          )}
+          {claim.receiptStatus === 'DISPUTED' && !bom && (
+            <ResolveReceiptDisputeForm claim={claim} onDone={refresh} />
+          )}
           <Row label="Hồ sơ bảo hiểm" value={INSURANCE_LABELS[claim.insuranceStatus] || '—'} />
           {claim.insuranceRef && <Row label="Mã hồ sơ bảo hiểm" value={claim.insuranceRef} />}
           {claim.insuranceStatus === 'PAID' && <Row label="Bảo hiểm đã trả cơ sở" value={formatVND(claim.insuranceAmount)} />}
@@ -429,15 +501,19 @@ function DecisionForm({ claim, onDone }) {
   const isLoss = claim.claimType === 'GOODS_LOSS'
   const [form, setForm] = useState({
     liableParty: ['CUSTOMER', 'FACILITY', 'FORCE_MAJEURE'].includes(claim.preliminaryCause) ? claim.preliminaryCause : 'FACILITY',
-    assessedValue: String(Number(claim.claimedAmount)),
+    assessedValue: claim.staffAssessedValue != null
+      ? String(Math.min(Number(claim.staffAssessedValue), Number(claim.claimedAmount)))
+      : String(Number(claim.claimedAmount)),
     damagePercent: isLoss ? '100' : '50',
     unusableDays: '0',
     resolution: 'CONTINUE',
     note: '',
   })
   const [quote, setQuote] = useState(null)
+  const [inspectionOverride, setInspectionOverride] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const awaitingInspectionConfirm = claim.inspectionConfirmStatus === 'PENDING_CUSTOMER' && !inspectionOverride
 
   const payload = () => ({
     liableParty: form.liableParty,
@@ -477,7 +553,14 @@ function DecisionForm({ claim, onDone }) {
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#777777]">
-          Giá trị hàng thẩm định (≤ {formatVND(claim.claimedAmount)})
+          <span>
+            Giá trị hàng thẩm định (≤ {formatVND(claim.claimedAmount)})
+            {claim.staffAssessedValue != null && (
+              <span className="ml-1 text-[#0284C7] normal-case font-bold">
+                · Staff ước tính: {formatVND(claim.staffAssessedValue)}
+              </span>
+            )}
+          </span>
           <input type="number" min="0" value={form.assessedValue} onChange={set('assessedValue')} className="duo-input text-xs" />
         </label>
         {!isLoss && (
@@ -573,14 +656,26 @@ function DecisionForm({ claim, onDone }) {
           </div>
         </div>
       )}
+      {claim.inspectionConfirmStatus === 'PENDING_CUSTOMER' && (
+        <div className="rounded-xl border-2 border-[#FF9600] bg-[#FFF8E6] p-3 flex flex-col gap-1.5 text-xs">
+          <span className="font-black text-[#D96B00]">
+            Khách hàng chưa bấm xác nhận đúng hiện trạng kiểm tra trên mục Hỗ trợ (Vòng {claim.inspectionRound || 1}/2).
+          </span>
+          <label className="flex items-center gap-2 font-bold text-[#4B4B4B] cursor-pointer">
+            <input type="checkbox" checked={inspectionOverride} onChange={(e) => setInspectionOverride(e.target.checked)} className="w-4 h-4" />
+            Khách đã ký biên bản giấy tại quầy / chuyển tiếp thẩm định ngay
+          </label>
+        </div>
+      )}
       {error && <p className="text-xs font-bold text-[#FF4B4B]">{error}</p>}
       <div className="flex flex-wrap gap-3 justify-end">
         <button type="button" onClick={runQuote} disabled={busy} className="duo-btn-white px-4 py-2 text-xs">Tính thử</button>
-        <button type="button" onClick={submit} disabled={busy || !quote || form.note.trim().length < 10}
+        <button type="button" onClick={submit} disabled={busy || !quote || form.note.trim().length < 10 || awaitingInspectionConfirm}
           className="duo-btn-green px-4 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed">
           Chốt kết luận
         </button>
       </div>
+      {awaitingInspectionConfirm && <p className="text-[11px] font-bold text-[#D96B00] text-right">Đang chờ khách xác nhận hiện trạng (hoặc tích xác nhận biên bản giấy ở trên).</p>}
       {!quote && <p className="text-[11px] font-bold text-[#AFAFAF] text-right">Bấm “Tính thử” để xem bảng tính trước khi chốt.</p>}
     </Card>
   )
@@ -591,11 +686,13 @@ function PaymentForm({ claim, onDone }) {
   const [images, setImages] = useState([])
   const [ft, setFt] = useState('')
   const [cashConfirmed, setCashConfirmed] = useState(false)
+  const [decisionOverride, setDecisionOverride] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // BR-128a (24/11/2026): chuyển khoản cần tài khoản khách đã nhập trên hồ sơ
   const hasAccount = Boolean(claim.payoutAccountNumber)
-  const ready = method === 'BANK_TRANSFER' ? hasAccount && images.length > 0 : (cashConfirmed || images.length > 0)
+  const awaitingDecisionConfirm = claim.decisionConfirmStatus === 'PENDING_CUSTOMER' && !decisionOverride
+  const ready = !awaitingDecisionConfirm && (method === 'BANK_TRANSFER' ? hasAccount && images.length > 0 : (cashConfirmed || images.length > 0))
 
   const submit = () => {
     setBusy(true)
@@ -613,6 +710,22 @@ function PaymentForm({ claim, onDone }) {
 
   return (
     <Card icon="payments" title={`Chi trả ${formatVND(claim.totalCompensation)} cho khách`}>
+      {claim.decisionConfirmStatus === 'CONFIRMED' && (
+        <div className="rounded-xl bg-[#D7FFB8] border border-[#58CC02] px-3 py-2 text-xs font-black text-[#58A700]">
+          Khách đã đồng ý phương án bồi thường ({formatDateTime(claim.decisionConfirmedAt)}) — sẵn sàng chi trả.
+        </div>
+      )}
+      {claim.decisionConfirmStatus === 'PENDING_CUSTOMER' && (
+        <div className="rounded-xl border-2 border-[#CE82FF] bg-[#FAF5FF] p-3 flex flex-col gap-1.5 text-xs">
+          <span className="font-black text-[#8B3DFF]">
+            Đang chờ khách bấm “Đồng ý mức bồi thường” trên mục Hỗ trợ (Vòng {claim.decisionRound || 1}/2).
+          </span>
+          <label className="flex items-center gap-2 font-bold text-[#4B4B4B] cursor-pointer">
+            <input type="checkbox" checked={decisionOverride} onChange={(e) => setDecisionOverride(e.target.checked)} className="w-4 h-4" />
+            Khách đã đồng ý trực tiếp tại quầy / cho phép chi trả ngay
+          </label>
+        </div>
+      )}
       <div className="flex gap-2">
         {[['BANK_TRANSFER', 'Chuyển khoản'], ['CASH', 'Tiền mặt tại quầy']].map(([key, label]) => (
           <button key={key} type="button" onClick={() => setMethod(key)}
@@ -656,5 +769,79 @@ function PaymentForm({ claim, onDone }) {
         </button>
       </div>
     </Card>
+  )
+}
+
+function ResolveReceiptDisputeForm({ claim, onDone }) {
+  const [method, setMethod] = useState(claim.paymentMethod || 'BANK_TRANSFER')
+  const [images, setImages] = useState([])
+  const [ft, setFt] = useState(claim.bankTransactionCode || '')
+  const [cashConfirmed, setCashConfirmed] = useState(false)
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const effectiveHasImage = images.length > 0 || Boolean(claim.paymentEvidence)
+  const effectiveHasFt = Boolean(ft.trim())
+  const ready = method === 'BANK_TRANSFER' ? (effectiveHasImage && effectiveHasFt) : (cashConfirmed || effectiveHasImage)
+
+  const submit = () => {
+    setBusy(true)
+    setError('')
+    payClaim(claim.id, {
+      paymentMethod: method,
+      evidenceImageUrl: images[0] || undefined,
+      bankTransactionCode: ft.trim() || undefined,
+      cashReceiptConfirmed: cashConfirmed,
+      resolutionNote: note.trim() || undefined,
+    })
+      .then(() => onDone('Đã gửi lại chứng từ chi trả — chờ khách xác nhận lại.'))
+      .catch((err) => setError(err.response?.data?.message || 'Không cập nhật được đối soát chi trả.'))
+      .finally(() => setBusy(false))
+  }
+
+  return (
+    <div className="rounded-xl border-2 border-[#FF4B4B] bg-[#FFF5F5] p-3 flex flex-col gap-2.5">
+      <span className="text-xs font-black text-[#D93838]">Đối soát &amp; gửi lại chứng từ chi trả cho khách</span>
+      <div className="flex gap-2">
+        {[['BANK_TRANSFER', 'Chuyển khoản'], ['CASH', 'Tiền mặt tại quầy']].map(([key, label]) => (
+          <button key={key} type="button" onClick={() => setMethod(key)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-black border-2 ${method === key ? 'bg-[#DDF4FF] border-[#1CB0F6] text-[#1CB0F6]' : 'bg-white border-[#E5E5E5] text-[#777777]'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <HandoverPhotoPicker
+        images={images}
+        onChange={(list) => setImages(list.slice(-1))}
+        label="Ảnh ủy nhiệm chi / biên nhận mới (nếu thay đổi)"
+        mockLabel={`Đối soát chi trả ${claim.claimCode}`}
+        required={false}
+      />
+      {method === 'BANK_TRANSFER' ? (
+        <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#777777]">
+          Mã FT đối soát * (bắt buộc để khách tự kiểm tra sao kê ngân hàng)
+          <input value={ft} onChange={(e) => setFt(e.target.value)} placeholder="VD: FT26330123456" className="duo-input text-xs bg-white" />
+        </label>
+      ) : (
+        <label className="flex items-center gap-2 text-xs font-bold text-[#4B4B4B]">
+          <input type="checkbox" checked={cashConfirmed} onChange={(e) => setCashConfirmed(e.target.checked)} className="w-4 h-4" />
+          Khách đã ký nhận lại tại quầy
+        </label>
+      )}
+      <label className="flex flex-col gap-1 text-[11px] font-black uppercase text-[#777777]">
+        Phản hồi giải trình cho khách
+        <textarea rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="VD: Đã kiểm tra lệnh chuyển khoản FT..., tiền đang treo liên ngân hàng và sẽ về trong hôm nay."
+          className="duo-input text-xs bg-white normal-case resize-none" />
+      </label>
+      {error && <p className="text-xs font-bold text-[#FF4B4B]">{error}</p>}
+      <div className="flex justify-end">
+        <button type="button" onClick={submit} disabled={busy || !ready}
+          className="duo-btn-orange px-4 py-2 text-xs disabled:opacity-50 disabled:cursor-not-allowed">
+          {busy ? 'Đang gửi...' : 'Gửi lại chứng từ cho khách xác nhận'}
+        </button>
+      </div>
+    </div>
   )
 }

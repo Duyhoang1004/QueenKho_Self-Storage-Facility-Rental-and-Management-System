@@ -82,6 +82,13 @@ public class CompensationClaimService {
     @Lazy
     private CheckoutSettlementService settlementService;
 
+    @Autowired(required = false)
+    private ClaimConfirmationService claimConfirmationService;
+
+    @Autowired(required = false)
+    @Lazy
+    private SupportRequestService supportRequestService;
+
     public static boolean isClaimIssue(String issueType) {
         return issueType != null && CLAIM_ISSUE_TYPES.contains(issueType.trim().toUpperCase());
     }
@@ -185,6 +192,12 @@ public class CompensationClaimService {
 
     @Transactional
     public CompensationClaim recordInspection(Integer ticketId, User staff, String note, List<String> images, String cause) {
+        return recordInspection(ticketId, staff, note, images, cause, null);
+    }
+
+    @Transactional
+    public CompensationClaim recordInspection(Integer ticketId, User staff, String note, List<String> images,
+                                              String cause, BigDecimal staffAssessedValue) {
         CompensationClaim claim = claimRepository.findByTicketId(ticketId)
                 .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CLAIM_NOT_FOUND", "Không tìm thấy hồ sơ bồi thường của ticket"));
         if (!"SUBMITTED".equals(claim.getStatus())) {
@@ -207,6 +220,10 @@ public class CompensationClaimService {
         if (note == null || note.trim().length() < 10) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "Biên bản kiểm tra tối thiểu 10 ký tự");
         }
+        if (staffAssessedValue != null && (staffAssessedValue.signum() < 0 || staffAssessedValue.compareTo(MAX_CLAIM) > 0)) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                    "Giá trị hàng / thiệt hại nhân viên ước tính phải từ 0đ đến 10 tỷ đồng");
+        }
         claim.setInspectedBy(staff);
         claim.setInspectedAt(LocalDateTime.now());
         claim.setInspectionNote(note.trim());
@@ -220,19 +237,25 @@ public class CompensationClaimService {
             settlementService.notifyCheckoutUnblocked(claim.getContract().getId());
         }
 
+        String staffValueTag = staffAssessedValue != null
+                ? " [GIA_STAFF_UOC_TINH:" + staffAssessedValue.stripTrailingZeros().toPlainString() + "]"
+                : "";
         activityLogService.log(staff.getId(),
                 "[CLAIM_INSPECT] " + staff.getFullName() + " kiểm tra hồ sơ " + claim.getClaimCode() + ", nguyên nhân sơ bộ "
-                        + normCause + ": " + truncate(note.trim(), 300),
+                        + normCause + staffValueTag + ": " + truncate(note.trim(), 240),
                 "compensation_claims", String.valueOf(claim.getId()));
         if (notificationService != null) {
+            String valueText = staffAssessedValue != null
+                    ? ", giá trị Staff ước tính: " + formatVnd(staffAssessedValue)
+                    : "";
             notificationService.notifyFacilityManagers(claim.getFacilityId(),
                     "Hồ sơ bồi thường " + claim.getClaimCode() + " chờ quyết định",
                     staff.getFullName() + " đã kiểm tra hiện trường (nguyên nhân sơ bộ: " + causeLabel(normCause)
-                            + "). Vui lòng thẩm định và chốt mức bồi thường.",
+                            + valueText + "). Vui lòng thẩm định và chốt mức bồi thường.",
                     "SUPPORT", "/manager/claims/" + claim.getId());
             notificationService.notifyCustomer(claim.getCustomer().getId(),
                     "Đã kiểm tra hiện trường hồ sơ " + claim.getClaimCode(),
-                    "Nhân viên cơ sở đã kiểm tra ô và hàng của bạn. Quản lý cơ sở sẽ thẩm định và báo kết quả bồi thường.",
+                    "Nhân viên cơ sở đã kiểm tra ô và hàng của bạn. Vui lòng vào mục Hỗ trợ xác nhận đúng hiện trạng kiểm tra trước khi quản lý thẩm định.",
                     "SUPPORT", "/ho-tro");
         }
         return claim;
@@ -368,12 +391,10 @@ public class CompensationClaimService {
                     : "Bạn được bồi thường " + formatVnd(q.totalCompensation()) + " (hàng " + formatVnd(q.goodsCompensation())
                       + (q.penaltyAmount().signum() > 0 ? ", phạt vi phạm " + formatVnd(q.penaltyAmount()) : "")
                       + (q.rentRefundAmount().signum() > 0 ? ", hoàn tiền thuê " + formatVnd(q.rentRefundAmount()) : "")
-                      + "). " + ("TERMINATE".equals(claim.getResolution())
-                        ? "Bạn được chấm dứt hợp đồng không mất phí phá hợp đồng — hãy hẹn trả kho, tiền thuê còn lại hoàn theo ngày."
-                        : "Cơ sở sẽ chuyển tiền và có thể chuyển bạn sang ô khác cùng loại miễn phí.");
+                      + "). Vui lòng vào mục Hỗ trợ để xem bảng tính và xác nhận đồng ý phương án trước khi chi trả.";
             notificationService.notifyCustomer(claim.getCustomer().getId(),
                     (rejected ? "Hồ sơ bồi thường " + claim.getClaimCode() + " không được chấp nhận"
-                            : "Hồ sơ bồi thường " + claim.getClaimCode() + " được chấp nhận"),
+                            : "Hồ sơ bồi thường " + claim.getClaimCode() + " chờ bạn xác nhận phương án"),
                     body, "SUPPORT", "/ho-tro");
         }
 
@@ -389,7 +410,11 @@ public class CompensationClaimService {
     @Transactional
     public CompensationClaimResponse pay(Integer claimId, Integer managerId, ClaimPaymentRequest request) {
         CompensationClaim claim = findForManager(claimId, managerId, true);
-        if (!"APPROVED".equals(claim.getStatus())) {
+        boolean resolvingDispute = "PAID".equals(claim.getStatus())
+                && claimConfirmationService != null
+                && ClaimConfirmationService.RECEIPT_DISPUTED.equals(
+                        claimConfirmationService.getState(claim.getId()).receiptStatus());
+        if (!"APPROVED".equals(claim.getStatus()) && !resolvingDispute) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
                     "Chỉ chi trả hồ sơ đã được chấp nhận (hiện tại: " + claim.getStatus() + ")");
         }
@@ -407,6 +432,7 @@ public class CompensationClaimService {
         }
         String evidence = request.getEvidenceImageUrl() != null && !request.getEvidenceImageUrl().isBlank()
                 ? request.getEvidenceImageUrl().trim() : null;
+        String effectiveEvidence = resolvingDispute && evidence == null ? claim.getPaymentEvidence() : evidence;
         // Như PR-O15: chuyển khoản bắt buộc ảnh ủy nhiệm chi; tiền mặt bắt buộc khách ký nhận
         // BR-128a (24/11/2026): chuyển khoản phải biết tài khoản khách — khách nhập trên hồ sơ (Hỗ trợ của tôi)
         if ("BANK_TRANSFER".equals(method) && (claim.getPayoutAccountNumber() == null || claim.getPayoutAccountNumber().isBlank())) {
@@ -414,17 +440,55 @@ public class CompensationClaimService {
                     "Khách chưa nhập tài khoản nhận tiền bồi thường cho hồ sơ " + claim.getClaimCode()
                             + " — nhắc khách nhập ở mục Hỗ trợ, hoặc chi tiền mặt");
         }
-        if ("BANK_TRANSFER".equals(method) && evidence == null) {
+        if ("BANK_TRANSFER".equals(method) && effectiveEvidence == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "PAYMENT_EVIDENCE_REQUIRED",
                     "Chuyển khoản bắt buộc ảnh / link ủy nhiệm chi");
         }
-        if ("CASH".equals(method) && !Boolean.TRUE.equals(request.getCashReceiptConfirmed()) && evidence == null) {
+        if ("CASH".equals(method) && !Boolean.TRUE.equals(request.getCashReceiptConfirmed()) && effectiveEvidence == null) {
             throw new StaffTaskException(HttpStatus.BAD_REQUEST, "PAYMENT_EVIDENCE_REQUIRED",
                     "Tiền mặt bắt buộc xác nhận khách đã ký nhận (hoặc ảnh biên nhận)");
         }
         String ft = request.getBankTransactionCode() != null && !request.getBankTransactionCode().isBlank()
                 ? request.getBankTransactionCode().trim() : null;
         RentalContract contract = claim.getContract();
+
+        if (resolvingDispute) {
+            if ("BANK_TRANSFER".equals(method) && ft == null
+                    && (claim.getBankTransactionCode() == null || claim.getBankTransactionCode().isBlank())) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "BANK_TX_CODE_REQUIRED",
+                        "Đối soát chuyển khoản bắt buộc có mã giao dịch ngân hàng (FT) để khách kiểm tra sao kê");
+            }
+            User manager = userRepository.findById(managerId).orElseThrow();
+            LocalDateTime now = LocalDateTime.now();
+            String resNote = request.getResolutionNote() != null ? request.getResolutionNote().trim() : "";
+            claim.setPaymentMethod(method);
+            claim.setPaymentEvidence(effectiveEvidence);
+            if (ft != null) claim.setBankTransactionCode(ft);
+            claim.setPaidBy(manager);
+            claim.setPaidAt(now);
+            if (!resNote.isEmpty()) {
+                String merged = (claim.getDecisionNote() != null ? claim.getDecisionNote() : "")
+                        + "\n[Đối soát chi trả]: " + resNote;
+                claim.setDecisionNote(truncate(merged, 1000));
+            }
+            claimRepository.save(claim);
+            resolveTicket(claim.getSupportRequest(),
+                    "Quản lý đã kiểm tra và gửi lại chứng từ chi trả " + formatVnd(claim.getTotalCompensation())
+                            + " cho hồ sơ " + claim.getClaimCode() + (resNote.isEmpty() ? "" : ": " + resNote),
+                    now);
+            activityLogService.log(managerId,
+                    "[CLAIM_DISPUTE_RESOLVED] " + manager.getFullName() + " phản hồi khiếu nại chi trả hồ sơ "
+                            + claim.getClaimCode() + " (" + method + ")" + (!resNote.isEmpty() ? ": " + truncate(resNote, 200) : ""),
+                    "compensation_claims", String.valueOf(claim.getId()));
+            if (notificationService != null) {
+                notificationService.notifyCustomer(claim.getCustomer().getId(),
+                        "Đã cập nhật chứng từ chi trả " + claim.getClaimCode(),
+                        "Quản lý cơ sở đã kiểm tra lại giao dịch bồi thường " + formatVnd(claim.getTotalCompensation())
+                                + ". Vui lòng kiểm tra tài khoản và xác nhận trong mục Hỗ trợ.",
+                        "REFUND", "/ho-tro");
+            }
+            return toResponse(claim);
+        }
 
         jdbcTemplate.update(
                 "INSERT INTO payment_transactions (transaction_code, user_id, reservation_id, contract_id, payment_type, " +
@@ -539,9 +603,10 @@ public class CompensationClaimService {
         resolveTicket(claim.getSupportRequest(), "Đã bồi thường " + formatVnd(claim.getTotalCompensation())
                 + " cho hồ sơ " + claim.getClaimCode() + ". " + claim.getDecisionNote(), now);
 
+        String methodTag = ("CASH".equals(method) && evidence != null) ? "CASH_SIGNED" : method;
         activityLogService.log(actorId,
                 "[CLAIM_PAY] " + manager.getFullName() + " chi trả " + claim.getTotalCompensation().toPlainString() + "đ hồ sơ "
-                        + claim.getClaimCode() + " (" + method + ")"
+                        + claim.getClaimCode() + " (" + methodTag + ")"
                         + (claim.getInsuranceRef() != null ? ", gửi bảo hiểm " + claim.getInsuranceRef() : ""),
                 "compensation_claims", String.valueOf(claim.getId()));
         if (notificationService != null) {
@@ -580,6 +645,246 @@ public class CompensationClaimService {
                     result.message(), "REFUND", "/manager/claims/" + claim.getId());
         }
         return toResponse(claim);
+    }
+
+    // ================== 5. XÁC NHẬN 2 CHIỀU CỦA KHÁCH HÀNG (3 IDEA) ==================
+
+    /** Idea 3: Khách xác nhận đúng hiện trạng kiểm đếm của Staff */
+    @Transactional
+    public CompensationClaimResponse confirmInspection(Integer claimId, Integer customerId) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"INSPECTED".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Hồ sơ " + claim.getClaimCode() + " không ở trạng thái chờ xác nhận hiện trường");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.STATUS_PENDING_CUSTOMER.equals(state.inspectionConfirmStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_ALREADY_CONFIRMED",
+                    "Biên bản hiện trường đã được xử lý trước đó");
+        }
+        activityLogService.log(customerId,
+                "[CLAIM_INSPECT_CONFIRMED] Khách xác nhận đúng biên bản kiểm tra hiện trường hồ sơ " + claim.getClaimCode(),
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách đã xác nhận hiện trường — " + claim.getClaimCode(),
+                    "Khách hàng đã xác nhận đúng biên bản kiểm tra hiện trường. Quản lý cơ sở có thể tiến hành thẩm định và chốt bồi thường.",
+                    "SUPPORT", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Idea 3: Khách báo sai lệch hiện trạng / đề nghị Staff kiểm tra lại */
+    @Transactional
+    public CompensationClaimResponse disputeInspection(Integer claimId, Integer customerId, String reason) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"INSPECTED".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Chỉ có thể yêu cầu kiểm tra lại khi hồ sơ đang chờ xác nhận hiện trường");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.STATUS_PENDING_CUSTOMER.equals(state.inspectionConfirmStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_ALREADY_CONFIRMED",
+                    "Biên bản hiện trường không ở trạng thái chờ xác nhận");
+        }
+        if (state.inspectionRound() >= ClaimConfirmationService.MAX_INSPECTION_ROUNDS) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "MAX_ROUND_REACHED",
+                    "Đã hết lượt yêu cầu kiểm tra lại hiện trường (" + ClaimConfirmationService.MAX_INSPECTION_ROUNDS
+                            + " vòng). Vui lòng liên hệ Quản lý cơ sở để được hỗ trợ trực tiếp.");
+        }
+        String cleanReason = validateReason(reason, "Vui lòng mô tả sai lệch hiện trường cần kiểm tra lại (10–380 ký tự)");
+        claim.setStatus("SUBMITTED");
+        claimRepository.save(claim);
+        if (supportRequestService != null) {
+            supportRequestService.reopenInspectionTaskForClaim(claim.getSupportRequest(), cleanReason);
+        }
+        activityLogService.log(customerId,
+                "[CLAIM_INSPECT_DISPUTED] Khách báo sai lệch hiện trường hồ sơ " + claim.getClaimCode() + ": " + cleanReason,
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách báo sai lệch hiện trường — " + claim.getClaimCode(),
+                    "Khách yêu cầu kiểm tra lại hiện trường: " + cleanReason,
+                    "SUPPORT", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Idea 2: Khách đồng ý phương án & mức bồi thường FM đã chốt */
+    @Transactional
+    public CompensationClaimResponse confirmDecision(Integer claimId, Integer customerId) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"APPROVED".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Hồ sơ " + claim.getClaimCode() + " chưa ở trạng thái chờ đồng ý phương án");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.STATUS_PENDING_CUSTOMER.equals(state.decisionConfirmStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_ALREADY_CONFIRMED",
+                    "Phương án bồi thường đã được xác nhận trước đó");
+        }
+        activityLogService.log(customerId,
+                "[CLAIM_DECISION_CONFIRMED] Khách đồng ý phương án bồi thường "
+                        + formatVnd(claim.getTotalCompensation()) + " hồ sơ " + claim.getClaimCode(),
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách đồng ý bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng đã đồng ý phương án bồi thường " + formatVnd(claim.getTotalCompensation())
+                            + ". Quản lý cơ sở có thể tiến hành chi trả ngay.",
+                    "SUPPORT", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Idea 2: Khách chưa đồng ý mức bồi thường / hướng xử lý → trả về cho FM thẩm định lại (tối đa 2 vòng) */
+    @Transactional
+    public CompensationClaimResponse disputeDecision(Integer claimId, Integer customerId, String reason) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"APPROVED".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Chỉ có thể đề nghị thẩm định lại khi hồ sơ chưa chi trả");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.STATUS_PENDING_CUSTOMER.equals(state.decisionConfirmStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_ALREADY_CONFIRMED",
+                    "Phương án bồi thường không ở trạng thái chờ xác nhận");
+        }
+        if (state.decisionRound() >= ClaimConfirmationService.MAX_DECISION_ROUNDS) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "MAX_ROUND_REACHED",
+                    "Đã hết lượt đề nghị thẩm định lại (" + ClaimConfirmationService.MAX_DECISION_ROUNDS
+                            + " vòng). Mức bồi thường được áp dụng theo quy định hợp đồng; vui lòng liên hệ hotline nếu cần.");
+        }
+        String cleanReason = validateReason(reason, "Vui lòng nêu rõ lý do chưa đồng ý mức/phương án bồi thường (10–380 ký tự)");
+        claim.setStatus("INSPECTED");
+        RentalContract contract = claim.getContract();
+        if (contract != null && Boolean.TRUE.equals(contract.getFaultTermination())) {
+            contract.setFaultTermination(false);
+            rentalContractRepository.save(contract);
+        }
+        claimRepository.save(claim);
+        activityLogService.log(customerId,
+                "[CLAIM_DECISION_DISPUTED] Khách đề nghị thẩm định lại hồ sơ " + claim.getClaimCode() + ": " + cleanReason,
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách đề nghị thẩm định lại — " + claim.getClaimCode(),
+                    "Khách chưa đồng ý phương án bồi thường: " + cleanReason + ". Vui lòng kiểm tra và chốt lại.",
+                    "SUPPORT", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Idea 1: Khách xác nhận đã nhận được tiền bồi thường */
+    @Transactional
+    public CompensationClaimResponse confirmReceipt(Integer claimId, Integer customerId) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"PAID".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Hồ sơ " + claim.getClaimCode() + " chưa ở trạng thái đã chi trả");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.RECEIPT_WAITING.equals(state.receiptStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "RECEIPT_ALREADY_CONFIRMED",
+                    "Khoản bồi thường này đã được xác nhận trước đó");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        SupportRequest ticket = claim.getSupportRequest();
+        if (ticket != null && "RESOLVED".equals(ticket.getStatus())) {
+            ticket.setStatus("CLOSED");
+            ticket.setClosedAt(now);
+            supportRequestRepository.save(ticket);
+        }
+        activityLogService.log(customerId,
+                "[CLAIM_RECEIPT_CONFIRMED] Khách xác nhận đã nhận tiền bồi thường "
+                        + formatVnd(claim.getTotalCompensation()) + " hồ sơ " + claim.getClaimCode(),
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách đã nhận tiền bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng xác nhận đã nhận đủ " + formatVnd(claim.getTotalCompensation()) + " bồi thường.",
+                    "REFUND", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Idea 1: Khách báo chưa nhận được tiền bồi thường → báo động đỏ về FM */
+    @Transactional
+    public CompensationClaimResponse disputeReceipt(Integer claimId, Integer customerId, String reason) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"PAID".equals(claim.getStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_STATUS_INVALID",
+                    "Hồ sơ " + claim.getClaimCode() + " chưa chi trả");
+        }
+        ClaimConfirmationService.State state = claimConfirmationService != null
+                ? claimConfirmationService.getState(claim.getId()) : ClaimConfirmationService.State.empty();
+        if (!ClaimConfirmationService.RECEIPT_WAITING.equals(state.receiptStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "RECEIPT_NOT_WAITING",
+                    "Không ở trạng thái chờ xác nhận nhận tiền");
+        }
+        if (state.receiptRound() >= ClaimConfirmationService.MAX_RECEIPT_ROUNDS) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "MAX_ROUND_REACHED",
+                    "Đã hết lượt khiếu nại nhận tiền trực tuyến (" + ClaimConfirmationService.MAX_RECEIPT_ROUNDS
+                            + " vòng). Vui lòng kiểm tra mã giao dịch ngân hàng đã đối soát hoặc liên hệ hotline 1900 6868 / mang CCCD ra quầy đối chất trực tiếp.");
+        }
+        String cleanReason = validateReason(reason, "Vui lòng mô tả vấn đề nhận tiền (10–380 ký tự, VD: chưa thấy tiền về, sai STK...)");
+        SupportRequest ticket = claim.getSupportRequest();
+        if (ticket != null && !"CLOSED".equals(ticket.getStatus())) {
+            ticket.setStatus("IN_PROGRESS");
+            ticket.setResolvedAt(null);
+            supportRequestRepository.save(ticket);
+        }
+        activityLogService.log(customerId,
+                "[CLAIM_RECEIPT_DISPUTED] Khách báo chưa nhận tiền bồi thường hồ sơ " + claim.getClaimCode() + ": " + cleanReason,
+                "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "KHÁCH BÁO CHƯA NHẬN TIỀN BỒI THƯỜNG — " + claim.getClaimCode(),
+                    "Khách báo chưa nhận được " + formatVnd(claim.getTotalCompensation()) + ": " + cleanReason
+                            + ". Vui lòng kiểm tra mã FT / ủy nhiệm chi ngay.",
+                    "REFUND", "/manager/claims/" + claim.getId());
+        }
+        return toResponse(claim);
+    }
+
+    /** Demo helper: tua nhanh 3 ngày để kích hoạt tự xác nhận đã nhận tiền bồi thường */
+    @Transactional
+    public CompensationClaimResponse simulateReceiptAutoConfirm(Integer claimId, Integer customerId) {
+        CompensationClaim claim = requireOwnedClaim(claimId, customerId);
+        if (!"PAID".equals(claim.getStatus()) || claimConfirmationService == null
+                || !ClaimConfirmationService.RECEIPT_WAITING.equals(
+                        claimConfirmationService.getState(claim.getId()).receiptStatus())) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "SIMULATION_NOT_APPLICABLE",
+                    "Hồ sơ không ở trạng thái chờ khách xác nhận nhận tiền");
+        }
+        claimConfirmationService.forceAutoConfirmForDemo(claim.getId());
+        claim.setPaidAt(LocalDateTime.now().minusDays(ClaimConfirmationService.AUTO_CONFIRM_DAYS + 1));
+        return toResponse(claim);
+    }
+
+    private CompensationClaim requireOwnedClaim(Integer claimId, Integer customerId) {
+        if (customerId == null) {
+            throw new StaffTaskException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Thiếu thông tin tài khoản");
+        }
+        CompensationClaim claim = claimRepository.findDetailById(claimId)
+                .orElseThrow(() -> new StaffTaskException(HttpStatus.NOT_FOUND, "CLAIM_NOT_FOUND", "Không tìm thấy hồ sơ bồi thường"));
+        if (claim.getCustomer() == null || !claim.getCustomer().getId().equals(customerId)) {
+            throw new StaffTaskException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Không phải hồ sơ của bạn");
+        }
+        return claim;
+    }
+
+    private static String validateReason(String reason, String message) {
+        String r = reason != null ? reason.trim() : "";
+        if (r.length() < 10 || r.length() > 380) {
+            throw new StaffTaskException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", message);
+        }
+        return r;
     }
 
     // ================== ĐỌC ==================
@@ -684,7 +989,7 @@ public class CompensationClaimService {
      * mà khách đã đồng ý. Dữ liệu cũ chưa có biên bản giá trị thì mới dùng số khách
      * khai lúc đặt kho để tương thích ngược.
      */
-    private BigDecimal agreedGoodsValue(RentalContract contract) {
+    BigDecimal agreedGoodsValue(RentalContract contract) {
         if (contract == null || contract.getId() == null) return null;
         if (handoverRecordRepository != null) {
             BigDecimal agreed = handoverRecordRepository
@@ -726,6 +1031,10 @@ public class CompensationClaimService {
                             "ORDER BY round_no DESC", contract.getId());
             settlement = rows.isEmpty() ? null : rows.get(0);
         }
+        ClaimConfirmationService.State conf = claimConfirmationService != null
+                ? claimConfirmationService.getState(c.getId()) : ClaimConfirmationService.State.empty();
+        LocalDateTime receiptAutoConfirmAt = ClaimConfirmationService.RECEIPT_WAITING.equals(conf.receiptStatus()) && c.getPaidAt() != null
+                ? c.getPaidAt().plusDays(ClaimConfirmationService.AUTO_CONFIRM_DAYS) : null;
         return CompensationClaimResponse.builder()
                 .id(c.getId())
                 .settlementStatus(settlement != null ? (String) settlement.get("status") : null)
@@ -765,6 +1074,7 @@ public class CompensationClaimService {
                 .inspectionNote(c.getInspectionNote())
                 .inspectionImages(splitImages(c.getInspectionImages()))
                 .preliminaryCause(c.getPreliminaryCause())
+                .staffAssessedValue(conf.staffAssessedValue())
                 .liableParty(c.getLiableParty())
                 .assessedValue(c.getAssessedValue())
                 .damagePercent(c.getDamagePercent())
@@ -791,6 +1101,21 @@ public class CompensationClaimService {
                 .payoutAccountNumber(c.getPayoutAccountNumber())
                 .payoutAccountName(c.getPayoutAccountName())
                 .payoutAccountUpdatedAt(c.getPayoutAccountUpdatedAt())
+                .inspectionConfirmStatus(conf.inspectionConfirmStatus())
+                .inspectionConfirmedAt(conf.inspectionConfirmedAt())
+                .inspectionDisputeReason(conf.inspectionDisputeReason())
+                .inspectionRound(conf.inspectionRound() > 0 ? conf.inspectionRound() : null)
+                .decisionConfirmStatus(conf.decisionConfirmStatus())
+                .decisionConfirmedAt(conf.decisionConfirmedAt())
+                .decisionDisputeReason(conf.decisionDisputeReason())
+                .decisionRound(conf.decisionRound() > 0 ? conf.decisionRound() : null)
+                .receiptStatus(conf.receiptStatus())
+                .receiptConfirmedAt(conf.receiptConfirmedAt())
+                .receiptAutoConfirmed(conf.receiptAutoConfirmed())
+                .receiptDisputeReason(conf.receiptDisputeReason())
+                .receiptDisputedAt(conf.receiptDisputedAt())
+                .receiptRound(conf.receiptRound() > 0 ? conf.receiptRound() : null)
+                .receiptAutoConfirmAt(receiptAutoConfirmAt)
                 .build();
     }
 

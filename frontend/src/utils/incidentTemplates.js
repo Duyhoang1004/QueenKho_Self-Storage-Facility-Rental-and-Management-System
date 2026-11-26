@@ -311,20 +311,157 @@ export const INCIDENT_REPORT_TEMPLATES = {
   GOODS_DAMAGE: [
     {
       id: 'GOODS_INSPECT_FACILITY',
-      matchKeys: ['hàng', 'hư hỏng', 'ẩm mốc', 'thấm nước'],
+      causeCode: 'FACILITY',
+      matchKeys: ['lỗi cơ sở', 'rò rỉ', 'dột', 'thấm nước'],
       subCategory: 'Hàng bị hư hỏng',
-      label: 'Biên bản kiểm tra thiệt hại hàng hóa do lỗi cơ sở (Chuyển FM thẩm định)',
-      summary: 'Kiểm tra thiệt hại tài sản cùng khách, lập danh mục hư hại và chuyển FM bồi thường.',
-      inspection: 'Nước ngưng thẩm thấu từ trần làm ướt bao bì và ẩm mốc một số thùng hàng lưu trữ trong ô.',
-      cause: 'Lỗi kỹ thuật do cơ sở (FACILITY): Hệ thống làm mát gặp sự cố rò rỉ nước ngưng.',
+      label: 'Kiểm tra hàng hư hỏng — Nguyên nhân sơ bộ: Lỗi do cơ sở',
+      summary: 'Kiểm tra thiệt hại tài sản cùng khách, ghi nhận lỗi hạ tầng cơ sở và chuyển FM bồi thường.',
+      inspection: 'Nước ngưng/dột thấm từ trần và tường kho gây ướt bao bì, ẩm mốc hàng hóa bên trong ô.',
+      cause: 'Lỗi kỹ thuật do cơ sở (FACILITY): Hạ tầng kho/hệ thống làm mát gặp sự cố rò rỉ.',
       actions: [
-        'Chụp 06 ảnh hiện trường độ phân giải cao ghi nhận chi tiết mức độ hư hại của từng kiện hàng.',
-        'Lập bảng kê chi tiết danh mục hàng hóa bị ảnh hưởng cùng khách hàng.',
-        'Chuyển toàn bộ hồ sơ lên Quản lý cơ sở (FM) để thực hiện quy trình thẩm định bồi thường (BR-127).'
+        'Mở ô cùng khách hàng, chụp ảnh hiện trạng vị trí dột thấm và từng kiện hàng bị hư hỏng.',
+        'Lập bảng kê số lượng, ước tính giá trị thiệt hại thực tế tại hiện trường.',
+        'Chuyển hồ sơ lên Quản lý cơ sở (FM) đối chiếu ảnh check-in & cảm biến để giải quyết bồi thường (BR-127).'
       ],
-      conclusion: 'Cơ sở nhận trách nhiệm lỗi kỹ thuật, cam kết giải quyết bồi thường thỏa đáng theo đúng gói bảo hiểm hợp đồng.',
+      conclusion: 'Ghi nhận dấu hiệu lỗi kỹ thuật từ phía cơ sở; chuyển Quản lý cơ sở thẩm định và chốt mức bồi thường theo gói bảo hiểm.',
       presets: [
-        'Đã cùng khách hàng lập biên bản kiểm tra hiện trường hàng hư hỏng và gửi Quản lý cơ sở thẩm định bồi thường.',
+        'Ghi nhận dấu hiệu thấm dột từ trần ô kho (nghi lỗi cơ sở), đã chụp ảnh & ước tính thiệt hại chuyển FM thẩm định.',
+      ]
+    },
+    {
+      id: 'GOODS_INSPECT_CUSTOMER',
+      causeCode: 'CUSTOMER',
+      matchKeys: ['do khách', 'đóng gói', 'tự hư', 'bảo quản'],
+      subCategory: 'Hàng bị hư hỏng (Do khách hàng)',
+      label: 'Kiểm tra hàng hư hỏng — Nguyên nhân sơ bộ: Lỗi do khách hàng',
+      summary: 'Kiểm tra hiện trường cho thấy kết cấu ô kho bình thường, hàng hư hỏng do đóng gói/bảo quản từ phía khách.',
+      inspection: 'Trần, vách, sàn ô kho khô ráo hoàn toàn, hệ thống thông gió/nhiệt ẩm bình thường; hàng hóa bên trong bị hư hỏng từ bao bì/đặc tính tự nhiên.',
+      cause: 'Lỗi từ phía khách hàng (CUSTOMER): Đóng gói/kê lót chưa đúng quy cách hoặc hàng hóa tự biến chất trong quá trình lưu trữ.',
+      actions: [
+        'Mở ô cùng khách hàng, kiểm tra trần/tường/khóa ô (khô ráo, nguyên vẹn) và chụp ảnh đối chứng.',
+        'Kiểm kê các kiện hàng hư hỏng và ghi nhận mức ước tính thiệt hại thực tế tại hiện trường.',
+        'Chuyển toàn bộ hồ sơ & bằng chứng ảnh lên Quản lý cơ sở (FM) đối chiếu cảm biến và chốt kết luận.'
+      ],
+      conclusion: 'Hiện trạng ô kho đảm bảo tiêu chuẩn; sự cố phát sinh do lỗi đóng gói/bảo quản từ phía khách hàng (không thuộc lỗi cơ sở theo BR-127), chuyển FM thẩm định và chốt kết luận.',
+      presets: [
+        'Ô kho khô ráo bình thường, hàng hư do đóng gói/bảo quản từ phía khách hàng. Đã lập biên bản chuyển FM chốt kết luận.',
+      ]
+    },
+    {
+      id: 'GOODS_INSPECT_FORCE_MAJEURE',
+      causeCode: 'FORCE_MAJEURE',
+      matchKeys: ['bất khả kháng', 'thiên tai', 'hỏa hoạn', 'ngập lụt'],
+      subCategory: 'Hàng bị hư hỏng (Bất khả kháng)',
+      label: 'Kiểm tra hàng hư hỏng — Nguyên nhân sơ bộ: Bất khả kháng',
+      summary: 'Kiểm tra thiệt hại hàng hóa phát sinh từ sự kiện bất khả kháng bên ngoài để chuyển FM xét bảo hiểm.',
+      inspection: 'Khu vực ô kho bị ảnh hưởng bởi yếu tố thiên tai/sự cố bất khả kháng từ bên ngoài làm hư hại hàng hóa lưu trữ.',
+      cause: 'Sự kiện bất khả kháng (FORCE_MAJEURE): Thiên tai, mưa bão cực đoan hoặc sự cố bên ngoài ngoài tầm kiểm soát.',
+      actions: [
+        'Mở ô cùng khách hàng, lập danh mục hàng hóa hư hỏng và chụp ảnh hiện trường chi tiết.',
+        'Ghi nhận mức thiệt hại ước tính tại chỗ và rà soát thông tin gói bảo hiểm của hợp đồng.',
+        'Chuyển hồ sơ lên Quản lý cơ sở (FM) xem xét phạm vi chi trả theo gói bảo hiểm (BR-127).'
+      ],
+      conclusion: 'Xác định sơ bộ do sự kiện bất khả kháng; chuyển Quản lý cơ sở thẩm định giá trị và xử lý theo điều khoản bảo hiểm hợp đồng.',
+      presets: [
+        'Ghi nhận thiệt hại do yếu tố bất khả kháng từ bên ngoài, đã kiểm đếm & chuyển FM xem xét theo gói bảo hiểm.',
+      ]
+    },
+    {
+      id: 'GOODS_INSPECT_UNKNOWN',
+      causeCode: 'UNKNOWN',
+      matchKeys: ['chưa xác định', 'đối chiếu'],
+      subCategory: 'Hàng bị hư hỏng (Chưa rõ nguyên nhân)',
+      label: 'Kiểm tra hàng hư hỏng — Nguyên nhân sơ bộ: Chưa xác định được',
+      summary: 'Ghi nhận trung lập hiện trạng hư hỏng hàng hóa và chuyển FM đối chiếu cảm biến & ảnh check-in.',
+      inspection: 'Hàng hóa trong ô có dấu hiệu hư hỏng; cần đối chiếu thêm lịch sử nhiệt độ/độ ẩm và ảnh lúc nhận kho để xác định nguyên nhân.',
+      cause: 'Chưa xác định được nguyên nhân rõ ràng tại hiện trường (UNKNOWN).',
+      actions: [
+        'Mở ô cùng khách hàng, chụp ảnh toàn cảnh ô kho, vách/trần và từng kiện hàng bị ảnh hưởng.',
+        'Ghi nhận ước tính giá trị thiệt hại ban đầu để làm cơ sở tham khảo.',
+        'Chuyển Quản lý cơ sở (FM) trích xuất nhật ký cảm biến, camera và ảnh bàn giao lúc nhận kho để kết luận (BR-127).'
+      ],
+      conclusion: 'Chưa đủ cơ sở kết luận nguyên nhân tại hiện trường; chuyển toàn bộ bằng chứng lên FM kiểm tra cảm biến và chốt trách nhiệm.',
+      presets: [
+        'Đã kiểm tra hiện trạng hàng hư hỏng nhưng chưa xác định rõ nguyên nhân, chuyển FM đối chiếu cảm biến & ảnh check-in.',
+      ]
+    }
+  ],
+
+  GOODS_LOSS: [
+    {
+      id: 'GOODS_LOSS_FACILITY',
+      causeCode: 'FACILITY',
+      matchKeys: ['mất hàng', 'cạy khóa', 'mất trộm', 'lỗi cơ sở'],
+      subCategory: 'Mất hàng (Do cơ sở)',
+      label: 'Kiểm tra mất hàng — Nguyên nhân sơ bộ: Lỗi an ninh/khóa cơ sở',
+      summary: 'Kiểm tra dấu vết cạy phá khóa, kiểm đếm hàng tồn và chuyển FM xử lý bồi thường.',
+      inspection: 'Phát hiện dấu hiệu bất thường ở khóa SmartLock/chốt cửa ô kho; một số kiện hàng theo kê khai không còn trong ô.',
+      cause: 'Lỗi kỹ thuật / an ninh từ cơ sở (FACILITY): Khóa ô gặp sự cố hoặc phát hiện dấu hiệu xâm nhập trái phép.',
+      actions: [
+        'Kiểm tra niêm phong, tình trạng khóa SmartLock cùng khách hàng và chụp ảnh hiện trường.',
+        'Đối chiếu bảng kê hàng lúc nhận kho, xác định danh mục thiếu và ước tính giá trị thiệt hại.',
+        'Chuyển hồ sơ khẩn lên FM & trích xuất lịch sử mở khóa / camera để giải quyết bồi thường (BR-127).'
+      ],
+      conclusion: 'Ghi nhận dấu hiệu mất an toàn khóa/an ninh từ phía cơ sở; chuyển FM xác minh camera và giải quyết bồi thường theo quy định.',
+      presets: [
+        'Phát hiện bất thường tại khóa ô và thiếu hụt hàng hóa, nghi lỗi an ninh cơ sở — đã chuyển FM trích xuất camera & bồi thường.',
+      ]
+    },
+    {
+      id: 'GOODS_LOSS_CUSTOMER',
+      causeCode: 'CUSTOMER',
+      matchKeys: ['do khách', 'khóa nguyên vẹn', 'lấy nhầm'],
+      subCategory: 'Mất hàng (Do khách hàng)',
+      label: 'Kiểm tra mất hàng — Nguyên nhân sơ bộ: Lỗi từ phía khách hàng',
+      summary: 'Khóa và vách ô nguyên vẹn, không có dấu hiệu đột nhập; nghi sai sót quản lý từ phía khách.',
+      inspection: 'Khóa SmartLock, chốt cửa và vách bao che ô kho nguyên vẹn 100%, không có dấu hiệu cạy phá hay can thiệp từ bên ngoài.',
+      cause: 'Lỗi từ phía khách hàng (CUSTOMER): Khách tự quản lý mã PIN/thẻ từ hoặc nhầm lẫn trong quá trình xuất nhập hàng.',
+      actions: [
+        'Kiểm tra nguyên vẹn khóa SmartLock & niêm phong ô cùng khách hàng, chụp ảnh xác nhận.',
+        'Kiểm đếm phần hàng còn lại trong ô và ghi nhận giá trị khách kê khai thiếu.',
+        'Chuyển hồ sơ lên Quản lý cơ sở (FM) cung cấp nhật ký mở khóa SmartLock để chốt kết luận.'
+      ],
+      conclusion: 'Khóa ô và an ninh khu vực nguyên vẹn, không có dấu hiệu xâm nhập; sự cố không thuộc lỗi cơ sở (BR-127), chuyển FM đối chiếu log và chốt kết luận.',
+      presets: [
+        'Khóa SmartLock và vách ô còn nguyên vẹn hoàn toàn, không có dấu hiệu đột nhập; đã lập biên bản chuyển FM đối chiếu log mở khóa.',
+      ]
+    },
+    {
+      id: 'GOODS_LOSS_FORCE_MAJEURE',
+      causeCode: 'FORCE_MAJEURE',
+      matchKeys: ['bất khả kháng'],
+      subCategory: 'Mất hàng (Bất khả kháng)',
+      label: 'Kiểm tra mất hàng — Nguyên nhân sơ bộ: Bất khả kháng',
+      summary: 'Ghi nhận mất mát tài sản do sự kiện bất khả kháng để FM xét gói bảo hiểm.',
+      inspection: 'Ô kho chịu ảnh hưởng của sự cố bất khả kháng dẫn đến thất thoát hàng hóa đang lưu trữ.',
+      cause: 'Sự kiện bất khả kháng (FORCE_MAJEURE): Thiên tai, hỏa hoạn hoặc sự cố khách quan bên ngoài.',
+      actions: [
+        'Kiểm tra hiện trường cùng khách hàng, lập danh mục hàng thất thoát và chụp ảnh chứng cứ.',
+        'Ước tính giá trị hàng hóa tại hiện trường để làm cơ sở đối chiếu bảo hiểm.',
+        'Chuyển hồ sơ lên FM xử lý theo quyền lợi gói bảo hiểm hợp đồng (BR-127).'
+      ],
+      conclusion: 'Xác định sơ bộ do bất khả kháng; chuyển FM rà soát gói bảo hiểm và giải quyết theo đúng điều khoản hợp đồng.',
+      presets: [
+        'Ghi nhận thất thoát do sự kiện bất khả kháng, đã kiểm đếm chuyển FM xem xét gói bảo hiểm.',
+      ]
+    },
+    {
+      id: 'GOODS_LOSS_UNKNOWN',
+      causeCode: 'UNKNOWN',
+      matchKeys: ['chưa xác định'],
+      subCategory: 'Mất hàng (Chưa rõ nguyên nhân)',
+      label: 'Kiểm tra mất hàng — Nguyên nhân sơ bộ: Chưa xác định được',
+      summary: 'Ghi nhận hiện trạng thiếu hụt hàng hóa, chuyển FM trích xuất camera & log SmartLock.',
+      inspection: 'Cần đối chiếu lịch sử ra vào cổng, log mở khóa SmartLock và dữ liệu camera hành lang để làm rõ nguyên nhân thiếu hụt.',
+      cause: 'Chưa xác định được nguyên nhân tại hiện trường (UNKNOWN).',
+      actions: [
+        'Chụp ảnh hiện trạng khóa, cửa ô và số lượng hàng hóa thực tế còn lại trong ô.',
+        'Ghi nhận giá trị hàng ước tính ban đầu cùng với khách hàng.',
+        'Chuyển FM trích xuất log SmartLock, camera an ninh và ảnh lúc bàn giao nhận kho (BR-127).'
+      ],
+      conclusion: 'Chưa đủ căn cứ kết luận tại chỗ; chuyển hồ sơ lên FM trích xuất dữ liệu an ninh để xác định trách nhiệm.',
+      presets: [
+        'Đã ghi nhận tình trạng thiếu hàng tại hiện trường, chuyển FM trích xuất camera & log mở khóa để làm rõ nguyên nhân.',
       ]
     }
   ],
@@ -406,16 +543,30 @@ export const INCIDENT_REPORT_TEMPLATES = {
   ]
 };
 
+const CAUSE_CODE_LABELS = {
+  FACILITY: 'Lỗi kỹ thuật / vận hành từ phía cơ sở (FACILITY) - ',
+  CUSTOMER: 'Lỗi đóng gói / bảo quản từ phía khách hàng (CUSTOMER) - ',
+  FORCE_MAJEURE: 'Sự kiện bất khả kháng từ bên ngoài (FORCE_MAJEURE) - ',
+  UNKNOWN: 'Chưa xác định được nguyên nhân tại hiện trường (UNKNOWN) - Chuyển FM đối chiếu cảm biến & ảnh check-in',
+};
+
 /**
- * Tìm kiếm template phù hợp nhất dựa vào task.subCategory và task.issueType
+ * Tìm kiếm template phù hợp nhất dựa vào preliminaryCause (với claim bồi thường), task.subCategory và task.issueType
+ * ƯU TIÊN 0 (Claim): Khớp causeCode theo preliminaryCause (FACILITY / CUSTOMER / FORCE_MAJEURE / UNKNOWN)
  * ƯU TIÊN 1: Khớp chính xác hoặc khớp từ khóa với task.subCategory (hoặc task.note)
  * ƯU TIÊN 2: Khớp theo task.issueType
  * ƯU TIÊN 3: Mẫu mặc định OTHER
  */
-export function findMatchingTemplate(task) {
+export function findMatchingTemplate(task, preliminaryCause = '') {
   if (!task) return INCIDENT_REPORT_TEMPLATES.OTHER[0];
-  const issueType = task.issueType || 'OTHER';
+  const issueType = task.issueType || task?.claim?.claimType || 'OTHER';
   const list = INCIDENT_REPORT_TEMPLATES[issueType] || INCIDENT_REPORT_TEMPLATES.OTHER;
+
+  const normCause = String(preliminaryCause || task?.claim?.preliminaryCause || '').trim().toUpperCase();
+  if (normCause && (issueType === 'GOODS_DAMAGE' || issueType === 'GOODS_LOSS')) {
+    const byCause = list.find(item => item.causeCode === normCause);
+    if (byCause) return byCause;
+  }
 
   // Lấy chuỗi tìm kiếm từ subCategory hoặc note
   const rawTarget = String(task.subCategory || task.note || task.ticketDescription || '').toLowerCase();
@@ -437,9 +588,9 @@ export function findMatchingTemplate(task) {
 }
 
 /**
- * Lấy danh sách các câu phản hồi nhanh phù hợp với task (ưu tiên khớp đúng subCategory và biện pháp xử lý)
+ * Lấy danh sách các câu phản hồi nhanh phù hợp với task (ưu tiên khớp đúng preliminaryCause, subCategory và biện pháp xử lý)
  */
-export function getPresetsForTask(task, repairStatus = 'FIXED') {
+export function getPresetsForTask(task, repairStatus = 'FIXED', preliminaryCause = '') {
   if (repairStatus === 'ESCALATED_MAINTENANCE') {
     return [
       'Đã khảo sát hiện trường, phát hiện sự cố phức tạp vượt thẩm quyền xử lý nhanh, đã lập phiếu chuyển bảo trì chuyên sâu.',
@@ -448,11 +599,11 @@ export function getPresetsForTask(task, repairStatus = 'FIXED') {
     ];
   }
 
-  const matched = findMatchingTemplate(task);
+  const matched = findMatchingTemplate(task, preliminaryCause);
   if (matched && matched.presets && matched.presets.length > 0) {
     return matched.presets;
   }
-  const issueType = task?.issueType || 'OTHER';
+  const issueType = task?.issueType || task?.claim?.claimType || 'OTHER';
   const list = INCIDENT_REPORT_TEMPLATES[issueType] || INCIDENT_REPORT_TEMPLATES.OTHER;
   const allPresets = [];
   for (const item of list) {
@@ -462,7 +613,7 @@ export function getPresetsForTask(task, repairStatus = 'FIXED') {
 }
 
 // Hàm sinh khung sườn biên bản chuẩn (chỉ điền sẵn thông tin hành chính, để trống các mục cho nhân viên tự ghi theo hiện trường thực tế)
-export function buildBlankIncidentReport(task, repairStatus = 'FIXED') {
+export function buildBlankIncidentReport(task, repairStatus = 'FIXED', preliminaryCause = '') {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const dateStr = `${pad(now.getHours())}:${pad(now.getMinutes())} ngày ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
@@ -471,13 +622,15 @@ export function buildBlankIncidentReport(task, repairStatus = 'FIXED') {
   const rawTicket = task?.ticketCode || (task?.id ? `SR-${task.id}` : '---');
   const ticketCode = String(rawTicket).startsWith('#') ? String(rawTicket).slice(1) : String(rawTicket);
   const subCategoryStr = task?.subCategory ? ` [${task.subCategory}]` : '';
+  const normCause = String(preliminaryCause || '').trim().toUpperCase();
+  const causePrefix = CAUSE_CODE_LABELS[normCause] || '';
 
   if (repairStatus === 'ESCALATED_MAINTENANCE') {
     return `[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]
 • Thời gian: ${dateStr} · Ô kho: ${unit}
 • Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode}${subCategoryStr}
 • Hiện trạng sự cố: 
-• Nguyên nhân sơ bộ: 
+• Nguyên nhân sơ bộ: ${causePrefix}
 • Biện pháp xử lý tạm thời: Đã khảo sát hiện trường, tạm thời cô lập sự cố và lập phiếu yêu cầu bảo trì chuyên sâu
 • Kết luận & Bàn giao: Đã chuyển sang quy trình Bảo trì chuyên sâu, bàn giao cho đội ngũ kỹ thuật xử lý dứt điểm.`;
   }
@@ -486,15 +639,19 @@ export function buildBlankIncidentReport(task, repairStatus = 'FIXED') {
 • Thời gian: ${dateStr} · Ô kho: ${unit}
 • Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode}${subCategoryStr}
 • Hiện trạng: 
-• Nguyên nhân sơ bộ: 
+• Nguyên nhân sơ bộ: ${causePrefix}
 • Biện pháp xử lý kỹ thuật:
 
 • Kết quả nghiệm thu: `;
 }
 
 // Hàm sinh đoạn văn bản biên bản mẫu đầy đủ (dùng khi cần demo test nhanh)
-export function buildIncidentReportNote(task, template, repairStatus = 'FIXED') {
-  const tpl = template || findMatchingTemplate(task);
+export function buildIncidentReportNote(task, template, repairStatus = 'FIXED', preliminaryCause = '') {
+  const issueType = task?.issueType || task?.claim?.claimType || 'OTHER';
+  const isClaimType = issueType === 'GOODS_DAMAGE' || issueType === 'GOODS_LOSS';
+  const tpl = (isClaimType && preliminaryCause
+    ? findMatchingTemplate(task, preliminaryCause)
+    : template) || findMatchingTemplate(task, preliminaryCause);
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const dateStr = `${pad(now.getHours())}:${pad(now.getMinutes())} ngày ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;

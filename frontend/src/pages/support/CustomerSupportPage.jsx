@@ -8,7 +8,16 @@ import {
   getEligibleSupportContracts,
   reopenSupportTicket,
 } from '../../services/supportService';
-import { updateClaimPayoutAccount } from '../../services/claimService';
+import {
+  confirmClaimDecision,
+  confirmClaimInspection,
+  confirmClaimReceipt,
+  disputeClaimDecision,
+  disputeClaimInspection,
+  disputeClaimReceipt,
+  simulateClaimReceiptAutoConfirm,
+  updateClaimPayoutAccount,
+} from '../../services/claimService';
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback';
 import SimulationButton from '../../components/SimulationButton';
 import { simulateTicketAutoClose } from '../../services/simulationService';
@@ -216,11 +225,53 @@ function ClaimPayoutAccount({ claim: initial }) {
   );
 }
 
-function CustomerClaimSummary({ claim }) {
+function CustomerClaimSummary({ claim: initialClaim, onActionDone }) {
+  const [claim, setClaim] = useState(initialClaim);
+  const [disputeMode, setDisputeMode] = useState(null); // 'INSPECTION' | 'DECISION' | 'RECEIPT'
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    setClaim(initialClaim);
+  }, [initialClaim]);
+
   const meta = CLAIM_STATUS_META[claim.status] || CLAIM_STATUS_META.SUBMITTED;
   const decided = ['APPROVED', 'PAID', 'REJECTED'].includes(claim.status);
+
+  const runAction = async (fn, successMsg) => {
+    setBusy(true);
+    setErr('');
+    try {
+      const updated = await fn();
+      setClaim(updated);
+      setDisputeMode(null);
+      setReason('');
+      onActionDone?.(successMsg);
+    } catch (e) {
+      setErr(e.response?.data?.message || 'Không thực hiện được thao tác.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitDispute = () => {
+    const clean = reason.trim();
+    if (clean.length < 10 || clean.length > 380) {
+      setErr('Vui lòng nhập lý do rõ ràng từ 10 đến 380 ký tự.');
+      return;
+    }
+    if (disputeMode === 'INSPECTION') {
+      runAction(() => disputeClaimInspection(claim.id, clean), 'Đã gửi yêu cầu kiểm tra lại hiện trường.');
+    } else if (disputeMode === 'DECISION') {
+      runAction(() => disputeClaimDecision(claim.id, clean), 'Đã gửi đề nghị Quản lý thẩm định lại phương án.');
+    } else if (disputeMode === 'RECEIPT') {
+      runAction(() => disputeClaimReceipt(claim.id, clean), 'Đã báo chưa nhận được tiền — Quản lý cơ sở sẽ kiểm tra lại.');
+    }
+  };
+
   return (
-    <div className="rounded-2xl border-2 border-[#FFB8B8] p-4 flex flex-col gap-2 text-xs font-bold text-[#4B4B4B]">
+    <div className="rounded-2xl border-2 border-[#FFB8B8] p-4 flex flex-col gap-2.5 text-xs font-bold text-[#4B4B4B]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-black flex items-center gap-1">
           <span className="material-symbols-outlined text-[18px] text-[#FF4B4B]">gavel</span>
@@ -232,12 +283,78 @@ function CustomerClaimSummary({ claim }) {
       <p>
         Đề nghị: <strong>{formatVND(claim.claimedAmount)}</strong> · Gói bảo hiểm {claim.insurancePlanLabel} · Trần {formatVND(claim.coverageCap)}
       </p>
-      {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
-      {claim.inspectionNote && (
-        <p className="text-[#777777]">Kiểm tra hiện trường ({claim.inspectedByName}): {claim.inspectionNote}</p>
+      {Number(claim.claimedAmount || 0) > Number(claim.coverageCap || 0) && Number(claim.coverageCap || 0) > 0 && (
+        <div className="rounded-xl border border-[#FF9600] bg-[#FFF8EE] px-3 py-2 text-[11px] font-bold text-[#B45309] flex items-start gap-2">
+          <span className="material-symbols-outlined text-[16px] text-[#FF9600] shrink-0 mt-0.5">warning</span>
+          <span>
+            Số tiền đề nghị (<strong>{formatVND(claim.claimedAmount)}</strong>) vượt trần bồi thường tối đa của hợp đồng (<strong>{formatVND(claim.coverageCap)}</strong>). Nếu bồi thường tiền hàng, mức chi trả hàng tối đa cũng không vượt quá {formatVND(claim.coverageCap)}.
+          </span>
+        </div>
       )}
+      {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
+
+      {claim.inspectionNote && (
+        <div className="rounded-xl bg-[#F7F7F7] p-3 flex flex-col gap-1.5 border border-[#EAEAEA]">
+          <span className="text-[#4B4B4B]">
+            Kiểm tra hiện trường ({claim.inspectedByName || 'Nhân viên'}): <span className="font-normal text-[#777777]">{claim.inspectionNote}</span>
+          </span>
+          {claim.staffAssessedValue != null && (
+            <span className="text-[#4B4B4B]">
+              Giá trị hàng / thiệt hại nhân viên ước tính tại hiện trường:{' '}
+              <strong className="text-[#0284C7]">{formatVND(claim.staffAssessedValue)}</strong>
+            </span>
+          )}
+          {claim.inspectionImages?.length > 0 && <PhotoGrid images={claim.inspectionImages} />}
+          {claim.inspectionConfirmStatus === 'CONFIRMED' && (
+            <span className="self-start px-2 py-0.5 rounded-lg bg-[#D7FFB8] text-[#58A700] text-[10px] font-black">
+              Bạn đã xác nhận đúng hiện trạng kiểm tra
+            </span>
+          )}
+          {claim.inspectionConfirmStatus === 'BYPASSED' && (
+            <span className="self-start px-2 py-0.5 rounded-lg bg-[#F0F0F0] text-[#777777] text-[10px] font-black">
+              Đã chuyển tiếp sang quản lý thẩm định
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Idea 3: Khách xác nhận biên bản kiểm đếm hiện trường của Staff */}
+      {claim.status === 'INSPECTED' && claim.inspectionConfirmStatus === 'PENDING_CUSTOMER' && (
+        <div className="rounded-xl border-2 border-[#FF9600] bg-[#FFF8E6] p-3 flex flex-col gap-2">
+          <span className="font-black text-[#D96B00] flex items-center gap-1">
+            <span className="material-symbols-outlined text-[16px]">fact_check</span>
+            Xác nhận biên bản kiểm tra hiện trường (Vòng {claim.inspectionRound || 1}/2)
+          </span>
+          <p className="text-[#777777] leading-snug">
+            Vui lòng kiểm tra mô tả &amp; ảnh hiện trường nhân viên vừa ghi nhận. Đúng hiện trạng thực tế chưa?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => runAction(() => confirmClaimInspection(claim.id), 'Đã xác nhận đúng hiện trạng kiểm tra.')}
+              className="duo-btn-green px-3 py-1.5 text-[11px] disabled:opacity-50"
+            >
+              Xác nhận đúng hiện trạng
+            </button>
+            {(claim.inspectionRound || 1) < 2 ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setDisputeMode(disputeMode === 'INSPECTION' ? null : 'INSPECTION'); setReason(''); setErr(''); }}
+                className="duo-btn-red px-3 py-1.5 text-[11px] disabled:opacity-50"
+              >
+                Sai lệch / Yêu cầu kiểm tra lại
+              </button>
+            ) : (
+              <span className="text-[10px] text-[#D96B00] self-center">Đã hết lượt yêu cầu kiểm tra lại.</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {decided && (
-        <div className="rounded-xl bg-[#F7F7F7] p-3 flex flex-col gap-1">
+        <div className="rounded-xl bg-[#F7F7F7] p-3 flex flex-col gap-1.5 border border-[#EAEAEA]">
           <span>Kết luận: <strong>{LIABLE_LABELS[claim.liableParty] || '—'}</strong></span>
           {Number(claim.totalCompensation) > 0 && (
             <span>
@@ -249,10 +366,152 @@ function CustomerClaimSummary({ claim }) {
           {claim.resolution === 'TERMINATE' && claim.status !== 'REJECTED' && (
             <span className="text-[#58A700]">Bạn được chấm dứt hợp đồng không mất phí phá hợp đồng — hẹn trả kho ở trang hợp đồng.</span>
           )}
-          {claim.decisionNote && <span className="text-[#777777]">{claim.decisionNote}</span>}
-          {claim.paidAt && <span>Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {formatDateTimeVN(claim.paidAt)}</span>}
+          {claim.decisionNote && <span className="text-[#777777] whitespace-pre-line">{claim.decisionNote}</span>}
+          {claim.decisionConfirmStatus === 'CONFIRMED' && (
+            <span className="self-start px-2 py-0.5 rounded-lg bg-[#D7FFB8] text-[#58A700] text-[10px] font-black">
+              Bạn đã đồng ý phương án bồi thường
+            </span>
+          )}
+          {claim.paidAt && (
+            <div className="flex flex-col gap-1 pt-1 border-t border-[#E5E5E5]">
+              <span>
+                Đã chi trả ({claim.paymentMethod === 'CASH' ? 'tiền mặt' : 'chuyển khoản'}) lúc {formatDateTimeVN(claim.paidAt)}
+                {claim.bankTransactionCode ? ` · Mã FT: ${claim.bankTransactionCode}` : ''}
+              </span>
+              {claim.paymentEvidence && <PhotoGrid images={[claim.paymentEvidence]} />}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Idea 2: Khách đồng ý / đề nghị thẩm định lại phương án bồi thường của FM */}
+      {claim.status === 'APPROVED' && claim.decisionConfirmStatus === 'PENDING_CUSTOMER' && (
+        <div className="rounded-xl border-2 border-[#CE82FF] bg-[#FAF5FF] p-3 flex flex-col gap-2">
+          <span className="font-black text-[#8B3DFF] flex items-center gap-1">
+            <span className="material-symbols-outlined text-[16px]">balance</span>
+            Xác nhận đồng ý phương án &amp; mức bồi thường (Vòng {claim.decisionRound || 1}/2)
+          </span>
+          <p className="text-[#777777] leading-snug">
+            Quản lý cơ sở đã chốt bồi thường <strong>{formatVND(claim.totalCompensation)}</strong>. Vui lòng xác nhận đồng ý để cơ sở tiến hành chi trả.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => runAction(() => confirmClaimDecision(claim.id), 'Đã xác nhận đồng ý phương án bồi thường.')}
+              className="duo-btn-green px-3 py-1.5 text-[11px] disabled:opacity-50"
+            >
+              Đồng ý mức bồi thường
+            </button>
+            {(claim.decisionRound || 1) < 2 ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setDisputeMode(disputeMode === 'DECISION' ? null : 'DECISION'); setReason(''); setErr(''); }}
+                className="duo-btn-red px-3 py-1.5 text-[11px] disabled:opacity-50"
+              >
+                Chưa đồng ý / Thẩm định lại
+              </button>
+            ) : (
+              <span className="text-[10px] text-[#8B3DFF] self-center">Đã hết lượt đề nghị thẩm định lại — vui lòng liên hệ hotline nếu cần.</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Idea 1: Khách xác nhận đã nhận tiền bồi thường sau khi FM chi trả */}
+      {claim.status === 'PAID' && claim.receiptStatus === 'WAITING_CUSTOMER' && (
+        <div className="rounded-xl border-2 border-[#FF9600] bg-[#FFF8E6] p-3 flex flex-col gap-2">
+          <span className="font-black text-[#D96B00] flex items-center gap-1">
+            <span className="material-symbols-outlined text-[16px]">payments</span>
+            Xác nhận đã nhận tiền bồi thường {formatVND(claim.totalCompensation)} (Vòng {claim.receiptRound || 1}/2)
+          </span>
+          <p className="text-[#777777] leading-snug">
+            Cơ sở đã thực hiện chi trả. Vui lòng kiểm tra tài khoản / tiền mặt và bấm xác nhận
+            {claim.receiptAutoConfirmAt ? ` (tự xác nhận sau 3 ngày: ${formatDateTimeVN(claim.receiptAutoConfirmAt)})` : ' (tự xác nhận sau 3 ngày)'}.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => runAction(() => confirmClaimReceipt(claim.id), 'Đã xác nhận nhận đủ tiền bồi thường.')}
+              className="duo-btn-green px-3 py-1.5 text-[11px] disabled:opacity-50"
+            >
+              Đã nhận được tiền
+            </button>
+            {(claim.receiptRound || 1) < 2 ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setDisputeMode(disputeMode === 'RECEIPT' ? null : 'RECEIPT'); setReason(''); setErr(''); }}
+                className="duo-btn-red px-3 py-1.5 text-[11px] disabled:opacity-50"
+              >
+                Chưa nhận được
+              </button>
+            ) : (
+              <span className="text-[10px] text-[#D96B00] self-center">
+                Đã đối soát xong lần 2/2 — hết lượt báo chưa nhận trực tuyến. Nếu vẫn có sai sót dù đã có ảnh bill &amp; mã GD, vui lòng mang CCCD &amp; sao kê ra quầy hoặc gọi 1900 6868.
+              </span>
+            )}
+          </div>
+          <SimulationButton
+            label="Tua 3 ngày tự xác nhận"
+            description="Giả lập quá 3 ngày khách không phản hồi → tự xác nhận đã nhận tiền."
+            onRun={() => simulateClaimReceiptAutoConfirm(claim.id)}
+            onDone={(updated) => {
+              if (updated) setClaim(updated);
+              onActionDone?.('Đã giả lập quá 3 ngày — hệ thống tự xác nhận nhận tiền bồi thường.');
+            }}
+          />
+        </div>
+      )}
+
+      {claim.status === 'PAID' && (claim.receiptStatus === 'CONFIRMED' || claim.receiptStatus === 'AUTO_CONFIRMED') && (
+        <div className="rounded-xl bg-[#D7FFB8] border border-[#58CC02] px-3 py-2 text-[#58A700] flex items-center justify-between gap-2">
+          <span className="font-black">
+            {claim.receiptStatus === 'AUTO_CONFIRMED'
+              ? 'Hệ thống đã tự xác nhận đã nhận tiền bồi thường sau 3 ngày'
+              : 'Bạn đã xác nhận đã nhận tiền bồi thường'}
+          </span>
+          {claim.receiptConfirmedAt && <span className="text-[10px]">{formatDateTimeVN(claim.receiptConfirmedAt)}</span>}
+        </div>
+      )}
+
+      {claim.status === 'PAID' && claim.receiptStatus === 'DISPUTED' && (
+        <div className="rounded-xl bg-[#FFDFDF] border-2 border-[#FF4B4B] px-3 py-2 text-[#D93838] flex flex-col gap-0.5">
+          <span className="font-black">Đã báo chưa nhận được tiền (Lần {claim.receiptRound || 1})</span>
+          <span>Lý do: {claim.receiptDisputeReason}</span>
+          <span className="text-[10px]">Quản lý cơ sở đang kiểm tra lại giao dịch và sẽ cập nhật cho bạn.</span>
+        </div>
+      )}
+
+      {disputeMode && (
+        <div className="rounded-xl border-2 border-[#FF4B4B] bg-[#FFF5F5] p-3 flex flex-col gap-2">
+          <span className="text-[11px] font-black text-[#D93838]">
+            {disputeMode === 'INSPECTION' && 'Nêu rõ điểm sai lệch trong biên bản kiểm tra hiện trường (10–380 ký tự)'}
+            {disputeMode === 'DECISION' && 'Nêu rõ lý do chưa đồng ý mức / phương án bồi thường (10–380 ký tự)'}
+            {disputeMode === 'RECEIPT' && 'Mô tả vấn đề khi nhận tiền bồi thường (10–380 ký tự)'}
+          </span>
+          <textarea
+            rows={2}
+            maxLength={380}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Nhập lý do chi tiết..."
+            className="duo-input text-xs bg-white resize-none"
+          />
+          {err && <span className="text-[#FF4B4B]">{err}</span>}
+          <div className="flex justify-end gap-2">
+            <button type="button" disabled={busy} onClick={() => { setDisputeMode(null); setErr(''); }} className="duo-btn-gray px-3 py-1 text-[11px]">Huỷ</button>
+            <button type="button" disabled={busy} onClick={submitDispute} className="duo-btn-red px-3 py-1 text-[11px]">
+              {busy ? 'Đang gửi...' : 'Gửi phản hồi'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {err && !disputeMode && <span className="text-[#FF4B4B]">{err}</span>}
+
       <ClaimPayoutAccount key={claim.id} claim={claim} />
     </div>
   );
@@ -1021,8 +1280,16 @@ export default function CustomerSupportPage() {
                   )}
                 </div>
 
-                {/* BR-126 → BR-128: tiến độ hồ sơ bồi thường */}
-                {ticket.claim && <CustomerClaimSummary claim={ticket.claim} />}
+                {/* BR-126 → BR-128: tiến độ hồ sơ bồi thường + xác nhận 2 chiều */}
+                {ticket.claim && (
+                  <CustomerClaimSummary
+                    claim={ticket.claim}
+                    onActionDone={(msg) => {
+                      if (msg) setToast({ type: 'success', message: msg });
+                      fetchData();
+                    }}
+                  />
+                )}
 
                 {/* Thông tin nhân viên phụ trách & Kết quả xử lý */}
                 <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#777777] font-bold">
@@ -1416,7 +1683,13 @@ export default function CustomerSupportPage() {
             </div>
 
             {/* BR-126: hồ sơ bồi thường hàng hư / mất */}
-            {ISSUE_TYPE_META[selectedIssueType]?.claim && (
+            {ISSUE_TYPE_META[selectedIssueType]?.claim && (() => {
+              const contractCap = selectedContractObj?.coverageCap != null ? Number(selectedContractObj.coverageCap) : null;
+              const contractLimit = selectedContractObj?.planCoverageLimit != null ? Number(selectedContractObj.planCoverageLimit) : null;
+              const contractAgreed = selectedContractObj?.agreedGoodsValue ?? selectedContractObj?.declaredGoodsValue;
+              const numericClaimAmount = Number(claimAmount || 0);
+              const excessOverCap = contractCap != null && numericClaimAmount > contractCap ? numericClaimAmount - contractCap : 0;
+              return (
               <div className="flex flex-col gap-3 rounded-2xl border-2 border-[#FFB8B8] bg-[#FFF5F5] p-4">
                 <p className="text-xs font-black uppercase text-[#FF4B4B] flex items-center gap-1">
                   <span className="material-symbols-outlined text-[18px]">gavel</span>
@@ -1426,6 +1699,25 @@ export default function CustomerSupportPage() {
                   Nhân viên sẽ mở ô cùng bạn để kiểm tra, quản lý cơ sở đối chiếu ảnh lúc nhận kho và cảm biến nhiệt độ để xác định lỗi.
                   Mức bồi thường tối đa theo gói bảo hiểm và giá trị hàng bạn khai báo khi đặt kho.
                 </p>
+
+                {selectedContractObj && contractCap != null && (
+                  <div className="rounded-xl border border-[#84D8FF] bg-[#F4FBFF] px-3.5 py-2.5 text-[11px] font-bold text-[#0369A1] flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        Gói bảo hiểm hợp đồng: <strong className="text-[#0F172A]">{selectedContractObj.insurancePlanLabel || 'Cơ bản'}</strong> (trần gói {formatVND(contractLimit)})
+                      </span>
+                      <span>
+                        Trần bồi thường tối đa: <strong className="text-[#0284C7]">{formatVND(contractCap)}</strong>
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-[#64748B]">
+                      {contractAgreed != null && Number(contractAgreed) > 0
+                        ? `Giá trị hàng đã chốt khi nhận kho: ${formatVND(contractAgreed)} — trần đền bù hàng = min(giá trị chốt, trần gói).`
+                        : 'Hợp đồng chưa khai báo giá trị hàng khi đặt/nhận kho — áp dụng mức trần sàn mặc định 5.000.000đ (BR-125).'}
+                    </span>
+                  </div>
+                )}
+
                 <label className="flex flex-col gap-1">
                   <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Danh sách hàng bị ảnh hưởng *</span>
                   <textarea
@@ -1439,14 +1731,22 @@ export default function CustomerSupportPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="flex flex-col gap-1">
                     <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Số tiền đề nghị (đ) *</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="100000"
-                      value={claimAmount}
-                      onChange={(e) => { setClaimAmount(e.target.value); setCreateError(''); }}
-                      className="duo-input text-xs"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={claimAmount !== '' && !Number.isNaN(Number(claimAmount)) ? Number(claimAmount).toLocaleString('vi-VN') : ''}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 11);
+                          setClaimAmount(digits);
+                          setCreateError('');
+                        }}
+                        placeholder="VD: 50.000.000"
+                        className="duo-input text-xs pr-8 w-full"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-[#AFAFAF]">₫</span>
+                    </div>
                   </label>
                   <label className="flex flex-col gap-1">
                     <span className="text-[11px] font-black uppercase text-[#4B4B4B]">Ngày phát hiện *</span>
@@ -1458,6 +1758,16 @@ export default function CustomerSupportPage() {
                     />
                   </label>
                 </div>
+
+                {excessOverCap > 0 && (
+                  <div className="rounded-xl border-2 border-[#FF9600] bg-[#FFF8EE] px-3.5 py-2.5 text-xs font-bold text-[#B45309] flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-[#FF9600] shrink-0 mt-0.5">warning</span>
+                    <div className="leading-relaxed">
+                      Số tiền bạn đề nghị (<strong>{formatVND(numericClaimAmount)}</strong>) đang vượt trần gói bảo hiểm / hợp đồng <strong>{selectedContractObj?.insurancePlanLabel || ''}</strong>. Mức bồi thường thiệt hại hàng tối đa chỉ đạt <strong className="text-[#D97706]">{formatVND(contractCap)}</strong>, phần chênh lệch vượt trần (<strong className="text-[#FF4B4B]">{formatVND(excessOverCap)}</strong>) sẽ không được chi trả (theo BR-125 &amp; BR-127).
+                    </div>
+                  </div>
+                )}
+
                 <HandoverPhotoPicker
                   images={claimImages}
                   onChange={setClaimImages}
@@ -1467,7 +1777,8 @@ export default function CustomerSupportPage() {
                   required={selectedIssueType === 'GOODS_DAMAGE'}
                 />
               </div>
-            )}
+              );
+            })()}
 
             {createError && (
               <div className="rounded-2xl border-2 border-[#FF4B4B] bg-[#FFF5F5] px-4 py-3 text-xs font-black text-[#FF4B4B] flex items-center gap-2">

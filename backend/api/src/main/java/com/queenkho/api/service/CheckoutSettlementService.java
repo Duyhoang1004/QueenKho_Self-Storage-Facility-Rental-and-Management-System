@@ -40,6 +40,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -159,24 +160,79 @@ public class CheckoutSettlementService {
 
     // ================== 1. NGHIỆM THU → VÒNG 1 (PR-O17, PR-O18) ==================
 
+    /**
+     * PR-O17a (26/11/2026): những gì đang chặn nghiệm thu trả kho — dùng chung cho kiểm tra lúc nộp biên bản
+     * và màn Staff (khoá form ngay từ đầu, không để Staff điền xong mới báo lỗi).
+     *  - TICKET: yêu cầu hỗ trợ thường còn OPEN / IN_PROGRESS (RESOLVED chờ khách xác nhận thì không chặn — nghiệm thu tự đóng)
+     *  - CLAIM_UNINSPECTED: hồ sơ mất / hư hàng chưa kiểm tra hiện trường (đã kiểm tra thì không chặn — tiền đền bù đi riêng, PR-O19c)
+     * Mỗi dòng: kind, code, issueType, status, ticketId, supportTaskId (task hỗ trợ mới nhất của ticket, null nếu chưa có).
+     */
+    public List<Map<String, Object>> checkoutBlockers(Integer contractId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (contractId == null) return out;
+        for (Map<String, Object> t : jdbcTemplate.queryForList(
+                "SELECT sr.id, sr.ticket_code, sr.issue_type, sr.status, " +
+                        "(SELECT TOP 1 ft.id FROM facility_tasks ft WHERE ft.support_request_id = sr.id ORDER BY ft.id DESC) AS task_id " +
+                        "FROM support_requests sr WHERE sr.contract_id = ? AND sr.status IN ('OPEN', 'IN_PROGRESS') " +
+                        "AND sr.issue_type NOT IN ('GOODS_DAMAGE', 'GOODS_LOSS') ORDER BY sr.id", contractId)) {
+            out.add(blocker("TICKET", t.get("ticket_code"), t.get("issue_type"), t.get("status"), t.get("id"), t.get("task_id")));
+        }
+        for (Map<String, Object> c : jdbcTemplate.queryForList(
+                "SELECT c.claim_code, sr.id AS ticket_id, sr.issue_type, " +
+                        "(SELECT TOP 1 ft.id FROM facility_tasks ft WHERE ft.support_request_id = sr.id ORDER BY ft.id DESC) AS task_id " +
+                        "FROM compensation_claims c LEFT JOIN support_requests sr ON sr.id = c.support_request_id " +
+                        "WHERE c.contract_id = ? AND c.status = 'SUBMITTED' ORDER BY c.id", contractId)) {
+            out.add(blocker("CLAIM_UNINSPECTED", c.get("claim_code"), c.get("issue_type"), "SUBMITTED", c.get("ticket_id"), c.get("task_id")));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> blocker(String kind, Object code, Object issueType, Object status, Object ticketId, Object taskId) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("kind", kind);
+        m.put("code", code);
+        m.put("issueType", issueType);
+        m.put("status", status);
+        m.put("ticketId", ticketId);
+        m.put("supportTaskId", taskId);
+        return m;
+    }
+
     /** PR-O17: còn ticket thường đang mở / hồ sơ bồi thường chưa kiểm tra hiện trường thì chưa được nghiệm thu */
     public void assertReadyForCheckout(Integer contractId) {
-        List<Map<String, Object>> tickets = jdbcTemplate.queryForList(
-                "SELECT ticket_code, issue_type FROM support_requests WHERE contract_id = ? AND status IN ('OPEN', 'IN_PROGRESS') " +
-                        "AND issue_type NOT IN ('GOODS_DAMAGE', 'GOODS_LOSS')", contractId);
+        List<Map<String, Object>> blockers = checkoutBlockers(contractId);
+        List<String> tickets = blockers.stream().filter(b -> "TICKET".equals(b.get("kind")))
+                .map(b -> String.valueOf(b.get("code"))).toList();
         if (!tickets.isEmpty()) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "OPEN_TICKETS_PENDING",
-                    "Hợp đồng còn " + tickets.size() + " yêu cầu hỗ trợ chưa xử lý xong ("
-                            + String.join(", ", tickets.stream().map(t -> String.valueOf(t.get("ticket_code"))).toList())
+                    "Hợp đồng còn " + tickets.size() + " yêu cầu hỗ trợ chưa xử lý xong (" + String.join(", ", tickets)
                             + "). Xử lý xong rồi mới nghiệm thu (PR-O17).");
         }
-        List<String> uninspected = jdbcTemplate.queryForList(
-                "SELECT claim_code FROM compensation_claims WHERE contract_id = ? AND status = 'SUBMITTED'", String.class, contractId);
+        List<String> uninspected = blockers.stream().filter(b -> "CLAIM_UNINSPECTED".equals(b.get("kind")))
+                .map(b -> String.valueOf(b.get("code"))).toList();
         if (!uninspected.isEmpty()) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CLAIM_INSPECTION_PENDING",
                     "Hồ sơ bồi thường " + String.join(", ", uninspected)
                             + " chưa được kiểm tra hiện trường. Lập biên bản kiểm tra trước khi dọn ô (PR-O17).");
         }
+    }
+
+    /**
+     * PR-O17a: ticket / hồ sơ cuối cùng vừa xong → báo nhân viên giữ task nghiệm thu trả kho là đã có thể nghiệm thu.
+     * Gọi sau khi trạng thái ticket / hồ sơ đã được ghi xuống DB (flush).
+     */
+    public void notifyCheckoutUnblocked(Integer contractId) {
+        if (contractId == null || notificationService == null || !checkoutBlockers(contractId).isEmpty()) return;
+        List<Map<String, Object>> tasks = jdbcTemplate.queryForList(
+                "SELECT TOP 1 ft.id, ft.staff_id, rc.contract_code FROM facility_tasks ft JOIN rental_contracts rc ON rc.id = ft.contract_id " +
+                        "WHERE ft.contract_id = ? AND ft.task_type = 'CHECK_OUT' AND ft.status IN ('OPEN', 'IN_PROGRESS') " +
+                        "AND (ft.note IS NULL OR ft.note NOT LIKE '[[]RECHECK]%') ORDER BY ft.id DESC", contractId);
+        if (tasks.isEmpty() || !(tasks.get(0).get("staff_id") instanceof Number staffId)) return;
+        Object taskId = tasks.get(0).get("id");
+        notificationService.notifyStaff(staffId.intValue(),
+                "Đã có thể nghiệm thu trả kho — HĐ " + tasks.get(0).get("contract_code"),
+                "Các yêu cầu hỗ trợ của hợp đồng đã xử lý xong. Task nghiệm thu #" + taskId + " đã mở (vào đúng ngày khách hẹn).",
+                "CHECKOUT", "/staff/tasks/" + taskId);
     }
 
     /**

@@ -266,4 +266,23 @@ class StaffTaskAssignAndRefundTest {
         assertEquals("BANK_TRANSFER", StaffTaskService.detectRefundMethodFromNote(null));
         assertEquals("BANK_TRANSFER", StaffTaskService.detectRefundMethodFromNote(""));
     }
+
+    @Test
+    @DisplayName("PR-O15a: cách nhận tiền khách đã chọn — chỉ đọc phần hệ thống ghi, không rõ thì null")
+    void customerChosenRefundMethodReadsOnlySystemNote() {
+        assertEquals("CASH", StaffTaskService.customerChosenRefundMethod(
+                "Hoàn tiền trả kho (quyết toán vòng 1) | HĐ: HD-1 | TỔNG CHI: 4.710.000đ | Hoàn tiền: Nhận tiền mặt trực tiếp tại quầy"));
+        assertEquals("CASH", StaffTaskService.customerChosenRefundMethod(
+                "[HOÀN CỌC TIỀN MẶT] Đơn: RES-1 | Khách: A | Số tiền hoàn đã chốt: 100 VND"));
+        assertEquals("BANK_TRANSFER", StaffTaskService.customerChosenRefundMethod(
+                "Hoàn tiền trả kho | HĐ: HD-2 | Hoàn cọc STK: 123456789 (VCB - NGUYEN VAN A) | Ghi chú: không lấy tiền mặt"));
+        assertEquals("BANK_TRANSFER", StaffTaskService.customerChosenRefundMethod(
+                "[HOÀN CỌC CK] Đơn: RES-2 | Ngân hàng: VCB | STK: 123 | Chủ TK: A"));
+        // No-Show / ghi chú cũ không có lựa chọn → FM tự chọn
+        assertNull(StaffTaskService.customerChosenRefundMethod("[HOÀN TIỀN NO-SHOW] Đơn: RES-3 | Số tiền hoàn: 100 VND"));
+        assertNull(StaffTaskService.customerChosenRefundMethod(null));
+        // Phần FM ghi sau khi chi không làm đổi lựa chọn của khách
+        assertEquals("BANK_TRANSFER", StaffTaskService.customerChosenRefundMethod(
+                "Hoàn cọc STK: 123 (VCB - A) | [ĐÃ HOÀN TIỀN MẶT - Khách đã ký nhận]"));
+    }
 }

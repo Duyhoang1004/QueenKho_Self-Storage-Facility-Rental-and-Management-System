@@ -3792,12 +3792,11 @@ public class StaffTaskService {
 
         // PR-X3, PR-A10 (08/11/2026): mã liên hệ để xét No-Show
         //  [CONTACT][REFUSED] khách từ chối tới nhận kho → FM xử lý No-Show được ngay
-        //  [CONTACT][FAILED]  không nghe máy / thuê bao / cúp máy → đủ 2 lần + qua 48h mới xử lý
+        //  [CONTACT][FAILED]  chỉ không nghe máy / thuê bao → đủ 2 lần + qua 48h mới xử lý
         //  [CONTACT][SUCCESS] liên lạc được (dời lịch, hẹn đến...)
         String outcomeLower = outcome.toLowerCase();
         boolean isRefused = outcomeLower.contains("từ chối") || outcomeLower.contains("xin hủy") || outcomeLower.contains("xin huỷ");
-        boolean isFailed = outcomeLower.contains("không nghe máy") || outcomeLower.contains("thuê bao")
-                || outcomeLower.contains("cúp máy") || outcomeLower.contains("thất bại");
+        boolean isFailed = outcomeLower.contains("không nghe máy") || outcomeLower.contains("thuê bao");
         String contactTag = isRefused ? "[CONTACT][REFUSED]" : isFailed ? "[CONTACT][FAILED]" : "[CONTACT][SUCCESS]";
 
         String logAction = contactTag + " Nhân viên " + staff.getFullName() + " báo cáo liên hệ task #" + task.getId()

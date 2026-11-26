@@ -456,18 +456,28 @@ export default function PendingReservationsPage() {
           )}
 
           {!overdueLoading && !overdueError && overdueItems.length > 0 && (
-            <div className="overflow-x-auto custom-scrollbar" role="region" aria-label="Danh sách đơn quá hạn nhận kho" tabIndex={0}>
-              <table className="w-full min-w-[1060px] text-left border-collapse">
-                <thead className="bg-[#FFF5F5] border-b-2 border-[#FFDFDF] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider whitespace-nowrap">
+            <div className="w-full">
+              <table className="w-full table-fixed text-left border-collapse">
+                <colgroup>
+                  <col className="w-[8%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[10%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[23%]" />
+                </colgroup>
+                <thead className="bg-[#FFF5F5] border-b-2 border-[#FFDFDF] text-[#AFAFAF] text-[11px] font-black uppercase tracking-wider">
                   <tr>
-                    <th className="py-3.5 px-5">Mã đơn</th>
-                    <th className="py-3.5 px-5">Khách hàng</th>
-                    <th className="py-3.5 px-5">Điện thoại</th>
-                    <th className="py-3.5 px-5">Loại kho</th>
-                    <th className="py-3.5 px-5">Hẹn nhận</th>
-                    <th className="py-3.5 px-5">Tiền cọc</th>
-                    <th className="py-3.5 px-5 min-w-[220px]">Báo cáo từ Staff</th>
-                    <th className="py-3.5 px-5 text-right">Xử lý</th>
+                    <th className="py-3.5 px-3">Mã đơn</th>
+                    <th className="py-3.5 px-3">Khách hàng</th>
+                    <th className="py-3.5 px-3">Điện thoại</th>
+                    <th className="py-3.5 px-3">Loại kho</th>
+                    <th className="py-3.5 px-3">Hẹn nhận</th>
+                    <th className="py-3.5 px-3">Tiền cọc</th>
+                    <th className="py-3.5 px-3">Báo cáo từ Staff</th>
+                    <th className="py-3.5 px-3 text-right">Xử lý</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-[#FFDFDF] text-xs font-bold text-[#4B4B4B]">
@@ -475,35 +485,35 @@ export default function PendingReservationsPage() {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FFF8F8] transition-colors">
-                        <td className="py-4 px-5 whitespace-nowrap">
+                        <td className="py-4 px-3">
                           <button type="button" title="Xem chi tiết đơn" onClick={() => setDetailTarget(r)}
-                            className="font-black text-[#FF4B4B] hover:underline cursor-pointer">
+                            className="font-black text-[11px] text-[#FF4B4B] hover:underline cursor-pointer break-all">
                             {r.reservationCode}
                           </button>
                         </td>
-                        <td className="py-4 px-5">
+                        <td className="py-4 px-3">
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs shrink-0">
+                            <div className="w-8 h-8 shrink-0 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs">
                               {initials(r.customerName)}
                             </div>
-                            <span className="font-black whitespace-nowrap">{r.customerName}</span>
+                            <span className="min-w-0 break-words font-black">{r.customerName}</span>
                           </div>
                         </td>
-                        <td className="py-4 px-5 whitespace-nowrap">{r.customerPhone || '—'}</td>
-                        <td className="py-4 px-5 whitespace-nowrap">
-                          <span className="duo-badge whitespace-nowrap bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
+                        <td className="py-4 px-3 break-all">{r.customerPhone || '—'}</td>
+                        <td className="py-4 px-3">
+                          <span className="duo-badge max-w-full text-center bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
                             {r.unitTypeName}
                           </span>
                         </td>
-                        <td className="py-4 px-5">
+                        <td className="py-4 px-3">
                           <div className="flex flex-col">
                             <span>{formatDate(r.startDate)}</span>
                             {hint && <span className={`text-[10px] ${hint.className}`}>{hint.text}</span>}
                           </div>
                         </td>
-                        <td className="py-4 px-5 font-black text-[#FF4B4B]">{formatVND(r.depositAmount)}</td>
-                        <td className="py-4 px-5">
-                          <div className="flex flex-col gap-1.5">
+                        <td className="py-4 px-3 break-all font-black text-[#FF4B4B]">{formatVND(r.depositAmount)}</td>
+                        <td className="py-4 px-3">
+                          <div className="flex min-w-0 flex-col gap-1.5">
                             {r.staffNote ? (
                               <div className="flex flex-col gap-1 p-2.5 rounded-xl bg-[#FFF0E6] border-2 border-[#FF9600] text-[11px] font-bold text-[#D06B00]">
                                 <div className="flex items-center gap-1 text-[10px] uppercase font-black text-[#E58800]">
@@ -535,13 +545,13 @@ export default function PendingReservationsPage() {
                                   Khách từ chối tới
                                 </span>
                               ) : (
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
+                                <span title="Số lần liên hệ thất bại liên tiếp sau giờ hẹn; liên hệ được khách sẽ tính lại từ đầu" className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black border ${
                                   (r.failedContactCount || 0) >= 2
                                     ? 'bg-[#EBFBF0] text-[#188838] border-[#A3E5B5]'
                                     : 'bg-[#FFF8E6] text-[#B26B00] border-[#FFD591]'
                                 }`}>
                                   <span className="material-symbols-outlined text-[12px]">phone_missed</span>
-                                  Liên hệ thất bại: {r.failedContactCount || 0}/2 lần
+                                  Liên hệ thất bại liên tiếp: {r.failedContactCount || 0} lần
                                 </span>
                               )}
 
@@ -550,12 +560,7 @@ export default function PendingReservationsPage() {
                                   <span className="material-symbols-outlined text-[12px]">edit_calendar</span>
                                   Cần dời lịch nhận kho
                                 </span>
-                              ) : r.noShowEligible ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#EBFBF0] text-[#188838] border border-[#A3E5B5]">
-                                  <span className="material-symbols-outlined text-[12px]">check_circle</span>
-                                  Đủ ĐK vắng mặt
-                                </span>
-                              ) : (
+                              ) : !r.noShowEligible ? (
                                 <span
                                   title={r.noShowEligible === false ? (r.noShowIneligibleReason || 'Chưa đủ điều kiện xử lý vắng mặt') : 'Đủ điều kiện xử lý'}
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black bg-[#FFF0E6] text-[#E05300] border border-[#FFBB96] cursor-help"
@@ -563,25 +568,25 @@ export default function PendingReservationsPage() {
                                   <span className="material-symbols-outlined text-[12px]">schedule</span>
                                   Chưa đủ điều kiện
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         </td>
-                        <td className="py-4 px-5 text-right whitespace-nowrap">
-                          <div className="flex gap-2 justify-end">
+                        <td className="py-4 px-3 text-right">
+                          <div className="flex items-stretch gap-2">
                             <button
                               type="button"
                               onClick={() => setRescheduleTarget(r)}
-                              className="px-3 py-2 text-xs font-black uppercase tracking-wider rounded-2xl border-2 border-b-4 border-[#1899D6] bg-[#1CB0F6] text-white hover:bg-[#1899D6] transition-colors"
+                              className="flex min-w-0 flex-1 items-center justify-center gap-1 px-2 py-2 text-center text-[11px] leading-tight font-black uppercase rounded-2xl border-2 border-b-4 border-[#1899D6] bg-[#1CB0F6] text-white hover:bg-[#1899D6] transition-colors"
                             >
-                              <span className="material-symbols-outlined text-[14px] mr-1 align-middle">edit_calendar</span>
+                              <span className="material-symbols-outlined shrink-0 text-[14px]">edit_calendar</span>
                               Dời lịch
                             </button>
                             <button
                               type="button"
                               disabled={!!r.hasDraftHandover}
                               onClick={() => { if (!r.hasDraftHandover) setNoShowTarget(r) }}
-                              className={`px-3 py-2 text-xs font-black uppercase tracking-wider rounded-2xl border-2 border-b-4 transition-colors ${
+                              className={`flex min-w-0 flex-1 items-center justify-center gap-1 px-2 py-2 text-center text-[11px] leading-tight font-black uppercase rounded-2xl border-2 border-b-4 transition-colors ${
                                 r.hasDraftHandover
                                   ? 'border-[#E5E5E5] bg-[#F7F7F7] text-[#AFAFAF] cursor-not-allowed opacity-70'
                                   : r.noShowEligible === false
@@ -590,7 +595,7 @@ export default function PendingReservationsPage() {
                               }`}
                               title={r.hasDraftHandover ? 'Khách đã tới làm thủ tục — chỉ áp dụng Dời lịch, không phạt No-Show' : r.noShowEligible === false ? r.noShowIneligibleReason : 'Xử lý khách vắng mặt'}
                             >
-                              <span className="material-symbols-outlined text-[14px] mr-1 align-middle">
+                              <span className="material-symbols-outlined shrink-0 text-[14px]">
                                 {r.hasDraftHandover ? 'lock' : r.noShowEligible === false ? 'info' : 'person_off'}
                               </span>
                               Khách vắng mặt

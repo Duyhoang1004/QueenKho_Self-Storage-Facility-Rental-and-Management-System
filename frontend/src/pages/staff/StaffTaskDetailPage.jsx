@@ -27,7 +27,6 @@ import {
 } from '../../services/staffTaskService';
 import { getCheckInHandover } from '../../services/contractService';
 import api from '../../services/api';
-import { rescheduleReservation } from '../../services/reservationService';
 import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
 import SettlementPanel from '../../components/SettlementPanel';
@@ -1612,40 +1611,6 @@ export default function StaffTaskDetailPage() {
       .finally(() => setPinResetting(false));
   };
 
-  // Vấn đề 2 (22/11/2026): FM dời lịch nhận kho trực tiếp trên trang chi tiết task CHECK_IN quá hạn
-  const [rescheduleCheckInDate, setRescheduleCheckInDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
-  const [rescheduleCheckInReason, setRescheduleCheckInReason] = useState('');
-  const [reschedulingCheckIn, setReschedulingCheckIn] = useState(false);
-
-  const handleRescheduleCheckInFromTask = async () => {
-    if (!task?.reservationId || !rescheduleCheckInDate) return;
-    setReschedulingCheckIn(true);
-    try {
-      await rescheduleReservation(task.reservationId, {
-        newStartDate: rescheduleCheckInDate,
-        reason: rescheduleCheckInReason.trim() || 'Dời lịch nhận kho từ task check-in quá hạn',
-        managerId: userId,
-      });
-      setRescheduleCheckInReason('');
-      await loadTask();
-      setToast({
-        type: 'success',
-        message: `Đã dời lịch nhận kho đơn ${task.reservationCode || '#' + task.reservationId} sang ngày ${formatDate(rescheduleCheckInDate)}. Task đã được mở lại!`,
-      });
-    } catch (err) {
-      setToast({
-        type: 'error',
-        message: err.response?.data?.message || 'Không thể dời lịch nhận kho.',
-      });
-    } finally {
-      setReschedulingCheckIn(false);
-    }
-  };
-
   const handleExtendSupportSubmit = () => {
     if (!extendDueDate || !extendReason.trim()) return;
     setExtendingSupport(true);
@@ -1782,8 +1747,8 @@ export default function StaffTaskDetailPage() {
           )}
           {isManager && task.reservationId && (
             <SimulationButton
-              label="Khách bùng hẹn (đủ No-Show)"
-              description="Lùi giờ hẹn 49 giờ và ghi 2 lần gọi khách thất bại cách nhau 25 giờ. Sau đó đơn hiện ở tab No-Show với nút huỷ đã bật."
+              label="Khách không đến hẹn"
+              description="Lùi giờ hẹn 49 giờ để đơn hiện ở tab quá hạn. Staff cần báo cáo kết quả liên hệ; giả lập không tạo cuộc gọi thất bại."
               onRun={() => simulateNoShow(task.reservationId)}
               onDone={() => loadTask()}
             />
@@ -1822,57 +1787,6 @@ export default function StaffTaskDetailPage() {
               onDone={() => navigate('/manager/overdue')}
             />
           )}
-        </div>
-      )}
-
-      {/* Vấn đề 2 (22/11/2026): Task CHECK_IN bị OVERDUE → FM dời lịch nhận kho ngay đầu trang chi tiết task */}
-      {isManager && task.taskType === 'CHECK_IN' && task.reservationId
-        && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)
-        && !handover?.facilityFaultConfirmed
-        && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
-        <div className="mb-6 rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5">
-          <div className="flex items-start gap-2.5">
-            <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">edit_calendar</span>
-            <div>
-              <h3 className="text-xs font-black uppercase text-[#E58800]">
-                Dời lịch nhận kho để mở lại task Check-in quá hạn
-              </h3>
-              <p className="text-xs font-bold text-[#777777] mt-0.5">
-                Task nhận kho đã quá hạn 21:00 nên nhân viên không thể hoàn tất bàn giao. Quản lý chọn ngày nhận kho mới bên dưới để cập nhật hạn task và mở lại xử lý.
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)_auto] gap-3 items-end">
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-black uppercase text-[#777777]">Ngày nhận kho mới *</span>
-              <DateInput
-                min={localTodayIso()}
-                value={rescheduleCheckInDate}
-                onChange={e => setRescheduleCheckInDate(e.target.value)}
-                className="duo-input text-xs font-bold bg-white"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-black uppercase text-[#777777]">Lý do dời lịch</span>
-              <input
-                type="text"
-                maxLength={300}
-                value={rescheduleCheckInReason}
-                onChange={e => setRescheduleCheckInReason(e.target.value)}
-                placeholder="VD: Khách hẹn quay lại ký biên bản bàn giao vào ngày mai..."
-                className="duo-input text-xs bg-white"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={reschedulingCheckIn || !rescheduleCheckInDate}
-              onClick={handleRescheduleCheckInFromTask}
-              className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 whitespace-nowrap disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
-              {reschedulingCheckIn ? 'Đang dời lịch...' : 'Xác nhận dời lịch nhận kho'}
-            </button>
-          </div>
         </div>
       )}
 

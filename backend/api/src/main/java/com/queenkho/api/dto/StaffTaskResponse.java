@@ -61,5 +61,6 @@ public class StaffTaskResponse {
     private String resolutionNote;
     private String cancelReason;     // PR-T2: lý do task bị huỷ (khách huỷ đơn / huỷ yêu cầu)
     private String maintenanceReason; // DAMAGE / LIQUIDATION / CHECKIN_REPAIR / CHECKIN_FAULT
-    private LocalDate simulatedCheckoutDate; // PR-O31a: ngày hẹn gốc khi demo "khách tới đúng ngày hẹn"
+    private LocalDate simulatedCheckoutDate;
+    private String customerRefundMethod; // PR-O15a: CASH / BANK_TRANSFER khách đã chọn (task REFUND), null = không rõ // PR-O31a: ngày hẹn gốc khi demo "khách tới đúng ngày hẹn"
 }

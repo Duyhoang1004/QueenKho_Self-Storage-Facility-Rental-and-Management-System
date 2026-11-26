@@ -31,11 +31,12 @@ import TransferUnitModal from '../../components/TransferUnitModal';
 import SimulationButton from '../../components/SimulationButton';
 import SettlementPanel from '../../components/SettlementPanel';
 import UnitLocationMap from '../../components/UnitLocationMap';
+import SeparateCompensationBox from '../../components/SeparateCompensationBox';
 import { simulateArriveToday, simulateAppointmentIn, simulateCheckoutToday, simulateNoShow, simulateOverdue, simulateTaskOverdue } from '../../services/simulationService';
 import { assignLockedUntil } from '../../utils/taskWindow';
 import { HandoverPhotoPicker, PhotoGrid } from '../../components/HandoverPhotos';
 import { compressImageToDataUrl, createMockEvidenceDataUrl } from '../../utils/imageEvidence';
-import { getCentralWarehouses } from '../../services/catalogService';
+import { getCentralWarehouses, getFacilityCentralWarehouse } from '../../services/catalogService';
 import { getOverdueFeeBreakdown } from '../../utils/overdueFee';
 import IncidentReportModal from '../../components/IncidentReportModal';
 import { INCIDENT_REPORT_TEMPLATES, buildIncidentReportNote, buildBlankIncidentReport, findMatchingTemplate, getPresetsForTask } from '../../utils/incidentTemplates';
@@ -289,6 +290,11 @@ function blockedReason(task, userId, isManager) {
           const [y, m, d] = appointment.split('-');
           return `Khách hẹn trả kho ngày ${d}/${m}/${y}. Chưa được nghiệm thu trước ngày hẹn.`;
         }
+        // PR-O17a (26/11/2026): còn yêu cầu hỗ trợ / hồ sơ bồi thường chưa kiểm tra hiện trường → khoá form từ đầu
+        // (cùng điều kiện backend kiểm tra lúc nộp — trước đây Staff điền xong mới nhận lỗi OPEN_TICKETS_PENDING)
+        if ((task.checkoutBlockers || []).length > 0) {
+          return `Hợp đồng còn ${task.checkoutBlockers.length} yêu cầu hỗ trợ chưa xong. Xử lý xong mới được nghiệm thu trả kho.`;
+        }
       }
       return null;
   }
@@ -445,16 +451,24 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
   );
   const isContractActive = task.contractStatus === 'ACTIVE';
 
+  // BR-134a (23/11/2026): chọn sẵn kho tổng phụ trách cơ sở (cùng thành phố); FM chỉ đổi khi kho đó đầy
+  const [defaultWarehouseId, setDefaultWarehouseId] = useState(null);
   useEffect(() => {
     if (!isLiquidation) return;
-    getCentralWarehouses()
-      .then(list => {
+    Promise.all([
+      getCentralWarehouses(),
+      task.facilityId ? getFacilityCentralWarehouse(task.facilityId).catch(() => null) : Promise.resolve(null),
+    ])
+      .then(([list, mine]) => {
         const items = Array.isArray(list) ? list : [];
         setWarehouses(items);
-        if (items.length === 1) setWarehouseId(String(items[0].id));
+        const defId = mine?.warehouse?.id && items.some(w => w.id === mine.warehouse.id) ? mine.warehouse.id : null;
+        setDefaultWarehouseId(defId);
+        if (defId) setWarehouseId(prev => prev || String(defId));
+        else if (items.length === 1) setWarehouseId(prev => prev || String(items[0].id));
       })
       .catch(() => setWarehouses([]));
-  }, [isLiquidation]);
+  }, [isLiquidation, task.facilityId]);
   const doneLabel = isLiquidation ? 'Dọn xong' : 'Sửa xong';
   const blocked = task.maintenanceReason === 'CHECKIN_REPAIR' && isManager
     ? 'Staff hoàn tất task cùng ảnh; FM duyệt tại báo cáo sự cố của task check-in.'
@@ -484,7 +498,7 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
       setInventoryNote('12 thùng carton đồ gia dụng (đã niêm phong), 1 tủ lạnh mini, 2 xe đạp, 1 túi quần áo.');
       setWitnessNote('Nhân viên kho + Quản lý cơ sở, có đại diện tổ dân phố chứng kiến');
       setStorageLocation('Dãy B - kệ 3');
-      if (!warehouseId && warehouses.length) setWarehouseId(String(warehouses[0].id));
+      if (!warehouseId && warehouses.length) setWarehouseId(String(defaultWarehouseId || warehouses[0].id));
       setInventoryImages([
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (1)'),
         createMockEvidenceDataUrl('Kiểm kê hàng ô ' + (task.storageUnitId || '') + ' (2)'),
@@ -794,8 +808,18 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
                       <span className="text-[11px] font-black uppercase text-[#777777]">Kho tổng nhận hàng *</span>
                       <select value={warehouseId} onChange={e => setWarehouseId(e.target.value)} className="duo-input text-xs">
                         <option value="">— Chọn kho tổng —</option>
-                        {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        {warehouses.map(w => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}{w.city ? ` (${w.city})` : ''}{w.id === defaultWarehouseId ? ' — phụ trách cơ sở này' : ''}
+                          </option>
+                        ))}
                       </select>
+                      {defaultWarehouseId && warehouseId && Number(warehouseId) !== defaultWarehouseId && (
+                        <span className="text-[11px] font-bold text-[#E58800]">Khác kho tổng phụ trách cơ sở — chỉ chọn khi kho phụ trách đã đầy.</span>
+                      )}
+                      {!defaultWarehouseId && warehouses.length > 0 && (
+                        <span className="text-[11px] font-bold text-[#E58800]">Thành phố của cơ sở chưa có kho tổng — chọn kho gần nhất.</span>
+                      )}
                     </label>
                     <label className="flex flex-col gap-1 sm:col-span-2">
                       <span className="text-[11px] font-black uppercase text-[#777777]">Vị trí kệ trong kho tổng *</span>
@@ -1769,13 +1793,28 @@ export default function StaffTaskDetailPage() {
         </div>
       )}
 
-      {/* Demo: khách tới trả kho hôm nay / khách không tới trả kho (task nghiệm thu đang mở) */}
+      {/* PR-O31a: đã giả lập tới ngày hẹn → nhắc quyết toán chốt theo ngày hẹn gốc */}
+      {/* Ngày hẹn giả lập đã qua → backend chốt theo ngày thực tế (effectiveCheckoutDate) nên không hiện nữa */}
+      {task.taskType === 'CHECK_OUT' && task.simulatedCheckoutDate && !task.completedAt
+        && String(task.simulatedCheckoutDate) >= new Date().toLocaleDateString('en-CA') && (
+        <div className="mb-4 flex items-start gap-2 rounded-2xl border-2 border-[#CE82FF] bg-[#FAF5FF] px-4 py-3 text-xs font-bold text-[#7C3AED]">
+          <span className="material-symbols-outlined text-[20px]">event_available</span>
+          <span>
+            Đang giả lập khách tới đúng ngày hẹn <strong>{formatDate(task.simulatedCheckoutDate)}</strong>: nghiệm thu ngay hôm nay,
+            bảng quyết toán tính theo ngày {formatDate(task.simulatedCheckoutDate)} (khớp số khách thấy lúc hẹn trả kho).
+          </span>
+        </div>
+      )}
+
+      {/* Demo: khách tới trả đúng ngày hẹn / khách không tới trả kho (task nghiệm thu đang mở) */}
       {task.taskType === 'CHECK_OUT' && task.contractStatus === 'TERMINATION_PENDING'
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           <SimulationButton
-            label="Khách tới trả kho hôm nay"
-            description="Dời ngày hẹn trả kho về hôm nay (hạn 21:00) để nghiệm thu ngay, không phải chờ đúng ngày hẹn."
+            label={task.dueAt && !task.simulatedCheckoutDate
+              ? `Khách tới trả đúng ngày hẹn (${formatDate(String(task.dueAt).slice(0, 10))})`
+              : 'Khách tới trả đúng ngày hẹn'}
+            description="Tua tới ngày khách đã hẹn: nghiệm thu được ngay hôm nay, nhưng quyết toán chốt theo NGÀY HẸN (số ngày đã dùng, phí...) — khớp đúng số khách thấy lúc hẹn trả kho."
             onRun={() => simulateCheckoutToday(task.id)}
             onDone={() => loadTask()}
           />
@@ -2349,7 +2388,11 @@ export default function StaffTaskDetailPage() {
                   {task.receiptStatus === 'DISPUTED' && (
                     <div className="rounded-xl border-2 border-[#FFB8B8] bg-[#FFF2F2] p-3 text-xs font-bold text-[#4B4B4B] flex flex-col gap-1">
                       <span className="font-black text-[#FF4B4B]">Khách báo chưa nhận được tiền: “{task.receiptDisputeReason}”</span>
-                      <span>Mở <Link to="/manager/refunds" className="text-[#1CB0F6] underline">Bảng hoàn tiền</Link> → “Xử lý: khách báo chưa nhận” để chọn giao dịch đúng hoặc chuyển bổ sung.</span>
+                      <span>Chọn "Giao dịch đã chuyển đúng" (giải thích + ảnh sao kê nếu có) hoặc "Chuyển bổ sung" (số tiền + biên lai).</span>
+                      {/* 23/11/2026: mở thẳng modal xử lý ở Bảng hoàn tiền, không phải tự tìm task */}
+                      <Link to={`/manager/refunds?resolveTaskId=${task.id}`} className="duo-btn-red px-4 py-2 text-xs self-start flex items-center gap-1.5 mt-1">
+                        <span className="material-symbols-outlined text-[16px]">report</span>Xử lý ngay: khách báo chưa nhận
+                      </Link>
                     </div>
                   )}
 
@@ -3561,9 +3604,11 @@ export default function StaffTaskDetailPage() {
                     </div>
                   )}
                   <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả khách:</span>
+                    <span className="text-xs font-black uppercase text-[#1899D6]">Tổng tiền hoàn trả kho:</span>
                     <span className="text-xl font-black text-[#58A700]">{formatCurrency(effectiveRefundAmount)}</span>
                   </div>
+                  {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
+                  <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                   {Number(task.excessDebtAmount) > 0 && (
                     <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex justify-between items-center text-xs">
                       <span className="font-black text-[#FF4B4B]">Khoản nợ vượt cọc khách cần đóng thêm:</span>
@@ -3688,6 +3733,31 @@ export default function StaffTaskDetailPage() {
               <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
               <p className="text-sm font-black text-[#4B4B4B]">Không thể lập biên bản</p>
               <p className="text-xs font-bold text-[#777777] max-w-[360px]">{reason}</p>
+              {/* PR-O17a: liệt kê yêu cầu hỗ trợ đang chặn nghiệm thu, bấm để mở task hỗ trợ */}
+              {task.taskType === 'CHECK_OUT' && (task.checkoutBlockers || []).length > 0 && (
+                <div className="w-full max-w-[420px] flex flex-col gap-1.5 text-left">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">Cần xử lý trước khi nghiệm thu</span>
+                  {task.checkoutBlockers.map((b) => {
+                    const label = b.kind === 'CLAIM_UNINSPECTED'
+                      ? `Hồ sơ bồi thường ${b.code} — chờ kiểm tra hiện trường`
+                      : `Yêu cầu hỗ trợ ${b.code} — ${b.status === 'OPEN' ? 'chờ tiếp nhận' : 'đang xử lý'}`;
+                    const href = b.supportTaskId ? `${isManager ? '/manager/tasks' : '/staff/tasks'}/${b.supportTaskId}` : null;
+                    return (
+                      <div key={`${b.kind}-${b.code}`}
+                        className="flex items-center justify-between gap-2 rounded-xl border-2 border-[#FFE0A3] bg-[#FFF8E6] px-3 py-2 text-xs font-bold text-[#B45309]">
+                        <span className="flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[16px]">{b.kind === 'CLAIM_UNINSPECTED' ? 'gavel' : 'support_agent'}</span>
+                          {label}
+                        </span>
+                        {href && <Link to={href} className="text-[#1CB0F6] font-black hover:underline whitespace-nowrap">Mở task</Link>}
+                      </div>
+                    );
+                  })}
+                  <span className="text-[10px] font-bold text-[#AFAFAF]">
+                    Hồ sơ mất / hư hàng chỉ cần kiểm tra hiện trường xong là nghiệm thu được — tiền đền bù quản lý chi riêng.
+                  </span>
+                </div>
+              )}
               {!isManager && task.taskType === 'CHECK_IN' && handover?.status === 'PENDING_CUSTOMER'
                 && task.staffId === userId && (
                 <button type="button" className="duo-btn-gray px-4 py-2 text-xs disabled:opacity-50"
@@ -4190,20 +4260,44 @@ export default function StaffTaskDetailPage() {
                       <span>• Tiền thuê khách đã đóng ({cycleMonths} tháng):</span>
                       <span className="font-black">{formatCurrency(rentPaid)}</span>
                     </div>
-                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                      <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
-                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                      <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
-                      <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
-                    </div>
+                    {task.faultTermination ? (() => {
+                      // BR-127 (góp ý test 24/11): chấm dứt do lỗi cơ sở → trừ đúng số ngày đã dùng, không thu 1 tháng / phí phạt
+                      const kept = (task.refundLines || []).find(l => l.group === 'KEPT' && String(l.label).startsWith('Tiền thuê'));
+                      return (
+                        <>
+                          <div className="flex justify-between gap-3 text-[11px] text-[#2B5300]/90">
+                            <span className="flex flex-col">
+                              <span>• Trừ tiền thuê những ngày đã dùng:</span>
+                              {kept?.note && <span className="text-[10px] font-bold text-[#777777]">{kept.note}</span>}
+                            </span>
+                            <span className="font-black text-[#FF4B4B] whitespace-nowrap">- {formatCurrency(kept ? kept.amount : Math.max(0, rentPaid - estimatedEarlyRentRefund))}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                            <span>• Phí phạt trả kho sớm:</span>
+                            <span className="font-black text-[#58A700]">0 đ (chấm dứt do lỗi cơ sở)</span>
+                          </div>
+                        </>
+                      );
+                    })() : (
+                      <>
+                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                          <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
+                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                          <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
+                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
-                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả khách:</span>
+                  <span className="text-xs font-black uppercase text-[#1899D6]">Tổng số tiền hoàn trả kho:</span>
                   <span className="text-xl font-black text-[#58A700]">{formatCurrency(estimatedTotalRefund)}</span>
                 </div>
+                {/* PR-O19c: tiền đền bù — khoản riêng FM chi, không cộng vào tiền hoàn trả kho */}
+                <SeparateCompensationBox items={task.separateCompensations} viewer="STAFF" />
                 {estimatedExcessDebt > 0 ? (
                   <div className="rounded-xl bg-[#FFDFDF] border border-[#FF4B4B] px-3 py-2 flex flex-col gap-0.5 text-xs">
                     <div className="flex justify-between items-center">

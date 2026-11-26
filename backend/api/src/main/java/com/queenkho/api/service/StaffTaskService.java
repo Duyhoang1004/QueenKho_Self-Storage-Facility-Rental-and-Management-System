@@ -189,10 +189,6 @@ public class StaffTaskService {
         createTask(contract, "CHECK_OUT", checkoutDate, note);
     }
 
-    // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi
-    // được khách).
-    // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
-    // IN_PROGRESS
     /**
      * PR-O31a (24/11/2026): ngày chốt quyết toán khi nghiệm thu. Luồng thật = hôm nay. Task đã bấm demo
      * "Khách tới trả đúng ngày hẹn" (hạn task dời về hôm nay) → ngày hẹn gốc, để số tiền khớp đúng số khách thấy lúc hẹn
@@ -203,6 +199,10 @@ public class StaffTaskService {
         return simulated != null && simulated.isAfter(today) ? simulated : today;
     }
 
+    // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi
+    // được khách).
+    // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
+    // IN_PROGRESS
     @Transactional
     public void rescheduleOpenTasks(Integer contractId, String taskType, LocalDate newAppointmentDate) {
         List<StaffTask> tasks = staffTaskRepository
@@ -615,6 +615,7 @@ public class StaffTaskService {
                 .receiptDisputeReason(task.getReceiptDisputeReason())
                 .receiptRound(task.getReceiptRound())
                 .refundAmount(task.getRefundAmount())
+                .customerRefundMethod("REFUND".equals(task.getTaskType()) ? customerChosenRefundMethod(task.getNote()) : null)
                 .staffId(staff != null ? staff.getId() : null)
                 .staffName(staff != null ? staff.getFullName() : null)
                 .contractId(contract != null ? contract.getId() : null)
@@ -2188,6 +2189,11 @@ public class StaffTaskService {
             }
             sr.setResolutionNote(resNoteToSave);
             supportRequestRepository.save(sr);
+            // PR-O17a: ticket cuối cùng xong → báo Staff giữ task nghiệm thu
+            if (!isEscalated && sr.getContract() != null && settlementService != null) {
+                entityManager.flush();
+                settlementService.notifyCheckoutUnblocked(sr.getContract().getId());
+            }
             ticketCode = sr.getTicketCode();
 
             // BR-111 / BR-117: khách nhận thông báo + email kết quả xử lý
@@ -3039,6 +3045,11 @@ public class StaffTaskService {
                     }
                     sr.setResolutionNote(updatedRes);
                     supportRequestRepository.save(sr);
+                    // PR-O17a: ticket cuối cùng xong → báo Staff giữ task nghiệm thu
+                    if (sr.getContract() != null && settlementService != null) {
+                        entityManager.flush();
+                        settlementService.notifyCheckoutUnblocked(sr.getContract().getId());
+                    }
 
                     if (notificationService != null && sr.getCustomer() != null) {
                         notificationService.notifyCustomer(
@@ -3329,6 +3340,22 @@ public class StaffTaskService {
         return note.trim();
     }
 
+    /**
+     * Góp ý test 26/11 (PR-O15a): cách nhận tiền KHÁCH ĐÃ CHỌN lúc gửi yêu cầu (hẹn trả kho / huỷ đơn / No-Show),
+     * đọc từ phần ghi chú hệ thống tạo (trước dấu "[ĐÃ HOÀN" FM ghi sau khi chi). null = không xác định → FM tự chọn.
+     */
+    static String customerChosenRefundMethod(String note) {
+        if (note == null || note.isBlank()) return null;
+        int cut = note.indexOf("[ĐÃ HOÀN");
+        String head = cut >= 0 ? note.substring(0, cut) : note;
+        if (head.contains("STK:")) return "BANK_TRANSFER";
+        if (head.contains("HOÀN CỌC TIỀN MẶT") || head.contains("HOAN COC TIEN MAT")
+                || head.contains("Nhận tiền mặt trực tiếp")) {
+            return "CASH";
+        }
+        return null;
+    }
+
     static String detectRefundMethodFromNote(String note) {
         if (note == null || note.isBlank()) {
             return "BANK_TRANSFER";
@@ -3570,6 +3597,8 @@ public class StaffTaskService {
         Integer cycleMonths = null;
         BigDecimal baseMonthlyPrice = null;
         String refundBreakdownNote = null;
+        boolean faultTermination = false;         // BR-127: chấm dứt do lỗi cơ sở — hoàn theo ngày, không phí phá HĐ
+        List<MoneyLine> refundLines = null;       // bảng "đã đóng − giữ lại = hoàn" cùng công thức nghiệm thu
         String taskNote = task.getNote();
 
         if (contract != null && ("CHECK_OUT".equals(task.getTaskType()) || "REFUND".equals(task.getTaskType()))) {
@@ -3600,6 +3629,8 @@ public class StaffTaskService {
             cycleMonths = calc.getCycleMonths();
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
             refundBreakdownNote = calc.getBreakdownDescription();
+            faultTermination = calc.isFaultTermination();
+            refundLines = calc.getLines();
 
             if ("REFUND".equals(task.getTaskType())) {
                 taskNote = buildEnrichedRefundNote(contract, taskNote, refDate);
@@ -3631,10 +3662,25 @@ public class StaffTaskService {
                     .orElse(null);
         }
 
+        // PR-O19c: tiền đền bù của hợp đồng — khoản riêng FM chi, hiện tách khỏi tiền hoàn trả kho ở task nghiệm thu / hoàn tiền
+        List<Map<String, Object>> separateCompensations = contract != null && compensationClaimService != null
+                && List.of("CHECK_OUT", "REFUND").contains(task.getTaskType())
+                ? compensationClaimService.separateCompensations(contract.getId()) : List.of();
+
+        // PR-O17a: task nghiệm thu đang mở → những gì còn chặn nghiệm thu (FE khoá form từ đầu)
+        List<Map<String, Object>> checkoutBlockers = "CHECK_OUT".equals(task.getTaskType()) && contract != null
+                && settlementService != null && OPEN_STATUSES.contains(task.getStatus())
+                && !CheckoutSettlementService.isRecheckTask(task)
+                ? settlementService.checkoutBlockers(contract.getId()) : List.of();
+
         return StaffTaskDetailResponse.builder()
                 .id(task.getId())
+                .checkoutBlockers(checkoutBlockers)
                 .cancelReason(task.getCancelReason())
                 .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
+                .separateCompensations(separateCompensations)
+                .faultTermination(faultTermination)
+                .refundLines(refundLines)
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
                 .status(task.getStatus())
@@ -3844,6 +3890,13 @@ public class StaffTaskService {
         String method = (request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank())
                 ? request.getPaymentMethod().trim().toUpperCase()
                 : detectRefundMethodFromNote(task.getNote());
+        // PR-O15a (26/11/2026): khách đã chọn cách nhận tiền lúc gửi yêu cầu → FM phải hoàn đúng cách đó
+        String chosen = customerChosenRefundMethod(task.getNote());
+        if (chosen != null && !chosen.equals(method)) {
+            throw new StaffTaskException(HttpStatus.CONFLICT, "REFUND_METHOD_MISMATCH",
+                    "Khách đã chọn nhận " + ("CASH".equals(chosen) ? "tiền mặt tại quầy" : "chuyển khoản")
+                            + " — hoàn tiền đúng cách khách đã chọn");
+        }
 
         String extraNote = request.getNote() != null && !request.getNote().isBlank()
                 ? request.getNote().trim()

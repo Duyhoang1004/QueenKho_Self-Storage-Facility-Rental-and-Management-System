@@ -124,9 +124,9 @@ public class DemoSimulationService {
 
         LocalDate today = LocalDate.now().plusDays(days);
         LocalDateTime now = LocalDateTime.now();
-        // Giống StaffTaskService.computeDueAt: hẹn hôm nay mà đã sau 21:00 thì hạn sang 21:00 ngày mai
-        LocalDateTime dueAt = days > 0 || now.toLocalTime().isBefore(CLOSING_TIME)
-                ? today.atTime(CLOSING_TIME) : today.plusDays(1).atTime(CLOSING_TIME);
+        // Góp ý test 26/11: demo buổi tối (sau 21:00) trước đây đẩy hạn sang 21:00 ngày mai → task bị khoá "chưa tới ngày hẹn".
+        // Giả lập "hôm nay" giờ luôn cho làm ngay trong ngày: sau 21:00 hạn là 23:59 hôm nay.
+        LocalDateTime dueAt = days > 0 ? today.atTime(CLOSING_TIME) : demoDueToday(today, now);
 
         // PR-X4: lưu giờ hẹn gốc (lần giả lập đầu) — phí huỷ đơn không bị đẩy lên vì giả lập
         jdbcTemplate.update("UPDATE reservations SET penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time), " +
@@ -152,6 +152,11 @@ public class DemoSimulationService {
         return result("Lịch hẹn nhận kho còn " + days + " ngày — "
                 + (open ? "task đã mở giao / nhận việc" : "task chưa giao / nhận được (ngoài khung "
                 + StaffTaskService.ASSIGN_WINDOW_DAYS + " ngày)"), "dueAt", dueAt);
+    }
+
+    /** Hạn của nút giả lập "hôm nay": trước 21:00 → 21:00 hôm nay; sau 21:00 → 23:59 hôm nay (demo buổi tối vẫn làm được) */
+    static LocalDateTime demoDueToday(LocalDate day, LocalDateTime now) {
+        return now.toLocalTime().isBefore(CLOSING_TIME) ? day.atTime(CLOSING_TIME) : day.atTime(23, 59);
     }
 
     private void refreshUnitOf(Object contractId) {
@@ -182,8 +187,7 @@ public class DemoSimulationService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime dueAt = now.toLocalTime().isBefore(CLOSING_TIME)
-                ? LocalDate.now().atTime(CLOSING_TIME) : LocalDate.now().plusDays(1).atTime(CLOSING_TIME);
+        LocalDateTime dueAt = demoDueToday(LocalDate.now(), now);
         // PR-O31a (24/11/2026): giữ ngày khách đã hẹn — nghiệm thu chốt tiền theo ngày này (khớp số khách thấy lúc hẹn),
         // chỉ mở hạn task về hôm nay để nghiệm thu được ngay. Bấm lại nhiều lần vẫn giữ ngày hẹn gốc đầu tiên.
         LocalDate appointment = toLocalDate(task.get("simulated_checkout_date"));

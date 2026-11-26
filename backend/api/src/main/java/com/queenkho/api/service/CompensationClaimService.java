@@ -214,6 +214,11 @@ public class CompensationClaimService {
         claim.setPreliminaryCause(normCause);
         claim.setStatus("INSPECTED");
         claimRepository.save(claim);
+        // PR-O17a: đã kiểm tra hiện trường → hồ sơ không còn chặn nghiệm thu trả kho
+        if (settlementService != null && claim.getContract() != null) {
+            claimRepository.flush();
+            settlementService.notifyCheckoutUnblocked(claim.getContract().getId());
+        }
 
         activityLogService.log(staff.getId(),
                 "[CLAIM_INSPECT] " + staff.getFullName() + " kiểm tra hồ sơ " + claim.getClaimCode() + ", nguyên nhân sơ bộ "

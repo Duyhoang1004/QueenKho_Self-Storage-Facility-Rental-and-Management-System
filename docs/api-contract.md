@@ -1249,3 +1249,10 @@ Không đổi schema.
 - `POST /api/v1/dev/simulation/tasks/{id}/checkout-today` (nút ⚡ "Khách tới trả đúng ngày hẹn"): vẫn mở hạn task về hôm nay, giờ trả thêm `simulatedCheckoutDate` (ngày hẹn gốc, `null` nếu đã tới ngày hẹn). Nghiệm thu task này chốt quyết toán theo ngày đó (PR-O31a). Task (`StaffTaskResponse` / `StaffTaskDetailResponse`) trả thêm `simulatedCheckoutDate`.
 - PR-O19c: `POST /api/v1/claims/{id}/pay` không còn chặn khi hợp đồng `TERMINATION_PENDING` / `SETTLEMENT_PENDING`; chỉ 409 `CLAIM_IN_SETTLEMENT` khi hồ sơ đã có `settlementId` (bảng quyết toán cũ). Bảng quyết toán mới luôn `compensationAmount = 0`; `claims[].includedInSettlement` chỉ true với hồ sơ đã gắn bảng. Task nghiệm thu / hoàn tiền (`StaffTaskDetailResponse`) trả thêm `separateCompensations`.
 
+## Cập nhật 26/11/2026 — Hoàn đúng cách khách chọn (PR-O15a)
+
+- `StaffTaskResponse` (task `REFUND`) thêm `customerRefundMethod`: `CASH` / `BANK_TRANSFER` khách đã chọn lúc hẹn trả kho / huỷ đơn, `null` nếu không có (No-Show, task cũ).
+- Xác nhận hoàn tiền của task `REFUND`: gửi `paymentMethod` khác lựa chọn của khách → 409 `REFUND_METHOD_MISMATCH`.
+- PR-O17a: `StaffTaskDetailResponse` (task `CHECK_OUT` đang mở, không phải `[RECHECK]`) thêm `checkoutBlockers`: `[{ kind: TICKET | CLAIM_UNINSPECTED, code, issueType, status, ticketId, supportTaskId }]` — cùng điều kiện với lỗi 409 `OPEN_TICKETS_PENDING` / `CLAIM_INSPECTION_PENDING` lúc nộp biên bản.
+- Nút giả lập "hôm nay" (`/dev/simulation/tasks/{id}/arrive-today`, `/checkout-today`): sau 21:00 hạn task là 23:59 cùng ngày (trước đây sang 21:00 ngày mai, task bị khoá).
+

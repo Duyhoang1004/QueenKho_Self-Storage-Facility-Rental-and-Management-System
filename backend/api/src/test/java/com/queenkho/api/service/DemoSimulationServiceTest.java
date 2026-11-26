@@ -350,4 +350,12 @@ class DemoSimulationServiceTest {
         assertEquals("SIMULATION_NOT_APPLICABLE", code(() -> service.autoCloseTicket(3, customer)));
         verify(supportRequestService, never()).autoCloseResolvedTickets();
     }
+
+    @Test
+    @DisplayName("Góp ý 26/11: nút giả lập 'hôm nay' sau 21:00 vẫn hạn trong ngày (23:59), không đẩy sang mai")
+    void demoDueTodayStaysOnSameDayAfterClosing() {
+        java.time.LocalDate day = java.time.LocalDate.of(2026, 11, 26);
+        assertEquals(day.atTime(21, 0), DemoSimulationService.demoDueToday(day, day.atTime(14, 0)));
+        assertEquals(day.atTime(23, 59), DemoSimulationService.demoDueToday(day, day.atTime(22, 7)));
+    }
 }

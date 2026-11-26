@@ -425,7 +425,10 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
 
   function openRefundModal(task) {
     setRefundTask(task)
-    const isCash = (task.note || '').toLowerCase().includes('tiền mặt')
+    // PR-O15a (26/11/2026): khách đã chọn cách nhận tiền lúc gửi yêu cầu → khoá theo lựa chọn đó
+    const isCash = task.customerRefundMethod
+      ? task.customerRefundMethod === 'CASH'
+      : (task.note || '').toLowerCase().includes('tiền mặt')
     setRefundMethod(isCash ? 'CASH' : 'BANK_TRANSFER')
     setBankTransactionCode('')
     setEvidenceImageUrl('')
@@ -1042,6 +1045,21 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               <label className="text-[11px] font-black uppercase text-[#777777]">
                 Hình thức thực hiện hoàn tiền:
               </label>
+              {refundTask?.customerRefundMethod ? (
+                /* PR-O15a: khách đã chọn lúc gửi yêu cầu → FM hoàn đúng cách đó, không đổi được */
+                <div className={`py-2 px-3 rounded-xl border-2 text-xs font-black flex items-center gap-2 ${
+                  refundTask.customerRefundMethod === 'CASH'
+                    ? 'border-[#58CC02] bg-[#D7FFB8] text-[#58A700]'
+                    : 'border-[#1CB0F6] bg-[#DDF4FF] text-[#1899D6]'}`}>
+                  <span className="material-symbols-outlined text-[18px]">
+                    {refundTask.customerRefundMethod === 'CASH' ? 'payments' : 'account_balance'}
+                  </span>
+                  <span className="flex flex-col">
+                    <span>Khách chọn: {refundTask.customerRefundMethod === 'CASH' ? 'Tiền mặt tại quầy' : 'Chuyển khoản'}</span>
+                    <span className="text-[10px] font-bold opacity-80">Hoàn đúng cách khách chọn lúc gửi yêu cầu</span>
+                  </span>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -1068,6 +1086,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
                   Tiền mặt tại quầy
                 </button>
               </div>
+              )}
             </div>
 
             {/* Form bằng chứng theo hình thức */}

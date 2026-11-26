@@ -246,6 +246,24 @@ export const INCIDENT_REPORT_TEMPLATES = {
       presets: [
         'Đã kiểm tra và đóng chốt khóa an toàn cửa thoát hiểm / ô lân cận, khu vực đã được kiểm soát an toàn.',
       ]
+    },
+    {
+      id: 'SECURITY_GENERAL',
+      matchKeys: ['an ninh khác', 'cảnh báo an ninh', 'báo động'],
+      subCategory: 'Cảnh báo an ninh khác',
+      label: 'Kiểm tra an ninh hiện trường & Đối chiếu camera theo phản ánh',
+      summary: 'Kiểm tra trực tiếp khu vực ô kho, rà soát cảm biến/báo động và trích xuất camera giám sát.',
+      inspection: 'Đã kiểm tra trực tiếp cửa ô kho, khóa SmartLock và hành lang xung quanh theo cảnh báo của khách hàng.',
+      cause: 'Hệ thống cảnh báo nhạy hoặc phát sinh yếu tố vận hành bên ngoài; không có dấu hiệu đột nhập.',
+      actions: [
+        'Trích xuất và rà soát camera hành lang khung giờ khách hàng phản ánh.',
+        'Kiểm tra tình trạng khóa, niêm phong ô kho và vận hành lại hệ thống cảm biến cảnh báo.',
+        'Bàn giao hiện trường an toàn và tăng cường tần suất tuần tra khu vực.'
+      ],
+      conclusion: 'Khu vực ô kho an toàn, tài sản nguyên vẹn, hệ thống cảnh báo an ninh hoạt động bình thường.',
+      presets: [
+        'Đã kiểm tra hiện trường, đối chiếu camera và xác nhận khu vực ô kho an toàn tuyệt đối.',
+      ]
     }
   ],
 
@@ -572,11 +590,14 @@ export function findMatchingTemplate(task, preliminaryCause = '') {
   const rawTarget = String(task.subCategory || task.note || task.ticketDescription || '').toLowerCase();
 
   if (rawTarget) {
-    // 1. Thử khớp theo subCategory chính xác hoặc matchKeys
+    // 1. Ưu tiên khớp chính xác theo subCategory trên toàn danh sách trước (tránh từ khóa trùng như "chập")
     for (const item of list) {
       if (item.subCategory && rawTarget.includes(item.subCategory.toLowerCase())) {
         return item;
       }
+    }
+    // 2. Sau đó mới tìm theo matchKeys
+    for (const item of list) {
       if (item.matchKeys && item.matchKeys.some(k => rawTarget.includes(k.toLowerCase()))) {
         return item;
       }
@@ -613,7 +634,7 @@ export function getPresetsForTask(task, repairStatus = 'FIXED', preliminaryCause
 }
 
 // Hàm sinh khung sườn biên bản chuẩn (chỉ điền sẵn thông tin hành chính, để trống các mục cho nhân viên tự ghi theo hiện trường thực tế)
-export function buildBlankIncidentReport(task, repairStatus = 'FIXED', preliminaryCause = '') {
+export function buildBlankIncidentReport(task, repairStatus = 'FIXED', preliminaryCause = '', securityLockStatus = '') {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const dateStr = `${pad(now.getHours())}:${pad(now.getMinutes())} ngày ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
@@ -624,12 +645,18 @@ export function buildBlankIncidentReport(task, repairStatus = 'FIXED', prelimina
   const subCategoryStr = task?.subCategory ? ` [${task.subCategory}]` : '';
   const normCause = String(preliminaryCause || '').trim().toUpperCase();
   const causePrefix = CAUSE_CODE_LABELS[normCause] || '';
+  const isSecurity = task?.issueType === 'SECURITY';
+  const secInspectionPrefix = isSecurity && securityLockStatus === 'TAMPERED'
+    ? 'Phát hiện dấu hiệu bất thường / cạy phá tại chốt khóa và cửa ô (TAMPERED) - '
+    : isSecurity && securityLockStatus === 'INTACT'
+    ? 'Khóa và niêm phong nguyên vẹn, không có dấu hiệu đột nhập (INTACT) - '
+    : '';
 
   if (repairStatus === 'ESCALATED_MAINTENANCE') {
     return `[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]
 • Thời gian: ${dateStr} · Ô kho: ${unit}
 • Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode}${subCategoryStr}
-• Hiện trạng sự cố: 
+• Hiện trạng sự cố: ${secInspectionPrefix}
 • Nguyên nhân sơ bộ: ${causePrefix}
 • Biện pháp xử lý tạm thời: Đã khảo sát hiện trường, tạm thời cô lập sự cố và lập phiếu yêu cầu bảo trì chuyên sâu
 • Kết luận & Bàn giao: Đã chuyển sang quy trình Bảo trì chuyên sâu, bàn giao cho đội ngũ kỹ thuật xử lý dứt điểm.`;
@@ -638,7 +665,7 @@ export function buildBlankIncidentReport(task, repairStatus = 'FIXED', prelimina
   return `[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]
 • Thời gian: ${dateStr} · Ô kho: ${unit}
 • Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode}${subCategoryStr}
-• Hiện trạng: 
+• Hiện trạng: ${secInspectionPrefix}
 • Nguyên nhân sơ bộ: ${causePrefix}
 • Biện pháp xử lý kỹ thuật:
 
@@ -646,7 +673,7 @@ export function buildBlankIncidentReport(task, repairStatus = 'FIXED', prelimina
 }
 
 // Hàm sinh đoạn văn bản biên bản mẫu đầy đủ (dùng khi cần demo test nhanh)
-export function buildIncidentReportNote(task, template, repairStatus = 'FIXED', preliminaryCause = '') {
+export function buildIncidentReportNote(task, template, repairStatus = 'FIXED', preliminaryCause = '', securityLockStatus = '') {
   const issueType = task?.issueType || task?.claim?.claimType || 'OTHER';
   const isClaimType = issueType === 'GOODS_DAMAGE' || issueType === 'GOODS_LOSS';
   const tpl = (isClaimType && preliminaryCause
@@ -661,24 +688,42 @@ export function buildIncidentReportNote(task, template, repairStatus = 'FIXED', 
   const ticketCode = String(rawTicket).startsWith('#') ? String(rawTicket).slice(1) : String(rawTicket);
   const subCategoryStr = task?.subCategory ? ` [${task.subCategory}]` : '';
 
-  const isEscalated = repairStatus === 'ESCALATED_MAINTENANCE';
+  const isEscalated = issueType === 'FACILITY_DAMAGE' && repairStatus === 'ESCALATED_MAINTENANCE';
+  const isTamperedSecurity = issueType === 'SECURITY' && securityLockStatus === 'TAMPERED';
+
+  const inspectionText = isTamperedSecurity
+    ? 'Phát hiện dấu hiệu bất thường / cạy phá hoặc tác động ngoại lực lên khóa SmartLock / cửa ô kho (TAMPERED).'
+    : tpl.inspection;
+
+  const causeText = isTamperedSecurity
+    ? 'Ghi nhận dấu hiệu can thiệp cơ học trái phép cần trích xuất camera an ninh và lập hồ sơ xác minh.'
+    : tpl.cause;
+
   const actions = isEscalated
     ? [
         `Khảo sát hiện trường, ghi nhận hỏng hóc kỹ thuật phức tạp cần thiết bị chuyên dụng.`,
         'Tạm thời ngắt nguồn cấp điện / cô lập khu vực sự cố để đảm bảo an toàn.',
         'Lập phiếu chuyển tiếp sang quy trình Bảo trì chuyên sâu (Task bảo trì kho).'
       ]
+    : isTamperedSecurity
+    ? [
+        'Giữ nguyên hiện trường, chụp ảnh cận cảnh các vết cạy phá/bất thường tại ổ khóa và cửa ô.',
+        'Trích xuất ngay toàn bộ dữ liệu camera giám sát hành lang và lịch sử mở khóa SmartLock.',
+        'Mời khách hàng cùng mở ô kiểm đếm tài sản, dán niêm phong bảo vệ và báo cáo khẩn Quản lý cơ sở (FM).'
+      ]
     : tpl.actions;
 
   const conclusion = isEscalated
     ? 'Đã cô lập an toàn tạm thời và chuyển hồ sơ sang quy trình Bảo trì chuyên sâu để đội kỹ thuật xử lý dứt điểm.'
+    : isTamperedSecurity
+    ? 'Đã lập biên bản ghi nhận dấu hiệu cạy phá, bàn giao clip camera & chứng cứ lên Quản lý cơ sở để xử lý khẩn theo quy định (nếu thất thoát tài sản, hướng dẫn khách mở hồ sơ bồi thường).'
     : tpl.conclusion;
 
   return `[BIÊN BẢN XỬ LÝ SỰ CỐ & KIỂM TRA HIỆN TRƯỜNG]
 • Thời gian: ${dateStr} · Ô kho: ${unit}
 • Cán bộ xử lý: ${staff} · Phiếu: ${ticketCode}${subCategoryStr}
-• Hiện trạng: ${tpl.inspection}
-• Nguyên nhân sơ bộ: ${tpl.cause}
+• Hiện trạng: ${inspectionText}
+• Nguyên nhân sơ bộ: ${causeText}
 • Biện pháp xử lý kỹ thuật:
   - ${actions.join('\n  - ')}
 • Kết quả nghiệm thu: ${conclusion}`;

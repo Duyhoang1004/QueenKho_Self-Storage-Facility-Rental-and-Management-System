@@ -1696,8 +1696,9 @@ export default function CustomerSupportPage() {
                   5. Hồ sơ đề nghị bồi thường
                 </p>
                 <p className="text-[11px] font-bold text-[#777777]">
-                  Nhân viên sẽ mở ô cùng bạn để kiểm tra, quản lý cơ sở đối chiếu ảnh lúc nhận kho và cảm biến nhiệt độ để xác định lỗi.
-                  Mức bồi thường tối đa theo gói bảo hiểm và giá trị hàng bạn khai báo khi đặt kho.
+                  {selectedIssueType === 'GOODS_LOSS'
+                    ? 'Nhân viên sẽ mở ô cùng bạn để kiểm tra khóa, niêm phong và phần hàng còn lại; quản lý cơ sở đối chiếu ảnh lúc nhận kho, lịch sử mở khóa và camera an ninh để xác định lỗi. Mức bồi thường tối đa theo gói bảo hiểm và giá trị hàng bạn khai báo khi đặt kho.'
+                    : 'Nhân viên sẽ mở ô cùng bạn để kiểm tra, quản lý cơ sở đối chiếu ảnh lúc nhận kho và cảm biến nhiệt độ để xác định lỗi. Mức bồi thường tối đa theo gói bảo hiểm và giá trị hàng bạn khai báo khi đặt kho.'}
                 </p>
 
                 {selectedContractObj && contractCap != null && (
@@ -1724,7 +1725,11 @@ export default function CustomerSupportPage() {
                     rows={3}
                     value={claimItems}
                     onChange={(e) => { setClaimItems(e.target.value); setCreateError(''); }}
-                    placeholder="VD: 2 thùng sách (1.500.000đ), 1 tủ gỗ (4.000.000đ)..."
+                    placeholder={
+                      selectedIssueType === 'GOODS_LOSS'
+                        ? 'VD: 2 thùng hồ sơ (4.000.000đ), 2 cục sạc laptop (200.000đ)...'
+                        : 'VD: 2 thùng sách (1.500.000đ), 1 tủ gỗ (4.000.000đ)...'
+                    }
                     className="duo-input w-full text-xs resize-none"
                   />
                 </label>
@@ -1771,9 +1776,13 @@ export default function CustomerSupportPage() {
                 <HandoverPhotoPicker
                   images={claimImages}
                   onChange={setClaimImages}
-                  label="Ảnh hàng hư / hoá đơn"
-                  hint="Chụp rõ hàng bị hư và hoá đơn mua hàng (nếu có) để thẩm định giá trị."
-                  mockLabel="Ảnh hàng bị ẩm mốc (demo)"
+                  label={selectedIssueType === 'GOODS_LOSS' ? 'Ảnh hiện trường mất hàng / hoá đơn' : 'Ảnh hàng hư / hoá đơn'}
+                  hint={
+                    selectedIssueType === 'GOODS_LOSS'
+                      ? 'Chụp hiện trường bên trong ô kho / ổ khóa và hoá đơn mua hàng (nếu có) để đối chiếu giá trị.'
+                      : 'Chụp rõ hàng bị hư và hoá đơn mua hàng (nếu có) để thẩm định giá trị.'
+                  }
+                  mockLabel={selectedIssueType === 'GOODS_LOSS' ? 'Ảnh hiện trường thiếu hàng & hoá đơn (demo)' : 'Ảnh hàng bị ẩm mốc (demo)'}
                   required={selectedIssueType === 'GOODS_DAMAGE'}
                 />
               </div>

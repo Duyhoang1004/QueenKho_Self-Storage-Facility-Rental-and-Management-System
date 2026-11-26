@@ -1035,6 +1035,7 @@ export default function StaffTaskDetailPage() {
   const [resolutionNote, setResolutionNote] = useState('');
   const [inspectionImages, setInspectionImages] = useState([]); // BR-126
   const [preliminaryCause, setPreliminaryCause] = useState('');
+  const [staffAssessedValue, setStaffAssessedValue] = useState('');
   const [securityLockStatus, setSecurityLockStatus] = useState('INTACT');
   const [securityImages, setSecurityImages] = useState([]);
   const [repairStatus, setRepairStatus] = useState('FIXED');
@@ -1487,10 +1488,14 @@ export default function StaffTaskDetailPage() {
     typeof task?.note === 'string' && task.note.includes('[FM đã chuyển HĐ sang ô')
   );
   const hasPendingSupportTransfer = hasRequestedSupportTransfer && !transferDone;
+  const parsedStaffAssessed = staffAssessedValue === '' ? null : Number(staffAssessedValue);
+  const hasValidStaffAssessed =
+    !isClaimInspection ||
+    (staffAssessedValue !== '' && !Number.isNaN(parsedStaffAssessed) && parsedStaffAssessed >= 0 && parsedStaffAssessed <= 10000000000);
   const canSubmitSupport =
     !hasPendingSupportTransfer &&
     resolutionNote.trim().length >= (isClaimInspection ? 10 : 1) && resolutionNote.trim().length <= NOTES_MAX && !submitting
-    && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause)))
+    && (!isClaimInspection || (inspectionImages.length > 0 && Boolean(preliminaryCause) && hasValidStaffAssessed))
     && (task?.issueType !== 'SECURITY' || (Boolean(securityLockStatus) && securityImages.length > 0))
     && (task?.issueType !== 'FACILITY_DAMAGE' || Boolean(repairStatus))
     && (task?.issueType !== 'CLEANING' || cleaningImages.length > 0);
@@ -1500,6 +1505,14 @@ export default function StaffTaskDetailPage() {
       setToast({
         type: 'error',
         message: 'Yêu cầu hỗ trợ đổi ô kho đang chờ Quản lý cơ sở (FM) chuyển ô mới. Không thể hoàn tất lúc này.'
+      });
+      return;
+    }
+    if (isClaimInspection && (staffAssessedValue === '' || parsedStaffAssessed === null || Number.isNaN(parsedStaffAssessed) || parsedStaffAssessed < 0)) {
+      setConfirmSupportOpen(false);
+      setToast({
+        type: 'error',
+        message: 'Bắt buộc nhập giá trị hàng / thiệt hại Staff ước tính tại hiện trường (>= 0đ).'
       });
       return;
     }
@@ -1517,7 +1530,7 @@ export default function StaffTaskDetailPage() {
     resolveSupportTask(task.id, userId, {
       resolutionNote: resolutionNote.trim(),
       inspectionImages: resolvedImages,
-      ...(isClaimInspection ? { preliminaryCause } : {}),
+      ...(isClaimInspection ? { preliminaryCause, staffAssessedValue: parsedStaffAssessed } : {}),
       ...(task.issueType === 'SECURITY' ? { securityLockStatus } : {}),
       ...(task.issueType === 'FACILITY_DAMAGE' ? { repairStatus } : {}),
     })
@@ -1697,7 +1710,11 @@ export default function StaffTaskDetailPage() {
     : task.status;
   const status = isRefund && task.status === 'OPEN'
     ? { label: 'Chờ xử lý', cls: 'bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]' }
-    : (STATUS_META[checkInDisplayStatus] || { label: checkInDisplayStatus, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
+    : isSupport && task.status === 'COMPLETED' && task.claim?.inspectionConfirmStatus === 'PENDING_CUSTOMER'
+      ? { label: 'Chờ khách xác nhận hiện trạng', cls: 'bg-[#FFF0D6] text-[#E58800] border-2 border-[#FF9600]' }
+      : isSupport && task.status === 'COMPLETED' && task.claim?.inspectionConfirmStatus === 'DISPUTED'
+        ? { label: 'Khách báo sai lệch hiện trạng', cls: 'bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]' }
+        : (STATUS_META[checkInDisplayStatus] || { label: checkInDisplayStatus, cls: 'bg-[#F7F7F7] text-[#777777] border-2 border-[#E5E5E5]' });
   const reason = blockedReason(task, userId, isManager) || (task.taskType === 'CHECK_IN' && task.status === 'IN_PROGRESS'
     ? handover?.status === 'PENDING_CUSTOMER' ? 'Đã gửi biên bản. Khách cần kiểm tra ô và xác nhận trên tài khoản.'
       : handover?.status === 'BLOCKED_FM' ? 'Vấn đề bàn giao đang chờ quản lý xử lý. Task check-in vẫn mở; chưa gửi biên bản mới.'
@@ -2561,15 +2578,62 @@ export default function StaffTaskDetailPage() {
 
               {task.status === 'COMPLETED' ? (
                 <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
-                    <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
-                    <div>
-                      <p className="text-sm font-black text-[#58A700]">Đã hoàn tất xử lý yêu cầu hỗ trợ!</p>
-                      <p className="text-xs font-bold text-[#58A700]">
-                        Phiếu hỗ trợ đã chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Nếu sau 3 ngày khách không phản hồi, hệ thống tự động đóng phiếu (PR-52).
-                      </p>
+                  {task.claim ? (
+                    task.claim.inspectionConfirmStatus === 'PENDING_CUSTOMER' ? (
+                      <div className="flex items-start gap-3 rounded-2xl bg-[#FFF8E6] border-2 border-[#FF9600] p-4">
+                        <span className="material-symbols-outlined text-[32px] text-[#E58800] shrink-0">hourglass_top</span>
+                        <div>
+                          <p className="text-sm font-black text-[#D96B00]">
+                            Đã gửi biên bản kiểm tra hiện trường — Đang chờ Khách hàng xác nhận (Vòng {task.claim.inspectionRound || 1}/2)
+                          </p>
+                          <p className="text-xs font-bold text-[#777777] mt-1">
+                            Hồ sơ bồi thường <strong className="font-mono text-[#4B4B4B]">{task.claim.claimCode}</strong> đang chờ khách vào mục <strong>Hỗ trợ của tôi (/ho-tro)</strong> bấm <strong>&ldquo;Xác nhận đúng hiện trạng&rdquo;</strong>. Nếu khách báo sai lệch, hệ thống sẽ tự mở lại task mới để bạn kiểm tra lại.
+                            {task.claim.staffAssessedValue != null && (
+                              <span className="block mt-1 text-[#0284C7]">
+                                Giá trị hàng / thiệt hại bạn ước tính: <strong>{Number(task.claim.staffAssessedValue).toLocaleString('vi-VN')}đ</strong>
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    ) : task.claim.inspectionConfirmStatus === 'DISPUTED' ? (
+                      <div className="flex items-start gap-3 rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] p-4">
+                        <span className="material-symbols-outlined text-[32px] text-[#D93838] shrink-0">report</span>
+                        <div>
+                          <p className="text-sm font-black text-[#D93838]">
+                            Khách báo sai lệch biên bản kiểm tra hiện trường ({task.claim.claimCode})
+                          </p>
+                          <p className="text-xs font-bold text-[#7F1D1D] mt-1">
+                            Lý do khách nêu: {task.claim.inspectionDisputeReason || 'Cần kiểm tra lại'} — Hệ thống đã mở lại task hỗ trợ mới trên Bảng công việc để nhân viên kiểm tra lại.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
+                        <span className="material-symbols-outlined text-[32px] text-[#58A700] shrink-0">verified</span>
+                        <div>
+                          <p className="text-sm font-black text-[#58A700]">
+                            {task.claim.inspectionConfirmStatus === 'CONFIRMED'
+                              ? `Khách hàng đã xác nhận đúng hiện trạng kiểm tra (${task.claim.claimCode})!`
+                              : `Biên bản kiểm tra hiện trường đã chuyển Quản lý cơ sở thẩm định (${task.claim.claimCode})`}
+                          </p>
+                          <p className="text-xs font-bold text-[#58A700] mt-1">
+                            Hồ sơ bồi thường đang ở bước Quản lý cơ sở (FM) thẩm định &amp; chốt phương án với khách hàng.
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    <div className="flex items-center gap-3 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] p-4">
+                      <span className="material-symbols-outlined text-[32px] text-[#58A700]">verified</span>
+                      <div>
+                        <p className="text-sm font-black text-[#58A700]">Đã hoàn tất xử lý yêu cầu hỗ trợ!</p>
+                        <p className="text-xs font-bold text-[#58A700]">
+                          Phiếu hỗ trợ đã chuyển sang trạng thái Chờ khách xác nhận (RESOLVED). Nếu sau 3 ngày khách không phản hồi, hệ thống tự động đóng phiếu (PR-52).
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {task.issueType === 'FACILITY_DAMAGE' && Boolean(task.escalatedMaintenanceTaskId || task.resolutionNote?.includes('[Chuyển bảo trì chuyên sâu]')) && (
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl bg-[#FFF7ED] border-2 border-[#F97316] p-4">
@@ -3195,11 +3259,15 @@ export default function StaffTaskDetailPage() {
                       </p>
                       <p className="text-xs font-bold text-[#4B4B4B] whitespace-pre-line">{claim.itemsDescription}</p>
                       <p className="text-xs font-bold text-[#777777]">
-                        Khách đề nghị {Number(claim.claimedAmount).toLocaleString('vi-VN')}đ · phát hiện ngày {claim.incidentDate || '—'} · gói bảo hiểm {claim.insurancePlanLabel}
+                        Khách đề nghị <strong>{Number(claim.claimedAmount).toLocaleString('vi-VN')}đ</strong>
+                        {(claim.agreedGoodsValue ?? claim.declaredGoodsValue) != null
+                          ? ` · Giá trị chốt nhận kho ${Number(claim.agreedGoodsValue ?? claim.declaredGoodsValue).toLocaleString('vi-VN')}đ`
+                          : ' · Chưa khai báo giá trị nhận kho (sàn 5.000.000đ)'}
+                        {' '}· phát hiện ngày {claim.incidentDate || '—'} · gói bảo hiểm {claim.insurancePlanLabel}
                       </p>
                       {claim.customerImages?.length > 0 && <PhotoGrid images={claim.customerImages} />}
                       <p className="text-[11px] font-bold text-[#FF9600]">
-                        Mở ô cùng khách, chụp hiện trạng (dấu thấm, ẩm mốc, khoá, hàng hư) và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu với ảnh lúc nhận kho và cảm biến để kết luận.
+                        Mở ô cùng khách, chụp hiện trạng (dấu thấm, ẩm mốc, khoá, hàng hư), ước tính giá trị hàng/thiệt hại và ghi nguyên nhân sơ bộ. Quản lý cơ sở sẽ đối chiếu với ảnh lúc nhận kho và cảm biến để kết luận.
                       </p>
                       <HandoverPhotoPicker
                         images={inspectionImages}
@@ -3207,9 +3275,84 @@ export default function StaffTaskDetailPage() {
                         label="Ảnh kiểm tra hiện trường"
                         mockLabel={`Hiện trường ô ${task.storageUnitId || ''}`}
                       />
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-black uppercase text-[#777777]">
+                            Giá trị hàng / thiệt hại Staff ước tính thực tế (đ) *
+                          </span>
+                          {staffAssessedValue !== '' && !Number.isNaN(Number(staffAssessedValue)) && (
+                            <span className="text-xs font-black text-[#0284C7]">
+                              {Number(staffAssessedValue).toLocaleString('vi-VN')}đ
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            value={staffAssessedValue !== '' && !Number.isNaN(Number(staffAssessedValue)) ? Number(staffAssessedValue).toLocaleString('vi-VN') : ''}
+                            onChange={e => {
+                              const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+                              setStaffAssessedValue(digits === '' ? '' : String(Number(digits)));
+                            }}
+                            placeholder={`VD: ${Number(claim.agreedGoodsValue ?? claim.declaredGoodsValue ?? claim.claimedAmount ?? 0).toLocaleString('vi-VN')}`}
+                            className="duo-input text-xs bg-white pr-8 w-full"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-[#AFAFAF]">₫</span>
+                        </div>
+                        {staffAssessedValue === '' && (
+                          <span className="text-[11px] font-black text-[#FF4B4B]">
+                            * Bắt buộc nhập giá trị ước tính (nhập 0 nếu không thiệt hại / lỗi bảo quản từ phía khách).
+                          </span>
+                        )}
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setStaffAssessedValue(String(Math.round(Number(claim.claimedAmount || 0))))}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-[#FFB8B8] hover:bg-[#FFF0F0] text-[10px] font-black text-[#4B4B4B] cursor-pointer"
+                          >
+                            = Khách đề nghị ({Number(claim.claimedAmount || 0).toLocaleString('vi-VN')}đ)
+                          </button>
+                          {(claim.agreedGoodsValue ?? claim.declaredGoodsValue) != null && (
+                            <button
+                              type="button"
+                              onClick={() => setStaffAssessedValue(String(Math.round(Number(claim.agreedGoodsValue ?? claim.declaredGoodsValue))))}
+                              className="px-2.5 py-1 rounded-lg bg-white border border-[#84D8FF] hover:bg-[#F0F9FF] text-[10px] font-black text-[#0284C7] cursor-pointer"
+                            >
+                              = Giá chốt nhận kho ({Number(claim.agreedGoodsValue ?? claim.declaredGoodsValue).toLocaleString('vi-VN')}đ)
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setStaffAssessedValue('0')}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-[#E5E5E5] hover:bg-[#F7F7F7] text-[10px] font-black text-[#777777] cursor-pointer"
+                          >
+                            0đ (Không thiệt hại / Lỗi bảo quản)
+                          </button>
+                        </div>
+                        <span className="text-[10px] font-bold text-[#777777]">
+                          Con số này giúp Khách và Quản lý cơ sở (FM) đối chiếu độc lập với mức khách đề nghị ({Number(claim.claimedAmount).toLocaleString('vi-VN')}đ).
+                        </span>
+                      </div>
                       <label className="flex flex-col gap-1.5">
                         <span className="text-[11px] font-black uppercase text-[#777777]">Nguyên nhân sơ bộ *</span>
-                        <select value={preliminaryCause} onChange={e => setPreliminaryCause(e.target.value)} className="duo-input text-xs">
+                        <select
+                          value={preliminaryCause}
+                          onChange={e => {
+                            const nextCause = e.target.value;
+                            setPreliminaryCause(nextCause);
+                            if (resolutionNote.trim().startsWith('[BIÊN BẢN XỬ LÝ SỰ CỐ')) {
+                              const isFullTemplate = resolutionNote.includes('• Biện pháp xử lý kỹ thuật:\n  -');
+                              setResolutionNote(
+                                isFullTemplate
+                                  ? buildIncidentReportNote(task, null, repairStatus, nextCause)
+                                  : buildBlankIncidentReport(task, repairStatus, nextCause)
+                              );
+                            }
+                          }}
+                          className="duo-input text-xs"
+                        >
                           <option value="">— Chọn —</option>
                           <option value="FACILITY">Do cơ sở (dột, nhiệt độ / độ ẩm, khoá hỏng...)</option>
                           <option value="CUSTOMER">Do khách (đóng gói kém, hàng tự hư, hàng cấm...)</option>
@@ -3389,7 +3532,7 @@ export default function StaffTaskDetailPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setResolutionNote(buildBlankIncidentReport(task, repairStatus));
+                              setResolutionNote(buildBlankIncidentReport(task, repairStatus, preliminaryCause));
                             }}
                             className="px-3 py-1.5 rounded-xl bg-white border border-[#006699] hover:bg-[#E0F2FE] text-[11px] font-black text-[#006699] flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
                             title="Tạo khung biên bản trống chuẩn để nhân viên tự điền"
@@ -3418,12 +3561,17 @@ export default function StaffTaskDetailPage() {
                               Khớp danh mục: {task.subCategory}
                             </span>
                           )}
+                          {isClaimInspection && preliminaryCause && (
+                            <span className="px-2 py-0.5 rounded-md bg-[#D7FFB8] text-[#58A700] font-bold text-[10px] border border-[#58CC02]">
+                              Khớp nguyên nhân: {preliminaryCause}
+                            </span>
+                          )}
                         </div>
                         <button
                           type="button"
                           onClick={() => {
-                            const sampleTemplate = findMatchingTemplate(task);
-                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate, repairStatus));
+                            const sampleTemplate = findMatchingTemplate(task, preliminaryCause);
+                            setResolutionNote(buildIncidentReportNote(task, sampleTemplate, repairStatus, preliminaryCause));
                           }}
                           className="text-[10px] font-bold text-[#006699] hover:underline cursor-pointer shrink-0"
                           title="Điền dữ liệu mẫu chuẩn khớp với mục khách đã chọn"
@@ -3438,7 +3586,7 @@ export default function StaffTaskDetailPage() {
                         <span className="material-symbols-outlined text-[13px]">bolt</span>
                         Gợi ý phản hồi nhanh:
                       </span>
-                      {getPresetsForTask(task, repairStatus).map((preset, idx) => (
+                      {getPresetsForTask(task, repairStatus, preliminaryCause).map((preset, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -3498,6 +3646,15 @@ export default function StaffTaskDetailPage() {
                           </span>
                         </div>
                       </div>
+                    )}
+
+                    {isClaimInspection && !canSubmitSupport && !hasPendingSupportTransfer && (
+                      <p className="text-[11px] font-bold text-[#FF4B4B]">
+                        Cần đủ: {inspectionImages.length === 0 ? 'ảnh hiện trường (≥ 1) · ' : ''}
+                        {!hasValidStaffAssessed ? 'giá trị Staff ước tính · ' : ''}
+                        {!preliminaryCause ? 'nguyên nhân sơ bộ · ' : ''}
+                        {resolutionNote.trim().length < 10 ? 'biên bản kiểm tra (≥ 10 ký tự)' : ''}
+                      </p>
                     )}
 
                     <button
@@ -4722,6 +4879,13 @@ export default function StaffTaskDetailPage() {
                 </div>
               )}
 
+              {isClaimInspection && staffAssessedValue !== '' && (
+                <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
+                  <span className="text-[#777777]">Giá trị Staff ước tính:</span>
+                  <span className="font-black text-[#0284C7]">{Number(staffAssessedValue || 0).toLocaleString('vi-VN')}đ</span>
+                </div>
+              )}
+
               <div className="flex justify-between items-center pb-2 border-b border-[#E5E5E5]">
                 <span className="text-[#777777]">Bằng chứng ảnh đính kèm:</span>
                 <span className="font-black text-[#4B4B4B]">{resolvedImagesForPreview.length} hình ảnh</span>
@@ -4912,6 +5076,7 @@ export default function StaffTaskDetailPage() {
         onClose={() => setIncidentReportModalOpen(false)}
         task={task}
         repairStatus={repairStatus}
+        preliminaryCause={preliminaryCause}
         resolutionNote={editResolutionOpen ? editResolutionNote : (resolutionNote || task?.resolutionNote)}
         evidenceImages={
           editResolutionOpen

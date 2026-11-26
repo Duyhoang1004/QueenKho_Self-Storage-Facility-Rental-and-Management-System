@@ -56,6 +56,7 @@ public class CompensationClaimResponse {
     private String inspectionNote;
     private List<String> inspectionImages;
     private String preliminaryCause;
+    private BigDecimal staffAssessedValue;
 
     // Quyết định
     private String liableParty;
@@ -90,4 +91,26 @@ public class CompensationClaimResponse {
     private String payoutAccountNumber;
     private String payoutAccountName;
     private LocalDateTime payoutAccountUpdatedAt;
+
+    // Xác nhận 2 chiều ở 3 bước:
+    // Idea 3: Khách xác nhận biên bản kiểm tra hiện trường của Staff
+    private String inspectionConfirmStatus;   // PENDING_CUSTOMER / CONFIRMED / DISPUTED / BYPASSED
+    private LocalDateTime inspectionConfirmedAt;
+    private String inspectionDisputeReason;
+    private Integer inspectionRound;
+
+    // Idea 2: Khách xác nhận phương án & mức bồi thường của FM
+    private String decisionConfirmStatus;     // PENDING_CUSTOMER / CONFIRMED / DISPUTED / BYPASSED
+    private LocalDateTime decisionConfirmedAt;
+    private String decisionDisputeReason;
+    private Integer decisionRound;
+
+    // Idea 1: Khách xác nhận đã nhận tiền bồi thường từ FM
+    private String receiptStatus;             // WAITING_CUSTOMER / CONFIRMED / AUTO_CONFIRMED / DISPUTED
+    private LocalDateTime receiptConfirmedAt;
+    private Boolean receiptAutoConfirmed;
+    private String receiptDisputeReason;
+    private LocalDateTime receiptDisputedAt;
+    private Integer receiptRound;
+    private LocalDateTime receiptAutoConfirmAt;
 }

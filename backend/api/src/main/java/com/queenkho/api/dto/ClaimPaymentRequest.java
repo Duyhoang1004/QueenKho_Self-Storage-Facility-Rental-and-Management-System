@@ -13,4 +13,5 @@ public class ClaimPaymentRequest {
     private String evidenceImageUrl;       // bắt buộc khi chuyển khoản (ảnh ủy nhiệm chi)
     private String bankTransactionCode;    // mã FT, tuỳ chọn
     private Boolean cashReceiptConfirmed;  // tiền mặt: khách đã ký nhận
+    private String resolutionNote;         // ghi chú xử lý lại khi khách báo chưa nhận tiền
 }

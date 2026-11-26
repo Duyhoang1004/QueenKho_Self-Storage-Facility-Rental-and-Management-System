@@ -2169,9 +2169,13 @@ public class StaffTaskService {
         SupportRequest linkedTicket = supportRequestId == null ? null : supportRequestRepository.findById(supportRequestId).orElse(null);
         if (linkedTicket != null && CompensationClaimService.isClaimIssue(linkedTicket.getIssueType())
                 && compensationClaimService != null) {
+            if (request == null || request.getStaffAssessedValue() == null) {
+                throw new StaffTaskException(HttpStatus.BAD_REQUEST, "STAFF_ASSESSED_VALUE_REQUIRED",
+                        "Bắt buộc nhập giá trị hàng / thiệt hại Staff ước tính tại hiện trường (>= 0đ)");
+            }
             // BR-126: ticket hàng hư / mất → "hoàn tất" = biên bản kiểm tra hiện trường; ticket vẫn đang xử lý chờ FM chốt bồi thường
             compensationClaimService.recordInspection(linkedTicket.getId(), staff, resolutionNote,
-                    request.getInspectionImages(), request.getPreliminaryCause());
+                    request.getInspectionImages(), request.getPreliminaryCause(), request.getStaffAssessedValue());
             ticketCode = linkedTicket.getTicketCode();
         } else if (supportRequestId != null) {
             SupportRequest sr = supportRequestRepository.findById(supportRequestId)

@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -24,4 +25,13 @@ public class SupportEligibleContractDto {
     private String facilityName;
     private int openTicketCount;
     private List<String> openIssueTypes;
+
+    // BR-125 / BR-127: thông tin bảo hiểm & trần bồi thường tối đa để cảnh báo khi khách tạo claim
+    private String insurancePlan;
+    private String insurancePlanLabel;
+    private boolean insured;
+    private BigDecimal declaredGoodsValue;
+    private BigDecimal agreedGoodsValue;
+    private BigDecimal planCoverageLimit;
+    private BigDecimal coverageCap;
 }

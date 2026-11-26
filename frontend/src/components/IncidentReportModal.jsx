@@ -10,6 +10,7 @@ export default function IncidentReportModal({
   onClose,
   task,
   repairStatus = 'FIXED',
+  preliminaryCause = '',
   resolutionNote,
   evidenceImages = [],
   onUpdateResolutionNote,
@@ -36,9 +37,9 @@ export default function IncidentReportModal({
   // Đồng bộ dữ liệu ban đầu khi mở modal
   useEffect(() => {
     if (isOpen && task) {
-      const matched = findMatchingTemplate(task);
+      const matched = findMatchingTemplate(task, preliminaryCause);
       setSelectedTemplateKey(matched?.id || '');
-      setLocalNote(resolutionNote || task.resolutionNote || buildBlankIncidentReport(task, repairStatus));
+      setLocalNote(resolutionNote || task.resolutionNote || buildBlankIncidentReport(task, repairStatus, preliminaryCause));
       setLocalDescription(task.ticketDescription || task.description || 'Khách hàng liên hệ yêu cầu cơ sở hỗ trợ kỹ thuật và kiểm tra hiện trường tại ô kho.');
       setLocalCustomerName(task.customerName || 'Khách hàng QueenKho');
       setLocalStaffName(task.staffName || task.assignedStaffName || 'Nhân viên cơ sở');
@@ -49,7 +50,7 @@ export default function IncidentReportModal({
       setLocalImages(initialImages);
       setUploadError('');
     }
-  }, [isOpen, task, resolutionNote, evidenceImages, repairStatus]);
+  }, [isOpen, task, resolutionNote, evidenceImages, repairStatus, preliminaryCause]);
 
   // Khi người dùng gõ sửa nội dung biên bản
   const handleNoteChange = (newText) => {
@@ -69,7 +70,7 @@ export default function IncidentReportModal({
       if (found) break;
     }
     if (found) {
-      const generated = buildIncidentReportNote(task, found, repairStatus);
+      const generated = buildIncidentReportNote(task, found, repairStatus, found.causeCode || preliminaryCause);
       setLocalNote(generated);
       if (onUpdateResolutionNote) {
         onUpdateResolutionNote(generated);
@@ -223,7 +224,7 @@ export default function IncidentReportModal({
                 <button
                   type="button"
                   onClick={() => {
-                    const skeleton = buildBlankIncidentReport(task, repairStatus);
+                    const skeleton = buildBlankIncidentReport(task, repairStatus, preliminaryCause);
                     setLocalNote(skeleton);
                     if (onUpdateResolutionNote) {
                       onUpdateResolutionNote(skeleton);
@@ -253,8 +254,8 @@ export default function IncidentReportModal({
                 <button
                   type="button"
                   onClick={() => {
-                    const sampleTemplate = findMatchingTemplate(task);
-                    const sampleNote = buildIncidentReportNote(task, sampleTemplate);
+                    const sampleTemplate = findMatchingTemplate(task, preliminaryCause);
+                    const sampleNote = buildIncidentReportNote(task, sampleTemplate, repairStatus, preliminaryCause);
                     setLocalNote(sampleNote);
                     setSelectedTemplateKey(sampleTemplate?.id || '');
                     if (onUpdateResolutionNote) {

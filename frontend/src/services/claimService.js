@@ -43,3 +43,39 @@ export async function payClaim(claimId, data) {
   const res = await api.post(`/claims/${claimId}/pay`, data)
   return res.data
 }
+
+// Xác nhận 2 chiều từ phía Khách hàng (Idea 1, Idea 2, Idea 3)
+export async function confirmClaimInspection(claimId) {
+  const res = await api.post(`/support-requests/claims/${claimId}/confirm-inspection`)
+  return res.data
+}
+
+export async function disputeClaimInspection(claimId, reason) {
+  const res = await api.post(`/support-requests/claims/${claimId}/dispute-inspection`, { reason })
+  return res.data
+}
+
+export async function confirmClaimDecision(claimId) {
+  const res = await api.post(`/support-requests/claims/${claimId}/confirm-decision`)
+  return res.data
+}
+
+export async function disputeClaimDecision(claimId, reason) {
+  const res = await api.post(`/support-requests/claims/${claimId}/dispute-decision`, { reason })
+  return res.data
+}
+
+export async function confirmClaimReceipt(claimId) {
+  const res = await api.post(`/support-requests/claims/${claimId}/confirm-receipt`)
+  return res.data
+}
+
+export async function disputeClaimReceipt(claimId, reason) {
+  const res = await api.post(`/support-requests/claims/${claimId}/dispute-receipt`, { reason })
+  return res.data
+}
+
+export async function simulateClaimReceiptAutoConfirm(claimId) {
+  const res = await api.post(`/support-requests/claims/${claimId}/simulate-auto-confirm`)
+  return res.data
+}

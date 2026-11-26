@@ -116,6 +116,11 @@ public class SupportRequestService {
             }
             StorageUnit su = c.getStorageUnit();
             List<String> openTypes = openIssuesByContract.getOrDefault(c.getId(), Collections.emptyList());
+            var plan = CompensationClaimService.planOf(c);
+            java.math.BigDecimal agreedValue = compensationClaimService != null
+                    ? compensationClaimService.agreedGoodsValue(c)
+                    : (c.getReservation() != null ? c.getReservation().getDeclaredGoodsValue() : null);
+            java.math.BigDecimal declaredValue = c.getReservation() != null ? c.getReservation().getDeclaredGoodsValue() : null;
             result.add(SupportEligibleContractDto.builder()
                     .contractId(c.getId())
                     .contractCode(c.getContractCode())
@@ -128,6 +133,13 @@ public class SupportRequestService {
                     .facilityName(su != null && su.getFacility() != null ? su.getFacility().getName() : null)
                     .openTicketCount(openTypes.size())
                     .openIssueTypes(openTypes)
+                    .insurancePlan(plan.name())
+                    .insurancePlanLabel(plan.label())
+                    .insured(plan.insured())
+                    .declaredGoodsValue(declaredValue)
+                    .agreedGoodsValue(agreedValue)
+                    .planCoverageLimit(plan.coverageLimit())
+                    .coverageCap(plan.coverageCap(agreedValue))
                     .build());
         }
         return result;
@@ -415,6 +427,25 @@ public class SupportRequestService {
         );
 
         return toResponse(ticket, newTask);
+    }
+
+    /** Mở lại task kiểm tra hiện trường cho Staff khi khách báo sai lệch biên bản kiểm đếm (Idea 3) */
+    @Transactional
+    public StaffTask reopenInspectionTaskForClaim(SupportRequest ticket, String reason) {
+        if (ticket == null || ticket.getContract() == null || "CLOSED".equals(ticket.getStatus())) {
+            return null;
+        }
+        ticket.setStatus("OPEN");
+        ticket.setResolvedAt(null);
+        supportRequestRepository.save(ticket);
+
+        List<StaffTask> openTasks = staffTaskRepository.findBySupportRequestIdAndStatusIn(ticket.getId(), OPEN_TASK_STATUSES);
+        for (StaffTask t : openTasks) {
+            t.setStatus("CANCELLED");
+        }
+        staffTaskRepository.saveAll(openTasks);
+
+        return createSupportTaskForTicket(ticket.getContract(), ticket, "Kiểm tra lại hiện trường: " + reason);
     }
 
     // ──────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ package com.queenkho.api.controller;
 import com.queenkho.api.dto.CreateSupportRequestDto;
 import com.queenkho.api.dto.ReopenSupportRequestDto;
 import com.queenkho.api.exception.StaffTaskException;
+import com.queenkho.api.security.CurrentUserProvider;
+import com.queenkho.api.service.CompensationClaimService;
 import com.queenkho.api.service.SupportRequestService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -20,6 +22,12 @@ public class SupportRequestController {
 
     @Autowired
     private SupportRequestService supportRequestService;
+
+    @Autowired
+    private CompensationClaimService compensationClaimService;
+
+    @Autowired(required = false)
+    private CurrentUserProvider currentUser;
 
     // ──────────────────────────────────────────────────────
     // UC-26 API 1: Danh sách hợp đồng đủ điều kiện gửi hỗ trợ (PR-51, PR-S2)
@@ -122,6 +130,106 @@ public class SupportRequestController {
         try {
             Integer effectiveCustomerId = customerId != null ? customerId : headerUserId;
             return ResponseEntity.ok(supportRequestService.reopenTicket(id, effectiveCustomerId, request));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    // ──────────────────────────────────────────────────────
+    // Xác nhận 2 chiều cho hồ sơ bồi thường (Idea 1, Idea 2, Idea 3)
+    // ──────────────────────────────────────────────────────
+    private Integer resolveCustomerId(Integer customerId, Integer headerUserId) {
+        if (currentUser != null && currentUser.current() != null) {
+            return currentUser.current().id();
+        }
+        return customerId != null ? customerId : headerUserId;
+    }
+
+    @PostMapping("/claims/{claimId}/confirm-inspection")
+    public ResponseEntity<?> confirmClaimInspection(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        try {
+            return ResponseEntity.ok(compensationClaimService.confirmInspection(claimId, resolveCustomerId(customerId, headerUserId)));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/dispute-inspection")
+    public ResponseEntity<?> disputeClaimInspection(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId,
+            @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String reason = body != null ? body.get("reason") : null;
+            return ResponseEntity.ok(compensationClaimService.disputeInspection(claimId, resolveCustomerId(customerId, headerUserId), reason));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/confirm-decision")
+    public ResponseEntity<?> confirmClaimDecision(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        try {
+            return ResponseEntity.ok(compensationClaimService.confirmDecision(claimId, resolveCustomerId(customerId, headerUserId)));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/dispute-decision")
+    public ResponseEntity<?> disputeClaimDecision(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId,
+            @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String reason = body != null ? body.get("reason") : null;
+            return ResponseEntity.ok(compensationClaimService.disputeDecision(claimId, resolveCustomerId(customerId, headerUserId), reason));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/confirm-receipt")
+    public ResponseEntity<?> confirmClaimReceipt(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        try {
+            return ResponseEntity.ok(compensationClaimService.confirmReceipt(claimId, resolveCustomerId(customerId, headerUserId)));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/dispute-receipt")
+    public ResponseEntity<?> disputeClaimReceipt(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId,
+            @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String reason = body != null ? body.get("reason") : null;
+            return ResponseEntity.ok(compensationClaimService.disputeReceipt(claimId, resolveCustomerId(customerId, headerUserId), reason));
+        } catch (StaffTaskException e) {
+            return toError(e);
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/simulate-auto-confirm")
+    public ResponseEntity<?> simulateClaimReceiptAutoConfirm(
+            @PathVariable Integer claimId,
+            @RequestParam(required = false) Integer customerId,
+            @RequestHeader(value = "X-User-Id", required = false) Integer headerUserId) {
+        try {
+            return ResponseEntity.ok(compensationClaimService.simulateReceiptAutoConfirm(claimId, resolveCustomerId(customerId, headerUserId)));
         } catch (StaffTaskException e) {
             return toError(e);
         }

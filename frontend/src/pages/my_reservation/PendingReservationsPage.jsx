@@ -373,8 +373,8 @@ export default function PendingReservationsPage() {
                           </div>
                         </td>
                         <td className="py-4 px-5">{r.customerPhone || '—'}</td>
-                        <td className="py-4 px-5">
-                          <span className="duo-badge bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]">
+                        <td className="py-4 px-5 whitespace-nowrap">
+                          <span className="duo-badge whitespace-nowrap bg-[#DDF4FF] text-[#1CB0F6] border-2 border-[#84D8FF]">
                             {r.unitTypeName}
                           </span>
                         </td>
@@ -475,7 +475,7 @@ export default function PendingReservationsPage() {
                     const hint = startHint(daysUntil(r.startDate))
                     return (
                       <tr key={r.id} className="hover:bg-[#FFF8F8] transition-colors">
-                        <td className="py-4 px-5">
+                        <td className="py-4 px-5 whitespace-nowrap">
                           <button type="button" title="Xem chi tiết đơn" onClick={() => setDetailTarget(r)}
                             className="font-black text-[#FF4B4B] hover:underline cursor-pointer">
                             {r.reservationCode}
@@ -483,15 +483,15 @@ export default function PendingReservationsPage() {
                         </td>
                         <td className="py-4 px-5">
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs">
+                            <div className="w-8 h-8 rounded-xl bg-[#FF4B4B] border-b border-[#CC0000] text-white flex items-center justify-center font-black text-xs shrink-0">
                               {initials(r.customerName)}
                             </div>
-                            <span className="font-black">{r.customerName}</span>
+                            <span className="font-black whitespace-nowrap">{r.customerName}</span>
                           </div>
                         </td>
-                        <td className="py-4 px-5">{r.customerPhone || '—'}</td>
-                        <td className="py-4 px-5">
-                          <span className="duo-badge bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
+                        <td className="py-4 px-5 whitespace-nowrap">{r.customerPhone || '—'}</td>
+                        <td className="py-4 px-5 whitespace-nowrap">
+                          <span className="duo-badge whitespace-nowrap bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]">
                             {r.unitTypeName}
                           </span>
                         </td>

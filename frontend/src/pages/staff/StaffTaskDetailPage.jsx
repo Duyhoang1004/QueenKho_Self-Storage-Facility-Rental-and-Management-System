@@ -1825,6 +1825,107 @@ export default function StaffTaskDetailPage() {
         </div>
       )}
 
+      {/* Vấn đề 2 (22/11/2026): Task CHECK_IN bị OVERDUE → FM dời lịch nhận kho ngay đầu trang chi tiết task */}
+      {isManager && task.taskType === 'CHECK_IN' && task.reservationId
+        && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)
+        && !handover?.facilityFaultConfirmed
+        && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
+        <div className="mb-6 rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5">
+          <div className="flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">edit_calendar</span>
+            <div>
+              <h3 className="text-xs font-black uppercase text-[#E58800]">
+                Dời lịch nhận kho để mở lại task Check-in quá hạn
+              </h3>
+              <p className="text-xs font-bold text-[#777777] mt-0.5">
+                Task nhận kho đã quá hạn 21:00 nên nhân viên không thể hoàn tất bàn giao. Quản lý chọn ngày nhận kho mới bên dưới để cập nhật hạn task và mở lại xử lý.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)_auto] gap-3 items-end">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Ngày nhận kho mới *</span>
+              <DateInput
+                min={localTodayIso()}
+                value={rescheduleCheckInDate}
+                onChange={e => setRescheduleCheckInDate(e.target.value)}
+                className="duo-input text-xs font-bold bg-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Lý do dời lịch</span>
+              <input
+                type="text"
+                maxLength={300}
+                value={rescheduleCheckInReason}
+                onChange={e => setRescheduleCheckInReason(e.target.value)}
+                placeholder="VD: Khách hẹn quay lại ký biên bản bàn giao vào ngày mai..."
+                className="duo-input text-xs bg-white"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={reschedulingCheckIn || !rescheduleCheckInDate}
+              onClick={handleRescheduleCheckInFromTask}
+              className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 whitespace-nowrap disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+              {reschedulingCheckIn ? 'Đang dời lịch...' : 'Xác nhận dời lịch nhận kho'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Vấn đề 3C (22/11/2026): Task phúc tra CHECK_OUT [RECHECK] bị OVERDUE → FM gia hạn xử lý ngay đầu trang chi tiết task */}
+      {isManager && isRecheckTask
+        && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status)
+        && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
+        <div className="mb-6 rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5">
+          <div className="flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">more_time</span>
+            <div>
+              <h3 className="text-xs font-black uppercase text-[#E58800]">
+                Gia hạn xử lý task kiểm tra lại nghiệm thu quá hạn (PR-S4)
+              </h3>
+              <p className="text-xs font-bold text-[#777777] mt-0.5">
+                Task phúc tra quyết toán đã quá hạn 21:00 nên nhân viên bị khóa thao tác. Quản lý chọn ngày hạn mới bên dưới để mở lại (hệ thống tự bắn chuông báo và gửi email cho khách &amp; nhân viên).
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_auto] gap-3 items-end">
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Ngày hạn mới (hạn 21:00, tối đa 7 ngày) *</span>
+              <DateInput
+                min={localTodayIso()}
+                value={extendDueDate}
+                onChange={e => setExtendDueDate(e.target.value)}
+                className="duo-input text-xs font-bold bg-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] font-black uppercase text-[#777777]">Lý do gia hạn *</span>
+              <input
+                type="text"
+                maxLength={500}
+                value={extendReason}
+                onChange={e => setExtendReason(e.target.value)}
+                placeholder="VD: Chờ đối chiếu lại hình ảnh hiện trạng cùng khách hàng..."
+                className="duo-input text-xs bg-white"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={extendingSupport || !extendDueDate || !extendReason.trim()}
+              onClick={handleExtendSupportSubmit}
+              className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 whitespace-nowrap disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+              {extendingSupport ? 'Đang gia hạn...' : 'Xác nhận gia hạn task kiểm tra lại'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)] gap-6 items-start">
         {/* Cột trái: thông tin khách, ô kho, hợp đồng */}
         <div className="flex flex-col gap-4">
@@ -3724,105 +3825,6 @@ export default function StaffTaskDetailPage() {
                     onClick={async () => { try { await reopenCheckInHandover(task.id, { note: reopenNote.trim(), evidenceImageUrl: reopenPhotos[0] || null, resolvedGoodsValue: handover.blockerType === 'GOODS_VALUE_DISPUTE' ? managerGoodsValue : null }); await loadTask(); setToast({ type: 'success', message: 'Đã cho tiếp tục bàn giao; nhân viên kiểm tra ô và lập biên bản mới.' }); } catch (err) { setToast({ type: 'error', message: err.response?.data?.message || 'Không mở lại được bàn giao.' }); } }}>Cho tiếp tục bàn giao sau khi xử lý</button>}
                 </> : <p className="text-xs font-bold text-[#777777]">Quản lý đang kiểm tra và thống nhất phương án với khách.</p>}
               </div>}
-
-              {/* Vấn đề 2 (22/11/2026): Task CHECK_IN bị OVERDUE (kể cả khi đã lập biên bản nháp / bị từ chối) → FM dời lịch nhận kho ngay tại trang task */}
-              {isManager && task.taskType === 'CHECK_IN' && task.reservationId
-                && !handover?.facilityFaultConfirmed
-                && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
-                <div className="w-full max-w-md rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5 text-left mt-2">
-                  <div className="flex items-start gap-2.5">
-                    <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">edit_calendar</span>
-                    <div>
-                      <h3 className="text-xs font-black uppercase text-[#E58800]">
-                        Dời lịch nhận kho để mở lại task Check-in quá hạn
-                      </h3>
-                      <p className="text-xs font-bold text-[#777777] mt-0.5">
-                        Task nhận kho đã quá hạn 21:00 nên không thể mở lại biên bản hoặc bàn giao tiếp. Quản lý chọn ngày nhận kho mới bên dưới để cập nhật hạn task và tiếp tục xử lý.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2.5">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase text-[#777777]">Ngày nhận kho mới *</span>
-                      <DateInput
-                        min={localTodayIso()}
-                        value={rescheduleCheckInDate}
-                        onChange={e => setRescheduleCheckInDate(e.target.value)}
-                        className="duo-input text-xs font-bold bg-white"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase text-[#777777]">Lý do dời lịch</span>
-                      <input
-                        type="text"
-                        maxLength={300}
-                        value={rescheduleCheckInReason}
-                        onChange={e => setRescheduleCheckInReason(e.target.value)}
-                        placeholder="VD: Khách hẹn quay lại ký biên bản bàn giao vào ngày mai..."
-                        className="duo-input text-xs bg-white"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={reschedulingCheckIn || !rescheduleCheckInDate}
-                      onClick={handleRescheduleCheckInFromTask}
-                      className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
-                      {reschedulingCheckIn ? 'Đang dời lịch...' : 'Xác nhận dời lịch nhận kho'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Vấn đề 3C (22/11/2026): Task phúc tra CHECK_OUT [RECHECK] bị OVERDUE → FM gia hạn xử lý ngay tại trang task */}
-              {isManager && isRecheckTask
-                && (task.status === 'OVERDUE' || (task.dueAt && new Date(task.dueAt) <= new Date())) && (
-                <div className="w-full max-w-md rounded-2xl border-2 border-[#FF9600] bg-[#FFF5E6] p-5 flex flex-col gap-3.5 text-left mt-2">
-                  <div className="flex items-start gap-2.5">
-                    <span className="material-symbols-outlined text-[#E58800] text-[24px] shrink-0">more_time</span>
-                    <div>
-                      <h3 className="text-xs font-black uppercase text-[#E58800]">
-                        Gia hạn xử lý task kiểm tra lại nghiệm thu quá hạn (PR-S4)
-                      </h3>
-                      <p className="text-xs font-bold text-[#777777] mt-0.5">
-                        Task phúc tra quyết toán đã quá hạn 21:00 nên nhân viên bị khóa thao tác. Quản lý chọn ngày hạn mới bên dưới để mở lại (hệ thống tự bắn chuông báo và gửi email cho khách &amp; nhân viên).
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2.5">
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase text-[#777777]">Ngày hạn mới (hạn lúc 21:00, tối đa 7 ngày) *</span>
-                      <DateInput
-                        min={localTodayIso()}
-                        value={extendDueDate}
-                        onChange={e => setExtendDueDate(e.target.value)}
-                        className="duo-input text-xs font-bold bg-white"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="text-[11px] font-black uppercase text-[#777777]">Lý do gia hạn *</span>
-                      <input
-                        type="text"
-                        maxLength={500}
-                        value={extendReason}
-                        onChange={e => setExtendReason(e.target.value)}
-                        placeholder="VD: Chờ đối chiếu lại hình ảnh hiện trạng cùng khách hàng..."
-                        className="duo-input text-xs bg-white"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={extendingSupport || !extendDueDate || !extendReason.trim()}
-                      onClick={handleExtendSupportSubmit}
-                      className="duo-btn-blue px-4 py-2.5 text-xs gap-1.5 disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
-                      {extendingSupport ? 'Đang gia hạn...' : 'Xác nhận gia hạn task kiểm tra lại'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           ) : isCheckOut ? (
             /* ================== FORM NGHIỆM THU TRẢ KHO & SỰ CỐ (UC-23 & UC-24) ================== */

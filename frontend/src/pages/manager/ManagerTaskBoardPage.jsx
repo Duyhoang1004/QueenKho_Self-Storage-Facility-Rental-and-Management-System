@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import TaskBoard from '../../components/TaskBoard'
 import { TaskConfirmDialog, TaskToast } from '../../components/TaskActionFeedback'
 import { assignStaffTask, unassignStaffTask, completeRefundTask, extendOverdueTask, uploadImageFile, getStaffTasks } from '../../services/staffTaskService'
+import { rescheduleReservation } from '../../services/reservationService'
 import { getFacilityStaff } from '../../services/facilityStaffService'
 import { assignLockedUntil } from '../../utils/taskWindow'
 import DateInput from '../../components/DateInput'
@@ -262,6 +263,12 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
   const [extendReason, setExtendReason] = useState('')
   const [extendError, setExtendError] = useState('')
 
+  // Vấn đề 2 (26/11/2026): State dời lịch nhận kho cho task CHECK_IN quá hạn ngay trên bảng công việc
+  const [rescheduleTarget, setRescheduleTarget] = useState(null)
+  const [rescheduleDate, setRescheduleDate] = useState(tomorrowIsoDate())
+  const [rescheduleReason, setRescheduleReason] = useState('')
+  const [rescheduleError, setRescheduleError] = useState('')
+
   // State duyệt hoàn tiền cọc (PR-O12, PR-O15)
   const [refundTask, setRefundTask] = useState(null)
   const [refundMethod, setRefundMethod] = useState('BANK_TRANSFER')
@@ -307,6 +314,46 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
         setConfirmTask(null)
         setReloadKey(k => k + 1)
       })
+  }
+
+  const openRescheduleModal = (task) => {
+    setRescheduleTarget(task)
+    setRescheduleDate(tomorrowIsoDate())
+    setRescheduleReason('')
+    setRescheduleError('')
+  }
+
+  const handleRescheduleSubmit = () => {
+    if (!rescheduleTarget?.reservationId) return
+    if (!rescheduleDate) {
+      setRescheduleError('Vui lòng chọn ngày nhận kho mới.')
+      return
+    }
+    const trimmedReason = rescheduleReason.trim()
+    if (trimmedReason.length > 300) {
+      setRescheduleError('Lý do dời lịch tối đa 300 ký tự.')
+      return
+    }
+
+    setSubmitting(true)
+    setRescheduleError('')
+    rescheduleReservation(rescheduleTarget.reservationId, {
+      newStartDate: rescheduleDate,
+      reason: trimmedReason || 'Dời lịch nhận kho từ bảng công việc (task check-in quá hạn)',
+      managerId: user.userId,
+    })
+      .then(() => {
+        setToast({
+          type: 'success',
+          message: `Đã dời lịch nhận kho task #${rescheduleTarget.id} (${rescheduleTarget.contractCode || 'Check-in'}) sang ngày ${rescheduleDate.split('-').reverse().join('/')}. Task đã được mở lại!`,
+        })
+        setRescheduleTarget(null)
+        setReloadKey(k => k + 1)
+      })
+      .catch(err => {
+        setRescheduleError(err.response?.data?.message || 'Không thể dời lịch nhận kho, vui lòng thử lại.')
+      })
+      .finally(() => setSubmitting(false))
   }
 
   const openExtendSupportModal = (task) => {
@@ -526,6 +573,30 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
     const isTaskOverdue = task.status === 'OVERDUE'
       || (['OPEN', 'IN_PROGRESS'].includes(task.status) && task.dueAt && new Date(task.dueAt) <= new Date())
     const isRecheckTask = task.taskType === 'CHECK_OUT' && typeof task.note === 'string' && task.note.includes('[RECHECK]')
+
+    // Vấn đề 2 (26/11/2026): Task CHECK_IN quá hạn -> FM được bấm "Dời lịch nhận kho" ngay trên bảng công việc
+    if (task.taskType === 'CHECK_IN' && isTaskOverdue && task.reservationId && task.checkInEscalationStatus !== 'CI_FAULT') {
+      return (
+        <>
+          <Link
+            to={detailUrl}
+            className="duo-btn-gray w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">visibility</span>
+            Xem chi tiết
+          </Link>
+          <button
+            type="button"
+            onClick={() => openRescheduleModal(task)}
+            className="duo-btn-blue w-full py-1.5 px-3 text-xs font-black gap-1.5 flex items-center justify-center whitespace-normal text-center leading-tight break-words cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[17px]">edit_calendar</span>
+            Dời lịch nhận kho
+          </button>
+        </>
+      )
+    }
+
     if ((task.taskType === 'SUPPORT' || isRecheckTask) && isTaskOverdue) {
       return (
         <>
@@ -770,6 +841,76 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
             setReloadKey((k) => k + 1)
           }}
         />
+      )}
+
+      {/* Modal Dời lịch nhận kho cho task CHECK_IN quá hạn */}
+      {rescheduleTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#FFF5E6] border-2 border-[#FF9600] flex items-center justify-center text-[#E58800]">
+                <span className="material-symbols-outlined text-[24px]">edit_calendar</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-black text-[#4B4B4B]">Dời lịch nhận kho</h3>
+                <p className="text-xs font-bold text-[#AFAFAF] truncate">
+                  Task #{rescheduleTarget.id} · {rescheduleTarget.contractCode || `Đơn #${rescheduleTarget.reservationId}`} · Ô {rescheduleTarget.storageUnitId || '—'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                Ngày nhận kho mới <span className="text-[#FF4B4B]">*</span>
+              </label>
+              <DateInput
+                min={todayIsoDate()}
+                value={rescheduleDate}
+                onChange={e => { setRescheduleDate(e.target.value); setRescheduleError('') }}
+                className="duo-input w-full text-xs"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-black uppercase text-[#4B4B4B]">
+                Lý do dời lịch
+              </label>
+              <textarea
+                rows={3}
+                maxLength={300}
+                value={rescheduleReason}
+                onChange={e => { setRescheduleReason(e.target.value); setRescheduleError('') }}
+                placeholder="VD: Khách hẹn quay lại bổ sung giấy tờ và ký biên bản bàn giao vào ngày mai..."
+                className="duo-input w-full text-xs resize-none"
+              />
+            </div>
+
+            {rescheduleError && (
+              <div className="p-3 bg-[#FFDFDF] border border-[#FF4B4B] rounded-xl text-xs font-bold text-[#FF4B4B] flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{rescheduleError}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#E5E5E5]">
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                disabled={submitting}
+                className="duo-btn-gray px-4 py-2.5 text-xs"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleRescheduleSubmit}
+                disabled={submitting || !rescheduleDate}
+                className="duo-btn-blue px-5 py-2.5 text-xs gap-1.5 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                {submitting ? 'Đang dời lịch...' : 'Xác nhận dời lịch'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal Gia hạn task SUPPORT quá hạn (PR-S4) */}

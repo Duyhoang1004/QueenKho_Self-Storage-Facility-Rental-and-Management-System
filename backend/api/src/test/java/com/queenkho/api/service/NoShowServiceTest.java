@@ -239,7 +239,7 @@ class NoShowServiceTest {
         log1.put("action", "[CONTACT][FAILED] Khách không nghe máy");
         log1.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(20)));
         Map<String, Object> log2 = new HashMap<>();
-        log2.put("action", "[CONTACT][FAILED] Khách cúp máy");
+        log2.put("action", "[CONTACT][FAILED] Thuê bao không liên lạc được");
         log2.put("created_at", Timestamp.valueOf(LocalDateTime.now().minusHours(2)));
         when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt())).thenReturn(List.of(log1, log2));
 
@@ -248,6 +248,63 @@ class NoShowServiceTest {
         assertFalse(eligibility.eligible());
         assertEquals(2, eligibility.failedCount());
         assertTrue(eligibility.reason().contains("48 giờ"));
+    }
+
+    @Test
+    @DisplayName("Khách liên lạc lại sau 2 cuộc gọi nhỡ thì không còn đủ điều kiện No-Show")
+    void successfulContactResetsFailedAttempts() {
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> first = Map.of("action", "[CONTACT][FAILED] Không nghe máy",
+                "created_at", Timestamp.valueOf(now.minusHours(40)));
+        Map<String, Object> second = Map.of("action", "[CONTACT][FAILED] Thuê bao",
+                "created_at", Timestamp.valueOf(now.minusHours(15)));
+        Map<String, Object> reached = Map.of("action", "[CONTACT][SUCCESS] Khách gọi lại xin dời lịch",
+                "created_at", Timestamp.valueOf(now.minusHours(1)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt()))
+                .thenReturn(List.of(first, second, reached));
+
+        NoShowEligibility eligibility = reservationService.evaluateNoShowEligibility(testReservation);
+
+        assertFalse(eligibility.eligible());
+        assertEquals(0, eligibility.failedCount());
+        assertTrue(eligibility.reason().contains("Đã liên hệ được khách"));
+    }
+
+    @Test
+    @DisplayName("Log cũ ghi khách cúp máy là FAILED không được tính là lần không nghe máy")
+    void oldHungUpLogDoesNotQualifyAsFailedContact() {
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> missed = Map.of("action", "[CONTACT][FAILED] Khách không nghe máy",
+                "created_at", Timestamp.valueOf(now.minusHours(40)));
+        Map<String, Object> hungUp = Map.of("action", "[CONTACT][FAILED] Khách cúp máy",
+                "created_at", Timestamp.valueOf(now.minusHours(10)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt()))
+                .thenReturn(List.of(missed, hungUp));
+
+        NoShowEligibility eligibility = reservationService.evaluateNoShowEligibility(testReservation);
+
+        assertFalse(eligibility.eligible());
+        assertEquals(0, eligibility.failedCount());
+    }
+
+    @Test
+    @DisplayName("Lịch hẹn mới và log giả lập không được cộng vào số lần Staff liên hệ thất bại")
+    void ignoresOldAndSimulatedContacts() {
+        testReservation.setExpectedAppointmentTime(LocalDateTime.now().minusHours(50));
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> beforeAppointment = Map.of("action", "[CONTACT][FAILED] Không nghe máy",
+                "created_at", Timestamp.valueOf(now.minusHours(60)));
+        Map<String, Object> simulated = Map.of("action", "[CONTACT][FAILED] [SIMULATION] Gọi khách",
+                "created_at", Timestamp.valueOf(now.minusHours(40)));
+        Map<String, Object> actual = Map.of("action", "[CONTACT][FAILED] Không nghe máy",
+                "created_at", Timestamp.valueOf(now.minusHours(10)));
+        when(jdbcTemplate.queryForList(anyString(), anyString(), anyInt()))
+                .thenReturn(List.of(beforeAppointment, simulated, actual));
+
+        NoShowEligibility eligibility = reservationService.evaluateNoShowEligibility(testReservation);
+
+        assertFalse(eligibility.eligible());
+        assertEquals(1, eligibility.failedCount());
     }
 
     @Test

@@ -43,7 +43,7 @@ export async function simulateExpireHold(reservationId) {
   return (await api.post(`/dev/simulation/reservations/${reservationId}/expire-hold`)).data
 }
 
-// Flow 2: khách bùng hẹn, đủ điều kiện No-Show
+// Flow 2: giả lập khách quá hẹn, không tạo báo cáo liên hệ
 export async function simulateNoShow(reservationId) {
   return (await api.post(`/dev/simulation/reservations/${reservationId}/trigger-noshow`)).data
 }

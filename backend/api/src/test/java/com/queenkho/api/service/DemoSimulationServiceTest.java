@@ -145,7 +145,7 @@ class DemoSimulationServiceTest {
     // ---------- 3. No-Show ----------
 
     @Test
-    @DisplayName("No-Show: giờ hẹn lùi 49h, ngày bắt đầu < hôm nay, 2 log [CONTACT][FAILED] cách nhau ≥ 24h")
+    @DisplayName("Khách không đến hẹn: chỉ lùi giờ hẹn, không tự tạo báo cáo liên hệ")
     void triggerNoShowPreparesEligibility() {
         rows("FROM reservations", map("id", 4, "reservation_code", "RES-1", "status", "UNIT_ASSIGNED", "customer_id", 1, "facility_id", 1, "duration_months", 3));
         rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", "PENDING_CHECK_IN"));
@@ -156,11 +156,8 @@ class DemoSimulationServiceTest {
         verify(jdbcTemplate).update(contains("UPDATE reservations SET start_date"), start.capture(), any(Timestamp.class), eq(4));
         assertTrue(start.getValue().isBefore(LocalDate.now()), "Ngày bắt đầu phải < hôm nay để hiện ở tab No-Show");
 
-        ArgumentCaptor<Timestamp> at = ArgumentCaptor.forClass(Timestamp.class);
-        verify(jdbcTemplate, times(2)).update(contains("INSERT INTO activity_logs"), eq(6),
-                startsWith("[CONTACT][FAILED]"), eq("4"), at.capture());
-        long gapHours = Duration.between(at.getAllValues().get(0).toLocalDateTime(), at.getAllValues().get(1).toLocalDateTime()).toHours();
-        assertTrue(gapHours >= 24, "2 lần gọi phải cách nhau ≥ 24h, thực tế " + gapHours);
+        verify(jdbcTemplate, never()).update(contains("INSERT INTO activity_logs"), eq(6),
+                startsWith("[CONTACT][FAILED]"), eq("4"), any(Timestamp.class));
     }
 
     @Test

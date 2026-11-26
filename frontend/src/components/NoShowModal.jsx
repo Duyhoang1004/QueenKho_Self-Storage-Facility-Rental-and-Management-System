@@ -80,7 +80,7 @@ export default function NoShowModal({ isOpen, reservation, onClose, onSuccess })
               <p className="leading-relaxed text-[#4B4B4B]">{reservation.noShowIneligibleReason || 'Cần khách từ chối tới nhận kho, hoặc tối thiểu 2 lần liên hệ thất bại và đã qua 48 giờ từ giờ hẹn.'}</p>
               <div className="flex items-center gap-2 mt-1 text-[11px]">
                 <span className="px-2 py-0.5 rounded-md bg-white border border-[#FFD591] font-black text-[#B26B00]">
-                  Số lần liên hệ: {reservation.failedContactCount || 0}/2 lần
+                  Liên hệ thất bại liên tiếp: {reservation.failedContactCount || 0} lần (cần 2 lần)
                 </span>
               </div>
             </div>

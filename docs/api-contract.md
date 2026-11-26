@@ -671,7 +671,7 @@ Bật / tắt: `queenkho.simulation.enabled` trong `application.yaml` (mặc đ�
 | `GET /api/v1/dev/simulation/status` | đã đăng nhập | `{ "enabled": true }` | |
 | `POST /api/v1/dev/simulation/tasks/{taskId}/arrive-today` | STAFF, FM (cùng cơ sở) | Task CHECK_IN + HĐ PENDING_CHECK_IN: ngày hẹn / ngày bắt đầu HĐ = hôm nay, ngày kết thúc = hôm nay + số tháng, task hạn 21:00 (sau 21h → 21:00 ngày mai), task quá hạn được mở lại | `409 SIMULATION_NOT_APPLICABLE`, `403 FORBIDDEN_FACILITY` |
 | `POST /api/v1/dev/simulation/reservations/{id}/expire-hold` | CUSTOMER (đơn của mình), FM | Đơn PENDING: lùi giờ tạo 16 phút rồi chạy ngay job huỷ giữ chỗ → `{ "status": "EXPIRED" }` | `409`, `403 FORBIDDEN_OWNER` |
-| `POST /api/v1/dev/simulation/reservations/{id}/trigger-noshow` | FM | Đơn UNIT_ASSIGNED chưa check-in: giờ hẹn lùi 49h, task CHECK_IN quá hạn, ghi 2 log `[CONTACT][FAILED]` cách nhau 25h → đơn hiện ở tab No-Show và đủ điều kiện | `409`, `403` |
+| `POST /api/v1/dev/simulation/reservations/{id}/trigger-noshow` | FM | Đơn UNIT_ASSIGNED chưa check-in: giờ hẹn lùi 49h, task CHECK_IN quá hạn → đơn hiện ở tab quá hạn. Không tự tạo báo cáo liên hệ; Staff cần ghi kết quả liên hệ thật trước khi FM xét No-Show. | `409`, `403` |
 | `POST /api/v1/dev/simulation/contracts/{id}/make-overdue?days=3` | FM | HĐ ACTIVE / OVERDUE: hết hạn `days` ngày trước (start = end − số tháng), OVERDUE, tắt miễn phí trễ, huỷ link gia hạn đang chờ. `days=31` để vượt mốc thanh lý 30 ngày. HĐ **TERMINATION_PENDING** = khách không tới trả kho: thêm đơn về UNIT_ASSIGNED, huỷ task CHECK_OUT (giống job PR-Q1), `days` phải > 5 (ân hạn) | `400 INVALID_INPUT` (days ngoài 1–90, hoặc ≤ 5 với HĐ chờ trả kho), `409`, `403` |
 | `POST /api/v1/dev/simulation/tasks/{taskId}/checkout-today` | STAFF, FM (cùng cơ sở) | Task CHECK_OUT + HĐ TERMINATION_PENDING: hạn task (= ngày hẹn trả kho) về 21:00 hôm nay, task quá hạn được mở lại → nghiệm thu được ngay | `409 SIMULATION_NOT_APPLICABLE`, `403` |
 | `POST /api/v1/dev/simulation/contracts/{id}/add-failed-contacts` | FM | HĐ OVERDUE: ghi 3 log `[OVERDUE_CONTACT] HĐ <mã>: [SIMULATION] Gọi khách không nghe máy...` (cách nhau 1 tuần) → đủ điều kiện liên hệ để thanh lý | `409`, `403` |
@@ -1041,8 +1041,8 @@ Không đổi schema, không thêm bảng.
 
 ### PR-X1 / PR-X3 — No-Show
 - `GET /api/v1/reservations/overdue-no-show`: mỗi đơn thêm `totalPaid`, `noShowPenaltyAmount` (cọc + 1 tháng thuê), `noShowRefundAmount` (phần thuê còn lại; miễn phạt thì hoàn `totalPaid`).
-- `POST /api/v1/reservations/{id}/no-show`: tiền hoàn = tổng đã trả − (cọc + 1 tháng thuê); `waivePenalty = true` → hoàn toàn bộ. Điều kiện (`409 NO_SHOW_NOT_ALLOWED_YET` nếu chưa đủ): có báo cáo `[CONTACT][REFUSED]` **hoặc** (≥ 2 báo cáo `[CONTACT][FAILED]` và đã qua 48h từ giờ hẹn).
-- `POST /api/v1/staff-tasks/{id}/contact-report`: `callOutcome` chứa "từ chối" / "xin hủy" → log `[CONTACT][REFUSED]`; "không nghe máy" / "thuê bao" / "cúp máy" → `[CONTACT][FAILED]`; còn lại `[CONTACT][SUCCESS]`.
+- `POST /api/v1/reservations/{id}/no-show`: tiền hoàn = tổng đã trả − (cọc + 1 tháng thuê); `waivePenalty = true` → hoàn toàn bộ. Điều kiện (`409 NO_SHOW_NOT_ALLOWED_YET` nếu chưa đủ): khách từ chối tới nhận kho sau giờ hẹn và chưa liên hệ lại thành công **hoặc** (≥ 2 lần `[CONTACT][FAILED]` liên tiếp sau giờ hẹn hiện tại và đã qua 48h). `[CONTACT][SUCCESS]` đặt lại số lần thất bại về 0; log `[SIMULATION]` không được tính.
+- `POST /api/v1/staff-tasks/{id}/contact-report`: `callOutcome` chứa "từ chối" / "xin hủy" → log `[CONTACT][REFUSED]`; chỉ "không nghe máy" / "thuê bao" → `[CONTACT][FAILED]`; còn lại `[CONTACT][SUCCESS]`. Kết quả "khách cúp máy" cũ không được tính là lần liên hệ thất bại.
 
 ### PR-T1 — Khung 30 ngày giao / nhận task
 - `GET /api/v1/staff-tasks`, `GET /api/v1/staff-tasks/{id}`: thêm `assignableFrom` (`LocalDateTime`) — task `CHECK_IN` / `CHECK_OUT` chỉ giao / nhận từ mốc này (00:00 của ngày hẹn − 30 ngày); `null` = không giới hạn.

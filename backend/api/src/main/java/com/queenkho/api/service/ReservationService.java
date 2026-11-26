@@ -1285,7 +1285,7 @@ public class ReservationService {
 
     // PR-X3 (08/11/2026): điều kiện FM được xử lý No-Show
     //  - Staff ghi "Khách từ chối tới nhận kho" ([CONTACT][REFUSED]) → xử lý được ngay;
-    //  - còn lại: đã qua 48h kể từ giờ hẹn VÀ có ≥ 2 lần liên hệ thất bại (không nghe máy / thuê bao / cúp máy).
+    //  - còn lại: đã qua 48h kể từ giờ hẹn VÀ có ≥ 2 lần không nghe máy / thuê bao liên tiếp.
     public NoShowEligibility evaluateNoShowEligibility(Reservation reservation) {
         if (reservation == null) {
             return new NoShowEligibility(false, 0, "Đơn đặt chỗ không tồn tại");
@@ -1307,9 +1307,11 @@ public class ReservationService {
         boolean pastWaitWindow = appointmentTime != null
                 && !now.isBefore(appointmentTime.plusHours(NO_SHOW_WAIT_HOURS));
 
-        // 2. Đọc các báo cáo liên hệ ([CONTACT]...) từ activity_logs của đơn và task check-in
-        List<LocalDateTime> failedAttemptTimes = new java.util.ArrayList<>();
+        // Chỉ tính chuỗi liên hệ kể từ giờ hẹn hiện tại. Khách liên lạc lại sẽ ngắt chuỗi thất bại.
+        int failedCount = 0;
         boolean refused = false;
+        boolean contacted = false;
+        LocalDateTime lastFailedAt = null;
         try {
             List<Map<String, Object>> logs = jdbcTemplate.queryForList(
                     "SELECT created_at, action FROM activity_logs " +
@@ -1324,34 +1326,42 @@ public class ReservationService {
 
             for (Map<String, Object> log : logs) {
                 String action = log.get("action") != null ? log.get("action").toString() : "";
-                if (!action.contains("[CONTACT]")) continue;
+                if (!action.contains("[CONTACT]") || action.contains("[SIMULATION]")) continue;
+                Object createdAt = log.get("created_at");
+                LocalDateTime at = createdAt instanceof java.sql.Timestamp ts ? ts.toLocalDateTime()
+                        : createdAt instanceof LocalDateTime ldt ? ldt : null;
+                if (at == null || (appointmentTime != null && at.isBefore(appointmentTime))) continue;
                 String actionLower = action.toLowerCase();
                 // Log cũ ghi "từ chối" dưới mã [CONTACT][FAILED] — vẫn tính là khách từ chối
                 if (action.contains("[CONTACT][REFUSED]") || actionLower.contains("từ chối")) {
                     refused = true;
+                    contacted = false;
+                    failedCount = 0;
+                    lastFailedAt = null;
                     continue;
                 }
-                if (action.contains("[CONTACT][FAILED]")) {
-                    Object ca = log.get("created_at");
-                    if (ca instanceof java.sql.Timestamp ts) {
-                        failedAttemptTimes.add(ts.toLocalDateTime());
-                    } else if (ca instanceof LocalDateTime ldt) {
-                        failedAttemptTimes.add(ldt);
+                // Log cũ gắn nhầm "khách cúp máy" là FAILED: khách đã bắt máy, không tính lượt thất bại.
+                if (actionLower.contains("cúp máy")) {
+                    refused = false;
+                    contacted = true;
+                    failedCount = 0;
+                    lastFailedAt = null;
+                } else if (action.contains("[CONTACT][FAILED]")) {
+                    contacted = false;
+                    if (lastFailedAt == null || java.time.Duration.between(lastFailedAt, at).toMinutes() >= 10) {
+                        failedCount++;
                     }
+                    lastFailedAt = at;
+                } else if (action.contains("[CONTACT][SUCCESS]")) {
+                    refused = false;
+                    contacted = true;
+                    failedCount = 0;
+                    lastFailedAt = null;
                 }
             }
         } catch (Exception ignored) {
         }
 
-        // Khử trùng lặp: 1 báo cáo ghi 2 dòng log (đơn + task) → trong vòng 10 phút tính là 1 lần liên hệ
-        List<LocalDateTime> distinctAttempts = new java.util.ArrayList<>();
-        for (LocalDateTime t : failedAttemptTimes) {
-            if (distinctAttempts.isEmpty() || java.time.Duration.between(distinctAttempts.get(distinctAttempts.size() - 1), t).abs().toMinutes() >= 10) {
-                distinctAttempts.add(t);
-            }
-        }
-
-        int failedCount = distinctAttempts.size();
         if (refused) {
             return new NoShowEligibility(true, failedCount, null);
         }
@@ -1359,7 +1369,9 @@ public class ReservationService {
         boolean enoughAttempts = failedCount >= NO_SHOW_MIN_FAILED_CONTACTS;
         boolean eligible = pastWaitWindow && enoughAttempts;
         String reason = null;
-        if (!pastWaitWindow) {
+        if (contacted) {
+            reason = "Đã liên hệ được khách; cần xác nhận phương án tiếp theo trước khi xử lý vắng mặt.";
+        } else if (!pastWaitWindow) {
             String deadlineStr = appointmentTime != null
                     ? appointmentTime.plusHours(NO_SHOW_WAIT_HOURS).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
                     : NO_SHOW_WAIT_HOURS + "h";
@@ -1430,7 +1442,7 @@ public class ReservationService {
 
         assertNotCheckedIn(reservation);
 
-        // PR-X3: Ràng buộc điều kiện No-Show (48h quá hạn & 2 lần liên hệ cách nhau 24h)
+        // PR-X3: Ràng buộc điều kiện No-Show (48h quá hạn và 2 lần liên hệ thất bại liên tiếp)
         NoShowEligibility eligibility = evaluateNoShowEligibility(reservation);
         if (!eligibility.eligible()) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "NO_SHOW_NOT_ALLOWED_YET", eligibility.reason());

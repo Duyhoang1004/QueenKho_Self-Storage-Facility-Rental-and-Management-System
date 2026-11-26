@@ -254,8 +254,8 @@ public class DemoSimulationService {
         return result("Đơn đã quá 15 phút giữ chỗ, hệ thống nhả suất", "status", status);
     }
 
-    // ---------- 3. Flow 2: khách bùng hẹn, đủ điều kiện No-Show ----------
-    // Giờ hẹn lùi 49h (ngày bắt đầu < hôm nay → hiện ở tab No-Show) + 2 lần gọi thất bại cách nhau 25h (PR-X3).
+    // ---------- 3. Flow 2: khách không đến hẹn ----------
+    // Chỉ lùi giờ hẹn; kết quả liên hệ phải do Staff báo cáo riêng.
     @Transactional
     public Map<String, Object> triggerNoShow(Integer reservationId, CurrentUser actor) {
         requireEnabled();
@@ -282,13 +282,9 @@ public class DemoSimulationService {
                 "UPDATE facility_tasks SET due_at = ?, status = 'OVERDUE' " +
                         "WHERE contract_id = ? AND task_type = 'CHECK_IN' AND status IN ('OPEN', 'IN_PROGRESS', 'OVERDUE')",
                 Timestamp.valueOf(startDate.atTime(CLOSING_TIME)), contract.get("id"));
-        // 2 lần liên hệ thất bại, cách nhau 25h, đều sau giờ hẹn — đúng mã [CONTACT][FAILED] mà evaluateNoShowEligibility đếm
-        insertContactLog(actor, reservationId, LocalDateTime.now().minusHours(48), 1);
-        insertContactLog(actor, reservationId, LocalDateTime.now().minusHours(23), 2);
-
-        log(actor, "Khách bùng hẹn đơn " + reservation.get("reservation_code") + ": hẹn lùi 49h, 2 lần gọi thất bại cách 25h",
+        log(actor, "Khách không đến hẹn đơn " + reservation.get("reservation_code") + ": hẹn lùi 49h, chờ Staff báo cáo liên hệ",
                 "reservations", reservationId);
-        return result("Đơn đã đủ điều kiện No-Show (xem tab No-Show)", "appointment", appointment);
+        return result("Đơn đã quá hẹn; cần Staff báo cáo liên hệ trước khi xét No-Show", "appointment", appointment);
     }
 
     // ---------- 4 + 5. Flow 6: hợp đồng quá hạn N ngày (3 = phí trễ, 31 = được thanh lý) ----------
@@ -513,13 +509,6 @@ public class DemoSimulationService {
         Integer months = jdbcTemplate.queryForObject("SELECT duration_months FROM reservations WHERE id = ?",
                 Integer.class, reservationId);
         return months != null && months > 0 ? months : 1;
-    }
-
-    private void insertContactLog(CurrentUser actor, Integer reservationId, LocalDateTime at, int attempt) {
-        jdbcTemplate.update(
-                "INSERT INTO activity_logs (user_id, action, target_entity, target_id, created_at) VALUES (?, ?, 'reservations', ?, ?)",
-                actor.id(), "[CONTACT][FAILED] [SIMULATION] Gọi khách không nghe máy (lần " + attempt + ")",
-                String.valueOf(reservationId), Timestamp.valueOf(at));
     }
 
     private void log(CurrentUser actor, String detail, String targetEntity, Integer targetId) {

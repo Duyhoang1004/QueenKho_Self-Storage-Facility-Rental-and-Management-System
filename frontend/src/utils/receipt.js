@@ -1,6 +1,8 @@
 // Phiếu biên nhận đặt kho: mở cửa sổ in của trình duyệt để khách in hoặc "Lưu thành PDF".
 // Dùng trang HTML riêng (không in cả layout) và font hệ thống nên không lỗi tiếng Việt.
 
+import { formatDateVN } from './date'
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -22,8 +24,7 @@ function formatDateTime(value) {
 }
 
 function formatDate(value) {
-  if (!value) return '—'
-  return String(value).slice(0, 10).split('-').reverse().join('/')
+  return formatDateVN(value, '—')
 }
 
 /**

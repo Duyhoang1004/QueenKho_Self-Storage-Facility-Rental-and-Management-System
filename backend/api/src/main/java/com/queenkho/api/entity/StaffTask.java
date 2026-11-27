@@ -94,8 +94,8 @@ public class StaffTask {
     @Column(name = "cancel_reason", length = 300)
     private String cancelReason;
 
-    // 24/11/2026 — PR-O31a: demo "Khách tới trả đúng ngày hẹn" — ngày hẹn gốc của task nghiệm thu (hạn task đã dời về hôm nay);
-    // nghiệm thu chốt quyết toán theo ngày này để số tiền khớp đúng số khách thấy lúc hẹn. NULL = luồng thật.
+    // Ngày hẹn gốc của thao tác giả lập: CHECK_OUT dùng để chốt quyết toán, CHECK_IN dùng để mở bàn giao
+    // theo ngày hẹn mà không sửa ngày của đơn/hợp đồng. NULL = luồng thật.
     @Column(name = "simulated_checkout_date")
     private LocalDate simulatedCheckoutDate;
 }

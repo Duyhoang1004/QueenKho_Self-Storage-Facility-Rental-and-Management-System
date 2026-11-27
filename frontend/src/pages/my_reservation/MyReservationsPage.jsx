@@ -829,18 +829,18 @@ export default function MyReservationsPage() {
             aria-label="Danh sách đơn đặt chỗ"
             tabIndex={0}
           >
-            <table className="w-full min-w-[1190px] table-fixed text-left border-collapse">
+            <table className="w-full table-fixed text-left border-collapse">
               <colgroup>
-                <col className="w-[96px]" />
-                <col className="w-[160px]" />
-                <col className="w-[132px]" />
-                <col className="w-[132px]" />
-                <col className="w-[88px]" />
-                <col className="w-[56px]" />
-                <col className="w-[148px]" />
-                <col className="w-[78px]" />
-                <col className="w-[178px]" />
-                <col className="w-[122px]" />
+                <col className="w-[8.5%]" />
+                <col className="w-[13.5%]" />
+                <col className="w-[11%]" />
+                <col className="w-[11%]" />
+                <col className="w-[7.5%]" />
+                <col className="w-[5%]" />
+                <col className="w-[12.5%]" />
+                <col className="w-[7%]" />
+                <col className="w-[10%]" />
+                <col className="w-[14%]" />
               </colgroup>
               <thead className="bg-[#FAFAFA] text-[#AFAFAF] text-[10px] font-black uppercase tracking-widest border-b-2 border-[#E5E5E5]">
                 <tr>
@@ -1028,7 +1028,7 @@ export default function MyReservationsPage() {
 
                       {/* Cột 10: Thao tác (Đứng đúng cột Thao tác ngoài cùng bên phải) */}
                       <td className="px-3 py-3 text-center align-middle">
-                        <div className={`flex items-center justify-center whitespace-nowrap ${r.status === "PENDING" ? "flex-col gap-2" : "gap-1.5"}`}>
+                        <div className={`flex items-center justify-center ${r.status === "PENDING" ? "flex-col gap-2" : "flex-wrap gap-1.5"}`}>
                           {(Boolean(r.contractId) || Boolean(r.storageUnitId) || ["UNIT_ASSIGNED", "TERMINATION_PENDING", "SETTLEMENT_PENDING"].includes(r.status)) && (
                             <button
                               onClick={() =>

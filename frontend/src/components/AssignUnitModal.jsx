@@ -354,8 +354,8 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
             </div>
           )}
 
-          {/* Notes */}
-          <div className="flex flex-col gap-1.5">
+          {/* Giữ lại hai phần demo trong code, ẩn khỏi modal gán ô. */}
+          <div className="hidden flex-col gap-1.5">
             <label className="text-xs font-black uppercase tracking-wider text-[#777777]" htmlFor="assignNote">
               Ghi chú bàn giao & Kích hoạt SmartLock
             </label>
@@ -368,8 +368,7 @@ export default function AssignUnitModal({ isOpen, onClose, reservation, onSucces
             />
           </div>
 
-          {/* Automated Notification */}
-          <div className="flex items-center gap-3 p-3 bg-[#FAFAFA] rounded-2xl border-2 border-[#E5E5E5]">
+          <div className="hidden items-center gap-3 p-3 bg-[#FAFAFA] rounded-2xl border-2 border-[#E5E5E5]">
             <input
               id="autoNotify"
               type="checkbox"

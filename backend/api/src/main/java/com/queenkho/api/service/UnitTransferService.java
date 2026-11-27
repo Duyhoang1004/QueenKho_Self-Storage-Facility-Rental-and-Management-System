@@ -328,12 +328,15 @@ public class UnitTransferService {
                     String transferTag = "[FM đã chuyển HĐ sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + "]";
                     String updatedNote = truncate(transferTag + " | " + note, 1000);
                     jdbcTemplate.update("UPDATE facility_tasks SET note = ? WHERE id = ?", updatedNote, tid);
-                    if (row.get("staff_id") instanceof Number staffNum && notificationService != null) {
-                        notificationService.notifyStaff(staffNum.intValue(),
-                                "FM đã chuyển ô chính thức cho HĐ " + contract.getContractCode(),
-                                "Quản lý đã chuyển HĐ " + contract.getContractCode() + " từ ô " + oldUnit.getId()
-                                        + " sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + " theo đề xuất từ " + label + " #" + tid + ".",
-                                "TASK", "/staff/tasks/" + tid, true);
+                    if (notificationService != null) {
+                        String staffTitle = "FM đã chuyển ô chính thức cho HĐ " + contract.getContractCode();
+                        String staffMsg = "Quản lý đã chuyển HĐ " + contract.getContractCode() + " từ ô " + oldUnit.getId()
+                                + " sang ô " + (toEmergency ? "khẩn cấp " : "tiêu chuẩn ") + newUnit.getId() + " theo đề xuất từ " + label + " #" + tid + ".";
+                        if (row.get("staff_id") instanceof Number staffNum) {
+                            notificationService.notifyStaff(staffNum.intValue(), staffTitle, staffMsg, "TASK", "/staff/tasks/" + tid, true);
+                        } else {
+                            notificationService.notifyFacilityStaff(facilityId, staffTitle, staffMsg, "TASK", "/staff/tasks/" + tid, true);
+                        }
                     }
                 }
             });

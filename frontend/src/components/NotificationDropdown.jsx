@@ -164,62 +164,84 @@ export default function NotificationDropdown() {
     setIsOpen(!isOpen);
   };
 
-  const handleItemClick = async (item) => {
+  const resolveNotificationTarget = (item) => {
+    if (!item?.targetUrl) return null;
+    let target = String(item.targetUrl).trim();
+    if (!target) return null;
+
     try {
-      if (!item.isRead) {
-        await markAsRead(item.id);
-        setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, isRead: true } : n));
-        setUnreadCount(prev => Math.max(0, prev - 1));
+      const user = JSON.parse(sessionStorage.getItem('user') || '{}');
+      const fullText = `${item.title || ''} ${item.message || ''}`;
+      const taskIdFromText = fullText.match(/#(\d+)/)?.[1];
+
+      if (user?.role === 'STAFF') {
+        if (target.startsWith('/manager/tasks/')) {
+          target = target.replace('/manager/tasks/', '/staff/tasks/');
+        } else if (target.startsWith('/manager/tasks')) {
+          const qId = target.match(/highlightTaskId=(\d+)/)?.[1] || taskIdFromText;
+          target = qId ? `/staff/tasks/${qId}` : '/staff';
+        } else if (target.startsWith('/staff?') || target === '/staff') {
+          const qId = target.match(/highlightTaskId=(\d+)/)?.[1] || taskIdFromText;
+          if (qId) target = `/staff/tasks/${qId}`;
+        }
+      } else if (user?.role === 'FACILITY_MANAGER') {
+        if (target.startsWith('/staff/tasks/')) {
+          target = target.replace('/staff/tasks/', '/manager/tasks/');
+        } else if (target.startsWith('/staff?') || target === '/staff') {
+          const qId = target.match(/highlightTaskId=(\d+)/)?.[1] || taskIdFromText;
+          target = qId ? `/manager/tasks/${qId}` : '/manager/tasks';
+        } else if (target === '/manager/tasks' && taskIdFromText) {
+          target = `/manager/tasks/${taskIdFromText}`;
+        }
+      } else if (user?.role === 'CUSTOMER' || !user?.role) {
+        const srMatch = fullText.match(/(SR-[A-Z0-9-]+)/i);
+        const btMatch = fullText.match(/(BT-[A-Z0-9-]+)/i);
+        const hdMatch = fullText.match(/(HD-[A-Z0-9-]+)/i);
+        const resMatch = fullText.match(/(RES-[A-Z0-9-]+)/i);
+
+        // Nếu link chưa có query điều hướng cụ thể ở /ho-tro thì phân giải theo mã (hỗ trợ cả mã chữ & số)
+        if (target === '/ho-tro' || target.startsWith('/ho-tro?')) {
+          const hasSpecificQuery = target.includes('highlightTicketCode=') || target.includes('highlightClaimCode=');
+          if (!hasSpecificQuery) {
+            if (btMatch) {
+              target = `/ho-tro?highlightClaimCode=${btMatch[1].toUpperCase()}`;
+            } else if (srMatch) {
+              target = `/ho-tro?highlightTicketCode=${srMatch[1].toUpperCase()}`;
+            }
+          }
+        } else if (target.startsWith('/kho-cua-toi/hop-dong/')) {
+          if (!target.includes('highlight=')) {
+            target += (target.includes('?') ? '&' : '?') + 'highlight=1';
+          }
+        } else if (target === '/kho-cua-toi' || target.startsWith('/kho-cua-toi?')) {
+          const code = hdMatch?.[1] || resMatch?.[1];
+          if (code && !target.includes('highlightCode=')) {
+            target = `/kho-cua-toi?highlightCode=${code.toUpperCase()}`;
+          }
+        }
       }
-    } catch (err) {
-      console.error('Lỗi đánh dấu đã đọc:', err);
+    } catch {
+      // ignore json parse error
+    }
+
+    return target;
+  };
+
+  const clickSeqRef = useRef(0);
+
+  const handleItemClick = (item) => {
+    const target = resolveNotificationTarget(item);
+
+    if (!item.isRead) {
+      setNotifications(prev => prev.map(n => n.id === item.id ? { ...n, isRead: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      markAsRead(item.id).catch(err => console.error('Lỗi đánh dấu đã đọc:', err));
     }
 
     setIsOpen(false);
-
-    if (item.targetUrl) {
-      let target = item.targetUrl;
-      try {
-        const user = JSON.parse(sessionStorage.getItem('user') || '{}');
-        if (user?.role === 'STAFF' && target.startsWith('/manager/tasks')) {
-          target = target.replace('/manager/tasks', '/staff');
-        } else if (user?.role === 'FACILITY_MANAGER' && (target.startsWith('/staff?') || target === '/staff')) {
-          target = target.replace('/staff', '/manager/tasks');
-        } else if (user?.role === 'CUSTOMER' || !user?.role) {
-          const fullText = (item.title || '') + ' ' + (item.message || '');
-          const srMatch = fullText.match(/(SR-\d+)/);
-          const btMatch = fullText.match(/(BT-\d+)/);
-          const hdMatch = fullText.match(/(HD-[A-Z0-9-]+)/);
-          const resMatch = fullText.match(/(RES-\d+)/);
-
-          // 1. Nếu là thông báo bồi thường
-          if (btMatch) {
-            if (item.type === 'REFUND' || fullText.toLowerCase().includes('chi trả') || fullText.toLowerCase().includes('tiền')) {
-              target = `/thanh-toan?highlightClaim=${btMatch[1]}&highlightType=COMPENSATION`;
-            } else {
-              target = `/ho-tro?highlightClaimCode=${btMatch[1]}`;
-            }
-          }
-          // 2. Nếu là thông báo ticket hỗ trợ
-          else if (srMatch) {
-            target = `/ho-tro?highlightTicketCode=${srMatch[1]}`;
-          }
-          // 3. Nếu là thông báo chi tiết hợp đồng
-          else if (target.startsWith('/kho-cua-toi/hop-dong/')) {
-            target += (target.includes('?') ? '&' : '?') + 'highlight=1';
-          }
-          // 4. Nếu là thông báo danh sách hợp đồng / đặt kho
-          else if (target === '/kho-cua-toi' || target.startsWith('/kho-cua-toi?')) {
-            const code = hdMatch?.[1] || resMatch?.[1];
-            if (code) {
-              target = `/kho-cua-toi?highlightCode=${code}`;
-            }
-          }
-        }
-      } catch {
-        // ignore json parse error
-      }
-      navigate(target);
+    if (target) {
+      clickSeqRef.current += 1;
+      navigate(target, { state: { fromNotificationAt: `${item.id}-${clickSeqRef.current}` } });
     }
   };
 
@@ -306,7 +328,7 @@ export default function NotificationDropdown() {
                 </div>
               </div>
             ) : (
-              notifications.map((item) => {
+              notifications.filter((item) => Boolean(resolveNotificationTarget(item))).map((item) => {
                 const cfg = TYPE_CONFIG[item.type] || {
                   icon: 'notifications',
                   bg: 'bg-[#F7F7F7]',

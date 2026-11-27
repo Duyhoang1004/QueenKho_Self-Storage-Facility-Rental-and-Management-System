@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   cancelSupportTicket,
   confirmSupportTicket,
@@ -569,6 +569,8 @@ function formatDateTime(val) {
 }
 
 export default function CustomerSupportPage() {
+  const location = useLocation();
+  const fromNotificationAt = location.state?.fromNotificationAt;
   const [searchParams, setSearchParams] = useSearchParams();
   const initialContractId = searchParams.get('contractId') ? Number(searchParams.get('contractId')) : '';
   const shouldOpenCreate = searchParams.get('create') === '1';
@@ -629,17 +631,22 @@ export default function CustomerSupportPage() {
 
   const [toast, setToast] = useState(null);
 
-  const fetchData = useCallback(() => {
+  const hasLoadedOnceRef = useRef(false);
+
+  const fetchData = useCallback((silent = false) => {
     if (!customerId) {
       setLoading(false);
       return Promise.resolve();
     }
-    setLoading(true);
+    if (!silent && !hasLoadedOnceRef.current) {
+      setLoading(true);
+    }
     return Promise.all([
       getCustomerSupportTickets(customerId),
       getEligibleSupportContracts(customerId),
     ])
       .then(([ticketList, contractList]) => {
+        hasLoadedOnceRef.current = true;
         setTickets(ticketList || []);
         setEligibleContracts(contractList || []);
         setError('');
@@ -650,9 +657,13 @@ export default function CustomerSupportPage() {
       .finally(() => setLoading(false));
   }, [customerId]);
 
+  const urlTicketCode = searchParams.get('highlightTicketCode');
+  const urlClaimCode = searchParams.get('highlightClaimCode');
+  const urlTicketId = searchParams.get('highlightTicketId');
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    fetchData(hasLoadedOnceRef.current);
+  }, [fetchData, fromNotificationAt, urlTicketCode, urlClaimCode, urlTicketId]);
 
   // Nếu có query ?create=1 hoặc ?contractId=... thì mở modal tạo sẵn hợp đồng
   useEffect(() => {
@@ -931,7 +942,9 @@ export default function CustomerSupportPage() {
     }
 
     setActiveHighlightKey(target.ticketCode || target.claim?.claimCode || String(target.id));
-  }, [highlightParam, tickets]);
+  }, [highlightParam, fromNotificationAt, tickets]);
+
+  const lastJumpedHighlightRef = useRef('');
 
   // 2. Tự động lật đúng trang phân trang chứa ticket cần highlight
   useEffect(() => {
@@ -943,12 +956,14 @@ export default function CustomerSupportPage() {
         String(t.id) === String(highlightParam)
     );
     if (targetIdx !== -1) {
+      const jumpKey = `${highlightParam}|${fromNotificationAt || ''}|${activeTab}|${tickets.length}`;
       const targetPage = Math.floor(targetIdx / PAGE_SIZE) + 1;
-      if (currentPage !== targetPage) {
+      if (lastJumpedHighlightRef.current !== jumpKey) {
+        lastJumpedHighlightRef.current = jumpKey;
         setCurrentPage(targetPage);
       }
     }
-  }, [highlightParam, visibleTickets]);
+  }, [highlightParam, fromNotificationAt, visibleTickets, activeTab, tickets.length]);
 
   // 3. Cuộn mượt đến ticket card và nhấp nháy highlight 8 giây
   useEffect(() => {

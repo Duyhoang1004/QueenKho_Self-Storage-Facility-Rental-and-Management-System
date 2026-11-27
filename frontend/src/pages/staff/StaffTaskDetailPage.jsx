@@ -8,6 +8,7 @@ import {
   startCheckInRepair,
   confirmCheckInRepair,
   checkInStaffTask,
+  claimStaffTask,
   reopenCheckInHandover,
   confirmCheckInUnitIssue,
   checkOutStaffTask,
@@ -261,7 +262,7 @@ function blockedReason(task, userId, isManager) {
   if (task.taskType === 'SUPPORT') {
     if (task.status === 'COMPLETED') return null;
     if (task.status === 'CANCELLED') return task.cancelReason ? `Task đã huỷ — ${task.cancelReason}.` : 'Yêu cầu hỗ trợ đã bị huỷ hoặc đã đóng.';
-    if (task.status === 'OPEN') return 'Task hỗ trợ chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
+    if (task.status === 'OPEN') return 'Task hỗ trợ chưa có người nhận. Hãy bấm "Nhận việc ngay" bên dưới để tiếp nhận và xử lý.';
     if (task.status === 'OVERDUE') return 'Task hỗ trợ đã quá hạn (PR-S4). Cần Quản lý cơ sở gia hạn trước khi nhân viên có thể hoàn tất.';
     if (task.staffId !== userId) return `Task hỗ trợ đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
     if (new Date(task.dueAt) <= new Date()) return 'Task hỗ trợ đã quá hạn 21:00. Cần Quản lý cơ sở gia hạn (PR-S4).';
@@ -271,7 +272,7 @@ function blockedReason(task, userId, isManager) {
     return 'Trang này chỉ hỗ trợ lập biên bản cho task check-in, nghiệm thu check-out, hỗ trợ KH hoặc hoàn tiền.';
   }
   switch (task.status) {
-    case 'OPEN': return 'Task chưa có người nhận. Hãy quay lại bảng công việc và bấm "Nhận việc" trước.';
+    case 'OPEN': return 'Task chưa có người nhận. Hãy bấm "Nhận việc ngay" phía trên để tiếp nhận và xử lý.';
     case 'OVERDUE': return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản. Vui lòng báo quản lý cơ sở.';
     case 'CANCELLED': return task.cancelReason ? `Task đã huỷ — ${task.cancelReason}.` : 'Task đã bị huỷ (khách không đến hoặc đã huỷ yêu cầu).';
     case 'COMPLETED': return null;
@@ -411,7 +412,7 @@ function maintenanceBlockedReason(task, userId, isManager) {
 }
 
 // PR-O10 / PR-Q9: phiếu bảo trì ô kho — sửa chữa sau trả kho có sự cố, hoặc dọn kho sau thanh lý
-function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onToast }) {
+function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onToast, onClaim, claiming }) {
   const [note, setNote] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -750,6 +751,17 @@ function MaintenancePanel({ task, userId, isManager, onCompleted, onPreview, onT
           <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
           <p className="text-sm font-black text-[#4B4B4B]">Chưa thể hoàn tất bảo trì</p>
           <p className="text-xs font-bold text-[#777777] max-w-[360px]">{blocked}</p>
+          {!isManager && task.status === 'OPEN' && !assignLockedUntil(task) && onClaim && (
+            <button
+              type="button"
+              disabled={claiming}
+              onClick={onClaim}
+              className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 mt-1 disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[18px]">pan_tool_alt</span>
+              {claiming ? 'Đang nhận việc...' : 'Nhận việc ngay'}
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -1067,6 +1079,7 @@ export default function StaffTaskDetailPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmRefundOpen, setConfirmRefundOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [claiming, setClaiming] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
   const [toast, setToast] = useState(null);
   const closeToast = useCallback(() => setToast(null), []);
@@ -1111,9 +1124,23 @@ export default function StaffTaskDetailPage() {
       .finally(() => setLoading(false));
   }, [id, userId, fetchPin]);
 
+  const handleQuickClaim = () => {
+    if (!task?.id || !userId || claiming) return;
+    setClaiming(true);
+    claimStaffTask(task.id, userId)
+      .then(() => {
+        setToast({ type: 'success', message: `Đã nhận Task #${task.id}. Bạn có thể bắt đầu xử lý ngay!` });
+        return loadTask();
+      })
+      .catch(err => {
+        setToast({ type: 'error', message: err.response?.data?.message || 'Không thể nhận task này.' });
+      })
+      .finally(() => setClaiming(false));
+  };
+
   useEffect(() => {
     loadTask();
-  }, [loadTask]);
+  }, [loadTask, location.state?.fromNotificationAt]);
 
   // ================== LOGIC CHECK-IN (UC-18) ==================
   const allCheckInChecked = CHECKIN_CHECKLIST.every(item => checks[item.key]);
@@ -1763,6 +1790,28 @@ export default function StaffTaskDetailPage() {
         <div className="mb-6 flex items-start gap-2 rounded-2xl border-2 border-[#E5E5E5] bg-[#F7F7F7] px-4 py-3 text-xs font-bold text-[#777777]">
           <span className="material-symbols-outlined text-[20px] text-[#AFAFAF]">lock_clock</span>
           <span>Việc này chỉ giao / nhận được trong vòng 30 ngày trước ngày hẹn — mở từ <strong className="text-[#4B4B4B]">{assignLockedUntil(task)}</strong>.</span>
+        </div>
+      )}
+
+      {/* Cho phép Staff bấm Nhận việc ngay tại trang chi tiết khi đi thẳng từ thông báo vào task OPEN */}
+      {!isManager && task.status === 'OPEN' && !assignLockedUntil(task) && task.taskType !== 'REFUND' && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[#58CC02] bg-[#F2FFE6] px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[24px] text-[#58A700]">assignment_turned_in</span>
+            <div>
+              <p className="text-xs font-black uppercase text-[#58A700]">Task đang chờ tiếp nhận</p>
+              <p className="text-xs font-bold text-[#4B4B4B]">Bạn có thể bấm &ldquo;Nhận việc ngay&rdquo; tại đây để mở khóa và bắt đầu xử lý.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={claiming}
+            onClick={handleQuickClaim}
+            className="duo-btn-green px-5 py-2.5 text-xs gap-1.5 whitespace-nowrap disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[18px]">pan_tool_alt</span>
+            {claiming ? 'Đang nhận việc...' : 'Nhận việc ngay'}
+          </button>
         </div>
       )}
 
@@ -2464,6 +2513,8 @@ export default function StaffTaskDetailPage() {
               onCompleted={data => setTask(data)}
               onPreview={setPreviewImage}
               onToast={setToast}
+              onClaim={handleQuickClaim}
+              claiming={claiming}
             />
           ) : isSupport ? (
             /* ================== MÀN HÌNH XỬ LÝ YÊU CẦU HỖ TRỢ (SUPPORT - UC-27) ================== */
@@ -2782,12 +2833,25 @@ export default function StaffTaskDetailPage() {
                   <span className="material-symbols-outlined text-[#FF9600] text-[40px]">lock</span>
                   <p className="text-sm font-black text-[#4B4B4B]">Chưa thể hoàn tất xử lý hỗ trợ</p>
                   <p className="text-xs font-bold text-[#777777] max-w-[400px]">{reason}</p>
-                  <Link
-                    to={isManager ? '/manager/tasks' : '/staff'}
-                    className="duo-btn-gray px-4 py-2 text-xs mt-1"
-                  >
-                    Về bảng công việc
-                  </Link>
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                    {!isManager && task.status === 'OPEN' && !assignLockedUntil(task) && (
+                      <button
+                        type="button"
+                        disabled={claiming}
+                        onClick={handleQuickClaim}
+                        className="duo-btn-green px-5 py-2 text-xs gap-1.5 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">pan_tool_alt</span>
+                        {claiming ? 'Đang nhận việc...' : 'Nhận việc ngay'}
+                      </button>
+                    )}
+                    <Link
+                      to={isManager ? '/manager/tasks' : '/staff'}
+                      className="duo-btn-gray px-4 py-2 text-xs"
+                    >
+                      Về bảng công việc
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 /* Nhân viên đang giữ task IN_PROGRESS hoặc Quản lý cơ sở (FM) vào điều phối */

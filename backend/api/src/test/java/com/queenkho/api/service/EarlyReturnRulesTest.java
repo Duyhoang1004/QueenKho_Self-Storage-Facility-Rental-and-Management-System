@@ -37,9 +37,16 @@ class EarlyReturnRulesTest {
         assertEquals(BigDecimal.ZERO, r.breakFee());
     }
 
-    @Test void trialTwoDaysChargesTwoDays() {
-        var r = StaffTaskService.trialReturn(START, START.plusDays(2), m(500_000), m(1_325_000));
+    @Test void trialNextDayChargesTwoDays() {
+        // nhận 28, trả 29 → 2 ngày (đếm cả ngày nhận kho)
+        var r = StaffTaskService.trialReturn(START, START.plusDays(1), m(500_000), m(1_325_000));
         assertEquals(m(1_325_000 - 2 * 16_667), r.refund());
+    }
+
+    @Test void trialThirdDayChargesThreeDays() {
+        // nhận 28, trả 30 → 3 ngày
+        var r = StaffTaskService.trialReturn(START, START.plusDays(2), m(500_000), m(1_325_000));
+        assertEquals(m(1_325_000 - 3 * 16_667), r.refund());
     }
 
     @Test void trialWindowIsFirstThreeDaysOfOriginalPeriod() {

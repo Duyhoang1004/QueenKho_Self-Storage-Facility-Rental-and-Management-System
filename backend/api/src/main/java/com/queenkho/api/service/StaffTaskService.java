@@ -4475,7 +4475,8 @@ public class StaffTaskService {
      * rentPaid: tiền thuê kỳ đã đóng (không gồm bảo hiểm).
      */
     static EarlyReturn trialReturn(LocalDate periodStart, LocalDate actualDate, BigDecimal baseMonthlyPrice, BigDecimal rentPaid) {
-        long usedDays = Math.max(1, ChronoUnit.DAYS.between(periodStart, actualDate));
+        // 27/11/2026: đếm cả ngày nhận kho — nhận 28, trả 28 = 1 ngày, trả 29 = 2 ngày, trả 30 = 3 ngày
+        long usedDays = Math.max(1, ChronoUnit.DAYS.between(periodStart, actualDate) + 1);
         BigDecimal daily = baseMonthlyPrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
         BigDecimal used = daily.multiply(BigDecimal.valueOf(usedDays)).min(rentPaid.max(BigDecimal.ZERO));
         return new EarlyReturn(1, BigDecimal.ZERO, rentPaid.subtract(used).max(BigDecimal.ZERO));

@@ -1,5 +1,6 @@
 package com.queenkho.api.service;
 
+import com.queenkho.api.exception.ContractException;
 import com.queenkho.api.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -435,8 +436,19 @@ public class VnpayService {
     private String settleRenewal(String ref, Map<String, Object> p) {
         var c = contracts.findDetailById(((Number) p.get("contract_id")).intValue()).orElse(null);
         if (c == null) return "Không tìm thấy hợp đồng";
-        
+
         String previousStatus = c.getStatus() != null ? c.getStatus().toUpperCase() : "";
+        if (!"ACTIVE".equals(previousStatus) && !"OVERDUE".equals(previousStatus)
+                && !"TERMINATION_PENDING".equals(previousStatus)) {
+            return "Hợp đồng đang ở trạng thái " + previousStatus + ", không thể gia hạn";
+        }
+        if (renewalPolicy != null) {
+            try {
+                renewalPolicy.assertRenewable(c);
+            } catch (ContractException ex) {
+                return ex.getMessage() != null ? ex.getMessage() : "Ô kho đã có khách khác đặt trước, không thể gia hạn";
+            }
+        }
         LocalDate today = LocalDate.now(LateFeeService.VIETNAM_ZONE);
         LocalDate currentEnd = "TERMINATION_PENDING".equals(previousStatus)
                 ? today

@@ -285,8 +285,17 @@ export default function StorageManagementPage() {
         </button>
       )}
 
-      {/* Mở lại kho */}
-      {unit.status === 'MAINTENANCE' && (
+      {/* Mở lại kho (chặn mở bằng tay nếu ô đang chờ dọn hàng cưỡng chế chuyển Kho tổng — BR-134) */}
+      {unit.status === 'MAINTENANCE' && unit.maintenanceReason === 'LIQUIDATION' ? (
+        <button
+          type="button"
+          onClick={() => navigate(unit.maintenanceTaskId ? `/manager/tasks/${unit.maintenanceTaskId}` : '/manager/tasks')}
+          className="duo-btn-white px-3 py-1.5 text-[11px] text-[#9333EA] border-[#C084FC]"
+          title="Ô đang chờ kiểm kê chuyển hàng vào Kho tổng — bắt buộc hoàn tất task dọn kho trước khi mở lại"
+        >
+          Dọn kho tổng{unit.maintenanceTaskId ? ` #${unit.maintenanceTaskId}` : ''}
+        </button>
+      ) : unit.status === 'MAINTENANCE' && (
         <button
           type="button"
           onClick={() => openStatusModal(unit, 'AVAILABLE')}

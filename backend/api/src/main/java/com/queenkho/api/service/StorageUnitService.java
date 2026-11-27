@@ -409,6 +409,18 @@ public class StorageUnitService {
             checkSlotAvailabilityBeforeReduction(unit.getFacility().getId(), unit.getUnitType().getId());
         }
 
+        // BR-134 / B10: Không cho mở lại kho bằng tay khi ô đang chờ kiểm kê & dọn hàng cưỡng chế chuyển Kho tổng
+        if (!"MAINTENANCE".equals(targetStatus) && "MAINTENANCE".equalsIgnoreCase(unit.getStatus())
+                && staffTaskService != null) {
+            var openMaintenance = staffTaskService.findOpenMaintenanceTask(id).orElse(null);
+            if (openMaintenance != null && "LIQUIDATION".equalsIgnoreCase(openMaintenance.getMaintenanceReason())) {
+                throw new FacilityException(HttpStatus.CONFLICT, "LIQUIDATION_CLEANUP_REQUIRED",
+                        "Ô kho đang chờ kiểm kê và dọn hàng cưỡng chế chuyển vào Kho tổng"
+                                + (openMaintenance.getId() != null ? " (task #" + openMaintenance.getId() + ")" : "")
+                                + ". Bắt buộc hoàn tất dọn kho trên Bảng công việc trước khi mở lại ô.");
+            }
+        }
+
         unit.setStatus(targetStatus);
         if ("MAINTENANCE".equals(targetStatus)) {
             unit.setMaintenanceNote(note);

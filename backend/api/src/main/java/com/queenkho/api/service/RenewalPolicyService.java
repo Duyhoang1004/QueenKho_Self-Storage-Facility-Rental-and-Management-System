@@ -303,7 +303,11 @@ public class RenewalPolicyService {
         Integer facilityId = contract.getStorageUnit().getFacility().getId();
         Integer unitTypeId = contract.getStorageUnit().getUnitType().getId();
         int freeNow = freeSlotsNow(facilityId, unitTypeId);
-        int otherReleasing = releaseDates(facilityId, unitTypeId, contract.getId()).size();
+        LocalDate myReleaseDate = expectedReleaseDate(contract);
+        List<LocalDate> otherDates = releaseDates(facilityId, unitTypeId, contract.getId());
+        int otherReleasing = myReleaseDate != null
+                ? (int) otherDates.stream().filter(d -> d != null && !d.isAfter(myReleaseDate)).count()
+                : otherDates.size();
         if (freeNow + otherReleasing < 0) {
             return true;
         }
@@ -324,6 +328,25 @@ public class RenewalPolicyService {
             }
         }
         return false;
+    }
+
+    /** Ngày trống dự kiến của chính hợp đồng hiện tại (cùng công thức với RELEASE_DATE_SQL) */
+    private LocalDate expectedReleaseDate(RentalContract contract) {
+        if (contract == null) return null;
+        String status = contract.getStatus() != null ? contract.getStatus().toUpperCase() : "";
+        LocalDate t = today();
+        if ("OVERDUE".equals(status) || "LIQUIDATED".equals(status)) {
+            return t.plusDays(OVERDUE_UNIT_BOOKING_LEAD_DAYS);
+        }
+        LocalDate endDate = contract.getEndDate();
+        if (endDate == null) return null;
+        if ("TERMINATION_PENDING".equals(status)) {
+            return endDate.plusDays(1);
+        }
+        if ("ACTIVE".equals(status)) {
+            return endDate.plusDays(EXPIRING_ACTIVE_BOOKING_LEAD_DAYS);
+        }
+        return endDate.plusDays(CLEANUP_DAYS_AFTER_LIQUIDATION);
     }
 
     private static String formatDate(LocalDate date) {

@@ -72,8 +72,8 @@ export default function BomOverduePage() {
         ) : rows.length === 0 ? (
           <p className="p-6 text-xs font-bold text-[#AFAFAF]">Không có hợp đồng nào đang quá hạn.</p>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="bg-[#F7F7F7] text-[11px] font-black uppercase text-[#AFAFAF]">
+          <table className="w-full min-w-[960px] text-left text-xs">
+            <thead className="bg-[#F7F7F7] text-[11px] font-black uppercase text-[#AFAFAF] whitespace-nowrap">
               <tr>
                 <th className="py-3 px-4">Hợp đồng</th><th className="py-3 px-4">Cơ sở</th><th className="py-3 px-4">Khách</th>
                 <th className="py-3 px-4">Hết hạn</th><th className="py-3 px-4">Quá hạn</th><th className="py-3 px-4">Phí trễ</th>
@@ -85,19 +85,19 @@ export default function BomOverduePage() {
                 const { lateFee, overstayFee, totalPenalty, lateFeeWaived, overstayFeeWaived } = getOverdueFeeBreakdown(c)
                 return (
                   <tr key={c.contractId}>
-                    <td className="py-3 px-4 font-black text-[#1CB0F6]">{c.contractCode}<div className="text-[11px] text-[#AFAFAF]">{c.storageUnitId}</div></td>
-                    <td className="py-3 px-4">{c.facilityName}</td>
-                    <td className="py-3 px-4">{c.customerName}<div className="text-[11px] text-[#AFAFAF]">{c.customerPhone}</div></td>
-                    <td className="py-3 px-4">{formatDate(c.endDate)}</td>
-                    <td className="py-3 px-4">{c.overdueDays} ngày</td>
-                    <td className="py-3 px-4">{lateFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(lateFee)}</td>
-                    <td className="py-3 px-4">{overstayFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(overstayFee)}</td>
-                    <td className="py-3 px-4 text-right font-black text-[#FF4B4B]">{formatVND(totalPenalty)}</td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 font-black text-[#1CB0F6] whitespace-nowrap">{c.contractCode}<div className="text-[11px] text-[#AFAFAF]">{c.storageUnitId}</div></td>
+                    <td className="py-3 px-4 whitespace-nowrap">{c.facilityName}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{c.customerName}<div className="text-[11px] text-[#AFAFAF]">{c.customerPhone}</div></td>
+                    <td className="py-3 px-4 whitespace-nowrap">{formatDate(c.endDate)}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{c.overdueDays} ngày</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{lateFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(lateFee)}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">{overstayFeeWaived ? <span className="text-[#58A700]">Đã miễn</span> : formatVND(overstayFee)}</td>
+                    <td className="py-3 px-4 text-right font-black text-[#FF4B4B] whitespace-nowrap">{formatVND(totalPenalty)}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       {lateFeeWaived ? (
                         <span className="text-[11px] text-[#AFAFAF]" title={c.lateFeeWaiverNote || ''}>Đã miễn</span>
                       ) : (
-                        <button type="button" onClick={() => { setTarget(c); setFormError('') }} className="duo-btn-white px-3 py-1.5 text-xs">
+                        <button type="button" onClick={() => { setTarget(c); setReason(''); setWaiveOverstay(false); setFormError('') }} className="duo-btn-white px-3 py-1.5 text-xs whitespace-nowrap">
                           Miễn phí trễ
                         </button>
                       )}

@@ -254,7 +254,9 @@ function withMockHandoverPhoto(photos, task, action) {
 // Vì sao người đang xem không lập được biên bản (null = lập được)
 function blockedReason(task, userId, isManager) {
   if (task.taskType === 'MAINTENANCE') return null; // xét riêng trong MaintenancePanel (FM được đóng thẳng)
-  if (isManager) return null; // Quản lý cơ sở luôn có quyền xem toàn bộ nội dung và thực hiện điều phối / chuyển ô kho
+  // FM được xem và điều phối task check-in, nhưng biên bản bàn giao chỉ Staff được lập.
+  if (isManager && task.taskType === 'CHECK_IN') return 'Biên bản bàn giao do nhân viên phụ trách lập. Quản lý chỉ theo dõi và xử lý sự cố.';
+  if (isManager) return null;
   if (task.taskType === 'REFUND') {
     if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
     return null;
@@ -1116,13 +1118,13 @@ export default function StaffTaskDetailPage() {
             setFmResolvedGoodsValueNote('');
           }
         } else setHandover(null);
-        if (data.taskType === 'CHECK_IN' && !blockedReason(data, userId) && data.status !== 'COMPLETED') {
+        if (!isManager && data.taskType === 'CHECK_IN' && !blockedReason(data, userId, false) && data.status !== 'COMPLETED') {
           fetchPin();
         }
       })
       .catch(err => setLoadError(err.response?.data?.message || 'Không tải được công việc.'))
       .finally(() => setLoading(false));
-  }, [id, userId, fetchPin]);
+  }, [id, userId, isManager, fetchPin]);
 
   const handleQuickClaim = () => {
     if (!task?.id || !userId || claiming) return;
@@ -1820,8 +1822,8 @@ export default function StaffTaskDetailPage() {
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           <SimulationButton
-            label="Khách tới hôm nay"
-            description="Dời lịch hẹn của khách về hôm nay (hạn 21:00) để check-in ngay, không phải chờ đúng ngày hẹn."
+            label="Giả lập tới ngày check-in"
+            description="Mở thao tác check-in ngay theo đúng ngày khách đã hẹn; giữ nguyên ngày bắt đầu và kết thúc hợp đồng."
             onRun={() => simulateArriveToday(task.id)}
             onDone={() => loadTask()}
           />

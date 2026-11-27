@@ -32,7 +32,7 @@ public class DemoSimulationController {
         return ResponseEntity.ok(Map.of("enabled", simulationService.isEnabled()));
     }
 
-    // Flow 2: khách tới nhận kho hôm nay (Staff / FM, task CHECK_IN)
+    // Flow 2: giả lập tới đúng ngày hẹn check-in (giữ nguyên ngày đơn và hợp đồng)
     @PostMapping("/tasks/{id}/arrive-today")
     public ResponseEntity<Map<String, Object>> arriveToday(@PathVariable Integer id) {
         return ResponseEntity.ok(simulationService.arriveToday(id, currentUser.require()));

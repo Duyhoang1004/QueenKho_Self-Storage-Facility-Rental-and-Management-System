@@ -254,7 +254,9 @@ function withMockHandoverPhoto(photos, task, action) {
 // Vì sao người đang xem không lập được biên bản (null = lập được)
 function blockedReason(task, userId, isManager) {
   if (task.taskType === 'MAINTENANCE') return null; // xét riêng trong MaintenancePanel (FM được đóng thẳng)
-  if (isManager) return null; // Quản lý cơ sở luôn có quyền xem toàn bộ nội dung và thực hiện điều phối / chuyển ô kho
+  // FM được xem và điều phối task check-in, nhưng biên bản bàn giao chỉ Staff được lập.
+  if (isManager && task.taskType === 'CHECK_IN') return 'Biên bản bàn giao do nhân viên phụ trách lập. Quản lý chỉ theo dõi và xử lý sự cố.';
+  if (isManager) return null;
   if (task.taskType === 'REFUND') {
     if (task.status === 'CANCELLED') return 'Yêu cầu hoàn tiền đã bị huỷ.';
     return null;
@@ -1116,13 +1118,13 @@ export default function StaffTaskDetailPage() {
             setFmResolvedGoodsValueNote('');
           }
         } else setHandover(null);
-        if (data.taskType === 'CHECK_IN' && !blockedReason(data, userId) && data.status !== 'COMPLETED') {
+        if (!isManager && data.taskType === 'CHECK_IN' && !blockedReason(data, userId, false) && data.status !== 'COMPLETED') {
           fetchPin();
         }
       })
       .catch(err => setLoadError(err.response?.data?.message || 'Không tải được công việc.'))
       .finally(() => setLoading(false));
-  }, [id, userId, fetchPin]);
+  }, [id, userId, isManager, fetchPin]);
 
   const handleQuickClaim = () => {
     if (!task?.id || !userId || claiming) return;

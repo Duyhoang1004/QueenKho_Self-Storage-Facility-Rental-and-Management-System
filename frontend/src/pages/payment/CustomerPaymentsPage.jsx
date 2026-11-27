@@ -462,7 +462,7 @@ function PaymentReceiptModal({ transaction, onClose }) {
               {earlyRentRefund > 0 && (
                 <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
                   <div className="flex flex-col">
-                    <span className="font-bold text-[#58A700]">Hoàn tiền thuê trả sớm (PR-O2)</span>
+                    <span className="font-bold text-[#58A700]">Hoàn tiền thuê chưa dùng (trả sớm)</span>
                     <span className="text-[10px] text-[#AFAFAF]">Hoàn tiền thuê cho các tháng chưa sử dụng</span>
                   </div>
                   <span className="font-black text-[#58A700]">

@@ -330,7 +330,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="w-[580px] max-w-xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-y-auto flex flex-col relative transition-all animate-in fade-in zoom-in-95 duration-200 custom-scrollbar">
+      <div className="w-full max-w-xl max-h-[92vh] bg-white rounded-2xl shadow-2xl overflow-y-auto flex flex-col relative transition-all animate-in fade-in zoom-in-95 duration-200 custom-scrollbar">
         
         {/* Modal Header */}
         <div className="px-6 pt-5 pb-4 bg-white flex items-start justify-between border-b border-slate-100">
@@ -793,7 +793,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
               )}
               {!isOverdue && isEarlyCheckout && (
                 <span className="text-[11px] text-emerald-700 bg-emerald-100 font-semibold px-2 py-0.5 rounded shrink-0">
-                  Trả sớm (PR-O2)
+                  {preview?.faultTermination ? 'Trả sớm — lỗi cơ sở, tính theo ngày' : preview?.trialReturn ? 'Trả sớm — trong 3 ngày đầu, tính theo ngày' : 'Trả sớm (PR-O2)'}
                 </span>
               )}
               {!isOverdue && !isTerminationPending && isMatchedExpiry && (
@@ -887,7 +887,7 @@ export default function ContractOptionsModal({ isOpen, onClose, contract, onSucc
                     <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">calculate</span>
                     Dự kiến quyết toán nếu trả ngày {formatDate(checkoutDate)}
                   </span>
-                  {isEarlyCheckout && <span className="text-[10px] font-black uppercase text-[#58A700]">Trả sớm (PR-O2)</span>}
+                  {isEarlyCheckout && <span className="text-[10px] font-black uppercase text-[#58A700] text-right">{preview?.faultTermination ? 'Trả sớm — lỗi cơ sở, tính theo ngày' : preview?.trialReturn ? 'Trả sớm — trong 3 ngày đầu, tính theo ngày' : 'Trả sớm (PR-O2)'}</span>}
                   {isGraceOrOverdue && <span className="text-[10px] font-black uppercase text-[#E58800]">Quá hạn</span>}
                 </div>
                 {preview?.lines ? (

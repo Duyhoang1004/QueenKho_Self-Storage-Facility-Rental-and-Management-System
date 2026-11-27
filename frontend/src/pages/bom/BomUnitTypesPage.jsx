@@ -787,7 +787,7 @@ export default function BomUnitTypesPage() {
       ───────────────────────────────────────────────────────────── */}
       {createModalOpen && (
         <div className="fixed inset-0 z-50 bg-[#000000]/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="duo-card w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 my-8">
+          <div className="duo-card w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-150 my-8 max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="p-6 border-b-2 border-[#E5E5E5] flex items-center justify-between bg-[#FAFAFA]">
               <div className="flex items-center gap-3">
@@ -1050,7 +1050,7 @@ export default function BomUnitTypesPage() {
       ───────────────────────────────────────────────────────────── */}
       {editModalOpen && activeUnitType && (
         <div className="fixed inset-0 z-50 bg-[#000000]/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="duo-card w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 my-8">
+          <div className="duo-card w-full max-w-2xl shadow-2xl animate-in zoom-in-95 duration-150 my-8 max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="p-6 border-b-2 border-[#E5E5E5] flex items-center justify-between bg-[#FAFAFA]">
               <div className="flex items-center gap-3">
@@ -1250,7 +1250,7 @@ export default function BomUnitTypesPage() {
       ───────────────────────────────────────────────────────────── */}
       {statusModalOpen && activeUnitType && (
         <div className="fixed inset-0 z-50 bg-[#000000]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="duo-card w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 p-6 space-y-4">
+          <div className="duo-card w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-150 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <div
                 className={`w-12 h-12 rounded-2xl flex items-center justify-center border-2 shrink-0 ${
@@ -1329,7 +1329,7 @@ export default function BomUnitTypesPage() {
       ───────────────────────────────────────────────────────────── */}
       {deleteModalOpen && activeUnitType && (
         <div className="fixed inset-0 z-50 bg-[#000000]/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="duo-card w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-150 p-6 space-y-4">
+          <div className="duo-card w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-150 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-[#FFDFE0] border-2 border-[#FF4B4B] flex items-center justify-center text-[#FF4B4B] shrink-0">
                 <span className="material-symbols-outlined text-[28px]">

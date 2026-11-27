@@ -1287,7 +1287,7 @@ export default function StorageManagementPage() {
       {/* ======================================================== */}
       {statusModal.show && statusModal.unit && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="duo-card w-full max-w-md p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="duo-card w-full max-w-md p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <div
                 className={`w-12 h-12 rounded-2xl border-2 flex items-center justify-center shrink-0 ${
@@ -1395,7 +1395,7 @@ export default function StorageManagementPage() {
       {/* ======================================================== */}
       {deleteModal.show && deleteModal.unit && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="duo-card w-full max-w-sm p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="duo-card w-full max-w-sm p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-2xl bg-[#FFDFDF] border-2 border-[#FF4B4B] text-[#FF4B4B] flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[28px]">delete</span>

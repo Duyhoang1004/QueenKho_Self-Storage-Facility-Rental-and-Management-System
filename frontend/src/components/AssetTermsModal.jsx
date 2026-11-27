@@ -59,7 +59,7 @@ const SECTIONS = [
     items: [
       'Hàng hư / mất **do lỗi cơ sở** được bồi thường tới **mức trần của gói** đã chọn và không vượt **giá trị hàng đã chốt khi nhận kho**. Gói có phí còn bồi thường cả rủi ro bất khả kháng theo điều kiện của gói.',
       'Báo qua **Hỗ trợ → Hàng bị hư hỏng**, kèm danh sách hàng, ảnh và số tiền đề nghị. Nhân viên kiểm tra hiện trường; quản lý cơ sở đối chiếu ảnh nhận kho, dữ liệu cảm biến rồi chốt lỗi và số tiền.',
-      'Lỗi do Bên thuê (đóng gói, hàng cấm, khai sai) không được bồi thường. Sự cố nghiêm trọng do cơ sở: được chấm dứt hợp đồng **không phí phá hợp đồng**, hoàn tiền thuê theo số ngày còn lại.',
+      'Lỗi do Bên thuê (đóng gói, hàng cấm, khai sai) không được bồi thường. Sự cố nghiêm trọng do cơ sở: được chấm dứt hợp đồng **không phí phá hợp đồng**, hoàn tiền thuê theo số ngày còn lại (tính tối thiểu 1 ngày đã dùng). Đã có hồ sơ bồi thường lỗi cơ sở được duyệt thì khi trả kho sớm cũng tính theo ngày như vậy.',
       'Đang trả kho thì tiền bồi thường được cộng thẳng vào **bảng quyết toán** (mục 7).',
     ],
   },
@@ -77,6 +77,7 @@ const SECTIONS = [
     items: [
       'Hẹn ngày trả **trong thời hạn hợp đồng** (từ ngày mai tới ngày hết hạn) và chọn cách nhận tiền hoàn; được dời sang ngày sớm hơn. Không có ân hạn sau ngày hết hạn.',
       '**Trả trước hạn**: tiền thuê được hoàn = tiền thuê kỳ đang dùng − số tháng đã dùng (làm tròn lên) × **giá niêm yết** − **phí phá hợp đồng** bằng 1 tháng giá niêm yết; tối thiểu 0, phần thiếu không trừ vào tiền cọc. Trả trong tháng cuối của kỳ: không hoàn tiền thuê, không phí phá hợp đồng. Phí bảo hiểm của kỳ đang dùng không hoàn.',
+      '**Trả trong 3 ngày đầu** kể từ ngày nhận kho: chỉ tính **số ngày đã dùng** (tối thiểu 1 ngày) theo giá niêm yết / 30, **không phí phá hợp đồng**; phần tiền thuê còn lại được hoàn (phí bảo hiểm không hoàn).',
       '**Kỳ gia hạn chưa bắt đầu** tại ngày trả kho: hoàn đủ tiền thuê và bảo hiểm của kỳ đó, không tính phí phá hợp đồng.',
       'Các yêu cầu hỗ trợ phải xử lý xong trước buổi nghiệm thu. Sau nghiệm thu, Bên thuê nhận **bảng quyết toán** (Đã đóng − Cơ sở giữ lại + Bồi thường = Hoàn), kèm đối chiếu với số dự kiến lúc hẹn.',
       'Bên thuê bấm **"Xác nhận"** hoặc **"Không đồng ý"** — trước khi cơ sở lập lệnh hoàn tiền. Bảng dương không phản hồi sau 3 ngày coi như đã xác nhận; bảng âm thì Bên thuê thanh toán phần thiếu.',

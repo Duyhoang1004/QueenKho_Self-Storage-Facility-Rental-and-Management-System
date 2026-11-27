@@ -667,7 +667,7 @@ export default function FloorPlanBoard({
       {floorModal && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <form onSubmit={submitFloorModal}
-            className="duo-card w-full max-w-sm p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl">
+            className="duo-card w-full max-w-sm p-6 flex flex-col gap-4 border-4 border-[#E5E5E5] shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-black text-[#4B4B4B] uppercase">
               {floorModal.mode === 'create' ? 'Tạo mặt bằng tầng' : `Sửa ${floor?.name}`}
             </h3>

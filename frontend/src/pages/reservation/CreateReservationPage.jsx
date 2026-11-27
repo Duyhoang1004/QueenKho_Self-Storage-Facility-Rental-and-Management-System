@@ -969,7 +969,8 @@ export default function CreateReservationPage() {
                 .
                 <details className="mt-1 text-[11px] text-[#777777]">
                   <summary className="cursor-pointer font-black text-[#AFAFAF]">Tóm tắt điều khoản v6</summary>
-                  Trả sớm mất ưu đãi và chịu phí phá hợp đồng 1 tháng giá niêm yết, phí bảo hiểm không hoàn; trả kho là tất toán — bạn xác nhận bảng
+                  Trả sớm mất ưu đãi và chịu phí phá hợp đồng 1 tháng giá niêm yết, phí bảo hiểm không hoàn (trả trong 3 ngày đầu sau nhận kho
+                  chỉ tính số ngày đã dùng, không phí phá hợp đồng; lỗi do cơ sở thì tính theo ngày); trả kho là tất toán — bạn xác nhận bảng
                   quyết toán thì hợp đồng mới kết thúc. Hết hạn mà không gia hạn / không trả kho, hợp đồng quá hạn và tự động cưỡng chế dọn kho{' '}
                   <span className="font-black text-[#FF4B4B]">sau 5 ngày quá hạn (hoặc sớm hơn sau 2 lần liên lạc không thành công / có khách đặt mới)</span>;
                   hàng vào kho tổng, tính phí lưu giữ mỗi ngày (QueenKho không bán hàng của bạn). Số tiền cụ thể xem ở "Bảng phí & hoàn tiền của đơn này".

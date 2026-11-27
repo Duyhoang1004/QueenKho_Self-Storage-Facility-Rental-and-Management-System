@@ -641,7 +641,7 @@ export default function OverdueContractsPage() {
       {/* MODAL 1: GHI CHÚ LIÊN HỆ */}
       {contactModalOpen && selectedContract && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-[540px] max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -762,7 +762,7 @@ export default function OverdueContractsPage() {
       {/* MODAL 2: XÁC NHẬN THANH LÝ HỢP ĐỒNG */}
       {liquidateModalOpen && liquidateContractTarget && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-[560px] max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="px-6 py-4 border-b border-red-100 bg-red-50/50 flex items-center justify-between">
               <div className="flex items-center gap-2 text-[#FF4B4B]">
@@ -916,7 +916,7 @@ export default function OverdueContractsPage() {
       {/* Modal 3 (Flow 6): Miễn phí trễ */}
       {waiveTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-11 h-11 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700]">
                 <span className="material-symbols-outlined text-[24px]">volunteer_activism</span>

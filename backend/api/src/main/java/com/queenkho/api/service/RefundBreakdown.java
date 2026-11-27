@@ -39,15 +39,24 @@ public final class RefundBreakdown {
      * @param futurePaid  (22/11/2026, PR-O2d) tiền các kỳ gia hạn CHƯA bắt đầu tại ngày trả kho (gồm bảo hiểm) — hoàn đủ
      * @param futureMonths số tháng của các kỳ đó
      * @param futureStart ngày bắt đầu kỳ gia hạn chưa dùng sớm nhất
+     * @param trial       (27/11/2026, PR-O2e) khách tự trả trong thời gian dùng thử (3 ngày đầu sau nhận kho):
+     *                    tính ngày đã dùng theo giá niêm yết, không phí phá HĐ
      */
     public record RentBasis(BigDecimal rentPaid, BigDecimal insurance, int periodMonths, LocalDate periodStart,
                             boolean early, boolean fault, int usedMonths, BigDecimal price, BigDecimal breakFee,
-                            long daysPast, BigDecimal futurePaid, int futureMonths, LocalDate futureStart) {
+                            long daysPast, BigDecimal futurePaid, int futureMonths, LocalDate futureStart, boolean trial) {
+
+        public RentBasis(BigDecimal rentPaid, BigDecimal insurance, int periodMonths, LocalDate periodStart,
+                         boolean early, boolean fault, int usedMonths, BigDecimal price, BigDecimal breakFee,
+                         long daysPast, BigDecimal futurePaid, int futureMonths, LocalDate futureStart) {
+            this(rentPaid, insurance, periodMonths, periodStart, early, fault, usedMonths, price, breakFee, daysPast,
+                    futurePaid, futureMonths, futureStart, false);
+        }
 
         public RentBasis(BigDecimal rentPaid, BigDecimal insurance, int periodMonths, LocalDate periodStart,
                          boolean early, boolean fault, int usedMonths, BigDecimal price, BigDecimal breakFee, long daysPast) {
             this(rentPaid, insurance, periodMonths, periodStart, early, fault, usedMonths, price, breakFee, daysPast,
-                    BigDecimal.ZERO, 0, null);
+                    BigDecimal.ZERO, 0, null, false);
         }
 
         public String toText() {
@@ -55,7 +64,7 @@ public final class RefundBreakdown {
                     + ";periodStart=" + (periodStart != null ? periodStart : "") + ";early=" + early + ";fault=" + fault
                     + ";usedMonths=" + usedMonths + ";price=" + plain(price) + ";breakFee=" + plain(breakFee)
                     + ";daysPast=" + daysPast + ";futurePaid=" + plain(futurePaid) + ";futureMonths=" + futureMonths
-                    + ";futureStart=" + (futureStart != null ? futureStart : "");
+                    + ";futureStart=" + (futureStart != null ? futureStart : "") + ";trial=" + trial;
         }
 
         public static RentBasis parse(String text) {
@@ -75,7 +84,7 @@ public final class RefundBreakdown {
                         Integer.parseInt(m.getOrDefault("usedMonths", "0")), dec(m.get("price")), dec(m.get("breakFee")),
                         Long.parseLong(m.getOrDefault("daysPast", "0")),
                         dec(m.get("futurePaid")), Integer.parseInt(m.getOrDefault("futureMonths", "0")),
-                        fStart.isBlank() ? null : LocalDate.parse(fStart));
+                        fStart.isBlank() ? null : LocalDate.parse(fStart), Boolean.parseBoolean(m.get("trial")));
             } catch (RuntimeException e) {
                 return null;
             }
@@ -135,6 +144,10 @@ public final class RefundBreakdown {
                 lines.add(new MoneyLine(MoneyLine.KEPT,
                         insurance.signum() > 0 ? "Tiền thuê + bảo hiểm những ngày đã dùng" : "Tiền thuê những ngày đã dùng",
                         usedAmount, faultDaysNote(basis, rentPaid.add(insurance), usedAmount)));
+            } else if (basis.early() && basis.trial()) {
+                lines.add(new MoneyLine(MoneyLine.KEPT, "Tiền thuê những ngày đã dùng", money(rentKept),
+                        trialDaysNote(basis, money(rentKept))));
+                addInsuranceKept(lines, insurance, true);
             } else if (basis.early() && nz(basis.breakFee()).signum() == 0) {
                 lines.add(new MoneyLine(MoneyLine.KEPT, "Tiền thuê kỳ hiện tại", money(rentKept),
                         "Trả trong tháng cuối của kỳ: không hoàn tiền thuê, không thu phí phá hợp đồng (PR-O2a)"));
@@ -200,6 +213,19 @@ public final class RefundBreakdown {
         return usedDays + " ngày đã dùng × " + vnd(daily) + "/ngày (" + vnd(periodTotal) + " ÷ " + totalDays
                 + " ngày của kỳ) · " + rule;
     }
+
+    /** PR-O2e: "N ngày × đơn giá/ngày (giá niêm yết ÷ 30)" cho khách tự trả trong thời gian dùng thử */
+    static String trialDaysNote(RentBasis basis, BigDecimal usedAmount) {
+        String rule = "Trả trong " + TRIAL_DAYS + " ngày đầu sau nhận kho: không phí phá hợp đồng, tính theo giá niêm yết (PR-O2e)";
+        BigDecimal price = nz(basis.price());
+        if (price.signum() <= 0) return rule;
+        BigDecimal daily = price.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
+        long days = daily.signum() > 0 ? usedAmount.divide(daily, 0, RoundingMode.HALF_UP).longValue() : 0;
+        return days + " ngày đã dùng × " + vnd(daily) + "/ngày (giá niêm yết " + vnd(price) + " ÷ 30) · " + rule;
+    }
+
+    /** PR-O2e (27/11/2026): số ngày dùng thử — khách tự trả trong khoảng này không bị phí phá hợp đồng */
+    public static final int TRIAL_DAYS = 3;
 
     private static void addInsuranceKept(List<MoneyLine> lines, BigDecimal insurance, boolean early) {
         if (insurance.signum() <= 0) return;

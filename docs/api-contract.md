@@ -1256,3 +1256,9 @@ Không đổi schema.
 - PR-O17a: `StaffTaskDetailResponse` (task `CHECK_OUT` đang mở, không phải `[RECHECK]`) thêm `checkoutBlockers`: `[{ kind: TICKET | CLAIM_UNINSPECTED, code, issueType, status, ticketId, supportTaskId }]` — cùng điều kiện với lỗi 409 `OPEN_TICKETS_PENDING` / `CLAIM_INSPECTION_PENDING` lúc nộp biên bản.
 - Nút giả lập "hôm nay" (`/dev/simulation/tasks/{id}/arrive-today`, `/checkout-today`): sau 21:00 hạn task là 23:59 cùng ngày (trước đây sang 21:00 ngày mai, task bị khoá).
 
+## Cập nhật 27/11/2026 — Trả sớm tính theo ngày (PR-O2e, PR-O19d)
+
+- `checkout-refund-preview` / `RefundCalculationResult` thêm `trialReturn` (khách tự trả trong 3 ngày đầu sau nhận kho). `faultTermination` giờ true cả khi hợp đồng có hồ sơ bồi thường lỗi cơ sở `APPROVED` / `PAID` (không chỉ khi FM chọn chấm dứt).
+- `StaffTaskDetailResponse` thêm `trialReturn`. Dòng `KEPT` "Tiền thuê những ngày đã dùng" có `note` ghi phép tính ngày (lỗi cơ sở: tiền kỳ ÷ số ngày kỳ; dùng thử: giá niêm yết ÷ 30).
+- Lỗi cơ sở: tối thiểu 1 ngày đã dùng (trả cùng ngày nhận kho không còn hoàn 100%).
+

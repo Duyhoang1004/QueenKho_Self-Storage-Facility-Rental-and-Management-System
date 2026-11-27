@@ -16,7 +16,7 @@ function PhotoPreview({ src, onClose }) {
   if (!src) return null
   return (
     <div onClick={onClose} className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div onClick={e => e.stopPropagation()} className="duo-card max-w-2xl w-full p-4 flex flex-col gap-3">
+      <div onClick={e => e.stopPropagation()} className="duo-card max-w-2xl w-full p-4 flex flex-col gap-3 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <span className="text-xs font-black uppercase text-[#4B4B4B] flex items-center gap-1">
             <span className="material-symbols-outlined text-[18px] text-[#1CB0F6]">image</span>

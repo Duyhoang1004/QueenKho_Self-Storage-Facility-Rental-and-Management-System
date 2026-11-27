@@ -3742,6 +3742,7 @@ public class StaffTaskService {
         BigDecimal baseMonthlyPrice = null;
         String refundBreakdownNote = null;
         boolean faultTermination = false;         // BR-127: chấm dứt do lỗi cơ sở — hoàn theo ngày, không phí phá HĐ
+        boolean trialReturn = false;              // PR-O2e: trả trong 3 ngày đầu — tính theo ngày, không phí phá HĐ
         List<MoneyLine> refundLines = null;       // bảng "đã đóng − giữ lại = hoàn" cùng công thức nghiệm thu
         String taskNote = task.getNote();
 
@@ -3774,6 +3775,7 @@ public class StaffTaskService {
             baseMonthlyPrice = calc.getBaseMonthlyPrice();
             refundBreakdownNote = calc.getBreakdownDescription();
             faultTermination = calc.isFaultTermination();
+            trialReturn = calc.isTrialReturn();
             refundLines = calc.getLines();
 
             if ("REFUND".equals(task.getTaskType())) {
@@ -3824,6 +3826,7 @@ public class StaffTaskService {
                 .simulatedCheckoutDate(task.getSimulatedCheckoutDate())
                 .separateCompensations(separateCompensations)
                 .faultTermination(faultTermination)
+                .trialReturn(trialReturn)
                 .refundLines(refundLines)
                 .facilityId(task.getFacilityId())
                 .taskType(task.getTaskType())
@@ -4429,12 +4432,47 @@ public class StaffTaskService {
      */
     static EarlyReturn faultTerminationReturn(LocalDate periodStart, LocalDate periodEnd, LocalDate actualDate, BigDecimal rentPaid) {
         long totalDays = Math.max(1, ChronoUnit.DAYS.between(periodStart, periodEnd));
-        long remainingDays = Math.max(0, ChronoUnit.DAYS.between(actualDate, periodEnd));
+        // 27/11/2026: tối thiểu 1 ngày đã dùng — nhận kho và trả kho cùng ngày vẫn tính 1 ngày (trước đây = 0, hoàn 100%)
+        long remainingDays = Math.max(0, Math.min(totalDays - 1, ChronoUnit.DAYS.between(actualDate, periodEnd)));
         BigDecimal refund = rentPaid.multiply(BigDecimal.valueOf(remainingDays))
                 .divide(BigDecimal.valueOf(totalDays), 0, RoundingMode.HALF_UP);
         long usedDays = totalDays - Math.min(totalDays, remainingDays);
         int usedMonths = (int) Math.max(1, (usedDays + 29) / 30);
         return new EarlyReturn(usedMonths, BigDecimal.ZERO, refund.max(BigDecimal.ZERO));
+    }
+
+    /**
+     * PR-O2e (27/11/2026): khách tự trả trong thời gian dùng thử (TRIAL_DAYS ngày đầu sau ngày nhận kho) →
+     * tính số ngày đã dùng (tối thiểu 1) theo giá niêm yết / 30, không phí phá hợp đồng; phần còn lại hoàn.
+     * rentPaid: tiền thuê kỳ đã đóng (không gồm bảo hiểm).
+     */
+    static EarlyReturn trialReturn(LocalDate periodStart, LocalDate actualDate, BigDecimal baseMonthlyPrice, BigDecimal rentPaid) {
+        long usedDays = Math.max(1, ChronoUnit.DAYS.between(periodStart, actualDate));
+        BigDecimal daily = baseMonthlyPrice.divide(BigDecimal.valueOf(30), 0, RoundingMode.HALF_UP);
+        BigDecimal used = daily.multiply(BigDecimal.valueOf(usedDays)).min(rentPaid.max(BigDecimal.ZERO));
+        return new EarlyReturn(1, BigDecimal.ZERO, rentPaid.subtract(used).max(BigDecimal.ZERO));
+    }
+
+    /** Khách tự trả trong thời gian dùng thử: kỳ gốc (không phải kỳ gia hạn) và trả trước ngày nhận kho + TRIAL_DAYS */
+    static boolean inTrialWindow(LocalDate contractStart, LocalDate periodStart, LocalDate actualDate) {
+        return contractStart != null && contractStart.equals(periodStart)
+                && actualDate.isBefore(contractStart.plusDays(RefundBreakdown.TRIAL_DAYS));
+    }
+
+    /**
+     * 27/11/2026: hợp đồng có hồ sơ bồi thường lỗi cơ sở đã duyệt / đã chi → khách trả sớm vẫn tính theo ngày, không phí
+     * phá HĐ, kể cả khi lúc chốt hồ sơ FM chọn "tiếp tục thuê" (trước đây chỉ khi chọn chấm dứt — fault_termination).
+     */
+    boolean hasFacilityFaultClaim(Integer contractId) {
+        if (contractId == null) return false;
+        try {
+            Integer n = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM compensation_claims WHERE contract_id = ? AND liable_party = 'FACILITY' " +
+                            "AND status IN ('APPROVED', 'PAID')", Integer.class, contractId);
+            return n != null && n > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     public RefundCalculationResult calculateCheckoutRefund(RentalContract contract, LocalDate actualCheckoutDate, BigDecimal totalDamageCost) {
@@ -4549,8 +4587,17 @@ public class StaffTaskService {
         BigDecimal breakFee = BigDecimal.ZERO;
         BigDecimal earlyRentRefund = BigDecimal.ZERO;
 
-        if (isEarlyCheckout && Boolean.TRUE.equals(contract.getFaultTermination())) {
+        boolean faultEarly = isEarlyCheckout
+                && (Boolean.TRUE.equals(contract.getFaultTermination()) || hasFacilityFaultClaim(contract.getId()));
+        boolean trialEarly = isEarlyCheckout && !faultEarly && inTrialWindow(startDate, periodStart, actualDate);
+        if (faultEarly) {
             EarlyReturn early = faultTerminationReturn(periodStart, periodEnd.isAfter(endDate) ? endDate : periodEnd, actualDate, rentPaid);
+            usedMonths = early.usedMonths();
+            breakFee = BigDecimal.ZERO;
+            earlyRentRefund = early.refund();
+        } else if (trialEarly) {
+            // BR-125: phí bảo hiểm không hoàn khi khách tự trả sớm (kể cả trong thời gian dùng thử)
+            EarlyReturn early = trialReturn(periodStart, actualDate, baseMonthlyPrice, rentPaidNet);
             usedMonths = early.usedMonths();
             breakFee = BigDecimal.ZERO;
             earlyRentRefund = early.refund();
@@ -4662,10 +4709,10 @@ public class StaffTaskService {
         }
 
         // D-22: bảng "Bạn đã đóng − Cơ sở giữ lại = Hoàn" — dùng chung với bảng quyết toán sau nghiệm thu
-        boolean fault = isEarlyCheckout && Boolean.TRUE.equals(contract.getFaultTermination());
+        boolean fault = faultEarly;
         RefundBreakdown.RentBasis rentBasis = new RefundBreakdown.RentBasis(rentPaidNet, insurancePaid, periodMonths,
                 periodStart, isEarlyCheckout, fault, usedMonths, baseMonthlyPrice, breakFee, daysPast,
-                futurePaid, futureMonths, futureStart);
+                futurePaid, futureMonths, futureStart, trialEarly);
         List<MoneyLine> lines = RefundBreakdown.lines(depositHeld, rentBasis, earlyRentRefund, totalDamageCost,
                 feeOffset, overstayFee, BigDecimal.ZERO);
         RefundBreakdown.Totals totals = RefundBreakdown.totals(lines);
@@ -4679,6 +4726,7 @@ public class StaffTaskService {
                 .periodMonths(periodMonths)
                 .periodStart(periodStart)
                 .faultTermination(fault)
+                .trialReturn(trialEarly)
                 .lines(lines)
                 .paidTotal(totals.paid())
                 .keptTotal(totals.kept())

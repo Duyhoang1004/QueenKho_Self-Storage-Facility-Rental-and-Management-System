@@ -756,12 +756,12 @@ GO
 DELETE FROM [unit_types];
 SET IDENTITY_INSERT [unit_types] ON;
 INSERT INTO [unit_types] ([id], [name], [area_sqm], [volume_cbm], [base_price_monthly], [suggested_capacity], [dimensions], [features], [status], [temperature_class]) VALUES
-    (1, N'Kho Mini M', 3.50, 8.40, 750000.00, N'10–20 thùng carton', N'1.5m × 2.3m × 2.4m', N'Cá nhân, đồ theo mùa', N'ACTIVE', N'NORMAL'),
-    (2, N'Kho Tiêu Chuẩn', 6.00, 16.20, 1850000.00, N'20–40 thùng, nội thất nhỏ', N'2.5m × 2.4m × 2.7m', N'Phổ biến nhất, phù hợp chuyển nhà', N'ACTIVE', N'NORMAL'),
-    (3, N'Kho Gia Đình', 12.00, 32.40, 3450000.00, N'Đồ 1 phòng ngủ hoặc VP nhỏ', N'4.0m × 3.0m × 2.7m', N'Gia đình, doanh nghiệp nhỏ', N'ACTIVE', N'NORMAL'),
-    (4, N'Kho Lớn', 16.00, 43.20, 4500000.00, N'Đồ 2 phòng ngủ hoặc hàng hóa', N'4.0m × 4.0m × 2.7m', N'Doanh nghiệp, kho hàng', N'ACTIVE', N'NORMAL'),
-    (5, N'Kho Đặc Biệt XL', 25.00, 67.50, 6500000.00, N'Hàng hóa lớn, máy móc', N'5.0m × 5.0m × 2.7m', N'Doanh nghiệp, sản xuất', N'ACTIVE', N'NORMAL'),
-    (6, N'Kho nhỏ 2m²', 2.00, 4.80, 500000.00, N'5–10 thùng carton', N'1.0m × 2.0m × 2.4m', N'Cá nhân, sinh viên, giấy tờ', N'ACTIVE', N'NORMAL'),
+    (1, N'Kho Mini M', 3.50, 8.40, 750000.00, N'Tương đương 1 phòng chứa đồ nhỏ / 1 xe bán tải', N'1.5m × 2.3m × 2.4m', N'Cá nhân, đồ theo mùa', N'ACTIVE', N'NORMAL'),
+    (2, N'Kho Tiêu Chuẩn', 6.00, 16.20, 1850000.00, N'Tương đương 1 phòng trọ nhỏ / 1 xe tải 1 tấn', N'2.5m × 2.4m × 2.7m', N'Nội thất gọn, đồ gia dụng & hàng shop online', N'ACTIVE', N'NORMAL'),
+    (3, N'Kho Gia Đình', 12.00, 32.40, 3450000.00, N'Tương đương đồ căn hộ 1 phòng ngủ', N'4.0m × 3.0m × 2.7m', N'Gia đình, doanh nghiệp nhỏ', N'ACTIVE', N'NORMAL'),
+    (4, N'Kho Lớn', 16.00, 43.20, 4500000.00, N'Tương đương đồ căn hộ 2 phòng ngủ', N'4.0m × 4.0m × 2.7m', N'Doanh nghiệp, kho hàng', N'ACTIVE', N'NORMAL'),
+    (5, N'Kho Đặc Biệt XL', 25.00, 67.50, 6500000.00, N'Tương đương 1 gara ô tô / kho hàng nhỏ', N'5.0m × 5.0m × 2.7m', N'Doanh nghiệp, sản xuất', N'ACTIVE', N'NORMAL'),
+    (6, N'Kho nhỏ 2m²', 2.00, 4.80, 500000.00, N'Tương đương 1 tủ quần áo lớn', N'1.0m × 2.0m × 2.4m', N'Cá nhân, sinh viên, giấy tờ', N'ACTIVE', N'NORMAL'),
     (7, N'Kho Lạnh 6m²', 6.00, 15.00, 2900000.00, N'Thực phẩm, đồ uống, nông sản đóng thùng', N'2.0m × 3.0m × 2.5m', N'Giữ 0–8°C, độ ẩm ≤ 90%, cảm biến nhiệt độ 24/7 — gửi được thực phẩm', N'ACTIVE', N'COLD'),
     (8, N'Kho Đông 4m²', 4.00, 9.60, 2600000.00, N'Thực phẩm đông lạnh, thịt cá, hải sản', N'2.0m × 2.0m × 2.4m', N'Giữ -25 → -15°C, cảm biến nhiệt độ 24/7 — gửi được thực phẩm đông lạnh', N'ACTIVE', N'FROZEN');
 SET IDENTITY_INSERT [unit_types] OFF;

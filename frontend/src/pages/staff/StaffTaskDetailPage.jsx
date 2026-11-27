@@ -1820,8 +1820,8 @@ export default function StaffTaskDetailPage() {
         && ['OPEN', 'IN_PROGRESS', 'OVERDUE'].includes(task.status) && (
         <div className="flex flex-wrap items-start gap-3 mb-6">
           <SimulationButton
-            label="Giả lập tới ngày check-in"
-            description="Mở thao tác check-in ngay theo đúng ngày khách đã hẹn; giữ nguyên ngày bắt đầu và kết thúc hợp đồng."
+            label="Khách tới hôm nay"
+            description="Dời lịch hẹn của khách về hôm nay (hạn 21:00) để check-in ngay, không phải chờ đúng ngày hẹn."
             onRun={() => simulateArriveToday(task.id)}
             onDone={() => loadTask()}
           />

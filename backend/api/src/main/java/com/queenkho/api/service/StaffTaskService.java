@@ -199,13 +199,6 @@ public class StaffTaskService {
         return simulated != null && simulated.isAfter(today) ? simulated : today;
     }
 
-    // CHECK_IN dùng cùng cột ngày giả lập trên task: chỉ mở bàn giao khi ngày đó đúng ngày hẹn hiện tại.
-    static boolean checkInDateReached(StaffTask task, LocalDate appointment, LocalDate today) {
-        if (appointment == null || !today.isBefore(appointment)) return true;
-        return task != null && "CHECK_IN".equals(task.getTaskType())
-                && appointment.equals(task.getSimulatedCheckoutDate());
-    }
-
     // UC-16: dời hạn task CHECK_IN khi đơn được dời lịch nhận kho (No-Show → gọi
     // được khách).
     // Task đã quá hạn thì mở lại: chưa ai nhận → OPEN, đã có người nhận →
@@ -1124,7 +1117,7 @@ public class StaffTaskService {
         if (!"PENDING_CHECK_IN".equals(contract.getStatus())) throw new StaffTaskException(HttpStatus.CONFLICT, "CONTRACT_STATUS_INVALID", "Hợp đồng không còn chờ bàn giao");
         LocalDate appointment = contract.getReservation() != null && contract.getReservation().getExpectedAppointmentTime() != null
                 ? contract.getReservation().getExpectedAppointmentTime().toLocalDate() : contract.getStartDate();
-        if (!checkInDateReached(task, appointment, LocalDate.now())) throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY", "Chưa đến ngày hẹn bàn giao");
+        if (appointment != null && LocalDate.now().isBefore(appointment)) throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY", "Chưa đến ngày hẹn bàn giao");
         normalizeUnitCheck(request);
         normalizeGoodsValueAssessment(contract, request);
         validateCheckInRequest(request, false);
@@ -1838,7 +1831,7 @@ public class StaffTaskService {
                 && taskContract.getReservation().getExpectedAppointmentTime() != null) {
             appointmentDate = taskContract.getReservation().getExpectedAppointmentTime().toLocalDate();
         }
-        if (!checkInDateReached(task, appointmentDate, LocalDate.now())) {
+        if (appointmentDate != null && LocalDate.now().isBefore(appointmentDate)) {
             throw new StaffTaskException(HttpStatus.CONFLICT, "CHECK_IN_TOO_EARLY",
                     "Khách hẹn nhận kho ngày " + appointmentDate.format(DATE_FMT)
                             + ", chưa được check-in trước ngày hẹn");

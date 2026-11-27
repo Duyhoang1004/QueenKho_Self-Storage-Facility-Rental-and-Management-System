@@ -2,7 +2,6 @@ package com.queenkho.api.service;
 
 import com.queenkho.api.security.AccessException;
 import com.queenkho.api.security.CurrentUser;
-import com.queenkho.api.entity.StaffTask;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -80,42 +79,28 @@ class DemoSimulationServiceTest {
         verifyNoInteractions(jdbcTemplate);
     }
 
-    // ---------- 1. giả lập đúng ngày hẹn check-in ----------
+    // ---------- 1. khách tới hôm nay ----------
 
     private void checkInTask(String taskType, String contractStatus, int facilityId) {
         rows("FROM facility_tasks", map("id", 50, "task_type", taskType, "status", "OVERDUE", "contract_id", 9, "facility_id", facilityId));
-        LocalDate appointment = LocalDate.now().plusDays(2);
-        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", contractStatus,
-                "reservation_id", 4, "start_date", appointment,
-                "expected_appointment_time", Timestamp.valueOf(appointment.atTime(9, 0))));
+        rows("FROM rental_contracts", map("id", 9, "contract_code", "HD-1", "status", contractStatus, "reservation_id", 4));
         when(jdbcTemplate.queryForObject(contains("duration_months"), eq(Integer.class), eq(4))).thenReturn(3);
     }
 
     @Test
-    @DisplayName("Giả lập check-in: mở task theo ngày hẹn, giữ nguyên ngày đơn và kỳ thuê")
-    void arriveTodayKeepsContractDates() {
+    @DisplayName("Khách tới hôm nay: đơn + HĐ dời về hôm nay (giữ 3 tháng), task quá hạn được mở lại, có log")
+    void arriveTodayMovesDatesToToday() {
         checkInTask("CHECK_IN", "PENDING_CHECK_IN", 1);
 
         service.arriveToday(50, staff);
 
-        LocalDate appointment = LocalDate.now().plusDays(2);
-        verify(jdbcTemplate, never()).update(contains("UPDATE reservations SET"), any(), any(), any());
-        verify(jdbcTemplate, never()).update(contains("UPDATE rental_contracts SET start_date"), any(), any(), any());
-        verify(jdbcTemplate).update(contains("simulated_checkout_date = ?"), any(Timestamp.class), eq(appointment), eq(50));
-        verify(activityLogService).log(eq(12), startsWith("[SIMULATION]"), eq("facility_tasks"), eq("50"));
-    }
-
-    @Test
-    @DisplayName("Chỉ task check-in giả lập đúng ngày hẹn mới được bàn giao sớm")
-    void simulatedCheckInDateMustMatchAppointment() {
         LocalDate today = LocalDate.now();
-        LocalDate appointment = today.plusDays(2);
-        StaffTask task = new StaffTask();
-        task.setTaskType("CHECK_IN");
-        assertFalse(StaffTaskService.checkInDateReached(task, appointment, today));
-        task.setSimulatedCheckoutDate(appointment);
-        assertTrue(StaffTaskService.checkInDateReached(task, appointment, today));
-        assertFalse(StaffTaskService.checkInDateReached(task, appointment.plusDays(1), today));
+        // PR-X4: lưu giờ hẹn gốc (penalty_anchor_time) trước khi dời — phí huỷ không bị đẩy lên vì giả lập
+        verify(jdbcTemplate).update(contains("penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time)"),
+                eq(today), any(), eq(4));
+        verify(jdbcTemplate).update(contains("UPDATE rental_contracts SET start_date"), eq(today), eq(today.plusMonths(3)), eq(9));
+        verify(jdbcTemplate).update(contains("WHEN status = 'OVERDUE'"), any(Timestamp.class), eq(50));
+        verify(activityLogService).log(eq(12), startsWith("[SIMULATION]"), eq("facility_tasks"), eq("50"));
     }
 
     @Test

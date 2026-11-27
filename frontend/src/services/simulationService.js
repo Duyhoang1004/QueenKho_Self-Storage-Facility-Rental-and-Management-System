@@ -18,7 +18,7 @@ export function getSimulationEnabled() {
   return statusPromise
 }
 
-// Flow 2: giả lập tới đúng ngày hẹn nhận kho (task CHECK_IN)
+// Flow 2: khách tới nhận kho hôm nay (task CHECK_IN)
 export async function simulateArriveToday(taskId) {
   return (await api.post(`/dev/simulation/tasks/${taskId}/arrive-today`)).data
 }

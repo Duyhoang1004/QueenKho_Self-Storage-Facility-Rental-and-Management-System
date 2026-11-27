@@ -758,12 +758,12 @@ GO
 /* ---------- unit_types (id cố định 1..8; 7 kho lạnh, 8 kho đông — BR-131, Update_kho_lanh.sql) ---------- */
 SET IDENTITY_INSERT unit_types ON;
 INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, suggested_capacity, dimensions, features) VALUES
-    (1, N'Kho Mini M',      3.5,  8.4,   750000, N'10–20 thùng carton',          N'1.5m × 2.3m × 2.4m', N'Cá nhân, đồ theo mùa'),
-    (2, N'Kho Tiêu Chuẩn',  6.0,  16.2, 1850000, N'20–40 thùng, nội thất nhỏ',   N'2.5m × 2.4m × 2.7m', N'Phổ biến nhất, phù hợp chuyển nhà'),
-    (3, N'Kho Gia Đình',    12.0, 32.4, 3450000, N'Đồ 1 phòng ngủ hoặc VP nhỏ',  N'4.0m × 3.0m × 2.7m', N'Gia đình, doanh nghiệp nhỏ'),
-    (4, N'Kho Lớn',         16.0, 43.2, 4500000, N'Đồ 2 phòng ngủ hoặc hàng hóa', N'4.0m × 4.0m × 2.7m', N'Doanh nghiệp, kho hàng'),
-    (5, N'Kho Đặc Biệt XL', 25.0, 67.5, 6500000, N'Hàng hóa lớn, máy móc',       N'5.0m × 5.0m × 2.7m', N'Doanh nghiệp, sản xuất'),
-    (6, N'Kho nhỏ 2m²',     2.0,  4.8,   500000, N'5–10 thùng carton',           N'1.0m × 2.0m × 2.4m', N'Cá nhân, sinh viên, giấy tờ');
+    (1, N'Kho Mini M',      3.5,  8.4,   750000, N'Tương đương 1 phòng chứa đồ nhỏ / 1 xe bán tải', N'1.5m × 2.3m × 2.4m', N'Cá nhân, đồ theo mùa'),
+    (2, N'Kho Tiêu Chuẩn',  6.0,  16.2, 1850000, N'Tương đương 1 phòng trọ nhỏ / 1 xe tải 1 tấn',   N'2.5m × 2.4m × 2.7m', N'Nội thất gọn, đồ gia dụng & hàng shop online'),
+    (3, N'Kho Gia Đình',    12.0, 32.4, 3450000, N'Tương đương đồ căn hộ 1 phòng ngủ',               N'4.0m × 3.0m × 2.7m', N'Gia đình, doanh nghiệp nhỏ'),
+    (4, N'Kho Lớn',         16.0, 43.2, 4500000, N'Tương đương đồ căn hộ 2 phòng ngủ',               N'4.0m × 4.0m × 2.7m', N'Doanh nghiệp, kho hàng'),
+    (5, N'Kho Đặc Biệt XL', 25.0, 67.5, 6500000, N'Tương đương 1 gara ô tô / kho hàng nhỏ',          N'5.0m × 5.0m × 2.7m', N'Doanh nghiệp, sản xuất'),
+    (6, N'Kho nhỏ 2m²',     2.0,  4.8,   500000, N'Tương đương 1 tủ quần áo lớn',                    N'1.0m × 2.0m × 2.4m', N'Cá nhân, sinh viên, giấy tờ');
 INSERT INTO unit_types (id, name, area_sqm, volume_cbm, base_price_monthly, suggested_capacity, dimensions, features, temperature_class) VALUES
     (7, N'Kho Lạnh 6m²',    6.0,  15.0, 2900000, N'Thực phẩm, đồ uống, nông sản đóng thùng', N'2.0m × 3.0m × 2.5m', N'Giữ 0–8°C, độ ẩm ≤ 90%, cảm biến nhiệt độ 24/7 — gửi được thực phẩm', 'COLD'),
     (8, N'Kho Đông 4m²',    4.0,  9.6,  2600000, N'Thực phẩm đông lạnh, thịt cá, hải sản',   N'2.0m × 2.0m × 2.4m', N'Giữ -25 → -15°C, cảm biến nhiệt độ 24/7 — gửi được thực phẩm đông lạnh', 'FROZEN');

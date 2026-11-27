@@ -80,7 +80,8 @@ export function parseRefundNote(note) {
   res.isNoShow = /^\[HOÀN TIỀN NO-SHOW\]/i.test(note.trim());
   res.noShowWaived = res.isNoShow && /FM phê duyệt miễn phạt No-Show/i.test(note);
 
-  const mNetRefund = note.match(/(?:THỰC HOÀN|THUC HOAN|Tổng hoàn:?|Tong hoan:?)\s*([0-9.,]+)\s*[₫đVND]*/i);
+  // 27/11/2026: task hoàn tiền của bảng quyết toán ghi "TỔNG CHI: X" (số chốt theo quyết toán)
+  const mNetRefund = note.match(/(?:THỰC HOÀN|THUC HOAN|TỔNG CHI:?|TONG CHI:?|Tổng hoàn:?|Tong hoan:?)\s*([0-9.,]+)\s*[₫đVND]*/i);
   if (mNetRefund) {
     const numNet = parseVndAmount(mNetRefund[1]);
     res.refundAmountNum = numNet;

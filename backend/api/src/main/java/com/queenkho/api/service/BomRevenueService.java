@@ -21,6 +21,8 @@ import java.util.Map;
  *  - DEPOSIT, MONTHLY_RENT và OVERSTAY_FEE (phí chiếm dụng / lưu giữ hàng, PR-Q14/Q15) ➔ rentalRevenue
  *  - LATE_FEE và DAMAGE_FEE  ➔ feesRevenue
  *  - REFUND                  ➔ refundDisbursed (âm với doanh thu ròng)
+ *  - (27/11/2026, PR-M7a) chỉ tính giao dịch TIỀN THẬT: bỏ dòng cấn trừ (DEPOSIT_OFFSET / SETTLEMENT_OFFSET) — phí trừ vào cọc
+ *    đã nằm trong tiền cọc khách đóng, cộng thêm là tính trùng. COMPENSATION (chi đền bù) trừ vào doanh thu ròng.
  *  - Quỹ cọc đang giữ         = deposit_held_amount của HĐ đang ACTIVE / OVERDUE / TERMINATION_PENDING
  */
 @Service
@@ -28,6 +30,9 @@ public class BomRevenueService {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    /** PR-M7a: chỉ giao dịch có dòng tiền thật — cấn trừ từ cọc / tiền hoàn không phải tiền vào / ra */
+    static final String CASH_ONLY = " AND p.payment_method NOT IN ('DEPOSIT_OFFSET','SETTLEMENT_OFFSET')";
 
     // ─────────────────────────────────────────────────────────────
     // 1. OVERVIEW — 8 KPI tài chính tổng quan
@@ -44,21 +49,21 @@ public class BomRevenueService {
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
 
         BigDecimal feesRevenue = querySum(
                 "SELECT COALESCE(SUM(p.amount), 0) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type IN ('LATE_FEE','DAMAGE_FEE')"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
 
         BigDecimal refundDisbursed = querySum(
                 "SELECT COALESCE(SUM(p.amount), 0) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type = 'REFUND'"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
 
         // Quỹ cọc: tính theo trạng thái HĐ, không phụ thuộc kỳ lọc
         String depositWhere = facilityId != null
@@ -71,21 +76,28 @@ public class BomRevenueService {
                         + " WHERE rc.status IN ('ACTIVE','OVERDUE','TERMINATION_PENDING')"
                         + depositWhere);
 
-        BigDecimal netRevenue = rentalRevenue.add(feesRevenue).subtract(refundDisbursed);
+        // PR-M7a: phí đã cấn trừ từ cọc / tiền hoàn — chỉ hiển thị
+        BigDecimal feesOffset = querySum(
+                "SELECT COALESCE(SUM(p.amount), 0) FROM payment_transactions p"
+                        + facilityJoin
+                        + " WHERE p.status = 'SUCCESS'"
+                        + " AND p.payment_type IN ('LATE_FEE','DAMAGE_FEE','OVERSTAY_FEE')"
+                        + " AND p.payment_method IN ('DEPOSIT_OFFSET','SETTLEMENT_OFFSET')"
+                        + dateFilter + facilityWhere);
 
         long rentalCount = queryCount(
                 "SELECT COUNT(*) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE')"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
 
         long refundCount = queryCount(
                 "SELECT COUNT(*) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type = 'REFUND'"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
 
         // BR-128: chi bồi thường cho khách (chi phí, không trừ vào doanh thu) + tiền bảo hiểm trả lại cơ sở
         BigDecimal compensationPaid = querySum(
@@ -93,7 +105,9 @@ public class BomRevenueService {
                         + facilityJoin
                         + " WHERE p.status = 'SUCCESS'"
                         + " AND p.payment_type = 'COMPENSATION'"
-                        + dateFilter + facilityWhere);
+                        + dateFilter + facilityWhere + CASH_ONLY);
+        // PR-M7a: doanh thu ròng = tiền thu − tiền hoàn − tiền chi đền bù (dòng tiền thật)
+        BigDecimal netRevenue = rentalRevenue.add(feesRevenue).subtract(refundDisbursed).subtract(compensationPaid);
         BigDecimal insuranceRecovered = querySum(
                 "SELECT COALESCE(SUM(c.insurance_amount), 0) FROM compensation_claims c"
                         + " WHERE c.insurance_status = 'PAID'"
@@ -114,6 +128,7 @@ public class BomRevenueService {
                 .refundCount(refundCount)
                 .compensationPaid(compensationPaid)
                 .insuranceRecovered(insuranceRecovered)
+                .feesOffset(feesOffset)
                 .build();
     }
 
@@ -130,10 +145,10 @@ public class BomRevenueService {
                 "SELECT MONTH(p.paid_at) AS m,"
                 + " COALESCE(SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE') THEN p.amount ELSE 0 END), 0) AS rent,"
                 + " COALESCE(SUM(CASE WHEN p.payment_type IN ('LATE_FEE','DAMAGE_FEE')  THEN p.amount ELSE 0 END), 0) AS fees,"
-                + " COALESCE(SUM(CASE WHEN p.payment_type = 'REFUND'                    THEN p.amount ELSE 0 END), 0) AS refund"
+                + " COALESCE(SUM(CASE WHEN p.payment_type IN ('REFUND','COMPENSATION') THEN p.amount ELSE 0 END), 0) AS refund"
                 + " FROM payment_transactions p"
                 + facilityJoin
-                + " WHERE p.status = 'SUCCESS'"
+                + " WHERE p.status = 'SUCCESS'" + CASH_ONLY
                 + " AND YEAR(p.paid_at) = " + targetYear
                 + facilityWhere
                 + " GROUP BY MONTH(p.paid_at)"
@@ -183,13 +198,13 @@ public class BomRevenueService {
                 "SELECT f.id AS fid, f.name AS fname,"
                 + " COALESCE(("
                 + "   SELECT SUM(CASE WHEN p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE') THEN p.amount"
-                + "                   WHEN p.payment_type = 'REFUND' THEN -p.amount ELSE 0 END)"
+                + "                   WHEN p.payment_type IN ('REFUND','COMPENSATION') THEN -p.amount ELSE 0 END)"
                 + "   FROM payment_transactions p"
                 + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
                 + "   LEFT JOIN rental_contracts rc2 ON rc2.id = p.contract_id"
                 + "   LEFT JOIN storage_units su2 ON su2.id = rc2.storage_unit_id"
                 + "   WHERE (res.facility_id = f.id OR su2.facility_id = f.id)"
-                + "     AND p.status = 'SUCCESS' AND YEAR(p.paid_at) = ?"
+                + "     AND p.status = 'SUCCESS' AND YEAR(p.paid_at) = ?" + CASH_ONLY
                 + " ), 0) AS revenue,"
                 + " (SELECT COUNT(DISTINCT rc.id)"
                 + "  FROM rental_contracts rc"
@@ -249,7 +264,7 @@ public class BomRevenueService {
                 + "   LEFT JOIN storage_units su ON su.id = rc.storage_unit_id"
                 + "   LEFT JOIN reservations res ON res.id = p.reservation_id"
                 + "   WHERE COALESCE(su.unit_type_id, res.unit_type_id) = ut.id"
-                + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')"
+                + "     AND p.status = 'SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE')" + CASH_ONLY
                 +       facFilter
                 + " ), 0) AS revenue,"
                 + " (SELECT COUNT(DISTINCT rc.id)"
@@ -495,12 +510,12 @@ public class BomRevenueService {
                 "SELECT COALESCE(SUM(p.amount),0) FROM payment_transactions p"
                         + facilityJoin
                         + " WHERE p.status='SUCCESS' AND p.payment_type IN ('DEPOSIT','MONTHLY_RENT','OVERSTAY_FEE','LATE_FEE','DAMAGE_FEE')"
-                        + prevDateFilter + facilityWhere);
+                        + prevDateFilter + facilityWhere + CASH_ONLY);
         BigDecimal prevRefund = querySum(
                 "SELECT COALESCE(SUM(p.amount),0) FROM payment_transactions p"
                         + facilityJoin
-                        + " WHERE p.status='SUCCESS' AND p.payment_type='REFUND'"
-                        + prevDateFilter + facilityWhere);
+                        + " WHERE p.status='SUCCESS' AND p.payment_type IN ('REFUND','COMPENSATION')"
+                        + prevDateFilter + facilityWhere + CASH_ONLY);
         BigDecimal prevNet = prevRental.subtract(prevRefund);
 
         if (prevNet.compareTo(BigDecimal.ZERO) == 0) return 0.0;

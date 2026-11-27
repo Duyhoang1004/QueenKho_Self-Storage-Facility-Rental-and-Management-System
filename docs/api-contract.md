@@ -1261,4 +1261,6 @@ Không đổi schema.
 - `checkout-refund-preview` / `RefundCalculationResult` thêm `trialReturn` (khách tự trả trong 3 ngày đầu sau nhận kho). `faultTermination` giờ true cả khi hợp đồng có hồ sơ bồi thường lỗi cơ sở `APPROVED` / `PAID` (không chỉ khi FM chọn chấm dứt).
 - `StaffTaskDetailResponse` thêm `trialReturn`. Dòng `KEPT` "Tiền thuê những ngày đã dùng" có `note` ghi phép tính ngày (lỗi cơ sở: tiền kỳ ÷ số ngày kỳ; dùng thử: giá niêm yết ÷ 30).
 - Lỗi cơ sở: tối thiểu 1 ngày đã dùng (trả cùng ngày nhận kho không còn hoàn 100%).
+- PR-M7a: `/bom/revenue/*` chỉ tính giao dịch tiền thật (bỏ `DEPOSIT_OFFSET` / `SETTLEMENT_OFFSET`); `overview.netRevenue` = thu − hoàn − chi đền bù; `overview.feesOffset` (mới) = phí trễ / sự cố / chiếm dụng đã cấn trừ từ cọc / tiền hoàn (chỉ hiển thị). Timeline: cột `refund` gồm cả chi đền bù.
+- Task `REFUND` của bảng quyết toán: `note` giữ nguyên số chốt theo quyết toán (không tính lại); các trường tiền tính theo `checkout_date` của quyết toán.
 

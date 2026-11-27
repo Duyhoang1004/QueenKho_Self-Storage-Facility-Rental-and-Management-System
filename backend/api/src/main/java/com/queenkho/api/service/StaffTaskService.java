@@ -3775,6 +3775,11 @@ public class StaffTaskService {
                     : ("CHECK_OUT".equals(task.getTaskType())
                         ? LocalDate.now(LateFeeService.VIETNAM_ZONE)
                         : (task.getCreatedAt() != null ? task.getCreatedAt().toLocalDate() : LocalDate.now(LateFeeService.VIETNAM_ZONE)));
+            // 27/11/2026: task hoàn tiền của bảng quyết toán → tính theo ngày trả kho đã chốt trong quyết toán
+            if ("REFUND".equals(task.getTaskType())) {
+                LocalDate settled = settlementCheckoutDate(task.getId());
+                if (settled != null) refDate = settled;
+            }
             // PR-O31a: task nghiệm thu chưa xong đã bấm demo "đúng ngày hẹn" → xem trước theo ngày hẹn gốc
             if ("CHECK_OUT".equals(task.getTaskType()) && task.getCompletedAt() == null) {
                 refDate = effectiveCheckoutDate(task, refDate);
@@ -4780,7 +4785,27 @@ public class StaffTaskService {
                 .build();
     }
 
+    /** Ghi chú do CheckoutSettlementService.createRefundTask tạo (hoàn tiền theo bảng quyết toán trả kho) */
+    static boolean isSettlementRefundNote(String note) {
+        return note != null && note.startsWith("Hoàn tiền trả kho (quyết toán");
+    }
+
+    /** Ngày trả kho đã chốt trong bảng quyết toán sinh ra task hoàn tiền này (null nếu không phải hoàn tiền trả kho) */
+    LocalDate settlementCheckoutDate(Integer refundTaskId) {
+        try {
+            List<java.sql.Date> rows = jdbcTemplate.queryForList(
+                    "SELECT TOP 1 checkout_date FROM checkout_settlements WHERE refund_task_id = ? ORDER BY id DESC",
+                    java.sql.Date.class, refundTaskId);
+            return rows.isEmpty() || rows.get(0) == null ? null : rows.get(0).toLocalDate();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String buildEnrichedRefundNote(RentalContract contract, String rawNote, LocalDate refDate) {
+        // 27/11/2026: task hoàn tiền của bảng quyết toán (D-21) — số tiền chốt theo quyết toán (ngày trả kho, dùng thử /
+        // lỗi cơ sở tính theo ngày). Không tính lại theo ngày tạo task: trước đây ghi "Đã dùng 1T … THỰC HOÀN" sai số.
+        if (isSettlementRefundNote(rawNote)) return rawNote;
         try {
             BigDecimal dmg = BigDecimal.ZERO;
             List<DamageCase> cases = damageCaseRepository.findByContract_IdOrderByIdAsc(contract.getId());

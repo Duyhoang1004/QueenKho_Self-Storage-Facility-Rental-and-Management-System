@@ -51,6 +51,23 @@ public class SupportRequestSchemaInitializer implements BeanPostProcessor {
                         "    ALTER TABLE rental_contracts ADD reassign_note NVARCHAR(500) NULL; " +
                         "  IF COL_LENGTH('rental_contracts', 'reassign_resolved_at') IS NULL " +
                         "    ALTER TABLE rental_contracts ADD reassign_resolved_at DATETIME2 NULL; " +
+                        "END; " +
+                        "IF OBJECT_ID('unit_types', 'U') IS NOT NULL " +
+                        "BEGIN " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương 1 phòng chứa đồ nhỏ / 1 xe bán tải' " +
+                        "    WHERE name = N'Kho Mini M' AND suggested_capacity IN (N'10–20 thùng carton', N'10-20 thùng carton'); " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương 1 phòng trọ nhỏ / 1 xe tải 1 tấn' " +
+                        "    WHERE name = N'Kho Tiêu Chuẩn' AND suggested_capacity IN (N'20–40 thùng, nội thất nhỏ', N'20-40 thùng, nội thất nhỏ'); " +
+                        "  UPDATE unit_types SET features = N'Nội thất gọn, đồ gia dụng & hàng shop online' " +
+                        "    WHERE name = N'Kho Tiêu Chuẩn' AND features IN (N'Phổ biến nhất, phù hợp chuyển nhà', N'Chuyển nhà, nội thất gọn & hàng shop online'); " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương đồ căn hộ 1 phòng ngủ' " +
+                        "    WHERE name = N'Kho Gia Đình' AND suggested_capacity = N'Đồ 1 phòng ngủ hoặc VP nhỏ'; " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương đồ căn hộ 2 phòng ngủ' " +
+                        "    WHERE name = N'Kho Lớn' AND suggested_capacity = N'Đồ 2 phòng ngủ hoặc hàng hóa'; " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương 1 gara ô tô / kho hàng nhỏ' " +
+                        "    WHERE name = N'Kho Đặc Biệt XL' AND suggested_capacity = N'Hàng hóa lớn, máy móc'; " +
+                        "  UPDATE unit_types SET suggested_capacity = N'Tương đương 1 tủ quần áo lớn' " +
+                        "    WHERE name = N'Kho nhỏ 2m²' AND suggested_capacity IN (N'5–10 thùng carton', N'5-10 thùng carton'); " +
                         "END"
                 );
             } catch (Exception e) {

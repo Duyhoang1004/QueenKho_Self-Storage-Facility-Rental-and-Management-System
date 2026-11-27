@@ -1425,13 +1425,11 @@ public class StaffTaskService {
         String unitId = text(eventData(blocker), "unitId");
         if (!unitId.equals(checkIn.getContract().getStorageUnit().getId()))
             throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_CHANGED", "Ô đã thay đổi; không thể duyệt ảnh của ô cũ");
-        if ("MAINTENANCE".equalsIgnoreCase(checkIn.getContract().getStorageUnit().getStatus()))
-            throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_IN_MAINTENANCE",
-                    "Ô vẫn đang khóa bảo trì từ sự cố trước. Hoàn tất task bảo trì để mở ô rồi mới xác nhận xử lý check-in");
         List<StaffTask> repairs = staffTaskRepository.findByContractIdAndTaskTypeAndStatusIn(
                 checkIn.getContract().getId(), "MAINTENANCE", List.of("COMPLETED"));
         StaffTask repair = repairs.stream().filter(t -> "CHECKIN_REPAIR".equals(t.getMaintenanceReason()))
-                .filter(t -> t.getNote() != null && t.getNote().startsWith("[CHECKIN_UNIT=" + unitId + "]"))
+                // Hoàn tất task đưa ghi chú mới lên đầu; mã ô gốc vẫn nằm phía sau.
+                .filter(t -> t.getNote() != null && t.getNote().contains("[CHECKIN_UNIT=" + unitId + "]"))
                 .max(Comparator.comparing(StaffTask::getId)).orElse(null);
         Object reportedAt = blocker.get("created_at");
         LocalDateTime reportTime = reportedAt instanceof java.sql.Timestamp ts ? ts.toLocalDateTime()
@@ -1439,6 +1437,24 @@ public class StaffTaskService {
         if (repair == null || repair.getEvidenceImageUrl() == null || repair.getEvidenceImageUrl().isBlank()
                 || repair.getCreatedAt() == null || reportTime == null || repair.getCreatedAt().isBefore(reportTime))
             throw new StaffTaskException(HttpStatus.CONFLICT, "REPAIR_NOT_DONE", "Staff phải hoàn tất task cùng ảnh sau xử lý trước khi FM xác nhận");
+        StorageUnit repairedUnit = checkIn.getContract().getStorageUnit();
+        if ("MAINTENANCE".equalsIgnoreCase(repairedUnit.getStatus())) {
+            if (repair.getCompletedAt() == null || repairedUnit.getMaintenanceSince() != null
+                    && repairedUnit.getMaintenanceSince().isAfter(repair.getCompletedAt()))
+                throw new StaffTaskException(HttpStatus.CONFLICT, "NEW_UNIT_FAULT", "Ô phát sinh sự cố mới sau khi Staff hoàn tất; cần kiểm tra lại");
+            Integer openRepairs = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM facility_tasks t JOIN rental_contracts c ON c.id = t.contract_id " +
+                            "WHERE c.storage_unit_id = ? AND t.task_type = 'MAINTENANCE' " +
+                            "AND t.status IN ('OPEN','IN_PROGRESS','OVERDUE') AND t.id <> ?",
+                    Integer.class, unitId, repair.getId());
+            if (openRepairs != null && openRepairs > 0)
+                throw new StaffTaskException(HttpStatus.CONFLICT, "UNIT_REPAIR_PENDING", "Ô còn task bảo trì khác chưa hoàn tất; chưa thể xác nhận đạt");
+            repairedUnit.setStatus(repairedUnit.idleStatus());
+            repairedUnit.setMaintenanceNote(null);
+            repairedUnit.setMaintenanceSince(null);
+            storageUnitRepository.save(repairedUnit);
+            unitScheduleService.refreshUnitStatus(repairedUnit);
+        }
         assertUnitReadyForCheckIn(checkIn.getContract());
         addCheckInEvent(checkIn.getContract(), actor.id(), "CI_REOPEN",
                 Map.of("draftId", eventDraftId(blocker), "note", note.trim(), "unitId", unitId,

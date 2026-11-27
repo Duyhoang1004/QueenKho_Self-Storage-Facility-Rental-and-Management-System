@@ -37,7 +37,15 @@ public class HeldGoodsResponse {
     private String termsVersion;       // NULL = đơn cũ chưa đồng ý điều khoản → không được bán
     private boolean canSell;           // hết hạn + đã đồng ý điều khoản
     private BigDecimal customerDebt;   // nợ DAMAGE_FEE / OVERSTAY_FEE còn PENDING của khách (phải trả trước khi nhận lại)
+    private BigDecimal contractDebt;   // nợ còn PENDING của riêng hợp đồng này
     private BigDecimal depositHeld;    // cọc còn giữ sau thanh lý
+
+    // Bóc tách các khoản phí cưỡng chế dọn kho để giải trình rõ vì sao trừ hết / vượt tiền cọc
+    private BigDecimal originalDeposit;
+    private BigDecimal liquidationLateFee;
+    private BigDecimal liquidationOverstayFee;
+    private BigDecimal liquidationMovingFee;
+    private BigDecimal liquidationTotalFee;
 
     private BigDecimal proceedsAmount;
     private BigDecimal debtOffsetAmount;

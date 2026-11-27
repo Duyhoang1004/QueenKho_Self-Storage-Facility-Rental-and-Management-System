@@ -59,6 +59,8 @@ public record CustomerPaymentsResponse(
             BigDecimal damageDeduction,
             BigDecimal lateFeeDeduction,
             BigDecimal overstayDeduction,
+            BigDecimal movingFeeDeduction,
+            BigDecimal storageFeeDeduction,
             BigDecimal breakFeeDeduction,
             String refundDescription
     ) {
@@ -71,7 +73,7 @@ public record CustomerPaymentsResponse(
             this(id, transactionCode, bankTransactionCode, paymentType, paymentMethod, amount, status, paidAt,
                     renewalMonths, reservationId, reservationCode, contractId, contractCode, facilityName, unitTypeName,
                     null, null, null, null, null, null, null, null, null, null, null, null, null,
-                    null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         }
 
         public PaymentItem(
@@ -89,7 +91,7 @@ public record CustomerPaymentsResponse(
                     monthlyRentPrice, durationMonths, baseRentAmount, rentDiscountPercent, rentDiscountAmount,
                     voucherCode, voucherDiscount, actualRentPaid, depositAmount, insurancePlan, insuranceAmount,
                     null, null,
-                    null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         }
 
         public PaymentItem(
@@ -108,7 +110,7 @@ public record CustomerPaymentsResponse(
                     monthlyRentPrice, durationMonths, baseRentAmount, rentDiscountPercent, rentDiscountAmount,
                     voucherCode, voucherDiscount, actualRentPaid, depositAmount, insurancePlan, insuranceAmount,
                     voucherDiscountType, voucherDiscountPercent,
-                    null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 

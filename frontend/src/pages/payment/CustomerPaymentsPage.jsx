@@ -35,6 +35,55 @@ function typeOf(t) {
   return TYPE_LABELS[t.paymentType] || { label: t.paymentType, icon: 'receipt' }
 }
 
+// Gộp các dòng phụ của cùng 1 lần thanh toán gia hạn VNPAY (QKR... + LFQKR... + OSQKR...) thành 1 giao dịch duy nhất
+function groupRenewalTransactions(list) {
+  const mainByCode = new Map()
+  for (const t of list) {
+    if (t.paymentType === 'MONTHLY_RENT' && t.transactionCode?.startsWith('QKR')) {
+      mainByCode.set(t.transactionCode, t)
+    }
+  }
+  const lateByBase = new Map()
+  const overstayByBase = new Map()
+  const mergedSubIds = new Set()
+
+  for (const t of list) {
+    const code = t.transactionCode || ''
+    if (t.paymentType === 'LATE_FEE' && code.startsWith('LFQKR')) {
+      const base = code.slice(2)
+      if (mainByCode.has(base)) {
+        lateByBase.set(base, (lateByBase.get(base) || 0) + Number(t.amount || 0))
+        mergedSubIds.add(t.id)
+      }
+    } else if (t.paymentType === 'OVERSTAY_FEE' && code.startsWith('OSQKR')) {
+      const base = code.slice(2)
+      if (mainByCode.has(base)) {
+        overstayByBase.set(base, (overstayByBase.get(base) || 0) + Number(t.amount || 0))
+        mergedSubIds.add(t.id)
+      }
+    }
+  }
+
+  return list
+    .filter((t) => !mergedSubIds.has(t.id))
+    .map((t) => {
+      if (t.paymentType === 'MONTHLY_RENT' && t.transactionCode?.startsWith('QKR')) {
+        const base = t.transactionCode
+        const renewalLateFee = lateByBase.get(base) || 0
+        const renewalOverstayFee = overstayByBase.get(base) || 0
+        const renewalRentAndInsurance = Number(t.amount || 0)
+        return {
+          ...t,
+          renewalRentAndInsurance,
+          renewalLateFee,
+          renewalOverstayFee,
+          amount: renewalRentAndInsurance + renewalLateFee + renewalOverstayFee,
+        }
+      }
+      return t
+    })
+}
+
 const METHOD_LABELS = {
   VNPAY: 'VNPAY',
   BANK_TRANSFER: 'Chuyển khoản',
@@ -78,8 +127,26 @@ function PaymentReceiptModal({ transaction, onClose }) {
   const status = STATUS_STYLES[transaction.status] || STATUS_STYLES.PENDING
   const isCompensation = transaction.paymentType === 'COMPENSATION'
   const isRefund = transaction.paymentType === 'REFUND'
+  const isRenewal = transaction.paymentType === 'MONTHLY_RENT'
   const isIncome = isRefund || isCompensation
-  const isDeposit = !isIncome && (transaction.paymentType === 'DEPOSIT' || transaction.baseRentAmount != null)
+  const isDeposit = !isIncome && !isRenewal && (transaction.paymentType === 'DEPOSIT' || transaction.baseRentAmount != null)
+
+  // Bóc tách lần thanh toán gia hạn (gồm tiền thuê + bảo hiểm + phí trễ + phí chiếm dụng cùng 1 lần VNPAY)
+  const renewalMonthsCount = Number(transaction.renewalMonths || 1)
+  const renewalRentAndIns = Number(transaction.renewalRentAndInsurance ?? transaction.amount ?? 0)
+  const renewalLateFee = Number(transaction.renewalLateFee || 0)
+  const renewalOverstayFee = Number(transaction.renewalOverstayFee || 0)
+  const renewalInsMonthly =
+    transaction.insurancePlan === 'ADVANCED'
+      ? 50000
+      : transaction.insurancePlan === 'PREMIUM'
+        ? 120000
+        : 0
+  const renewalInsTotal = renewalInsMonthly * renewalMonthsCount
+  const renewalRentOnly =
+    renewalInsTotal > 0 && renewalRentAndIns >= renewalInsTotal
+      ? renewalRentAndIns - renewalInsTotal
+      : renewalRentAndIns
 
   const durationMonths = Number(transaction.durationMonths || (Number(transaction.amount) >= 5000000 ? 6 : 1))
   const monthlyRentPrice = Number(transaction.monthlyRentPrice || transaction.depositAmount || 750000)
@@ -152,8 +219,26 @@ function PaymentReceiptModal({ transaction, onClose }) {
   const damageDeduction = Number(transaction.damageDeduction || 0)
   const lateFeeDeduction = Number(transaction.lateFeeDeduction || 0)
   const overstayDeduction = Number(transaction.overstayDeduction || 0)
+  const movingFeeDeduction = Number(transaction.movingFeeDeduction || 0)
+  const storageFeeDeduction = Number(transaction.storageFeeDeduction || 0)
   const breakFeeDeduction = Number(transaction.breakFeeDeduction || 0)
+  const totalRefundDeductions =
+    damageDeduction + lateFeeDeduction + overstayDeduction + movingFeeDeduction + storageFeeDeduction + breakFeeDeduction
   const refundDescription = transaction.refundDescription || 'Hoàn tất thủ tục quyết toán thanh lý hợp đồng & hoàn trả tiền cọc'
+
+  // Dựng chuỗi công thức giải trình rõ vì sao phần tiền hoàn có giá trị này
+  const refundFormulaParts = []
+  if (refundDepositAmount > 0) refundFormulaParts.push(`${formatVND(refundDepositAmount)} (cọc ban đầu)`)
+  if (earlyRentRefund > 0) refundFormulaParts.push(`+ ${formatVND(earlyRentRefund)} (tiền thuê hoàn)`)
+  if (damageDeduction > 0) refundFormulaParts.push(`− ${formatVND(damageDeduction)} (phí hư hại)`)
+  if (lateFeeDeduction > 0) refundFormulaParts.push(`− ${formatVND(lateFeeDeduction)} (phí trễ hạn)`)
+  if (overstayDeduction > 0) refundFormulaParts.push(`− ${formatVND(overstayDeduction)} (phí chiếm dụng)`)
+  if (movingFeeDeduction > 0) refundFormulaParts.push(`− ${formatVND(movingFeeDeduction)} (phí dọn & di dời hàng)`)
+  if (storageFeeDeduction > 0) refundFormulaParts.push(`− ${formatVND(storageFeeDeduction)} (phí lưu giữ kho tổng)`)
+  if (breakFeeDeduction > 0) refundFormulaParts.push(`− ${formatVND(breakFeeDeduction)} (phí hủy / chấm dứt sớm)`)
+  const refundFormulaText = refundFormulaParts.length > 0
+    ? `${refundFormulaParts.join(' ')} = ${formatVND(transaction.amount)}`
+    : null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="duo-card max-w-lg w-full bg-white overflow-hidden shadow-2xl border-2 border-[#E5E5E5] flex flex-col max-h-[90vh]">
@@ -342,6 +427,92 @@ function PaymentReceiptModal({ transaction, onClose }) {
             </div>
           )}
 
+          {/* Itemized breakdown for renewal (gộp tiền thuê, bảo hiểm, phí trễ và phí chiếm dụng trong cùng 1 lần thanh toán) */}
+          {isRenewal && (
+            <div className="flex flex-col gap-2.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF]">
+                  Bóc tách chi tiết thanh toán gia hạn
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-[#DDF4FF] text-[#1899D6] border border-[#84D8FF]">
+                  GIA HẠN {renewalMonthsCount} THÁNG
+                </span>
+              </div>
+
+              {/* Tiền thuê gia hạn */}
+              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                <div className="flex flex-col">
+                  <span className="font-bold text-[#4B4B4B]">
+                    Tiền thuê kho gia hạn ({renewalMonthsCount} tháng)
+                  </span>
+                  <span className="text-[10px] text-[#AFAFAF]">
+                    Đã áp dụng ưu đãi gia hạn theo chính sách cơ sở (nếu có)
+                  </span>
+                </div>
+                <span className="font-black text-[#4B4B4B]">
+                  {formatVND(renewalRentOnly)}
+                </span>
+              </div>
+
+              {/* Bảo hiểm hàng hóa kỳ gia hạn */}
+              {renewalInsTotal > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#4B4B4B]">
+                      Bảo hiểm hàng hóa ({insuranceLabel})
+                    </span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      {formatVND(renewalInsMonthly)}/tháng × {renewalMonthsCount} tháng
+                    </span>
+                  </div>
+                  <span className="font-black text-[#0284C7]">
+                    {formatVND(renewalInsTotal)}
+                  </span>
+                </div>
+              )}
+
+              {/* Phí trễ hạn kèm theo */}
+              {renewalLateFee > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Phí trễ hạn</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Phí phạt quá hạn thanh toán cùng lần gia hạn
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    +{formatVND(renewalLateFee)}
+                  </span>
+                </div>
+              )}
+
+              {/* Phí chiếm dụng ô kho kèm theo */}
+              {renewalOverstayFee > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Phí chiếm dụng ô kho</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Phí những ngày đã chiếm dụng ô sau ngày hết hạn cũ
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    +{formatVND(renewalOverstayFee)}
+                  </span>
+                </div>
+              )}
+
+              {/* Tổng thực trả 1 lần */}
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
+                <span className="font-black text-[#15803D] uppercase text-[11px] tracking-wide">
+                  Tổng tiền 1 lần thanh toán
+                </span>
+                <span className="text-base font-black text-[#16A34A] whitespace-nowrap">
+                  {formatVND(transaction.amount)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Itemized breakdown for compensation */}
           {isCompensation && (
             <div className="flex flex-col gap-2.5 bg-[#FAFAFA] border-2 border-[#E5E5E5] rounded-2xl p-4">
@@ -472,44 +643,76 @@ function PaymentReceiptModal({ transaction, onClose }) {
               )}
 
               {/* Khấu trừ chi phí hư hại ô kho */}
-              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
-                <div className="flex flex-col">
-                  <span className="font-bold text-[#4B4B4B]">Khấu trừ hư hại / sửa chữa ô kho</span>
-                  <span className="text-[10px] text-[#AFAFAF]">
-                    {damageDeduction > 0
-                      ? 'Khấu trừ chi phí sửa chữa theo biên bản kiểm tra trả kho'
-                      : 'Bàn giao ô kho nguyên vẹn — không phát sinh chi phí'}
+              {damageDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ hư hại / sửa chữa ô kho</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Khấu trừ trực tiếp vào tiền cọc theo biên bản kiểm tra trả kho
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(damageDeduction)}
                   </span>
                 </div>
-                <span className={`font-black ${damageDeduction > 0 ? 'text-[#FF4B4B]' : 'text-[#16A34A]'}`}>
-                  {damageDeduction > 0 ? `-${formatVND(damageDeduction)}` : '0₫'}
-                </span>
-              </div>
+              )}
 
-              {/* Khấu trừ phí dọn đồ trễ hạn */}
-              <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
-                <div className="flex flex-col">
-                  <span className="font-bold text-[#4B4B4B]">Khấu trừ phí trễ hạn trả kho</span>
-                  <span className="text-[10px] text-[#AFAFAF]">
-                    {lateFeeDeduction > 0
-                      ? 'Phí trễ hạn theo quy định hợp đồng'
-                      : 'Trả kho đúng hạn — không bị phạt'}
+              {/* Khấu trừ phí trễ hạn */}
+              {lateFeeDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí trễ hạn</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Phí phạt quá hạn khấu trừ vào tiền cọc theo điều khoản hợp đồng
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(lateFeeDeduction)}
                   </span>
                 </div>
-                <span className={`font-black ${lateFeeDeduction > 0 ? 'text-[#FF4B4B]' : 'text-[#16A34A]'}`}>
-                  {lateFeeDeduction > 0 ? `-${formatVND(lateFeeDeduction)}` : '0₫'}
-                </span>
-              </div>
+              )}
 
-              {/* Khấu trừ phí chiếm dụng kho */}
+              {/* Khấu trừ phí chiếm dụng ô kho */}
               {overstayDeduction > 0 && (
                 <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
                   <div className="flex flex-col">
-                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí chiếm dụng kho</span>
-                    <span className="text-[10px] text-[#AFAFAF]">Phí chiếm dụng kho sau thời gian ân hạn</span>
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí chiếm dụng ô kho</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Phí các ngày chiếm dụng ô kho sau ngày hết hạn hợp đồng
+                    </span>
                   </div>
                   <span className="font-black text-[#FF4B4B]">
                     -{formatVND(overstayDeduction)}
+                  </span>
+                </div>
+              )}
+
+              {/* Khấu trừ phí dọn & di dời hàng vào kho tổng */}
+              {movingFeeDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí dọn &amp; di dời hàng</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Chi phí cưỡng chế mở kho, đóng gói và chuyển hàng vào kho tổng
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(movingFeeDeduction)}
+                  </span>
+                </div>
+              )}
+
+              {/* Khấu trừ phí lưu giữ hàng tại kho tổng */}
+              {storageFeeDeduction > 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#FF4B4B]">Khấu trừ phí lưu giữ tại kho tổng</span>
+                    <span className="text-[10px] text-[#AFAFAF]">
+                      Phí lưu giữ tài sản tại kho tổng khấu trừ từ phần cọc còn giữ
+                    </span>
+                  </div>
+                  <span className="font-black text-[#FF4B4B]">
+                    -{formatVND(storageFeeDeduction)}
                   </span>
                 </div>
               )}
@@ -527,17 +730,40 @@ function PaymentReceiptModal({ transaction, onClose }) {
                 </div>
               )}
 
+              {/* Không phát sinh khấu trừ */}
+              {totalRefundDeductions === 0 && (
+                <div className="flex justify-between items-center text-xs pb-1.5 border-b border-[#E5E5E5]">
+                  <div className="flex flex-col">
+                    <span className="font-bold text-[#4B4B4B]">Các khoản khấu trừ vào tiền cọc</span>
+                    <span className="text-[10px] text-[#16A34A] font-semibold">
+                      Không phát sinh khoản khấu trừ nào
+                    </span>
+                  </div>
+                  <span className="font-black text-[#16A34A]">0₫</span>
+                </div>
+              )}
+
+              {/* Công thức giải trình lý do giá trị tiền hoàn */}
+              {refundFormulaText && (
+                <div className="p-2.5 rounded-xl bg-white border border-[#E5E5E5] text-[11px] leading-relaxed">
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-[#777777] mb-0.5">
+                    Cách tính số tiền hoàn
+                  </span>
+                  <span className="font-bold text-[#4B4B4B]">{refundFormulaText}</span>
+                </div>
+              )}
+
               {/* Tiền thực nhận hoàn lại: NỔI BẬT & IN ĐẬM */}
-              <div className="flex justify-between items-center p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
-                <div className="flex flex-col pr-2">
+              <div className="flex justify-between items-start gap-3 p-3 rounded-xl bg-[#F0FDF4] border-2 border-[#86EFAC] text-xs shadow-xs my-0.5">
+                <div className="flex flex-col">
                   <span className="font-black text-[#15803D] uppercase text-[11px] tracking-wide">
                     Tổng tiền thực hoàn
                   </span>
-                  <span className="text-[10px] text-[#16A34A] line-clamp-2">
+                  <span className="text-[11px] text-[#16A34A] mt-0.5 whitespace-pre-wrap break-words">
                     {refundDescription}
                   </span>
                 </div>
-                <span className="text-base font-black text-[#16A34A] whitespace-nowrap">
+                <span className="text-base font-black text-[#16A34A] whitespace-nowrap shrink-0">
                   +{formatVND(transaction.amount)}
                 </span>
               </div>
@@ -650,9 +876,20 @@ export default function CustomerPaymentsPage() {
 
   const transactions = useMemo(() => {
     const all = state.data?.transactions || []
-    return applyTimeFilter(all
+    // 1. Ẩn khấu trừ cọc nội bộ (DEPOSIT_OFFSET) — giải trình trong biên lai Hoàn tiền
+    // 2. Gộp các khoản phụ của cùng 1 lần gia hạn VNPAY (QKR + LFQKR + OSQKR) thành 1 dòng duy nhất
+    const grouped = groupRenewalTransactions(
+      all.filter((t) => t.paymentMethod !== 'DEPOSIT_OFFSET')
+    )
+    return applyTimeFilter(grouped
       .filter((t) => showFailed || t.status !== 'FAILED')
-      .filter((t) => typeFilter === 'ALL' || t.paymentType === typeFilter), timeFilter, TIME_FIELDS)
+      .filter((t) => {
+        if (typeFilter === 'ALL') return true
+        if (t.paymentType === typeFilter) return true
+        if (typeFilter === 'LATE_FEE' && Number(t.renewalLateFee || 0) > 0) return true
+        if (typeFilter === 'OVERSTAY_FEE' && Number(t.renewalOverstayFee || 0) > 0) return true
+        return false
+      }), timeFilter, TIME_FIELDS)
   }, [state.data, typeFilter, showFailed, timeFilter])
 
   const summary = state.data?.summary
@@ -728,9 +965,10 @@ export default function CustomerPaymentsPage() {
             tone="border-[#84D8FF] bg-[#F2FAFF] text-[#1899D6]" hint="Cọc, tiền thuê, gia hạn, phí" />
           <SummaryTile icon="currency_exchange" label="Đã được hoàn" value={summary.totalRefunded}
             tone="border-[#58CC02] bg-[#F1FFE7] text-[#58A700]"
-            hint={Number(summary.pendingRefund) > 0 ? `Đang chờ hoàn ${formatVND(summary.pendingRefund)}` : 'Không có khoản chờ hoàn'} />
-          <SummaryTile icon="account_balance_wallet" label="Trừ vào tiền cọc" value={summary.depositOffset}
-            tone="border-[#E5E5E5] bg-[#F7F7F7] text-[#777777]" hint="Phí trễ / sự cố khấu trừ khi trả kho" />
+            hint="Tiền hoàn cọc, trả sớm & bồi thường" />
+          <SummaryTile icon="hourglass_top" label="Đang chờ hoàn" value={summary.pendingRefund}
+            tone={Number(summary.pendingRefund) > 0 ? 'border-[#FF9600] bg-[#FFF8EE] text-[#E58800]' : 'border-[#E5E5E5] bg-[#F7F7F7] text-[#777777]'}
+            hint={Number(summary.pendingRefund) > 0 ? 'Cơ sở đang xử lý chuyển hoàn' : 'Không có khoản chờ hoàn'} />
           <SummaryTile icon="warning" label="Còn nợ" value={summary.outstandingDebt}
             tone={Number(summary.outstandingDebt) > 0 ? 'border-[#FF4B4B] bg-[#FFF5F5] text-[#EA2B2B]' : 'border-[#E5E5E5] bg-white text-[#AFAFAF]'}
             hint={Number(summary.outstandingDebt) > 0 ? 'Cần trả trước khi đặt kho mới' : 'Không có khoản nợ'} />
@@ -754,14 +992,35 @@ export default function CustomerPaymentsPage() {
             {paginatedActionable.map((item) => {
               if (item.kind === 'DEBT') {
                 const debt = item.data
+                const isMovingDebt = debt.transactionCode?.startsWith('MV-')
+                const isOverstayDebt = debt.paymentType === 'OVERSTAY_FEE'
+                const lateOff = Number(debt.lateFeeDeduction || 0)
+                const osOff = Number(debt.overstayDeduction || 0)
+                const mvOff = Number(debt.movingFeeDeduction || 0)
+                const dmgOff = Number(debt.damageDeduction || 0)
+                const origDep = Number(debt.depositAmount || 0)
+                const totalMv = mvOff + (isMovingDebt ? Number(debt.amount || 0) : 0)
+                const totalOs = osOff + (!isMovingDebt && isOverstayDebt ? Number(debt.amount || 0) : 0)
+                const totalFeeAll = lateOff + totalOs + totalMv + dmgOff
+                const hasBreakdown = totalFeeAll > Number(debt.amount || 0) && origDep > 0
                 return (
                   <div key={item.key} className="rounded-2xl bg-white p-4 border-2 border-b-4 border-[#FF4B4B] flex flex-col md:flex-row md:items-center gap-4">
                     <span className="material-symbols-outlined text-[30px] text-[#FF4B4B]">construction</span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-black text-[#4B4B4B]">{debt.transactionCode?.startsWith("MV-") ? "Phí dọn & di dời hàng vượt tiền cọc" : debt.paymentType === "OVERSTAY_FEE" ? "Phí chiếm dụng vượt tiền cọc" : "Phí sự cố vượt tiền cọc"} · HĐ {debt.contractCode || "—"}</p>
+                      <p className="font-black text-[#4B4B4B]">{isMovingDebt ? 'Phí dọn & di dời hàng vượt tiền cọc' : isOverstayDebt ? 'Phí chiếm dụng vượt tiền cọc' : 'Phí sự cố vượt tiền cọc'} · HĐ {debt.contractCode || '—'}</p>
                       <p className="text-xs font-bold text-[#777777]">
-                        {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — phát sinh khi nghiệm thu trả kho
+                        {debt.facilityName || ''}{debt.unitTypeName ? ` · ${debt.unitTypeName}` : ''} — {isOverstayDebt ? 'phát sinh khi cưỡng chế dọn kho (tổng phí vượt tiền cọc)' : 'phát sinh khi nghiệm thu trả kho'}
                       </p>
+                      {hasBreakdown && (
+                        <p className="text-[11px] font-bold text-[#DC2626] mt-1">
+                          Tổng phí {formatVND(totalFeeAll)} ({[
+                            lateOff > 0 ? `Phí trễ ${formatVND(lateOff)}` : null,
+                            totalOs > 0 ? `Chiếm dụng ${formatVND(totalOs)}` : null,
+                            totalMv > 0 ? `Dọn & di dời ${formatVND(totalMv)}` : null,
+                            dmgOff > 0 ? `Hư hại ${formatVND(dmgOff)}` : null,
+                          ].filter(Boolean).join(' + ')}) − Tiền cọc {formatVND(origDep)} = Vượt cọc {formatVND(debt.amount)}
+                        </p>
+                      )}
                     </div>
                     <span className="text-xl font-black text-[#EA2B2B]">{formatVND(debt.amount)}</span>
                     <button
@@ -817,7 +1076,7 @@ export default function CustomerPaymentsPage() {
           <ListBoxHeader
             icon="receipt_long"
             title="Lịch sử giao dịch"
-            subtitle="Chi tiết tất cả giao dịch thanh toán, hoàn tiền và khấu trừ cọc"
+            subtitle="Chi tiết các giao dịch thanh toán, bồi thường và hoàn tiền của bạn"
             count={transactions.length}
             countLabel="giao dịch"
             accentColor="bg-[#DDF4FF] text-[#1CB0F6] border-[#84D8FF]"
@@ -874,6 +1133,10 @@ export default function CustomerPaymentsPage() {
                   const type = typeOf(t)
                   const status = STATUS_STYLES[t.status] || STATUS_STYLES.PENDING
                   const isRefund = t.paymentType === 'REFUND' || t.paymentType === 'COMPENSATION'
+                  const refundDeductions = t.paymentType === 'REFUND'
+                    ? Number(t.damageDeduction || 0) + Number(t.lateFeeDeduction || 0) + Number(t.overstayDeduction || 0)
+                      + Number(t.movingFeeDeduction || 0) + Number(t.storageFeeDeduction || 0) + Number(t.breakFeeDeduction || 0)
+                    : 0
                   return (
                     <tr key={t.id} className="border-b-2 border-[#F7F7F7] last:border-b-0 hover:bg-[#FAFAFA]">
                       <td className="px-4 py-3 whitespace-nowrap font-bold text-[#777777]">{formatTime(t.paidAt)}</td>
@@ -886,6 +1149,20 @@ export default function CustomerPaymentsPage() {
                         {t.bankTransactionCode && (
                           <div className="text-[10px] font-bold text-[#FF9600] font-mono" title="Mã giao dịch ngân hàng / Cổng thanh toán">
                             FT: {t.bankTransactionCode}
+                          </div>
+                        )}
+                        {t.paymentType === 'MONTHLY_RENT' && (Number(t.renewalLateFee || 0) > 0 || Number(t.renewalOverstayFee || 0) > 0) && (
+                          <div className="text-[10px] font-bold text-[#777777] mt-0.5">
+                            {[
+                              `Thuê & BH ${formatVND(t.renewalRentAndInsurance)}`,
+                              Number(t.renewalLateFee || 0) > 0 ? `Phí trễ ${formatVND(t.renewalLateFee)}` : null,
+                              Number(t.renewalOverstayFee || 0) > 0 ? `Chiếm dụng ${formatVND(t.renewalOverstayFee)}` : null,
+                            ].filter(Boolean).join(' + ')}
+                          </div>
+                        )}
+                        {t.paymentType === 'REFUND' && refundDeductions > 0 && (
+                          <div className="text-[10px] font-bold text-[#777777] mt-0.5">
+                            Cọc {formatVND(t.refundDepositAmount ?? t.depositAmount)} − khấu trừ {formatVND(refundDeductions)} (bấm Chi tiết)
                           </div>
                         )}
                       </td>
@@ -943,8 +1220,27 @@ export default function CustomerPaymentsPage() {
       <PaymentConfirmModal
         open={Boolean(confirmDebt)}
         title="Xác nhận thanh toán khoản nợ"
-        subtitle={confirmDebt ? [confirmDebt.facilityName, confirmDebt.unitTypeName].filter(Boolean).join(' · ') : ''}
-        lines={confirmDebt ? [{ label: confirmDebt.transactionCode?.startsWith('MV-') ? 'Phí dọn & di dời hàng vượt tiền cọc' : 'Khoản phí phát sinh khi trả kho', amount: confirmDebt.amount }] : []}
+        subtitle={confirmDebt ? [confirmDebt.facilityName, confirmDebt.unitTypeName, confirmDebt.contractCode ? `HĐ ${confirmDebt.contractCode}` : null].filter(Boolean).join(' · ') : ''}
+        lines={confirmDebt ? (() => {
+          const isMv = confirmDebt.transactionCode?.startsWith('MV-')
+          const isOs = confirmDebt.paymentType === 'OVERSTAY_FEE'
+          const lateOff = Number(confirmDebt.lateFeeDeduction || 0)
+          const osTotal = Number(confirmDebt.overstayDeduction || 0) + (!isMv && isOs ? Number(confirmDebt.amount || 0) : 0)
+          const mvTotal = Number(confirmDebt.movingFeeDeduction || 0) + (isMv ? Number(confirmDebt.amount || 0) : 0)
+          const dmgOff = Number(confirmDebt.damageDeduction || 0)
+          const origDep = Number(confirmDebt.depositAmount || 0)
+          const totalFee = lateOff + osTotal + mvTotal + dmgOff
+          if (totalFee > Number(confirmDebt.amount || 0) && origDep > 0) {
+            return [
+              lateOff > 0 ? { label: 'Phí phạt trễ hạn', amount: lateOff } : null,
+              osTotal > 0 ? { label: 'Phí chiếm dụng ô kho', amount: osTotal } : null,
+              mvTotal > 0 ? { label: 'Phí dọn & di dời hàng vào kho tổng', amount: mvTotal } : null,
+              dmgOff > 0 ? { label: 'Phí hư hại ô kho', amount: dmgOff } : null,
+              { label: 'Đã trừ tiền cọc ban đầu', amount: -origDep },
+            ].filter(Boolean)
+          }
+          return [{ label: isMv ? 'Phí dọn & di dời hàng vượt tiền cọc' : 'Khoản phí phát sinh', amount: confirmDebt.amount }]
+        })() : []}
         total={confirmDebt?.amount}
         submitting={Boolean(confirmDebt) && payingId === confirmDebt?.id}
         onConfirm={() => doPayDebt(confirmDebt)}

@@ -409,12 +409,65 @@ public class HeldGoodsService {
                 .map(this::toResponse);
     }
 
+    private Map<String, BigDecimal> liquidationBreakdown(Integer contractId) {
+        if (contractId == null || jdbcTemplate == null) return Collections.emptyMap();
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT payment_type, payment_method, transaction_code, status, amount FROM payment_transactions " +
+                        "WHERE contract_id = ? AND status IN ('SUCCESS', 'PENDING') AND renewal_months IS NULL",
+                contractId);
+        if (rows == null || rows.isEmpty()) return Collections.emptyMap();
+        BigDecimal lateFee = BigDecimal.ZERO;
+        BigDecimal overstayFee = BigDecimal.ZERO;
+        BigDecimal movingFee = BigDecimal.ZERO;
+        BigDecimal qkfOverstay = BigDecimal.ZERO;
+        BigDecimal contractDebt = BigDecimal.ZERO;
+        for (Map<String, Object> row : rows) {
+            String type = row.get("payment_type") != null ? String.valueOf(row.get("payment_type")) : "";
+            String method = row.get("payment_method") != null ? String.valueOf(row.get("payment_method")) : "";
+            String code = row.get("transaction_code") != null ? String.valueOf(row.get("transaction_code")) : "";
+            String status = row.get("status") != null ? String.valueOf(row.get("status")) : "";
+            BigDecimal amt = row.get("amount") instanceof BigDecimal bd ? bd : BigDecimal.ZERO;
+            if ("PENDING".equals(status) && ("DAMAGE_FEE".equals(type) || "OVERSTAY_FEE".equals(type)) && "VNPAY".equals(method)) {
+                contractDebt = contractDebt.add(amt);
+            }
+            if ("LATE_FEE".equals(type) && ("DEPOSIT_OFFSET".equals(method) || code.startsWith("LATE-"))) {
+                lateFee = lateFee.add(amt);
+            } else if ("OVERSTAY_FEE".equals(type)) {
+                if (code.startsWith("OS-")) {
+                    overstayFee = overstayFee.add(amt);
+                } else if (code.startsWith("MV-")) {
+                    movingFee = movingFee.add(amt);
+                } else if (code.startsWith("QKF")) {
+                    qkfOverstay = qkfOverstay.add(amt);
+                }
+            }
+        }
+        if (qkfOverstay.compareTo(BigDecimal.ZERO) > 0) {
+            if (movingFee.compareTo(BigDecimal.ZERO) > 0) {
+                movingFee = movingFee.add(qkfOverstay);
+            } else {
+                overstayFee = overstayFee.add(qkfOverstay);
+            }
+        }
+        return Map.of(
+                "lateFee", lateFee,
+                "overstayFee", overstayFee,
+                "movingFee", movingFee,
+                "totalFee", lateFee.add(overstayFee).add(movingFee),
+                "contractDebt", contractDebt
+        );
+    }
+
     private HeldGoodsResponse toResponse(HeldGoods g) {
         RentalContract c = g.getContract();
         LocalDate today = LocalDate.now();
         boolean expired = today.isAfter(g.getHoldUntil());
         String terms = termsVersion(c);
         Integer customerId = c.getCustomer() != null ? c.getCustomer().getId() : null;
+        Map<String, BigDecimal> liq = liquidationBreakdown(c.getId());
+        BigDecimal origDeposit = (c.getReservation() != null && c.getReservation().getDepositAmount() != null)
+                ? c.getReservation().getDepositAmount()
+                : (c.getDepositHeldAmount() != null ? c.getDepositHeldAmount() : BigDecimal.ZERO);
         return HeldGoodsResponse.builder()
                 .id(g.getId())
                 .taskId(g.getTaskId())
@@ -438,7 +491,13 @@ public class HeldGoodsService {
                 .termsVersion(terms)
                 .canSell(false) // D-15: không bán hàng của khách
                 .customerDebt(customerDebt(customerId))
+                .contractDebt(liq.getOrDefault("contractDebt", BigDecimal.ZERO))
                 .depositHeld(c.getDepositHeldAmount() != null ? c.getDepositHeldAmount() : BigDecimal.ZERO)
+                .originalDeposit(origDeposit)
+                .liquidationLateFee(liq.getOrDefault("lateFee", BigDecimal.ZERO))
+                .liquidationOverstayFee(liq.getOrDefault("overstayFee", BigDecimal.ZERO))
+                .liquidationMovingFee(liq.getOrDefault("movingFee", BigDecimal.ZERO))
+                .liquidationTotalFee(liq.getOrDefault("totalFee", BigDecimal.ZERO))
                 .proceedsAmount(g.getProceedsAmount())
                 .debtOffsetAmount(g.getDebtOffsetAmount())
                 .refundAmount(g.getRefundAmount())

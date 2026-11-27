@@ -48,6 +48,10 @@ const STATUS_META = {
     label: "Chờ quyết toán",
     className: "bg-[#DDF4FF] text-[#1899D6] border-2 border-[#84D8FF]",
   },
+  LIQUIDATED: {
+    label: "Bị dọn kho",
+    className: "bg-[#FFDFDF] text-[#EA2B2B] border-2 border-[#FF4B4B]",
+  },
   CANCELLED: {
     label: "Đã hủy",
     className: "bg-[#FFDFDF] text-[#FF4B4B] border-2 border-[#FF4B4B]",
@@ -80,11 +84,11 @@ const FILTERS = [
     statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING", "SETTLEMENT_PENDING"],
   },
   // HĐ còn hiệu lực hết hạn trong 15 ngày tới hoặc đã quá hạn (khớp ô "HĐ sắp hết hạn" ở trang chủ)
-  { key: "EXPIRING", label: "Sắp hết hạn", statuses: ["UNIT_ASSIGNED"], expiringOnly: true },
+  { key: "EXPIRING", label: "Sắp hết hạn", statuses: ["UNIT_ASSIGNED", "TERMINATION_PENDING"], expiringOnly: true },
   {
     key: "CLOSED",
     label: "Đã đóng",
-    statuses: ["CANCELLED", "REFUND_PENDING", "REFUNDED", "EXPIRED", "COMPLETED"],
+    statuses: ["LIQUIDATED", "CANCELLED", "REFUND_PENDING", "REFUNDED", "EXPIRED", "COMPLETED"],
   },
 ];
 
@@ -353,16 +357,24 @@ export default function MyReservationsPage() {
           const r = { ...raw, receiptStatus: receiptByResCode[raw.reservationCode] || null };
           const c = contractsByResCode[r.reservationCode];
           if (c) {
+            const isLiquidatedUnsettled =
+              c.status === "LIQUIDATED" &&
+              !(c.heldGoodsStatus === "RETURNED" && Number(c.centralStorage?.customerDebt || 0) === 0);
             return {
               ...r,
               status:
-                c.status === "TERMINATION_PENDING" || c.status === "SETTLEMENT_PENDING"
-                  ? c.status
-                  : r.status,
+                isLiquidatedUnsettled
+                  ? "LIQUIDATED"
+                  : c.status === "TERMINATION_PENDING" || c.status === "SETTLEMENT_PENDING"
+                    ? c.status
+                    : r.status,
               endDate: c.endDate,
               contractId: c.contractId,
               contractCode: c.contractCode,
               contractStatus: c.status,
+              overdueDays: Number(c.overdueDays || 0),
+              heldGoodsStatus: c.heldGoodsStatus || null,
+              centralDebt: Number(c.centralStorage?.customerDebt || 0),
               storageUnitId: c.storageUnitId || r.storageUnitId,
               storageUnitFloor: c.floor || r.storageUnitFloor,
               storageUnitZone: c.zone || r.storageUnitZone,
@@ -482,7 +494,8 @@ export default function MyReservationsPage() {
   ];
 
   function getDaysUntilExpiry(r) {
-    if (r.status !== "UNIT_ASSIGNED") return null;
+    if (!["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status)) return null;
+    if (["TERMINATED", "LIQUIDATED", "CANCELLED"].includes(r.contractStatus)) return null;
     let endStr = r.endDate;
     if (!endStr && r.startDate && r.durationMonths) {
       const [y, m, d] = String(r.startDate).split("-").map(Number);
@@ -500,6 +513,23 @@ export default function MyReservationsPage() {
     return Math.round((target - today) / 86400000);
   }
 
+  function getOverdueDays(r, diffDays = getDaysUntilExpiry(r)) {
+    if (["TERMINATED", "LIQUIDATED", "CANCELLED"].includes(r.contractStatus)) return 0;
+    if (r.contractStatus === "OVERDUE") {
+      if (Number(r.overdueDays || 0) > 0) return Number(r.overdueDays);
+      return diffDays !== null && diffDays < 0 ? Math.abs(diffDays) : 0;
+    }
+    if (["UNIT_ASSIGNED", "TERMINATION_PENDING"].includes(r.status) && diffDays !== null && diffDays < 0) {
+      return Number(r.overdueDays || 0) > 0 ? Number(r.overdueDays) : Math.abs(diffDays);
+    }
+    return 0;
+  }
+
+  function isContractOverdue(r, diffDays = getDaysUntilExpiry(r)) {
+    if (["TERMINATED", "LIQUIDATED", "CANCELLED"].includes(r.contractStatus)) return false;
+    return r.contractStatus === "OVERDUE" || getOverdueDays(r, diffDays) > 0;
+  }
+
   const visibleReservations = useMemo(() => {
     const active = FILTERS.find((f) => f.key === filter);
     let list = reservations;
@@ -509,7 +539,8 @@ export default function MyReservationsPage() {
     if (active?.expiringOnly) {
       list = list.filter((r) => {
         const days = getDaysUntilExpiry(r);
-        return days !== null && days <= 15;
+        if (isContractOverdue(r, days)) return true;
+        return r.status === "UNIT_ASSIGNED" && days !== null && days <= 15;
       });
     }
     list = applyTimeFilter(list, timeFilter, TIME_FIELDS);
@@ -517,13 +548,13 @@ export default function MyReservationsPage() {
     return [...list].sort((a, b) => {
       const diffA = getDaysUntilExpiry(a);
       const diffB = getDaysUntilExpiry(b);
-      const isExpiringA = diffA !== null && diffA <= 3;
-      const isExpiringB = diffB !== null && diffB <= 3;
+      const urgentA = isContractOverdue(a, diffA) || (a.status === "UNIT_ASSIGNED" && diffA !== null && diffA <= 3);
+      const urgentB = isContractOverdue(b, diffB) || (b.status === "UNIT_ASSIGNED" && diffB !== null && diffB <= 3);
 
-      if (isExpiringA && !isExpiringB) return -1;
-      if (!isExpiringA && isExpiringB) return 1;
-      if (isExpiringA && isExpiringB) {
-        return diffA - diffB;
+      if (urgentA && !urgentB) return -1;
+      if (!urgentA && urgentB) return 1;
+      if (urgentA && urgentB) {
+        return (diffA ?? 0) - (diffB ?? 0);
       }
       return 0;
     });
@@ -866,7 +897,9 @@ export default function MyReservationsPage() {
                 {paginatedReservations.map((r, index) => {
                   const meta = statusMetaOf(r);
                   const diffDays = getDaysUntilExpiry(r);
-                  const isExpiringSoon = diffDays !== null && diffDays <= 3;
+                  const overdueDaysCount = getOverdueDays(r, diffDays);
+                  const isOverdue = isContractOverdue(r, diffDays);
+                  const isExpiringSoon = !isOverdue && r.status === "UNIT_ASSIGNED" && diffDays !== null && diffDays >= 0 && diffDays <= 3;
                   const isLast = index === paginatedReservations.length - 1;
                   const dt = formatDateTimeSplit(r.createdAt);
 
@@ -887,7 +920,7 @@ export default function MyReservationsPage() {
                     <tr
                       key={r.id}
                       id={`res-row-${r.reservationCode || r.id}`}
-                      className={`transition-all ${isHighlighted ? "ring-4 ring-[#58CC02] ring-offset-2 bg-[#F0FDF4] animate-pulse border-[#58CC02] shadow-md " : "hover:bg-[#F7F7F7] "} ${!isLast ? "border-b-2 border-[#F0F0F0]" : ""} ${isExpiringSoon && !isHighlighted ? "bg-[#FFFBEB] hover:bg-[#FFF3C7]" : ""}`}
+                      className={`transition-all ${isHighlighted ? "ring-4 ring-[#58CC02] ring-offset-2 bg-[#F0FDF4] animate-pulse border-[#58CC02] shadow-md " : "hover:bg-[#F7F7F7] "} ${!isLast ? "border-b-2 border-[#F0F0F0]" : ""} ${!isHighlighted && (isOverdue || r.status === "LIQUIDATED") ? "bg-[#FFF5F5] hover:bg-[#FFE8E8]" : !isHighlighted && isExpiringSoon ? "bg-[#FFFBEB] hover:bg-[#FFF3C7]" : ""}`}
                     >
                       {/* Cột 1: Mã đơn */}
                       <td className="px-3 py-3 whitespace-nowrap">
@@ -1012,17 +1045,26 @@ export default function MyReservationsPage() {
                           >
                             {meta.label}
                           </span>
-                          {isExpiringSoon && (
+                          {isOverdue ? (
+                            <span className="inline-flex items-center gap-1 max-w-full whitespace-normal leading-tight px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-[#FFDFDF] text-[#EA2B2B] border-2 border-[#FF4B4B] animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#FF4B4B] shrink-0"></span>
+                              <span>
+                                {overdueDaysCount > 0
+                                  ? `Quá hạn (${overdueDaysCount} ngày)`
+                                  : "Quá hạn"}
+                              </span>
+                            </span>
+                          ) : isExpiringSoon ? (
                             <span className="inline-flex items-center gap-1 max-w-full whitespace-normal leading-tight px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-[#FFE8CC] text-[#FF9600] border-2 border-[#FF9600] animate-pulse">
                               <span className="w-1.5 h-1.5 rounded-full bg-[#FF9600] shrink-0"></span>
                               <span>
                                 Sắp hết hạn{" "}
-                                {diffDays <= 0
+                                {diffDays === 0
                                   ? "(Hôm nay)"
                                   : `(${diffDays} ngày)`}
                               </span>
                             </span>
-                          )}
+                          ) : null}
                         </div>
                       </td>
 

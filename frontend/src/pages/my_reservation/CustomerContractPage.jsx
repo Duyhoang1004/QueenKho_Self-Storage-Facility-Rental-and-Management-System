@@ -26,7 +26,9 @@ function formatVND(v) {
 
 function formatDate(val) {
   if (!val) return "—";
-  const [y, m, d] = String(val).split("-");
+  const datePart = String(val).split(/[T ]/)[0];
+  const [y, m, d] = datePart.split("-");
+  if (!y || !m || !d) return datePart;
   return `${d}/${m}/${y}`;
 }
 
@@ -477,7 +479,19 @@ export default function CustomerContractPage() {
               </span>
             </div>
             <span className="text-xs font-bold text-[#4B4B4B] mt-1 leading-relaxed">
-              Hợp đồng đã bị cưỡng chế dọn kho theo điều khoản bạn đồng ý; hệ thống đang tạm giữ <strong className="text-[#FF4B4B]">{formatVND(contract.depositHeldAmount || 0)}</strong> tiền cọc để trừ các khoản phí.
+              {(() => {
+                const remainingDep = Number(contract.centralStorage?.depositHeld ?? contract.depositHeldAmount ?? 0);
+                return remainingDep > 0 ? (
+                  <>
+                    Hợp đồng đã bị cưỡng chế dọn kho theo điều khoản bạn đồng ý; tiền cọc còn giữ lại sau khi khấu trừ các khoản phí là{" "}
+                    <strong className="text-[#FF4B4B]">{formatVND(remainingDep)}</strong>.
+                  </>
+                ) : (
+                  <>
+                    Hợp đồng đã bị cưỡng chế dọn kho theo điều khoản bạn đồng ý; toàn bộ tiền cọc đã được dùng để khấu trừ các khoản phí phát sinh.
+                  </>
+                );
+              })()}
               {!contract.heldGoodsStatus && (
                 <>
                   {" "}Nhân viên đang mở kho, kiểm kê, chụp ảnh và <strong>chuyển hàng của bạn vào kho tổng</strong> của QueenKho
@@ -496,9 +510,18 @@ export default function CustomerContractPage() {
       {contract.heldGoodsStatus && (() => {
         const cs = contract.centralStorage || {}
         const debt = Number(cs.customerDebt) || 0
+        const contractDebt = Number(cs.contractDebt) || 0
         const storageFee = Number(cs.estimatedStorageFee) || 0
         const deposit = Number(cs.depositHeld ?? contract.depositHeldAmount) || 0
+        const depositOffset = Math.min(deposit, storageFee)
+        const depositRemaining = Math.max(0, deposit - depositOffset)
         const toPay = Math.max(0, debt + Math.max(0, storageFee - deposit))
+        const origDeposit = Number(cs.originalDeposit ?? contract.originalDeposit ?? 0)
+        const liqLateFee = Number(cs.liquidationLateFee) || 0
+        const liqOverstayFee = Number(cs.liquidationOverstayFee) || 0
+        const liqMovingFee = Number(cs.liquidationMovingFee) || 0
+        const liqTotalFee = Number(cs.liquidationTotalFee) || (liqLateFee + liqOverstayFee + liqMovingFee)
+        const liqOverflow = Math.max(0, liqTotalFee - origDeposit)
         return (
           <div className="bg-[#FAF5FF] border-2 border-[#C084FC] rounded-2xl p-5 flex items-start gap-4">
             <span className="material-symbols-outlined text-[#9333EA] text-[28px]">home_storage</span>
@@ -530,22 +553,109 @@ export default function CustomerContractPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="bg-white border border-[#E9D5FF] rounded-xl p-3 flex flex-col gap-1">
-                    <div className="flex justify-between"><span>Khoản nợ chưa thanh toán</span><span className="font-black text-[#FF4B4B]">{formatVND(debt)}</span></div>
-                    <div className="flex justify-between"><span>Phí lưu giữ tạm tính</span><span className="font-black">{formatVND(storageFee)}</span></div>
-                    <div className="flex justify-between"><span>Trừ cọc còn giữ</span><span className="font-black text-[#58A700]">- {formatVND(Math.min(deposit, storageFee))}</span></div>
-                    <div className="flex justify-between pt-1 border-t border-[#F3E8FF]">
-                      <span className="font-black">Cần thanh toán để nhận lại hàng</span>
+                  {liqTotalFee > 0 && (
+                    <div className="bg-white border border-[#FECACA] rounded-xl p-3 flex flex-col gap-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-[#DC2626]">
+                        Chi tiết các khoản phí cưỡng chế &amp; đối chiếu tiền cọc
+                      </p>
+                      {liqLateFee > 0 && (
+                        <div className="flex justify-between">
+                          <span>• Phí phạt trễ hạn (tối đa 50% cọc)</span>
+                          <span className="font-black text-[#FF4B4B]">{formatVND(liqLateFee)}</span>
+                        </div>
+                      )}
+                      {liqOverstayFee > 0 && (
+                        <div className="flex justify-between">
+                          <span>• Phí chiếm dụng ô kho các ngày quá hạn</span>
+                          <span className="font-black text-[#FF4B4B]">{formatVND(liqOverstayFee)}</span>
+                        </div>
+                      )}
+                      {liqMovingFee > 0 && (
+                        <div className="flex justify-between">
+                          <span>• Phí dọn &amp; di dời hàng vào kho tổng</span>
+                          <span className="font-black text-[#FF4B4B]">{formatVND(liqMovingFee)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between pt-1 border-t border-[#FEE2E2]">
+                        <span className="font-black">Tổng các khoản phí cưỡng chế</span>
+                        <span className="font-black text-[#DC2626]">{formatVND(liqTotalFee)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Trừ tiền cọc ban đầu của hợp đồng</span>
+                        <span className="font-black text-[#58A700]">- {formatVND(Math.min(origDeposit, liqTotalFee))}</span>
+                      </div>
+                      {liqOverflow > 0 ? (
+                        <div className="flex justify-between pt-1 border-t border-[#FEE2E2]">
+                          <span className="font-black text-[#DC2626]">
+                            Phí vượt tiền cọc {contractDebt > 0 ? "(chưa thanh toán)" : "(đã thanh toán)"}
+                          </span>
+                          <span className={`font-black ${contractDebt > 0 ? "text-[#DC2626]" : "text-[#58A700]"}`}>
+                            {formatVND(liqOverflow)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between pt-1 border-t border-[#FEE2E2]">
+                          <span className="font-black text-[#58A700]">Tiền cọc còn dư sau khấu trừ</span>
+                          <span className="font-black text-[#58A700]">{formatVND(Math.max(0, origDeposit - liqTotalFee))}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="bg-white border border-[#E9D5FF] rounded-xl p-3 flex flex-col gap-1.5">
+                    <div className="flex justify-between">
+                      <span>Tiền cọc còn giữ sau thanh lý</span>
+                      <span className="font-black text-[#58A700]">{formatVND(deposit)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>
+                        Khoản nợ chưa thanh toán
+                        {debt > 0 && contractDebt === 0 && " (từ hợp đồng khác)"}
+                        {debt > contractDebt && contractDebt > 0 && ` (gồm ${formatVND(contractDebt)} của HĐ này)`}
+                      </span>
+                      <span className={`font-black ${debt > 0 ? "text-[#FF4B4B]" : "text-[#777777]"}`}>{formatVND(debt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Phí lưu giữ tạm tính ({cs.heldDays ?? 0} ngày)</span>
+                      <span className="font-black">{formatVND(storageFee)}</span>
+                    </div>
+                    {depositOffset > 0 && (
+                      <div className="flex justify-between">
+                        <span>Trừ từ cọc còn giữ vào phí lưu giữ</span>
+                        <span className="font-black text-[#58A700]">- {formatVND(depositOffset)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between pt-1.5 border-t border-[#F3E8FF]">
+                      <span className="font-black">Cần thanh toán thêm để nhận lại hàng</span>
                       <span className="font-black text-[#9333EA]">{formatVND(toPay)}</span>
                     </div>
+                    {depositRemaining > 0 && (
+                      <div className="flex justify-between">
+                        <span className="font-black text-[#1899D6]">Tiền cọc còn dư (dự kiến hoàn sau khi nhận hàng)</span>
+                        <span className="font-black text-[#1899D6]">{formatVND(depositRemaining)}</span>
+                      </div>
+                    )}
                   </div>
-                  <span>
-                    QueenKho <strong>không bán</strong> hàng của bạn — hàng được giữ nguyên tới khi bạn nhận lại, phí lưu giữ tính tới ngày nhận.
-                    Thanh toán khoản nợ trong mục Thanh toán rồi gọi hotline hẹn ngày tới kho tổng nhận hàng. Xem{" "}
-                    <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
-                      Điều khoản xử lý tài sản
-                    </button>.
-                  </span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex-1 min-w-[240px]">
+                      QueenKho <strong>không bán</strong> hàng của bạn — hàng được giữ nguyên tới khi bạn nhận lại, phí lưu giữ tính tới ngày nhận.{" "}
+                      {toPay > 0
+                        ? "Thanh toán khoản nợ trong mục Thanh toán rồi gọi hotline hẹn ngày tới kho tổng nhận hàng."
+                        : "Hiện bạn chưa phát sinh khoản cần đóng thêm — hãy gọi hotline hẹn ngày tới kho tổng nhận hàng sớm để tránh phát sinh thêm phí lưu giữ."}{" "}
+                      Xem{" "}
+                      <button type="button" onClick={() => setTermsOpen(true)} className="font-black text-[#1CB0F6] underline cursor-pointer">
+                        Điều khoản xử lý tài sản
+                      </button>.
+                    </span>
+                    {debt > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => navigate("/thanh-toan")}
+                        className="duo-btn-green px-4 py-2 text-xs shrink-0"
+                      >
+                        THANH TOÁN KHOẢN NỢ
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : (
                 <span>

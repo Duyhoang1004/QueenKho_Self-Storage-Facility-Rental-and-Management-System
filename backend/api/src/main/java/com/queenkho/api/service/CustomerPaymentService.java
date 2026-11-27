@@ -75,9 +75,13 @@ public class CustomerPaymentService {
                         "cc.goods_compensation, cc.penalty_amount AS claim_penalty_amount, cc.rent_refund_amount AS claim_rent_refund, " +
                         "cc.damage_percent, cc.decision_note, " +
                         "t.note AS task_note, c.deposit_held_amount, " +
-                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'DAMAGE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS damage_offset, " +
-                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'LATE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS late_fee_offset, " +
-                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'OVERSTAY_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET') AS overstay_offset " +
+                        "r.cancellation_tier, r.cancellation_penalty_amount, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.reservation_id = r.id AND p2.payment_type = 'DEPOSIT' AND p2.status = 'SUCCESS') AS reservation_paid_total, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'DAMAGE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET' AND p2.status = 'SUCCESS') AS damage_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'LATE_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET' AND p2.status = 'SUCCESS') AS late_fee_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'OVERSTAY_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET' AND p2.status = 'SUCCESS' AND p2.transaction_code NOT LIKE 'MV-%' AND p2.transaction_code NOT LIKE 'HG-%') AS overstay_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'OVERSTAY_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET' AND p2.status = 'SUCCESS' AND p2.transaction_code LIKE 'MV-%') AS moving_fee_offset, " +
+                        "(SELECT SUM(p2.amount) FROM payment_transactions p2 WHERE p2.contract_id = p.contract_id AND p2.payment_type = 'OVERSTAY_FEE' AND p2.payment_method = 'DEPOSIT_OFFSET' AND p2.status = 'SUCCESS' AND p2.transaction_code LIKE 'HG-%') AS storage_fee_offset " +
                         MY_PAYMENTS + "ORDER BY p.id DESC",
                 (rs, i) -> {
                     Timestamp paidAt = rs.getTimestamp("paid_at");
@@ -132,6 +136,8 @@ public class CustomerPaymentService {
                     BigDecimal damageDeduction = null;
                     BigDecimal lateFeeDeduction = null;
                     BigDecimal overstayDeduction = null;
+                    BigDecimal movingFeeDeduction = null;
+                    BigDecimal storageFeeDeduction = null;
                     BigDecimal breakFeeDeduction = null;
                     String refundDescription = null;
 
@@ -156,29 +162,58 @@ public class CustomerPaymentService {
                         }
                     } else if ("REFUND".equalsIgnoreCase(paymentType)) {
                         BigDecimal held = rs.getBigDecimal("deposit_held_amount");
-                        if (held == null || held.compareTo(BigDecimal.ZERO) <= 0) {
-                            held = depositAmount;
-                        }
-                        refundDepositAmount = held != null ? held : (amount != null ? amount : BigDecimal.ZERO);
+                        // Luôn ưu tiên tiền cọc ban đầu trên đơn (deposit_amount) để đối chiếu đúng sau khi trừ cọc thanh lý
+                        BigDecimal originalDeposit = (depositAmount != null && depositAmount.compareTo(BigDecimal.ZERO) > 0)
+                                ? depositAmount
+                                : (held != null && held.compareTo(BigDecimal.ZERO) > 0 ? held : (amount != null ? amount : BigDecimal.ZERO));
+
+                        String cancelTier = rs.getString("cancellation_tier");
+                        BigDecimal cancelPenalty = rs.getBigDecimal("cancellation_penalty_amount");
+                        BigDecimal resPaidTotal = rs.getBigDecimal("reservation_paid_total");
+
                         damageDeduction = rs.getBigDecimal("damage_offset") != null ? rs.getBigDecimal("damage_offset") : BigDecimal.ZERO;
                         lateFeeDeduction = rs.getBigDecimal("late_fee_offset") != null ? rs.getBigDecimal("late_fee_offset") : BigDecimal.ZERO;
                         overstayDeduction = rs.getBigDecimal("overstay_offset") != null ? rs.getBigDecimal("overstay_offset") : BigDecimal.ZERO;
+                        movingFeeDeduction = rs.getBigDecimal("moving_fee_offset") != null ? rs.getBigDecimal("moving_fee_offset") : BigDecimal.ZERO;
+                        storageFeeDeduction = rs.getBigDecimal("storage_fee_offset") != null ? rs.getBigDecimal("storage_fee_offset") : BigDecimal.ZERO;
                         breakFeeDeduction = BigDecimal.ZERO;
+                        refundDepositAmount = originalDeposit;
 
-                        BigDecimal netDepositAfterOffsets = refundDepositAmount
-                                .subtract(damageDeduction)
-                                .subtract(lateFeeDeduction)
-                                .subtract(overstayDeduction);
+                        BigDecimal totalDepositOffsets = damageDeduction
+                                .add(lateFeeDeduction)
+                                .add(overstayDeduction)
+                                .add(movingFeeDeduction)
+                                .add(storageFeeDeduction);
 
-                        if (amount != null && amount.compareTo(netDepositAfterOffsets) > 0) {
-                            earlyRentRefund = amount.subtract(netDepositAfterOffsets);
+                        if (cancelTier != null && totalDepositOffsets.compareTo(BigDecimal.ZERO) == 0) {
+                            // Hoàn tiền do huỷ đơn trước nhận kho / No-Show: tổng đã đóng = cọc + tiền thuê đã đóng
+                            BigDecimal penalty = cancelPenalty != null ? cancelPenalty : BigDecimal.ZERO;
+                            BigDecimal paidBase = resPaidTotal != null && resPaidTotal.compareTo(BigDecimal.ZERO) > 0
+                                    ? resPaidTotal
+                                    : (amount != null ? amount.add(penalty) : BigDecimal.ZERO);
+                            earlyRentRefund = paidBase.subtract(refundDepositAmount).max(BigDecimal.ZERO);
+                            breakFeeDeduction = penalty;
                         } else {
-                            earlyRentRefund = BigDecimal.ZERO;
-                            if (amount != null && netDepositAfterOffsets.compareTo(amount) > 0) {
-                                breakFeeDeduction = netDepositAfterOffsets.subtract(amount);
+                            BigDecimal netDepositAfterOffsets = refundDepositAmount.subtract(totalDepositOffsets);
+                            if (amount != null && amount.compareTo(netDepositAfterOffsets) > 0) {
+                                earlyRentRefund = amount.subtract(netDepositAfterOffsets);
+                            } else {
+                                earlyRentRefund = BigDecimal.ZERO;
+                                if (amount != null && netDepositAfterOffsets.compareTo(amount) > 0) {
+                                    breakFeeDeduction = netDepositAfterOffsets.subtract(amount);
+                                }
                             }
                         }
                         refundDescription = rs.getString("task_note");
+                    } else if (("OVERSTAY_FEE".equalsIgnoreCase(paymentType) || "DAMAGE_FEE".equalsIgnoreCase(paymentType))
+                            && "VNPAY".equalsIgnoreCase(rs.getString("payment_method"))
+                            && rs.getObject("renewal_months") == null) {
+                        // Đính kèm các khoản phí đã trừ vào cọc để giải trình rõ vì sao khoản nợ vượt tiền cọc ban đầu
+                        damageDeduction = rs.getBigDecimal("damage_offset") != null ? rs.getBigDecimal("damage_offset") : BigDecimal.ZERO;
+                        lateFeeDeduction = rs.getBigDecimal("late_fee_offset") != null ? rs.getBigDecimal("late_fee_offset") : BigDecimal.ZERO;
+                        overstayDeduction = rs.getBigDecimal("overstay_offset") != null ? rs.getBigDecimal("overstay_offset") : BigDecimal.ZERO;
+                        movingFeeDeduction = rs.getBigDecimal("moving_fee_offset") != null ? rs.getBigDecimal("moving_fee_offset") : BigDecimal.ZERO;
+                        storageFeeDeduction = rs.getBigDecimal("storage_fee_offset") != null ? rs.getBigDecimal("storage_fee_offset") : BigDecimal.ZERO;
                     }
 
                     return new CustomerPaymentsResponse.PaymentItem(
@@ -220,6 +255,8 @@ public class CustomerPaymentService {
                             damageDeduction,
                             lateFeeDeduction,
                             overstayDeduction,
+                            movingFeeDeduction,
+                            storageFeeDeduction,
                             breakFeeDeduction,
                             refundDescription);
                 },

@@ -43,4 +43,8 @@ public class RevenueOverviewResponse {
 
     // BR-128: tiền bên bảo hiểm đã trả lại cho cơ sở trong kỳ
     private BigDecimal insuranceRecovered;
+
+    // 27/11/2026 (PR-M7a): phí trễ / sự cố / chiếm dụng đã CẤN TRỪ từ cọc hoặc tiền hoàn (không phải tiền mới thu —
+    // đã nằm trong "Cọc + tiền thuê"); chỉ để hiển thị, không cộng vào doanh thu
+    private BigDecimal feesOffset;
 }

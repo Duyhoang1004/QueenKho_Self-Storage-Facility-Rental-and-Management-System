@@ -234,12 +234,13 @@ export default function ManagerReportsPage() {
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-black text-[#4B4B4B]">Doanh thu · {periodLabel}</h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard icon="trending_up" label="Doanh thu thuần" value={formatVND(overview?.netRevenue)}
+              <KpiCard icon="trending_up" label="Doanh thu thuần (thu − hoàn − đền bù)" value={formatVND(overview?.netRevenue)}
                 sub={`So kỳ trước ${Number(overview?.growthRate || 0) >= 0 ? '+' : ''}${Number(overview?.growthRate || 0).toFixed(1)}%`}
                 tone="border-[#58CC02] bg-[#F1FFE7] text-[#58A700]" />
               <KpiCard icon="payments" label="Cọc + tiền thuê" value={formatVND(overview?.rentalRevenue)}
                 sub={`${overview?.rentalCount ?? 0} giao dịch`} tone="border-[#84D8FF] bg-[#F2FAFF] text-[#1899D6]" />
-              <KpiCard icon="timer_off" label="Phí trễ + sự cố" value={formatVND(overview?.feesRevenue)}
+              <KpiCard icon="timer_off" label="Phí trễ + sự cố (tiền thu)" value={formatVND(overview?.feesRevenue)}
+                sub={Number(overview?.feesOffset || 0) > 0 ? `+ ${formatVND(overview?.feesOffset)} trừ vào cọc / tiền hoàn` : undefined}
                 tone="border-[#FFC800] bg-[#FFFBEA] text-[#B38F00]" />
               <KpiCard icon="currency_exchange" label="Đã hoàn cho khách" value={formatVND(overview?.refundDisbursed)}
                 sub={`${overview?.refundCount ?? 0} lượt · cọc đang giữ ${formatVND(overview?.depositsHeld)}`}

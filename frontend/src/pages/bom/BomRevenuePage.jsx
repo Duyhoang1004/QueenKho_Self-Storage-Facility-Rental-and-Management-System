@@ -546,7 +546,7 @@ export default function BomRevenuePage() {
               <div className="flex flex-col">
                 <span className="text-[11px] font-black uppercase tracking-wider text-[#AFAFAF] flex items-center gap-1">
                   <span>2. Thu phí phạt & Bồi thường</span>
-                  <span className="material-symbols-outlined text-[14px] text-[#AFAFAF] cursor-help" title="LATE_FEE + DAMAGE_FEE (Hỗ trợ DEPOSIT_OFFSET)">help</span>
+                  <span className="material-symbols-outlined text-[14px] text-[#AFAFAF] cursor-help" title="Phí trễ / sự cố khách trả bằng tiền thật. Phí trừ vào cọc hoặc tiền hoàn đã nằm trong tiền cọc khách đóng nên không cộng lại (PR-M7a)">help</span>
                 </span>
                 <span className="text-2xl font-black text-[#FF9600] mt-1.5">
                   {formatVND(overview?.feesRevenue)}
@@ -556,6 +556,11 @@ export default function BomRevenuePage() {
                 <span className="material-symbols-outlined text-[26px]">gavel</span>
               </div>
             </div>
+            {Number(overview?.feesOffset || 0) > 0 && (
+              <p className="mt-2 text-[11px] font-bold text-[#AFAFAF]">
+                + {formatVND(overview?.feesOffset)} đã cấn trừ từ cọc / tiền hoàn (đã gồm trong tiền thu, không cộng lại)
+              </p>
+            )}
             <div className="mt-4 pt-3 flex items-center justify-between text-xs font-bold border-t-2 border-[#E5E5E5]">
               <span className="text-[#E58800] font-black">Phạt trễ + Hư hại khóa</span>
               <span className="text-[#AFAFAF] text-[11px]">(PR-M8: Trừ cọc an toàn)</span>
@@ -622,7 +627,7 @@ export default function BomRevenuePage() {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-black uppercase tracking-wider text-[#58A700]">DOANH THU RÒNG TOÀN HỆ THỐNG</span>
                 <span className="duo-badge bg-[#D7FFB8] text-[#58A700] border border-[#58CC02] text-[10px]">
-                  Thuê + Phí phạt - Hoàn tiền
+                  Tiền thu − Hoàn tiền − Chi đền bù
                 </span>
               </div>
               <span className="text-3xl font-black text-[#4B4B4B] tracking-tight mt-0.5">

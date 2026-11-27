@@ -560,6 +560,7 @@ Vị trí ô trên sơ đồ mặt bằng (UC-06, BR-105 → BR-109) **không �
 | Mã | Rule |
 |---|---|
 | PR-M7 | Ghi nhận theo **ngày thực thu** (`paid_at`), giao dịch `SUCCESS`. 4 chỉ số: **Doanh thu thuê** = (`DEPOSIT` − phần cọc) + `MONTHLY_RENT` + `OVERSTAY_FEE` *(27/10/2026: phí chiếm dụng / lưu giữ là tiền cho việc dùng chỗ, không phải phạt)*; **Thu phí phạt** = `LATE_FEE` + `DAMAGE_FEE`; **Đã hoàn tiền** = `REFUND`; **Cọc đang giữ** = Σ `deposit_held_amount` hợp đồng còn hiệu lực + phần cọc còn giữ của hợp đồng thanh lý. Lọc cơ sở, tháng / quý / năm; biểu đồ theo tháng, cơ sở, loại kho; **tỉ lệ lấp đầy** = `OCCUPIED` / (tổng ô − `MAINTENANCE`); số hợp đồng mới / kết thúc. |
+| PR-M7a | *(27/11/2026, kiểm thử trả kho)* **Báo cáo doanh thu chỉ tính dòng tiền thật**: bỏ các giao dịch cấn trừ (`DEPOSIT_OFFSET`, `SETTLEMENT_OFFSET`) khỏi tiền thu / phí / hoàn / đền bù — phí trừ vào cọc hoặc tiền hoàn đã nằm trong tiền cọc khách đóng, cộng lại là tính trùng (trước đây HĐ trừ cọc 500.000 bị báo dư 500.000, HĐ phí vượt cọc bị báo dư 8.140.000). Phí đã cấn trừ hiện riêng (`feesOffset`). **Doanh thu ròng = tiền thu − tiền hoàn − tiền chi đền bù** (trước đây không trừ đền bù). Áp cho tổng quan, biểu đồ tháng (đền bù cộng vào cột chi), theo cơ sở, theo loại kho, tăng trưởng. Danh sách giao dịch vẫn liệt kê dòng cấn trừ để đối chiếu. |
 | PR-M8 | Phí trừ vào cọc ghi method `DEPOSIT_OFFSET` → tính vào "Thu phí phạt" nhưng **không** là tiền mới thu vào (tránh tính trùng cọc). |
 | — | Báo cáo còn có: **tỉ lệ tái ký** = hợp đồng gia hạn / (gia hạn + kết thúc), không có phát sinh thì 0%; timeline luôn đủ 12 tháng; cơ cấu doanh thu theo loại kho (%); danh sách đối soát kèm thông tin ngân hàng và mã FT (BR-103, PR-O15). |
 
@@ -1155,6 +1156,8 @@ Schema: `rental_contracts.reassign_request_status`, `reassign_requested_months`,
 | 6 | FM chọn "tiếp tục thuê" khi chốt hồ sơ lỗi cơ sở, sau đó khách vẫn trả sớm → bị phí phá HĐ | Chỉ hướng "chấm dứt" mới bật tính theo ngày | ✅ Có hồ sơ lỗi cơ sở được duyệt là tính theo ngày (#165) | PR-O19d |
 | 7 | Số tiền hoàn phải hiện đủ ở các màn trả kho | Màn Staff tự tính dòng trừ (sai với dùng thử); modal hoàn tiền FM chỉ có tổng | ✅ Staff dùng dòng tính của backend kèm phép tính; FM thấy bảng quyết toán; nhãn trả sớm theo trường hợp (#165) | PR-O2e, PR-O19d |
 | 8 | Modal tràn màn hình ở một số trang | 27 modal không giới hạn chiều cao; vài modal rộng cố định | ✅ Tối đa 90% màn hình, cuộn trong; rộng theo màn hình (#165) | — |
+| 9 | Kiểm thử trả kho: báo cáo tiền vào / ra lệch (trừ cọc 500.000 → dư 500.000; phí vượt cọc → dư 8.140.000; đền bù 2.000.000 không trừ) | Báo cáo cộng cả giao dịch cấn trừ; doanh thu ròng không trừ đền bù | ✅ Chỉ tính tiền thật, ròng trừ đền bù, phí cấn trừ hiện riêng | PR-M7a |
+| 10 | Task hoàn tiền ghi "Đã dùng 1T … THỰC HOÀN 11.778.333" trong khi chi thật 11.716.666 | Ghi chú tính lại theo ngày tạo task, công thức tháng | ✅ Task hoàn tiền của quyết toán giữ số chốt, tính theo ngày trả kho của quyết toán | PR-O19 |
 
 ## 8. Truy vết rule ↔ kiểm thử
 

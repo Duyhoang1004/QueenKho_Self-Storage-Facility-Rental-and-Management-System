@@ -206,36 +206,47 @@ export function parseRefundNote(note) {
         : '* Tiền cọc giữ chỗ được hoàn trả 100% sau khi nhân viên cơ sở hoàn tất nghiệm thu khoang trống.';
     }
   } else {
-    const mPenalty = note.match(/(?:Đã trừ|Da tru) (?:phạt |phat )?(?:hủy trễ|huy tre|phí hủy|phi huy)?(?:\s*50% (?:cọc|coc))?:?|Phí hủy:?|Phi huy:?\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
-    if (mPenalty) {
-      const numPen = parseVndAmount(mPenalty[1]);
+    const mPolicy = note.match(/\|\s*Chính sách:\s*([^|]+)/i);
+    const policyDesc = mPolicy ? mPolicy[1].trim() : '';
+    const mKept = note.match(/\|\s*(?:Cọc giữ lại|Phí giữ lại):\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
+    const mLegacyPenalty = note.match(/(?:Đã trừ|Da tru) (?:phạt |phat )?(?:hủy trễ|huy tre|phí hủy|phi huy)?(?:\s*50% (?:cọc|coc))?:?\s*([0-9.,]+)\s*(?:VND|đ|₫)?|Phí hủy:?\s*([0-9.,]+)\s*(?:VND|đ|₫)?|Phi huy:?\s*([0-9.,]+)\s*(?:VND|đ|₫)?/i);
+
+    const numPen = mKept
+      ? parseVndAmount(mKept[1])
+      : mLegacyPenalty
+        ? parseVndAmount(mLegacyPenalty[1] || mLegacyPenalty[2] || mLegacyPenalty[3])
+        : 0;
+
+    const cancelFooter = '* Chính sách hủy đơn: trong 30 phút sau thanh toán hoặc trước giờ hẹn ≥ 48h hoàn 100%; từ 24h đến dưới 48h giữ 50% cọc; dưới 24h giữ 100% cọc.';
+
+    if (numPen > 0) {
       res.penaltyAmountNum = numPen;
       res.penaltyAmount = `${numPen.toLocaleString('vi-VN')} ₫`;
-      if (note.includes('50%')) {
-        res.isPenalty50 = true;
+      res.isPenalty50 = true;
+      if (/cọc \+ 1 tháng/i.test(policyDesc)) {
+        res.policyBadge = 'Giữ cọc + 1 tháng thuê';
+      } else if (/100% cọc/i.test(policyDesc)) {
+        res.policyBadge = 'Khấu trừ 100% tiền cọc';
+      } else if (/50%/i.test(policyDesc) || note.includes('50%')) {
         res.policyBadge = 'Khấu trừ 50% tiền cọc';
-        res.policyApplied = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
-        res.penaltyNote = `Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%: ${res.penaltyAmount})`;
-        res.footerNote = '* Lưu ý: Khách hủy đơn trễ trong 24h trước thời điểm nhận kho sẽ bị trừ 50% tiền cọc theo quy định.';
       } else {
-        res.isPenalty50 = true;
         res.policyBadge = 'Khấu trừ phí hủy đơn';
-        res.policyApplied = 'Khấu trừ phí hủy đơn theo chính sách';
-        res.penaltyNote = `Đã trừ phí hủy đơn: ${res.penaltyAmount}`;
-        res.footerNote = '* Đã khấu trừ phí hủy theo quy định chính sách hủy đơn.';
       }
-    } else if (note.includes('50%')) {
+      res.policyApplied = policyDesc || 'Khấu trừ phí hủy đơn theo chính sách';
+      res.penaltyNote = `${res.policyApplied} (${res.penaltyAmount})`;
+      res.footerNote = cancelFooter;
+    } else if (!mKept && note.includes('50%')) {
       res.isPenalty50 = true;
       res.policyBadge = 'Khấu trừ 50% tiền cọc';
-      res.policyApplied = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
-      res.penaltyNote = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
-      res.footerNote = '* Lưu ý: Khách hủy đơn trễ trong 24h trước thời điểm nhận kho sẽ bị trừ 50% tiền cọc theo quy định.';
+      res.policyApplied = policyDesc || 'Hủy từ 24 giờ đến dưới 48 giờ, giữ 50% cọc';
+      res.penaltyNote = res.policyApplied;
+      res.footerNote = cancelFooter;
     } else {
       res.isFull100 = true;
-      res.policyBadge = 'Hoàn 100% cọc';
-      res.policyApplied = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
-      res.penaltyNote = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
-      res.footerNote = '* Khách hủy đơn sớm trước 24h so với thời điểm nhận kho được hoàn trả 100% tiền cọc.';
+      res.policyBadge = 'Hoàn 100%';
+      res.policyApplied = policyDesc || 'Hủy trước giờ nhận kho từ 48 giờ trở lên (hoàn 100%)';
+      res.penaltyNote = res.policyApplied;
+      res.footerNote = cancelFooter;
     }
   }
 
@@ -303,9 +314,9 @@ export function parseRefundNote(note) {
 
   if (res.reason) {
     if (/hủy đơn sau 24h|huy don sau 24h/i.test(res.reason)) {
-      res.reason = 'Khách hủy đơn trễ trong 24h trước thời điểm nhận kho (trừ 50%)';
+      res.reason = 'Hủy đơn trong khoảng 24h–48h trước giờ nhận kho (giữ 50% tiền cọc)';
     } else if (/hủy đơn trong 24h miễn phí|huy don trong 24h mien phi/i.test(res.reason)) {
-      res.reason = 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)';
+      res.reason = 'Hủy đơn trong 30 phút sau thanh toán hoặc trước giờ nhận kho từ 48 giờ trở lên (hoàn 100%)';
     }
   }
 

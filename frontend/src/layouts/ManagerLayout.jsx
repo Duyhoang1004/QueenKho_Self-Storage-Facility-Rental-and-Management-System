@@ -42,36 +42,36 @@ export default function ManagerLayout() {
     <div className="bg-[#FFFFFF] text-[#4B4B4B] min-h-screen font-sans">
 
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 h-screen bg-white z-50 flex flex-col justify-between border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
-        <div className="flex flex-col">
+      <aside className={`fixed left-0 top-0 h-screen supports-[height:100dvh]:h-[100dvh] bg-white z-50 flex flex-col border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
+        {/* Logo + toggle */}
+        <div className={`h-20 shrink-0 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
+          <button
+            onClick={() => setCollapsed((prev) => !prev)}
+            className="h-11 w-11 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white shadow-xs cursor-pointer hover:bg-[#4db800] transition-colors shrink-0"
+            title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          >
+            <span className="material-symbols-outlined text-[26px]">
+              {collapsed ? 'menu_open' : 'warehouse'}
+            </span>
+          </button>
 
-          {/* Logo + toggle */}
-          <div className={`h-20 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
-            <button
-              onClick={() => setCollapsed((prev) => !prev)}
-              className="h-11 w-11 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white shadow-xs cursor-pointer hover:bg-[#4db800] transition-colors shrink-0"
-              title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-            >
-              <span className="material-symbols-outlined text-[26px]">
-                {collapsed ? 'menu_open' : 'warehouse'}
+          {!collapsed && (
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="text-xl font-black text-[#58CC02] tracking-wider uppercase leading-none">
+                Queen<span className="text-[#1CB0F6]">Kho</span>
               </span>
-            </button>
+              <span className="text-[11px] font-extrabold text-[#AFAFAF] uppercase tracking-widest mt-1 truncate">
+                Quản lý cơ sở
+              </span>
+            </div>
+          )}
+        </div>
 
-            {!collapsed && (
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-xl font-black text-[#58CC02] tracking-wider uppercase leading-none">
-                  Queen<span className="text-[#1CB0F6]">Kho</span>
-                </span>
-                <span className="text-[11px] font-extrabold text-[#AFAFAF] uppercase tracking-widest mt-1">
-                  Quản lý cơ sở
-                </span>
-              </div>
-            )}
-          </div>
-
+        {/* Scrollable nav region */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar [scrollbar-gutter:stable] flex flex-col">
           {/* Section label */}
           {!collapsed && (
-            <div className="px-5 pt-5 pb-2">
+            <div className="px-5 pt-3 pb-1.5">
               <span className="text-[11px] font-black uppercase tracking-widest text-[#AFAFAF]">
                 ĐIỀU PHỐI VẬN HÀNH
               </span>
@@ -79,7 +79,7 @@ export default function ManagerLayout() {
           )}
 
           {/* Nav Items */}
-          <nav className={`flex flex-col gap-2 ${collapsed ? 'px-2 pt-4' : 'px-3'}`}>
+          <nav className={`flex flex-col gap-1 pb-3 ${collapsed ? 'px-2 pt-3' : 'px-3'}`}>
             {managerMenuItems.map((item) => {
               const isActive = location.pathname === item.path
                 || (item.path !== '/manager' && location.pathname.startsWith(item.path))
@@ -88,42 +88,43 @@ export default function ManagerLayout() {
                 <Link
                   key={item.path}
                   to={item.path}
-                  title={collapsed ? item.label : undefined}
-                  className={`flex items-center rounded-2xl text-xs uppercase font-black tracking-wide transition-all duration-150 ${
-                    collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3'
+                  title={item.label}
+                  className={`flex items-center rounded-xl text-[11px] uppercase font-black tracking-wide transition-all duration-150 min-w-0 ${
+                    collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2'
                   } ${
                     isActive
                       ? 'bg-[#DDF4FF] border-2 border-[#84D8FF] text-[#1CB0F6] shadow-xs'
                       : 'border-2 border-transparent text-[#777777] hover:bg-[#F7F7F7] hover:text-[#4B4B4B]'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[22px] shrink-0">{item.icon}</span>
-                  {!collapsed && <span>{item.label}</span>}
+                  <span className="material-symbols-outlined text-[20px] shrink-0">{item.icon}</span>
+                  {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
             })}
           </nav>
         </div>
 
-        {/* Hotline & System status card */}
-        <div className={`border-t-2 border-[#E5E5E5] bg-[#FAFAFA] ${collapsed ? 'p-2' : 'p-4'}`}>
+        {/* Compact Hotline & System status bar */}
+        <div className={`shrink-0 border-t-2 border-[#E5E5E5] bg-[#FAFAFA] ${collapsed ? 'p-2' : 'px-3 py-2.5'}`}>
           {collapsed ? (
-            /* Collapsed: chỉ dot trạng thái */
-            <div className="flex flex-col items-center gap-2 py-1">
+            <div className="flex flex-col items-center py-1">
               <span
                 className="inline-block w-3 h-3 rounded-full bg-[#58CC02] animate-pulse"
-                title="Hệ thống trực tuyến"
+                title="Hệ thống trực tuyến — Hotline 1900 6868 (Phím 2)"
               />
             </div>
           ) : (
-            /* Expanded: full hotline card */
-            <div className="bg-white rounded-2xl p-3.5 border-2 border-b-4 border-[#E5E5E5] flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#58CC02] animate-pulse"></span>
-                <span className="text-xs font-black text-[#58CC02] uppercase tracking-wider">Hệ thống trực tuyến</span>
+            <div className="bg-white rounded-xl px-3 py-2 border-2 border-b-4 border-[#E5E5E5] flex items-center justify-between gap-2 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="inline-block w-2 h-2 rounded-full bg-[#58CC02] animate-pulse shrink-0"></span>
+                <span className="text-[10px] font-black text-[#58CC02] uppercase tracking-wider truncate">
+                  Hotline 24/7
+                </span>
               </div>
-              <div className="text-[11px] font-bold text-[#AFAFAF]">Hotline kỹ thuật 24/7:</div>
-              <div className="text-sm font-black text-[#4B4B4B] tracking-wide">1900 6868 (Phím 2)</div>
+              <span className="text-[11px] font-black text-[#4B4B4B] whitespace-nowrap shrink-0">
+                1900 6868 (P.2)
+              </span>
             </div>
           )}
         </div>

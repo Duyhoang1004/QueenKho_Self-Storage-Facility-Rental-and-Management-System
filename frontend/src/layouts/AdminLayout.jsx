@@ -36,10 +36,10 @@ export default function AdminLayout() {
     <div className="bg-[#FFFFFF] text-[#4B4B4B] min-h-screen font-sans">
 
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 h-screen bg-white z-50 flex flex-col border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
+      <aside className={`fixed left-0 top-0 h-screen supports-[height:100dvh]:h-[100dvh] bg-white z-50 flex flex-col border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
 
         {/* Logo + toggle */}
-        <div className={`h-20 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
+        <div className={`h-20 shrink-0 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
           <button
             onClick={() => setCollapsed((prev) => !prev)}
             className="h-11 w-11 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white shadow-xs cursor-pointer hover:bg-[#4db800] transition-colors shrink-0"
@@ -51,52 +51,55 @@ export default function AdminLayout() {
           </button>
 
           {!collapsed && (
-            <div className="flex flex-col overflow-hidden">
+            <div className="flex flex-col min-w-0 overflow-hidden">
               <span className="text-xl font-black text-[#58CC02] tracking-wider uppercase leading-none">
                 Queen<span className="text-[#1CB0F6]">Kho</span>
               </span>
-              <span className="text-[11px] font-extrabold text-[#AFAFAF] uppercase tracking-widest mt-1">
+              <span className="text-[11px] font-extrabold text-[#AFAFAF] uppercase tracking-widest mt-1 truncate">
                 Quản trị hệ thống
               </span>
             </div>
           )}
         </div>
 
-        {/* Section label */}
-        {!collapsed && (
-          <div className="px-5 pt-5 pb-2">
-            <span className="text-[11px] font-black uppercase tracking-widest text-[#AFAFAF]">
-              QUẢN TRỊ HỆ THỐNG
-            </span>
-          </div>
-        )}
+        {/* Scrollable nav region */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar [scrollbar-gutter:stable] flex flex-col">
+          {/* Section label */}
+          {!collapsed && (
+            <div className="px-5 pt-3 pb-1.5">
+              <span className="text-[11px] font-black uppercase tracking-widest text-[#AFAFAF]">
+                QUẢN TRỊ HỆ THỐNG
+              </span>
+            </div>
+          )}
 
-        {/* Nav Items */}
-        <nav className={`flex flex-col gap-2 ${collapsed ? 'px-2 pt-4' : 'px-3'}`}>
-          {adminMenuItems.map((item) => {
-            // "Tổng quan" chỉ sáng đúng /admin; các mục khác sáng cả trang con
-            const isActive = item.path === '/admin'
-              ? location.pathname === '/admin'
-              : location.pathname.startsWith(item.path);
-            return (
-              <Link
-                key={item.path}
-                to={item.path}
-                title={collapsed ? item.label : undefined}
-                className={`flex items-center rounded-2xl text-xs uppercase font-black tracking-wide transition-all duration-150 ${
-                  collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3'
-                } ${
-                  isActive
-                    ? 'bg-[#DDF4FF] border-2 border-[#84D8FF] text-[#1CB0F6] shadow-xs'
-                    : 'border-2 border-transparent text-[#777777] hover:bg-[#F7F7F7] hover:text-[#4B4B4B]'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[22px] shrink-0">{item.icon}</span>
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
-        </nav>
+          {/* Nav Items */}
+          <nav className={`flex flex-col gap-1 pb-3 ${collapsed ? 'px-2 pt-3' : 'px-3'}`}>
+            {adminMenuItems.map((item) => {
+              // "Tổng quan" chỉ sáng đúng /admin; các mục khác sáng cả trang con
+              const isActive = item.path === '/admin'
+                ? location.pathname === '/admin'
+                : location.pathname.startsWith(item.path);
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  title={item.label}
+                  className={`flex items-center rounded-xl text-[11px] uppercase font-black tracking-wide transition-all duration-150 min-w-0 ${
+                    collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2'
+                  } ${
+                    isActive
+                      ? 'bg-[#DDF4FF] border-2 border-[#84D8FF] text-[#1CB0F6] shadow-xs'
+                      : 'border-2 border-transparent text-[#777777] hover:bg-[#F7F7F7] hover:text-[#4B4B4B]'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[20px] shrink-0">{item.icon}</span>
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
       </aside>
 
       {/* Main Content Area */}

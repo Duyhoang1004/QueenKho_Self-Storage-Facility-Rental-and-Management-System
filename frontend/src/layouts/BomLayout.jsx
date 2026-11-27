@@ -42,36 +42,36 @@ export default function BomLayout() {
     <div className="bg-[#FFFFFF] text-[#4B4B4B] min-h-screen font-sans">
 
       {/* Sidebar Duolingo theme */}
-      <aside className={`fixed left-0 top-0 h-screen bg-white z-50 flex flex-col justify-between border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
-        <div className="flex flex-col">
+      <aside className={`fixed left-0 top-0 h-screen supports-[height:100dvh]:h-[100dvh] bg-white z-50 flex flex-col border-r-2 border-[#E5E5E5] transition-all duration-300 ${sidebarWidth}`}>
+        {/* Logo + toggle */}
+        <div className={`h-20 shrink-0 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
+          <button
+            onClick={() => setCollapsed((prev) => !prev)}
+            className="h-11 w-11 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white shadow-xs cursor-pointer hover:bg-[#4db800] transition-colors shrink-0"
+            title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
+          >
+            <span className="material-symbols-outlined text-[26px]">
+              {collapsed ? 'menu_open' : 'corporate_fare'}
+            </span>
+          </button>
 
-          {/* Logo + toggle */}
-          <div className={`h-20 flex items-center border-b-2 border-[#E5E5E5] ${collapsed ? 'justify-center px-0' : 'gap-3 px-6'}`}>
-            <button
-              onClick={() => setCollapsed((prev) => !prev)}
-              className="h-11 w-11 rounded-2xl bg-[#58CC02] border-b-4 border-[#58A700] flex items-center justify-center text-white shadow-xs cursor-pointer hover:bg-[#4db800] transition-colors shrink-0"
-              title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}
-            >
-              <span className="material-symbols-outlined text-[26px]">
-                {collapsed ? 'menu_open' : 'corporate_fare'}
+          {!collapsed && (
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="text-xl font-black text-[#58CC02] tracking-wider uppercase leading-none">
+                Queen<span className="text-[#1CB0F6]">Kho</span>
               </span>
-            </button>
+              <span className="text-[11px] font-extrabold text-[#FF9600] uppercase tracking-widest mt-1 truncate">
+                Vận hành BOM
+              </span>
+            </div>
+          )}
+        </div>
 
-            {!collapsed && (
-              <div className="flex flex-col overflow-hidden">
-                <span className="text-xl font-black text-[#58CC02] tracking-wider uppercase leading-none">
-                  Queen<span className="text-[#1CB0F6]">Kho</span>
-                </span>
-                <span className="text-[11px] font-extrabold text-[#FF9600] uppercase tracking-widest mt-1">
-                  Vận hành BOM
-                </span>
-              </div>
-            )}
-          </div>
-
+        {/* Scrollable nav region */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar [scrollbar-gutter:stable] flex flex-col">
           {/* Section label */}
           {!collapsed && (
-            <div className="px-5 pt-5 pb-2">
+            <div className="px-5 pt-3 pb-1.5">
               <span className="text-[11px] font-black uppercase tracking-widest text-[#AFAFAF]">
                 HỆ THỐNG VẬN HÀNH
               </span>
@@ -79,7 +79,7 @@ export default function BomLayout() {
           )}
 
           {/* Nav Items */}
-          <nav className={`flex flex-col gap-2 ${collapsed ? 'px-2 pt-4' : 'px-3'}`}>
+          <nav className={`flex flex-col gap-1 pb-3 ${collapsed ? 'px-2 pt-3' : 'px-3'}`}>
             {bomMenuItems.map((item) => {
               const isActive =
                 location.pathname === item.path ||
@@ -89,45 +89,24 @@ export default function BomLayout() {
                 <Link
                   key={item.path}
                   to={item.path}
-                  title={collapsed ? item.label : undefined}
-                  className={`flex items-center rounded-2xl text-xs uppercase font-black tracking-wide transition-all duration-150 ${
-                    collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-3'
+                  title={item.label}
+                  className={`flex items-center rounded-xl text-[11px] uppercase font-black tracking-wide transition-all duration-150 min-w-0 ${
+                    collapsed ? 'justify-center px-0 py-2.5' : 'gap-2.5 px-3 py-2'
                   } ${
                     isActive
                       ? 'bg-[#DDF4FF] border-2 border-[#84D8FF] text-[#1CB0F6] shadow-xs'
                       : 'border-2 border-transparent text-[#777777] hover:bg-[#F7F7F7] hover:text-[#4B4B4B]'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[22px] shrink-0">
+                  <span className="material-symbols-outlined text-[20px] shrink-0">
                     {item.icon}
                   </span>
-                  {!collapsed && <span>{item.label}</span>}
+                  {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               );
             })}
           </nav>
         </div>
-
-        {/* User Card at bottom of sidebar */}
-        {!collapsed && (
-          <Link
-            to="/bom/profile"
-            title="Xem & chỉnh sửa hồ sơ cá nhân"
-            className="p-4 border-t-2 border-[#E5E5E5] m-3 rounded-2xl bg-[#F7F7F7] hover:bg-[#EFEFEF] transition-colors flex items-center gap-3 cursor-pointer"
-          >
-            <div className="w-9 h-9 rounded-xl bg-[#FF9600] border-b-2 border-[#CC7A00] text-white flex items-center justify-center font-black text-xs shrink-0">
-              {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'B'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-black text-[#4B4B4B] truncate leading-tight">
-                {currentUser.fullName || 'Hoàng Long'}
-              </p>
-              <p className="text-[10px] font-extrabold text-[#AFAFAF] uppercase tracking-wider truncate mt-0.5">
-                Giám đốc vận hành
-              </p>
-            </div>
-          </Link>
-        )}
       </aside>
 
       {/* Main Content Area */}

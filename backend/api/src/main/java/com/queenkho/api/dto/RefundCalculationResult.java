@@ -57,6 +57,7 @@ public class RefundCalculationResult {
     private int periodMonths;
     private LocalDate periodStart;
     private boolean faultTermination;
+    private boolean trialReturn;           // PR-O2e: khách tự trả trong 3 ngày đầu — tính theo ngày, không phí phá HĐ
     private List<MoneyLine> lines;
     // PR-O19c (24/11/2026): tiền đền bù — khoản RIÊNG do FM chi, KHÔNG nằm trong lines / netAmount
     private List<java.util.Map<String, Object>> separateCompensations;

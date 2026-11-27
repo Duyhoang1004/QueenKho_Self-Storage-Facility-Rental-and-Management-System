@@ -695,7 +695,7 @@ export default function ManagerStaffPage() {
       {/* ==================== MODAL 1: THÊM NHÂN VIÊN MỚI ==================== */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-5">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b-2 border-[#E5E5E5] pb-3">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-[#DDF4FF] border border-[#84D8FF] flex items-center justify-center text-[#1CB0F6]">
@@ -817,7 +817,7 @@ export default function ManagerStaffPage() {
       {/* ==================== MODAL 2: KHÓA / MỞ KHÓA TÀI KHOẢN (PR-06) ==================== */}
       {statusModal.open && statusModal.staff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-white ${
                 statusModal.targetStatus === 'LOCKED' ? 'bg-[#E02424]' : 'bg-[#0E9F6E]'
@@ -894,7 +894,7 @@ export default function ManagerStaffPage() {
       {/* ==================== MODAL 3: ĐẶT LẠI MẬT KHẨU ==================== */}
       {pwdModal.open && pwdModal.staff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-10 h-10 rounded-2xl bg-[#DDF4FF] border border-[#84D8FF] flex items-center justify-center text-[#1CB0F6]">
                 <span className="material-symbols-outlined text-[22px]">key</span>

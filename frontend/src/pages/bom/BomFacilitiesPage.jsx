@@ -1013,7 +1013,7 @@ export default function BomFacilitiesPage() {
           ======================================================== */}
       {createModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-scale-up">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-lg shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-5 border-b-2 border-[#E5E5E5] flex items-center justify-between bg-[#F7F7F7]">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-[#EAF7DD] border-2 border-[#B4E885] text-[#58CC02] flex items-center justify-center font-black">
@@ -1184,7 +1184,7 @@ export default function BomFacilitiesPage() {
           ======================================================== */}
       {editModalOpen && activeFacility && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden animate-scale-up">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-lg shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-5 border-b-2 border-[#E5E5E5] flex items-center justify-between bg-[#F7F7F7]">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-[#EBF7FF] border-2 border-[#84D8FF] text-[#1CB0F6] flex items-center justify-center font-black">
@@ -1335,7 +1335,7 @@ export default function BomFacilitiesPage() {
           ======================================================== */}
       {statusModalOpen && activeFacility && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-scale-up">
+          <div className="bg-white border-2 border-[#E5E5E5] rounded-3xl w-full max-w-md shadow-2xl animate-scale-up max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-5 border-b-2 border-[#E5E5E5] flex items-center justify-between bg-[#F7F7F7]">
               <h3 className="text-base font-black text-[#4B4B4B]">
                 {activeFacility.status === 'ACTIVE' ? 'Tạm Ngừng Cơ Sở' : 'Kích Hoạt Lại Cơ Sở'}

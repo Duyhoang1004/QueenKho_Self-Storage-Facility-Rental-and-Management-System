@@ -2133,7 +2133,7 @@ export default function StaffTaskDetailPage() {
                         )}
                         {effectiveEarlyRentRefund > 0 && (
                           <div className="flex justify-between items-center py-0.5 bg-[#EAFBE0] px-2 rounded-lg border border-[#9AE6B4]">
-                            <span className="font-bold text-[#22543D]">Hoàn tiền thuê trả sớm (PR-O2):</span>
+                            <span className="font-bold text-[#22543D]">Hoàn tiền thuê chưa dùng (trả sớm):</span>
                             <span className="font-black text-[#2F855A]">
                               + {formatCurrency(effectiveEarlyRentRefund)}
                             </span>
@@ -2162,7 +2162,7 @@ export default function StaffTaskDetailPage() {
 
                     <p className="text-[10px] text-[#A0AEC0] italic mt-0.5">
                       {parsedRefund?.footerNote || (task.contractCode || parsedRefund?.isCheckout
-                        ? '* Tổng tiền hoàn bao gồm tiền cọc hợp đồng và tiền thuê các tháng còn lại sau khi trừ thời gian đã dùng & phí phạt trả sớm (PR-O2).'
+                        ? '* Tổng tiền hoàn trả kho = tiền cọc + tiền thuê chưa dùng (trả sớm: trừ thời gian đã dùng, phí phá hợp đồng nếu có — lỗi cơ sở / 3 ngày đầu tính theo ngày). Tiền đền bù (nếu có) chi riêng.'
                         : '* Khách hủy đơn sớm trước 24h so với thời điểm nhận kho được hoàn trả 100% tiền cọc.')}
                     </p>
                   </div>
@@ -2242,7 +2242,7 @@ export default function StaffTaskDetailPage() {
                           )}
                           {effectiveEarlyRentRefund > 0 && (
                             <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
-                              <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                              <span className="font-bold">• Hoàn tiền thuê còn lại (trả sớm):</span>
                               <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
                             </div>
                           )}
@@ -2380,7 +2380,7 @@ export default function StaffTaskDetailPage() {
                           )}
                           {effectiveEarlyRentRefund > 0 && (
                             <div className="flex justify-between text-xs text-[#15803D] bg-[#DCFCE7] px-2.5 py-1.5 rounded-xl border border-[#86EFAC]">
-                              <span className="font-bold">• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                              <span className="font-bold">• Hoàn tiền thuê còn lại (trả sớm):</span>
                               <span className="font-black">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
                             </div>
                           )}
@@ -3887,7 +3887,7 @@ export default function StaffTaskDetailPage() {
                   </div>
                   {effectiveEarlyRentRefund > 0 && (
                     <div className="flex justify-between text-xs font-bold text-[#58CC02] bg-[#EAFBE0] p-2 rounded-xl border border-[#D0F8AB]">
-                      <span>Hoàn tiền thuê trả sớm (PR-O2):</span>
+                      <span>Hoàn tiền thuê chưa dùng (trả sớm):</span>
                       <span className="font-black text-[#58A700]">+ {formatCurrency(effectiveEarlyRentRefund)}</span>
                     </div>
                   )}
@@ -4541,43 +4541,53 @@ export default function StaffTaskDetailPage() {
                 {isEarlyCheckout && (
                   <div className="flex flex-col gap-1.5 bg-[#EAFBE0] p-3 rounded-xl border border-[#D0F8AB] text-xs font-bold text-[#2B5300]">
                     <div className="flex justify-between items-center border-b border-[#D0F8AB] pb-1">
-                      <span className="font-black text-[#58A700]">Hoàn tiền thuê các tháng còn lại (PR-O2 - Gói {cycleMonths} tháng):</span>
+                      <span className="font-black text-[#58A700]">
+                        {task.faultTermination
+                          ? 'Hoàn tiền thuê còn lại (lỗi cơ sở — tính theo ngày):'
+                          : task.trialReturn
+                            ? 'Hoàn tiền thuê còn lại (trả trong 3 ngày đầu — tính theo ngày):'
+                            : `Hoàn tiền thuê các tháng còn lại (PR-O2 - Gói ${cycleMonths} tháng):`}
+                      </span>
                       <span className="font-black text-sm text-[#58A700]">+ {formatCurrency(estimatedEarlyRentRefund)}</span>
                     </div>
                     <div className="flex justify-between text-[11px] text-[#2B5300]/90">
                       <span>• Tiền thuê khách đã đóng ({cycleMonths} tháng):</span>
                       <span className="font-black">{formatCurrency(rentPaid)}</span>
                     </div>
-                    {task.faultTermination ? (() => {
-                      // BR-127 (góp ý test 24/11): chấm dứt do lỗi cơ sở → trừ đúng số ngày đã dùng, không thu 1 tháng / phí phạt
-                      const kept = (task.refundLines || []).find(l => l.group === 'KEPT' && String(l.label).startsWith('Tiền thuê'));
+                    {(() => {
+                      // 27/11/2026: các dòng trừ lấy đúng bảng backend tính (cùng công thức quyết toán) — lỗi cơ sở / dùng thử 3 ngày
+                      // tính theo ngày, trả sớm thường theo PR-O2 (tháng đã dùng + phí phá HĐ), kèm phép tính trong ghi chú
+                      const rentKept = (task.refundLines || []).filter(l => l.group === 'KEPT'
+                        && /^(Tiền thuê|Phí phá|Giảm|Phí bảo hiểm)/.test(String(l.label)));
+                      if (rentKept.length > 0) {
+                        return rentKept.map((l, i) => {
+                          const negative = Number(l.amount) < 0;
+                          return (
+                            <div key={i} className="flex justify-between gap-3 text-[11px] text-[#2B5300]/90">
+                              <span className="flex flex-col">
+                                <span>• Trừ {String(l.label).charAt(0).toLowerCase() + String(l.label).slice(1)}:</span>
+                                {l.note && <span className="text-[10px] font-bold text-[#777777]">{l.note}</span>}
+                              </span>
+                              <span className={`font-black whitespace-nowrap ${negative ? 'text-[#58A700]' : 'text-[#FF4B4B]'}`}>
+                                {negative ? '+ ' : '- '}{formatCurrency(Math.abs(Number(l.amount)))}
+                              </span>
+                            </div>
+                          );
+                        });
+                      }
                       return (
                         <>
-                          <div className="flex justify-between gap-3 text-[11px] text-[#2B5300]/90">
-                            <span className="flex flex-col">
-                              <span>• Trừ tiền thuê những ngày đã dùng:</span>
-                              {kept?.note && <span className="text-[10px] font-bold text-[#777777]">{kept.note}</span>}
-                            </span>
-                            <span className="font-black text-[#FF4B4B] whitespace-nowrap">- {formatCurrency(kept ? kept.amount : Math.max(0, rentPaid - estimatedEarlyRentRefund))}</span>
+                          <div className="flex justify-between text-[11px] text-[#2B5300]/90">
+                            <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
+                            <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
                           </div>
                           <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                            <span>• Phí phạt trả kho sớm:</span>
-                            <span className="font-black text-[#58A700]">0 đ (chấm dứt do lỗi cơ sở)</span>
+                            <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
+                            <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
                           </div>
                         </>
                       );
-                    })() : (
-                      <>
-                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                          <span>• Trừ thời gian đã sử dụng ({usedMonths} tháng × giá gốc {formatCurrency(basePrice)}):</span>
-                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(basePrice * usedMonths)}</span>
-                        </div>
-                        <div className="flex justify-between text-[11px] text-[#2B5300]/90">
-                          <span>• Trừ phí phạt trả kho sớm (1 tháng giá gốc):</span>
-                          <span className="font-black text-[#FF4B4B]">- {formatCurrency(breakFee)}</span>
-                        </div>
-                      </>
-                    )}
+                    })()}
                   </div>
                 )}
                 <div className="border-t border-[#84D8FF] pt-2 flex justify-between items-center">
@@ -5139,7 +5149,7 @@ export default function StaffTaskDetailPage() {
       {/* ==================== MODAL XÁC NHẬN MỞ LẠI NGUYÊN TASK CHO STAFF ==================== */}
       {reopenSupportOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="duo-card bg-white w-full max-w-[500px] p-6 flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="duo-card bg-white w-full max-w-[500px] p-6 flex flex-col gap-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-10 h-10 rounded-2xl bg-[#FFE8CC] border-2 border-[#FF9600] text-[#E58800] flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[24px]">restart_alt</span>

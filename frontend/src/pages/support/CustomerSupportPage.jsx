@@ -1839,7 +1839,7 @@ export default function CustomerSupportPage() {
       {/* ==================== MODAL BÁO CHƯA XONG / MỞ LẠI TICKET (PR-52) ==================== */}
       {reopenTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="duo-card bg-white w-full max-w-[520px] p-6 flex flex-col gap-4 shadow-2xl">
+          <div className="duo-card bg-white w-full max-w-[520px] p-6 flex flex-col gap-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-[#FF9600] border-b-4 border-[#E58800] text-white flex items-center justify-center">
                 <span className="material-symbols-outlined text-[24px]">replay</span>

@@ -1202,7 +1202,7 @@ export default function CustomerContractPage() {
                     {earlyRentRefund > 0 && (
                       <div className="flex flex-col gap-0.5 bg-[#EAFBE0] border border-[#D0F8AB] rounded-xl p-2.5 text-xs">
                         <div className="flex justify-between font-bold text-[#2B5300]">
-                          <span>• Hoàn tiền thuê các tháng còn lại (PR-O2):</span>
+                          <span>• Hoàn tiền thuê còn lại (trả sớm):</span>
                           <span className="font-black text-[#58A700]">+{formatVND(earlyRentRefund)}</span>
                         </div>
                         <span className="text-[10px] font-semibold text-[#2B5300]/80">
@@ -1540,7 +1540,7 @@ export default function CustomerContractPage() {
       {/* Modal xác nhận Hủy chờ trả kho */}
       {isCancelCheckoutModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-[480px] max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-4 text-[#FF4B4B]">
               <div className="w-10 h-10 rounded-full bg-[#FFDFDF] flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-[24px]">cancel</span>

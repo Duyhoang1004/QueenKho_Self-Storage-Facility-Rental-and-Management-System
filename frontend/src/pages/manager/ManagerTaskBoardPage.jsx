@@ -8,6 +8,8 @@ import { getFacilityStaff } from '../../services/facilityStaffService'
 import { assignLockedUntil } from '../../utils/taskWindow'
 import DateInput from '../../components/DateInput'
 import { parseRefundNote } from '../../utils/refundParser'
+import { getSettlement } from '../../services/settlementService'
+import MoneyBreakdownTable from '../../components/MoneyBreakdownTable'
 
 // D-22 / PR-O25: khách xác nhận đã nhận tiền hoàn
 const RECEIPT_LABELS = {
@@ -31,7 +33,29 @@ function MoneyRow({ label, amount, sign, tone = 'text-[#4B4B4B]', sub }) {
 
 // Góp ý test 13/11: ghi chú hoàn tiền BE ghép một dòng ("… | Cọc gốc … => Cọc hoàn … + … => THỰC HOÀN …") —
 // tách thành bảng tiền + khối nhận tiền cho FM dễ đối chiếu trước khi chuyển khoản
-function RefundBreakdown({ note }) {
+// 27/11/2026: task hoàn tiền của quyết toán trả kho → hiện đủ bảng "đã đóng − giữ lại = hoàn" của bảng quyết toán
+// (ghi chú task chỉ có tổng). Huỷ đơn / No-Show vẫn tách từ ghi chú như cũ.
+function SettlementRefundTable({ contractId }) {
+  const [data, setData] = useState({ forId: null, settlement: null })
+  useEffect(() => {
+    let active = true
+    getSettlement(contractId)
+      .then((s) => { if (active) setData({ forId: contractId, settlement: s }) })
+      .catch(() => { if (active) setData({ forId: contractId, settlement: null }) })
+    return () => { active = false }
+  }, [contractId])
+  if (data.forId !== contractId) return <p className="text-xs font-bold text-[#AFAFAF]">Đang tải bảng quyết toán...</p>
+  const lines = data.settlement?.lines
+  if (!lines || lines.length === 0) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-black uppercase text-[#777777]">Bảng quyết toán khách đã xác nhận</span>
+      <MoneyBreakdownTable lines={lines} viewer="STAFF" />
+    </div>
+  )
+}
+
+function RefundBreakdown({ note, contractId }) {
   const [showRaw, setShowRaw] = useState(false)
   if (!note) {
     return <p className="text-xs font-bold text-[#AFAFAF]">Không có ghi chú chi tiết</p>
@@ -50,6 +74,10 @@ function RefundBreakdown({ note }) {
           {p.unitId && <span className="font-bold text-[#777777]">· Ô {p.unitId}</span>}
           {p.customerName && <span className="font-bold text-[#777777]">· {p.customerName}</span>}
         </div>
+      )}
+
+      {p.isCheckout && contractId && String(note).startsWith('Hoàn tiền trả kho (quyết toán') && (
+        <SettlementRefundTable contractId={contractId} />
       )}
 
       {hasMoney && (
@@ -152,7 +180,7 @@ function AssignTaskModal({ task, facilityId, onClose, onAssigned }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-      <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4">
+      <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
           <div className="w-11 h-11 rounded-2xl bg-[#D7FFB8] border-2 border-[#58CC02] flex items-center justify-center text-[#58A700]">
             <span className="material-symbols-outlined text-[24px]">assignment_ind</span>
@@ -849,7 +877,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       {/* Modal Dời lịch nhận kho cho task CHECK_IN quá hạn */}
       {rescheduleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-11 h-11 rounded-2xl bg-[#FFF5E6] border-2 border-[#FF9600] flex items-center justify-center text-[#E58800]">
                 <span className="material-symbols-outlined text-[24px]">edit_calendar</span>
@@ -919,7 +947,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       {/* Modal Gia hạn task SUPPORT quá hạn (PR-S4) */}
       {extendTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
+          <div className="duo-card max-w-md w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-11 h-11 rounded-2xl bg-[#DDF4FF] border-2 border-[#84D8FF] flex items-center justify-center text-[#1CB0F6]">
                 <span className="material-symbols-outlined text-[24px]">more_time</span>
@@ -991,7 +1019,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
       {/* Modal xác nhận hoàn tiền (PR-O12, PR-O15) */}
       {refundTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="duo-card max-w-lg w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150">
+          <div className="duo-card max-w-lg w-full p-6 flex flex-col gap-4 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 border-b-2 border-[#E5E5E5] pb-3">
               <div className="w-10 h-10 rounded-xl bg-[#DDF4FF] border-2 border-[#84D8FF] flex items-center justify-center text-[#1CB0F6]">
                 <span className="material-symbols-outlined text-[24px]">payments</span>
@@ -1009,7 +1037,7 @@ export default function ManagerTaskBoardPage({ initialTypeFilter = 'ALL' }) {
               </div>
             )}
 
-            <RefundBreakdown note={refundTask.note} />
+            <RefundBreakdown note={refundTask.note} contractId={refundTask.contractId} />
 
             {/* D-22 / PR-O26: khách báo "Chưa nhận được" → giải thích hoặc chuyển bổ sung */}
             {refundReopened && (

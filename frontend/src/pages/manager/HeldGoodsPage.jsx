@@ -382,7 +382,7 @@ export default function HeldGoodsPage() {
       {/* Modal chốt cách xử lý */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs" onClick={() => !submitting && setModal(null)}>
-          <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} className="duo-card bg-white w-full max-w-[520px] shadow-2xl p-6 flex flex-col gap-4">
+          <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} className="duo-card bg-white w-full max-w-[520px] shadow-2xl p-6 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3">
               <span className={`duo-badge border-2 ${OUTCOMES[modal.outcome].badge}`}>
                 <span className="material-symbols-outlined text-[16px] mr-1 align-middle">{OUTCOMES[modal.outcome].icon}</span>

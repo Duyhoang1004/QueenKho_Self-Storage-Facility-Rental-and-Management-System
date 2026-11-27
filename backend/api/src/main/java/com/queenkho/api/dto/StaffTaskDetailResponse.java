@@ -129,6 +129,7 @@ public class StaffTaskDetailResponse {
 
     // Góp ý test 24/11: trả sớm do lỗi cơ sở (BR-127) → bảng tính hiện "trừ N ngày đã dùng", không phải "1 tháng + phí phạt"
     private boolean faultTermination;
+    private boolean trialReturn;              // PR-O2e: khách tự trả trong 3 ngày đầu — tính theo ngày, không phí phá HĐ
     private List<MoneyLine> refundLines;
 
     // PR-O17a (26/11/2026): ticket / hồ sơ đang chặn nghiệm thu (task CHECK_OUT) — FE khoá form và liệt kê

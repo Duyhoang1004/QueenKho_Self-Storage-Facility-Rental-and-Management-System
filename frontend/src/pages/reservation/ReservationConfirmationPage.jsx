@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { getVnpayStatus } from '../../services/vnpayService'
 import { useSearchParams } from 'react-router-dom'
 import { printReservationReceipt } from '../../utils/receipt'
-import { formatDateTimeVN } from '../../utils/date'
+import { formatDateTimeVN, formatDateVN } from '../../utils/date'
 
 function formatVND(amount) {
   return Number(amount || 0).toLocaleString('vi-VN') + 'đ'
@@ -55,9 +55,7 @@ export default function ReservationConfirmationPage() {
 
   const paidAt = serverDetails.paid_at ? new Date(serverDetails.paid_at) : new Date()
   const timeStr = formatDateTimeVN(paidAt).replace(' ', ' ngày ')
-  const startDateStr = startDate
-    ? String(startDate).split('-').reverse().join('/')
-    : 'Chưa cập nhật'
+  const startDateStr = formatDateVN(startDate, 'Chưa cập nhật')
   const voucherDiscount = Number(serverDetails.voucher_discount ?? paymentContext.voucherDiscount ?? 0)
   const voucherCode = serverDetails.voucher_code || paymentContext.voucherCode || ''
   const [printBlocked, setPrintBlocked] = useState(false)

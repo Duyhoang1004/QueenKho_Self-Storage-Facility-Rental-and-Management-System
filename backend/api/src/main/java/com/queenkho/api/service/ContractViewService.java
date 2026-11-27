@@ -3,8 +3,10 @@ package com.queenkho.api.service;
 import com.queenkho.api.dto.CustomerContractResponse;
 import com.queenkho.api.dto.RefundCalculationResult;
 import com.queenkho.api.entity.HeldGoods;
+import com.queenkho.api.entity.HandoverRecord;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.repository.HeldGoodsRepository;
+import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
 import com.queenkho.api.security.CurrentUser;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +46,9 @@ public class ContractViewService {
 
     @Autowired
     private HeldGoodsRepository heldGoodsRepository;
+
+    @Autowired
+    private HandoverRecordRepository handoverRecordRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -315,8 +320,14 @@ public class ContractViewService {
         }
         dto.setInsurancePlanLabel(plan.label());
         dto.setInsurancePremiumMonthly(reservation.getInsurancePremiumMonthly());
-        dto.setDeclaredGoodsValue(reservation.getDeclaredGoodsValue());
-        dto.setCoverageCap(plan.coverageCap(reservation.getDeclaredGoodsValue()));
+        BigDecimal declaredGoodsValue = reservation.getDeclaredGoodsValue();
+        BigDecimal agreedGoodsValue = handoverRecordRepository
+                .findFirstByContractIdAndRecordTypeOrderByIdDesc(rc.getId(), "CHECK_IN")
+                .map(HandoverRecord::getAssessedGoodsValue)
+                .filter(value -> value != null && value.signum() > 0)
+                .orElse(declaredGoodsValue);
+        dto.setDeclaredGoodsValue(agreedGoodsValue);
+        dto.setCoverageCap(plan.coverageCap(agreedGoodsValue));
         dto.setInsured(plan.insured());
         dto.setFaultTermination(Boolean.TRUE.equals(rc.getFaultTermination()));
         dto.setGoodsCategories(operationsCatalogService.goodsLabels(reservation.getGoodsCategoryCodes()));

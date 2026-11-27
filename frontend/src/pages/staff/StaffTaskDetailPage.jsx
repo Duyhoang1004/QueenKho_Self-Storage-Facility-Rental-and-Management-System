@@ -281,7 +281,8 @@ function blockedReason(task, userId, isManager) {
     default:
       if (task.staffId !== userId) return `Task đang do ${task.staffName || 'nhân viên khác'} phụ trách.`;
       if (new Date(task.dueAt) <= new Date()) return 'Task đã quá hạn 21:00 ngày hẹn nên không thể lập biên bản.';
-      if (task.taskType === 'CHECK_IN' && task.dueAt && localTodayIso() < String(task.dueAt).slice(0, 10)) {
+      if (task.taskType === 'CHECK_IN' && task.dueAt && localTodayIso() < String(task.dueAt).slice(0, 10)
+        && String(task.simulatedCheckoutDate || '') !== String(task.dueAt).slice(0, 10)) {
         const [y, m, d] = String(task.dueAt).slice(0, 10).split('-');
         return `Khách hẹn nhận kho ngày ${d}/${m}/${y}. Chưa được check-in trước ngày hẹn.`;
       }

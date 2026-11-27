@@ -101,7 +101,8 @@ class DemoSimulationServiceTest {
         LocalDate appointment = LocalDate.now().plusDays(2);
         verify(jdbcTemplate, never()).update(contains("UPDATE reservations SET"), any(), any(), any());
         verify(jdbcTemplate, never()).update(contains("UPDATE rental_contracts SET start_date"), any(), any(), any());
-        verify(jdbcTemplate).update(contains("simulated_checkout_date = ?"), any(Timestamp.class), eq(appointment), eq(50));
+        verify(jdbcTemplate).update(contains("simulated_checkout_date = ?"),
+                eq(Timestamp.valueOf(appointment.atTime(21, 0))), eq(appointment), eq(50));
         verify(activityLogService).log(eq(12), startsWith("[SIMULATION]"), eq("facility_tasks"), eq("50"));
     }
 

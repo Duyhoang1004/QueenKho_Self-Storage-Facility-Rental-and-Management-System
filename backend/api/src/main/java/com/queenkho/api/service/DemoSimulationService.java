@@ -123,13 +123,13 @@ public class DemoSimulationService {
         }
         LocalDate today = LocalDate.now().plusDays(days);
         LocalDateTime now = LocalDateTime.now();
-        // Góp ý test 26/11: demo buổi tối (sau 21:00) trước đây đẩy hạn sang 21:00 ngày mai → task bị khoá "chưa tới ngày hẹn".
-        // Giả lập "hôm nay" giờ luôn cho làm ngay trong ngày: sau 21:00 hạn là 23:59 hôm nay.
-        LocalDateTime dueAt = days > 0 ? today.atTime(CLOSING_TIME) : demoDueToday(today, now);
-
         LocalDate appointment = toLocalDate(contract.get("expected_appointment_time"));
         if (appointment == null) appointment = toLocalDate(contract.get("start_date"));
         if (days == 0 && appointment == null) throw notApplicable("Hợp đồng chưa có ngày hẹn nhận kho");
+        // Giả lập cho check-in sớm nhưng hạn task vẫn thuộc ngày hẹn gốc.
+        // Khi ngày hẹn đã qua hoặc là hôm nay, mở task tới cuối ngày để demo sau giờ đóng cửa.
+        LocalDateTime dueAt = days > 0 ? today.atTime(CLOSING_TIME)
+                : appointment.isAfter(today) ? appointment.atTime(CLOSING_TIME) : demoDueToday(today, now);
         if (days > 0) {
             int months = durationMonths(toInt(contract.get("reservation_id")));
             // Khung giao việc 30 ngày vẫn là thao tác dời lịch demo riêng.

@@ -336,7 +336,35 @@ public class SupportRequestService {
                 String.valueOf(ticket.getId())
         );
 
-        StaffTask latestTask = openTasks.isEmpty() ? null : openTasks.get(0);
+        StaffTask latestTask = !openTasks.isEmpty() ? openTasks.get(0) : findLatestTaskForTicket(ticket.getId());
+        if (notificationService != null && latestTask != null) {
+            boolean urgent = isUrgentIssue(ticket.getIssueType());
+            Integer facilityId = latestTask.getFacilityId() != null ? latestTask.getFacilityId() : 1;
+            String cancelMsg = "Khách " + customer.getFullName() + " đã huỷ yêu cầu hỗ trợ " + ticket.getTicketCode()
+                    + (r.isEmpty() ? "." : ". Lý do: " + r);
+            // Chỉ báo 2 bên còn lại (FM + Staff); nếu task chưa có Staff nhận (OPEN) thì báo toàn bộ Staff cơ sở
+            notificationService.notifyFacilityManagers(
+                    facilityId,
+                    "Khách đã huỷ yêu cầu " + ticket.getTicketCode(),
+                    cancelMsg + " Task #" + latestTask.getId() + " đã đóng.",
+                    "SUPPORT",
+                    "/manager/tasks/" + latestTask.getId(),
+                    urgent
+            );
+            for (StaffTask t : openTasks) {
+                if (t.getStaff() == null) {
+                    notificationService.notifyFacilityStaff(
+                            t.getFacilityId() != null ? t.getFacilityId() : facilityId,
+                            "Khách đã huỷ yêu cầu " + ticket.getTicketCode(),
+                            cancelMsg + " Task #" + t.getId() + " không cần xử lý nữa.",
+                            "SUPPORT",
+                            "/staff/tasks/" + t.getId(),
+                            urgent
+                    );
+                }
+            }
+        }
+
         return toResponse(ticket, latestTask);
     }
 
@@ -364,8 +392,37 @@ public class SupportRequestService {
                 String.valueOf(ticket.getId())
         );
 
-        List<StaffTask> tasks = staffTaskRepository.findBySupportRequestIdInWithStaff(List.of(ticket.getId()));
-        StaffTask latestTask = tasks.isEmpty() ? null : tasks.get(0);
+        StaffTask latestTask = findLatestTaskForTicket(ticket.getId());
+        if (notificationService != null && latestTask != null) {
+            Integer facilityId = latestTask.getFacilityId() != null ? latestTask.getFacilityId() : 1;
+            String title = "Khách xác nhận đã ổn — " + ticket.getTicketCode();
+            String message = "Khách " + customer.getFullName() + " đã xác nhận hài lòng và đóng yêu cầu hỗ trợ "
+                    + ticket.getTicketCode() + " (Task #" + latestTask.getId() + ").";
+            notificationService.notifyFacilityManagers(
+                    facilityId,
+                    title,
+                    message,
+                    "SUPPORT",
+                    "/manager/tasks/" + latestTask.getId()
+            );
+            if (latestTask.getStaff() != null) {
+                notificationService.notifyStaff(
+                        latestTask.getStaff().getId(),
+                        title,
+                        message,
+                        "SUPPORT",
+                        "/staff/tasks/" + latestTask.getId()
+                );
+            } else {
+                notificationService.notifyFacilityStaff(
+                        facilityId,
+                        title,
+                        message,
+                        "SUPPORT",
+                        "/staff/tasks/" + latestTask.getId()
+                );
+            }
+        }
         return toResponse(ticket, latestTask);
     }
 
@@ -445,7 +502,8 @@ public class SupportRequestService {
         }
         staffTaskRepository.saveAll(openTasks);
 
-        return createSupportTaskForTicket(ticket.getContract(), ticket, "Kiểm tra lại hiện trường: " + reason);
+        // FM nhận thông báo trực tiếp về claim từ CompensationClaimService.disputeInspection; Staff nhận task kiểm tra mới
+        return createSupportTaskForTicket(ticket.getContract(), ticket, "Kiểm tra lại hiện trường: " + reason, false, false);
     }
 
     // ──────────────────────────────────────────────────────
@@ -478,6 +536,38 @@ public class SupportRequestService {
                     "support_requests",
                     String.valueOf(ticket.getId())
             );
+
+            // Hệ thống tự đóng → thông báo cho cả 3 bên (Khách + Staff + FM)
+            if (notificationService != null) {
+                if (ticket.getCustomer() != null) {
+                    notificationService.notifyCustomer(
+                            ticket.getCustomer().getId(),
+                            "Yêu cầu hỗ trợ " + ticket.getTicketCode() + " đã tự động đóng",
+                            "Quá 3 ngày không có phản hồi mới, hệ thống đã tự động đóng yêu cầu hỗ trợ " + ticket.getTicketCode() + ".",
+                            "SUPPORT",
+                            "/ho-tro?highlightTicketCode=" + ticket.getTicketCode()
+                    );
+                }
+                StaffTask latestTask = findLatestTaskForTicket(ticket.getId());
+                if (latestTask != null) {
+                    Integer facilityId = latestTask.getFacilityId() != null ? latestTask.getFacilityId() : 1;
+                    String title = "Hệ thống đã tự đóng yêu cầu " + ticket.getTicketCode();
+                    String msg = "Sau 3 ngày khách không phản hồi, yêu cầu hỗ trợ " + ticket.getTicketCode()
+                            + " (Task #" + latestTask.getId() + ") đã tự động đóng.";
+                    notificationService.notifyFacilityManagers(
+                            facilityId, title, msg, "SUPPORT", "/manager/tasks/" + latestTask.getId()
+                    );
+                    if (latestTask.getStaff() != null) {
+                        notificationService.notifyStaff(
+                                latestTask.getStaff().getId(), title, msg, "SUPPORT", "/staff/tasks/" + latestTask.getId()
+                        );
+                    } else {
+                        notificationService.notifyFacilityStaff(
+                                facilityId, title, msg, "SUPPORT", "/staff/tasks/" + latestTask.getId()
+                        );
+                    }
+                }
+            }
         }
         return expiredResolved.size();
     }
@@ -485,7 +575,22 @@ public class SupportRequestService {
     // ──────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────
+    private StaffTask findLatestTaskForTicket(Integer ticketId) {
+        if (ticketId == null) return null;
+        List<StaffTask> tasks = staffTaskRepository.findBySupportRequestIdInWithStaff(List.of(ticketId));
+        if (tasks.isEmpty()) return null;
+        return tasks.stream()
+                .filter(t -> !"CANCELLED".equals(t.getStatus()))
+                .findFirst()
+                .orElse(tasks.get(0));
+    }
+
     private StaffTask createSupportTaskForTicket(RentalContract contract, SupportRequest ticket, String reopenReason) {
+        return createSupportTaskForTicket(contract, ticket, reopenReason, true, false);
+    }
+
+    private StaffTask createSupportTaskForTicket(RentalContract contract, SupportRequest ticket, String reopenReason,
+                                                 boolean notifyManagers, boolean notifyCustomer) {
         Integer facilityId = contract.getStorageUnit() != null && contract.getStorageUnit().getFacility() != null
                 ? contract.getStorageUnit().getFacility().getId()
                 : 1;
@@ -522,7 +627,7 @@ public class SupportRequestService {
         task.setNote(taskNote);
         StaffTask saved = staffTaskRepository.save(task);
 
-        // BR-111: FM và Staff nhận thông báo khi khách gửi / mở lại yêu cầu hỗ trợ (loại khẩn ghi rõ [KHẨN] và gửi email)
+        // BR-111: FM và Staff nhận thông báo khi khách gửi / mở lại yêu cầu hỗ trợ (chỉ gửi cho 2 bên còn lại, không tự báo lại khách vừa bấm)
         if (notificationService != null) {
             String customerName = ticket.getCustomer() != null ? ticket.getCustomer().getFullName() : "Khách hàng";
             boolean reopened = reopenReason != null && !reopenReason.isBlank();
@@ -531,27 +636,29 @@ public class SupportRequestService {
                     + (reopened ? ". Lý do: " + reopenReason.trim() : "") + ". Task hỗ trợ #" + saved.getId() + " đang chờ giao / nhận việc.";
 
             // 1. Thông báo cho Quản lý cơ sở (FM)
-            notificationService.notifyFacilityManagers(
-                    facilityId,
-                    title,
-                    message,
-                    "SUPPORT",
-                    "/manager/tasks?highlightTaskId=" + saved.getId(),
-                    urgent
-            );
+            if (notifyManagers) {
+                notificationService.notifyFacilityManagers(
+                        facilityId,
+                        title,
+                        message,
+                        "SUPPORT",
+                        "/manager/tasks/" + saved.getId(),
+                        urgent
+                );
+            }
 
-            // 2. Thông báo cho toàn bộ Nhân viên trực cơ sở (Staff)
+            // 2. Thông báo cho toàn bộ Nhân viên trực cơ sở (Staff) vì task mới tạo đang OPEN chưa ai nhận
             notificationService.notifyFacilityStaff(
                     facilityId,
                     title,
                     message,
                     "SUPPORT",
-                    "/staff?highlightTaskId=" + saved.getId(),
+                    "/staff/tasks/" + saved.getId(),
                     urgent
             );
 
-            // BR-117: xác nhận cho khách đã nhận yêu cầu (chuông + email)
-            if (ticket.getCustomer() != null) {
+            // 3. Chỉ gửi cho khách nếu tác nhân không phải khách hàng tự thao tác
+            if (notifyCustomer && ticket.getCustomer() != null) {
                 notificationService.notifyCustomer(
                         ticket.getCustomer().getId(),
                         (reopened ? "Đã nhận yêu cầu xử lý lại " : "Đã nhận yêu cầu hỗ trợ ") + ticket.getTicketCode(),
@@ -560,7 +667,7 @@ public class SupportRequestService {
                                 + (urgent ? " ưu tiên trong thời gian sớm nhất" : " và cập nhật kết quả cho bạn")
                                 + "; bạn sẽ nhận thông báo khi yêu cầu được xử lý xong.",
                         "SUPPORT",
-                        "/ho-tro");
+                        "/ho-tro?highlightTicketCode=" + ticket.getTicketCode());
             }
         }
         return saved;

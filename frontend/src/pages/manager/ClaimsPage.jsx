@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { decideClaim, getClaimDetail, getClaims, payClaim, quoteClaim } from '../../services/claimService'
 import { getSensorReadings } from '../../services/contractService'
 import { simulateInsurancePayout } from '../../services/simulationService'
@@ -179,6 +179,8 @@ function ClaimList() {
 }
 
 function ClaimDetail({ claimId }) {
+  const location = useLocation()
+  const fromNotificationAt = location.state?.fromNotificationAt
   const bom = isBom()
   const base = bom ? '/bom/claims' : '/manager/claims'
   const [claim, setClaim] = useState(null)
@@ -200,7 +202,7 @@ function ClaimDetail({ claimId }) {
       .catch((err) => setError(err.response?.data?.message || 'Không tải được hồ sơ.'))
   }, [claimId])
 
-  useEffect(() => { load() }, [load, reloadKey])
+  useEffect(() => { load() }, [load, reloadKey, fromNotificationAt])
 
   if (error) return <div className="p-8 text-sm font-black text-[#FF4B4B]">{error}</div>
   if (!claim) return <div className="p-8 text-xs font-bold text-[#AFAFAF]">Đang tải hồ sơ...</div>

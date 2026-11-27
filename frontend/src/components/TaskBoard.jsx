@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { getStaffTasks } from '../services/staffTaskService'
 import { parseRefundNote } from '../utils/refundParser'
 import { applyTimeFilter, hasDateRange, makeTimeFilter } from '../utils/timeFilter'
@@ -134,6 +134,8 @@ export default function TaskBoard({
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const location = useLocation()
+  const fromNotificationAt = location.state?.fromNotificationAt
   const [searchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const highlightParam = searchParams.get('highlightTaskId')
@@ -225,7 +227,7 @@ export default function TaskBoard({
 
   useEffect(() => {
     fetchTasks()
-  }, [fetchTasks, reloadKey])
+  }, [fetchTasks, reloadKey, highlightParam, fromNotificationAt])
 
   // Tự làm mới để thấy task mới sinh / task vừa chuyển quá hạn
   useEffect(() => {
@@ -312,17 +314,21 @@ export default function TaskBoard({
     return visibleTasks.slice(startIndex, startIndex + PAGE_SIZE)
   }, [visibleTasks, startIndex])
 
-  // Tự động nhảy đúng trang phân trang chứa task cần highlight
+  const lastJumpedHighlightRef = useRef('')
+
+  // Tự động nhảy đúng trang phân trang chứa task cần highlight (luôn chạy sau effect reset page khi đổi tab/filter)
   useEffect(() => {
     if (!highlightParam || visibleTasks.length === 0) return
     const targetIdx = visibleTasks.findIndex(t => String(t.id) === String(highlightParam))
     if (targetIdx !== -1) {
+      const jumpKey = `${highlightParam}|${fromNotificationAt || ''}|${tab}|${tasks.length}`
       const targetPage = Math.floor(targetIdx / PAGE_SIZE) + 1
-      if (currentPage !== targetPage) {
+      if (lastJumpedHighlightRef.current !== jumpKey) {
+        lastJumpedHighlightRef.current = jumpKey
         setCurrentPage(targetPage)
       }
     }
-  }, [highlightParam, visibleTasks])
+  }, [highlightParam, fromNotificationAt, visibleTasks, tab, tasks.length])
 
   // Cuộn mượt đến task card và giữ highlight nổi bật 8 giây
   useEffect(() => {

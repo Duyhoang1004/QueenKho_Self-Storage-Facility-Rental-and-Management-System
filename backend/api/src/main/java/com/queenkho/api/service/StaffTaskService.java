@@ -349,7 +349,7 @@ public class StaffTaskService {
 
         if (notificationService != null) {
             String unitCode = (liveContract.getStorageUnit() != null) ? liveContract.getStorageUnit().getId() : "";
-            // 1. Thông báo cho Quản lý cơ sở (FM)
+            // 1. Thông báo cho Quản lý cơ sở (FM) — đi thẳng tới chi tiết task bảo trì
             String fmTitle = assignedStaff != null
                     ? "Task bảo trì mới #" + savedTask.getId() + " (Ô " + unitCode + ")"
                     : "Task bảo trì mới cần phân công (Ô " + unitCode + ")";
@@ -361,15 +361,16 @@ public class StaffTaskService {
                     fmTitle,
                     fmBody,
                     "MAINTENANCE",
-                    "/manager/tasks"
+                    "/manager/tasks/" + savedTask.getId()
             );
 
-            // 2. Thông báo cho Nhân viên (Staff) nếu được giao trực tiếp
-            if (assignedStaff != null) {
-                notificationService.notifyStaff(
-                        assignedStaff.getId(),
-                        "Bạn đã tiếp nhận Task bảo trì #" + savedTask.getId(),
-                        "Task #" + savedTask.getId() + " [Bảo trì ô " + unitCode + "] đã được tạo và tự động giao cho bạn. Nhấp để chuyển đến thực hiện.",
+            // 2. Nếu task tạo ở trạng thái OPEN (chưa gán ai) → báo toàn bộ Staff cơ sở để nhận việc
+            // (nếu đã gán trực tiếp từ Staff đang xử lý hỗ trợ → không tự báo lại cho chính Staff đó)
+            if (assignedStaff == null) {
+                notificationService.notifyFacilityStaff(
+                        facilityId,
+                        "Task bảo trì mới #" + savedTask.getId() + " (Ô " + unitCode + ")",
+                        "Có task bảo trì ô kho mới #" + savedTask.getId() + " đang chờ nhận việc.",
                         "MAINTENANCE",
                         "/staff/tasks/" + savedTask.getId()
                 );
@@ -675,13 +676,13 @@ public class StaffTaskService {
         }
 
         // PR-34: Nếu là task SUPPORT thì ticket đi theo task (OPEN -> IN_PROGRESS)
+        SupportRequest linkedTicket = null;
         if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
-            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
-                if ("OPEN".equals(sr.getStatus())) {
-                    sr.setStatus("IN_PROGRESS");
-                    supportRequestRepository.save(sr);
-                }
-            });
+            linkedTicket = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            if (linkedTicket != null && "OPEN".equals(linkedTicket.getStatus())) {
+                linkedTicket.setStatus("IN_PROGRESS");
+                supportRequestRepository.save(linkedTicket);
+            }
         }
 
         // PR-A9: Ghi log nhận việc
@@ -691,6 +692,27 @@ public class StaffTaskService {
                 "facility_tasks",
                 String.valueOf(task.getId())
         );
+
+        // Thông báo cho 2 bên còn lại (FM + Khách nếu là task hỗ trợ)
+        if (notificationService != null && !"REFUND".equals(task.getTaskType())) {
+            String ticketTag = linkedTicket != null ? " (Phiếu " + linkedTicket.getTicketCode() + ")" : "";
+            notificationService.notifyFacilityManagers(
+                    task.getFacilityId(),
+                    user.getFullName() + " đã nhận task #" + task.getId() + ticketTag,
+                    "Nhân viên " + user.getFullName() + " đã nhận xử lý task " + task.getTaskType() + " #" + task.getId() + ticketTag + ".",
+                    "SUPPORT".equals(task.getTaskType()) ? "SUPPORT" : "TASK",
+                    "/manager/tasks/" + task.getId()
+            );
+            if (linkedTicket != null && linkedTicket.getCustomer() != null) {
+                notificationService.notifyCustomer(
+                        linkedTicket.getCustomer().getId(),
+                        "Nhân viên đã tiếp nhận yêu cầu " + linkedTicket.getTicketCode(),
+                        "Nhân viên " + user.getFullName() + " đã tiếp nhận yêu cầu hỗ trợ " + linkedTicket.getTicketCode() + " và đang tiến hành xử lý.",
+                        "SUPPORT",
+                        "/ho-tro?highlightTicketCode=" + linkedTicket.getTicketCode()
+                );
+            }
+        }
 
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
@@ -718,13 +740,13 @@ public class StaffTaskService {
         }
 
         // PR-34: Nếu là task SUPPORT thì ticket quay lại OPEN khi bị gỡ người nhận
+        SupportRequest linkedTicket = null;
         if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
-            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
-                if ("IN_PROGRESS".equals(sr.getStatus())) {
-                    sr.setStatus("OPEN");
-                    supportRequestRepository.save(sr);
-                }
-            });
+            linkedTicket = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            if (linkedTicket != null && "IN_PROGRESS".equals(linkedTicket.getStatus())) {
+                linkedTicket.setStatus("OPEN");
+                supportRequestRepository.save(linkedTicket);
+            }
         }
 
         // PR-A9: Ghi log gỡ người nhận
@@ -741,8 +763,17 @@ public class StaffTaskService {
                 "Quản lý " + manager.getFullName() + " đã gỡ bạn khỏi task " + task.getTaskType() + " #" + task.getId()
                         + ". Task quay về \"Chờ nhận\".",
                 "TASK",
-                "/staff?highlightTaskId=" + task.getId()
+                "/staff/tasks/" + task.getId()
         );
+        if (notificationService != null && linkedTicket != null && linkedTicket.getCustomer() != null) {
+            notificationService.notifyCustomer(
+                    linkedTicket.getCustomer().getId(),
+                    "Đang điều phối lại nhân viên — " + linkedTicket.getTicketCode(),
+                    "Quản lý cơ sở đang sắp xếp lại nhân viên phụ trách cho yêu cầu " + linkedTicket.getTicketCode() + ".",
+                    "SUPPORT",
+                    "/ho-tro?highlightTicketCode=" + linkedTicket.getTicketCode()
+            );
+        }
 
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
@@ -780,6 +811,7 @@ public class StaffTaskService {
         }
         requireInAssignWindow(task, "giao");
         String previousStaffName = task.getStaff() != null ? task.getStaff().getFullName() : null;
+        Integer previousStaffId = task.getStaff() != null ? task.getStaff().getId() : null;
 
         if (staffTaskRepository.assign(task.getId(), staff, LocalDateTime.now()) == 0) {
             StaffTask current = staffTaskRepository.findById(taskId).orElseThrow();
@@ -793,13 +825,13 @@ public class StaffTaskService {
         }
 
         // PR-34: ticket hỗ trợ đi theo task (OPEN → IN_PROGRESS)
+        SupportRequest linkedTicket = null;
         if ("SUPPORT".equals(task.getTaskType()) && task.getSupportRequestId() != null) {
-            supportRequestRepository.findById(task.getSupportRequestId()).ifPresent(sr -> {
-                if ("OPEN".equals(sr.getStatus())) {
-                    sr.setStatus("IN_PROGRESS");
-                    supportRequestRepository.save(sr);
-                }
-            });
+            linkedTicket = supportRequestRepository.findById(task.getSupportRequestId()).orElse(null);
+            if (linkedTicket != null && "OPEN".equals(linkedTicket.getStatus())) {
+                linkedTicket.setStatus("IN_PROGRESS");
+                supportRequestRepository.save(linkedTicket);
+            }
         }
 
         activityLogService.log(
@@ -811,13 +843,33 @@ public class StaffTaskService {
                 String.valueOf(task.getId())
         );
 
-        if (notificationService != null) notificationService.notifyStaff(
-                staff.getId(),
-                "Phân công task mới",
-                "Bạn vừa được phân công task " + task.getTaskType() + " #" + task.getId() + "!",
-                "TASK",
-                "/staff?highlightTaskId=" + task.getId()
-        );
+        if (notificationService != null) {
+            notificationService.notifyStaff(
+                    staff.getId(),
+                    "Phân công task mới #" + task.getId(),
+                    "Bạn vừa được phân công task " + task.getTaskType() + " #" + task.getId() + "!",
+                    "SUPPORT".equals(task.getTaskType()) ? "SUPPORT" : "TASK",
+                    "/staff/tasks/" + task.getId()
+            );
+            if (previousStaffId != null && !previousStaffId.equals(staff.getId())) {
+                notificationService.notifyStaff(
+                        previousStaffId,
+                        "Task #" + task.getId() + " đã được giao lại",
+                        "Quản lý " + manager.getFullName() + " đã chuyển task #" + task.getId() + " sang cho " + staff.getFullName() + ".",
+                        "SUPPORT".equals(task.getTaskType()) ? "SUPPORT" : "TASK",
+                        "/staff/tasks/" + task.getId()
+                );
+            }
+            if (linkedTicket != null && linkedTicket.getCustomer() != null) {
+                notificationService.notifyCustomer(
+                        linkedTicket.getCustomer().getId(),
+                        "Đã phân công nhân viên xử lý " + linkedTicket.getTicketCode(),
+                        "Quản lý cơ sở đã giao nhân viên " + staff.getFullName() + " xử lý yêu cầu hỗ trợ " + linkedTicket.getTicketCode() + ".",
+                        "SUPPORT",
+                        "/ho-tro?highlightTicketCode=" + linkedTicket.getTicketCode()
+                );
+            }
+        }
 
         return toResponse(staffTaskRepository.findById(taskId).orElseThrow());
     }
@@ -2207,23 +2259,34 @@ public class StaffTaskService {
             }
             ticketCode = sr.getTicketCode();
 
-            // BR-111 / BR-117: khách nhận thông báo + email kết quả xử lý
-            if (notificationService != null && sr.getCustomer() != null) {
-                String notifTitle = isEscalated
-                        ? "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã chuyển sang bảo trì chuyên sâu"
-                        : "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã được xử lý";
-                String notifBody = isEscalated
-                        ? "Nhân viên " + staff.getFullName() + " đã kiểm tra hiện trường và chuyển tiếp sang bảo trì chuyên sâu"
-                          + (createdMaintenanceTask != null ? " (Task #" + createdMaintenanceTask.getId() + ")" : "")
-                          + ": " + resolutionNote + ". Đội ngũ kỹ thuật đang tiếp tục xử lý."
-                        : "Kết quả: " + resolutionNote + ". Nếu sự cố chưa được khắc phục, bạn có thể yêu cầu xử lý lại trong 3 ngày.";
-                notificationService.notifyCustomer(
-                        sr.getCustomer().getId(),
-                        notifTitle,
-                        notifBody,
-                        "SUPPORT",
-                        "/ho-tro"
-                );
+            // BR-111 / BR-117: khách + FM nhận thông báo (Staff tự bấm nên không gửi lại Staff; nếu escalated thì createMaintenanceTask đã báo FM)
+            if (notificationService != null) {
+                if (sr.getCustomer() != null) {
+                    String notifTitle = isEscalated
+                            ? "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã chuyển sang bảo trì chuyên sâu"
+                            : "Yêu cầu hỗ trợ " + sr.getTicketCode() + " đã được xử lý";
+                    String notifBody = isEscalated
+                            ? "Nhân viên " + staff.getFullName() + " đã kiểm tra hiện trường và chuyển tiếp sang bảo trì chuyên sâu"
+                              + (createdMaintenanceTask != null ? " (Task #" + createdMaintenanceTask.getId() + ")" : "")
+                              + ": " + resolutionNote + ". Đội ngũ kỹ thuật đang tiếp tục xử lý."
+                            : "Kết quả: " + resolutionNote + ". Nếu sự cố chưa được khắc phục, bạn có thể yêu cầu xử lý lại trong 3 ngày.";
+                    notificationService.notifyCustomer(
+                            sr.getCustomer().getId(),
+                            notifTitle,
+                            notifBody,
+                            "SUPPORT",
+                            "/ho-tro?highlightTicketCode=" + sr.getTicketCode()
+                    );
+                }
+                if (!isEscalated) {
+                    notificationService.notifyFacilityManagers(
+                            updatedTask.getFacilityId(),
+                            "Nhân viên đã xử lý xong yêu cầu " + sr.getTicketCode(),
+                            staff.getFullName() + " đã hoàn tất Task #" + taskId + " (" + sr.getTicketCode() + "): " + resolutionNote,
+                            "SUPPORT",
+                            "/manager/tasks/" + taskId
+                    );
+                }
             }
         }
 
@@ -2322,6 +2385,10 @@ public class StaffTaskService {
                 String.valueOf(supportRequestId)
         );
 
+        notifySupportActionCounterparts(task, sr, roleName,
+                "Cập nhật kết quả hỗ trợ " + sr.getTicketCode(),
+                user.getFullName() + " đã cập nhật lại nội dung xử lý cho yêu cầu " + sr.getTicketCode() + ": " + resolutionNote);
+
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
@@ -2397,6 +2464,10 @@ public class StaffTaskService {
                 String.valueOf(supportRequestId)
         );
 
+        notifySupportActionCounterparts(task, sr, roleName,
+                "Mở lại xử lý yêu cầu hỗ trợ " + sr.getTicketCode(),
+                user.getFullName() + " đã mở lại task #" + taskId + " (" + sr.getTicketCode() + ") để kiểm tra/xử lý lại: " + reopenNote);
+
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
@@ -2467,6 +2538,11 @@ public class StaffTaskService {
                 "rental_contracts",
                 String.valueOf(contract.getId())
         );
+
+        notifySupportActionCounterparts(task, sr, "STAFF",
+                "Đã cấp lại mã PIN kho — " + sr.getTicketCode(),
+                "Nhân viên " + staff.getFullName() + " đã cấp lại mã PIN SmartLock mới cho HĐ " + contract.getContractCode()
+                        + " (Phiếu " + sr.getTicketCode() + ").");
 
         entityManager.flush();
         entityManager.clear();
@@ -2545,6 +2621,11 @@ public class StaffTaskService {
                 "rental_contracts",
                 String.valueOf(contract.getId())
         );
+
+        notifySupportActionCounterparts(task, sr, "STAFF",
+                "Đã cấp đổi thẻ từ RFID mới — " + sr.getTicketCode(),
+                "Nhân viên " + staff.getFullName() + " đã cấp thẻ RFID mới (" + newRfid + ") cho HĐ " + contract.getContractCode()
+                        + " (Phiếu " + sr.getTicketCode() + ").");
 
         entityManager.flush();
         entityManager.clear();
@@ -2657,16 +2738,15 @@ public class StaffTaskService {
                 String.valueOf(task.getId())
         );
 
-        // BR-111 & Vấn đề 3C: nhân viên đang giữ task biết hạn mới (chuông báo + email)
-        if (notificationService != null && task.getStaff() != null) {
-            notificationService.notifyStaff(
-                    task.getStaff().getId(),
-                    "Task #" + task.getId() + " đã được gia hạn đến " + formattedDue,
-                    "Quản lý " + manager.getFullName() + " đã dời hạn xử lý task " + typeLabel + " sang 21:00 ngày " + formattedDue + ". Lý do: " + reason,
-                    "TASK",
-                    "/staff?highlightTaskId=" + task.getId(),
-                    true
-            );
+        // BR-111 & Vấn đề 3C: nhân viên đang giữ task (hoặc toàn cơ sở nếu OPEN) biết hạn mới (chuông báo + email)
+        if (notificationService != null) {
+            String staffTitle = "Task #" + task.getId() + " đã được gia hạn đến " + formattedDue;
+            String staffMsg = "Quản lý " + manager.getFullName() + " đã dời hạn xử lý task " + typeLabel + " sang 21:00 ngày " + formattedDue + ". Lý do: " + reason;
+            if (task.getStaff() != null) {
+                notificationService.notifyStaff(task.getStaff().getId(), staffTitle, staffMsg, "TASK", "/staff/tasks/" + task.getId(), true);
+            } else {
+                notificationService.notifyFacilityStaff(task.getFacilityId(), staffTitle, staffMsg, "TASK", "/staff/tasks/" + task.getId(), true);
+            }
         }
 
         // Vấn đề 3C: chuông báo + email cho khách hàng liên quan biết công việc được dời qua ngày mới
@@ -2685,7 +2765,7 @@ public class StaffTaskService {
                         + (support ? " (phiếu " + ticketCode + ")" : (!contractCode.isEmpty() ? " của HĐ " + contractCode : ""))
                         + " sang trước 21:00 ngày " + formattedDue + ". Lý do: " + reason + ".";
                 String custUrl = support
-                        ? "/ho-tro"
+                        ? (sr != null ? "/ho-tro?highlightTicketCode=" + sr.getTicketCode() : "/ho-tro")
                         : (task.getContract() != null && task.getContract().getReservation() != null
                             ? "/kho-cua-toi/hop-dong/" + task.getContract().getReservation().getId()
                             : "/kho-cua-toi");
@@ -3026,22 +3106,32 @@ public class StaffTaskService {
                 String.valueOf(taskId)
         );
 
-        // BR-111: nhân viên làm xong thì FM được báo (FM tự đóng thì không cần)
-        if (notificationService != null && !isManager) notificationService.notifyFacilityManagers(
-                task.getFacilityId(),
-                ("CHECKIN_REPAIR".equals(done.getMaintenanceReason()) ? "Staff đã gửi kết quả sửa ô để FM duyệt"
-                        : cleanup ? "Đã cưỡng chế dọn kho xong" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
-                user.getFullName() + " hoàn tất task #" + taskId + ": " + workNote
-                        + ("CHECKIN_REPAIR".equals(done.getMaintenanceReason())
-                        ? ". Xem ảnh và xác nhận ô đạt tại báo cáo sự cố check-in."
-                        : unit != null ? ". Ô đã mở lại cho thuê." : ""),
-                "TASK",
-                "CHECKIN_REPAIR".equals(done.getMaintenanceReason()) && done.getContract() != null
-                        ? "/manager/tasks/" + jdbcTemplate.queryForList(
-                            "SELECT TOP 1 id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' ORDER BY id DESC",
-                            Integer.class, done.getContract().getId()).stream().findFirst().orElse(taskId)
-                        : "/manager/tasks/" + taskId
-        );
+        // BR-111: nhân viên làm xong thì FM được báo; FM tự đóng thì báo Staff phụ trách (hoặc toàn cơ sở)
+        if (notificationService != null && !isManager) {
+            notificationService.notifyFacilityManagers(
+                    task.getFacilityId(),
+                    ("CHECKIN_REPAIR".equals(done.getMaintenanceReason()) ? "Staff đã gửi kết quả sửa ô để FM duyệt"
+                            : cleanup ? "Đã cưỡng chế dọn kho xong" : "Đã bảo trì xong") + (unit != null ? " — ô " + unit.getId() : ""),
+                    user.getFullName() + " hoàn tất task #" + taskId + ": " + workNote
+                            + ("CHECKIN_REPAIR".equals(done.getMaintenanceReason())
+                            ? ". Xem ảnh và xác nhận ô đạt tại báo cáo sự cố check-in."
+                            : unit != null ? ". Ô đã mở lại cho thuê." : ""),
+                    "TASK",
+                    "CHECKIN_REPAIR".equals(done.getMaintenanceReason()) && done.getContract() != null
+                            ? "/manager/tasks/" + jdbcTemplate.queryForList(
+                                "SELECT TOP 1 id FROM facility_tasks WHERE contract_id = ? AND task_type = 'CHECK_IN' ORDER BY id DESC",
+                                Integer.class, done.getContract().getId()).stream().findFirst().orElse(taskId)
+                            : "/manager/tasks/" + taskId
+            );
+        } else if (notificationService != null && isManager) {
+            String staffTitle = "Quản lý đã đóng task bảo trì #" + taskId + (unit != null ? " (Ô " + unit.getId() + ")" : "");
+            String staffMsg = user.getFullName() + " đã hoàn tất bảo trì task #" + taskId + ": " + workNote;
+            if (done.getStaff() != null) {
+                notificationService.notifyStaff(done.getStaff().getId(), staffTitle, staffMsg, "TASK", "/staff/tasks/" + taskId);
+            } else {
+                notificationService.notifyFacilityStaff(task.getFacilityId(), staffTitle, staffMsg, "TASK", "/staff/tasks/" + taskId);
+            }
+        }
 
         // Nếu task bảo trì xuất phát từ yêu cầu hỗ trợ -> cập nhật ticket sang RESOLVED
         if (done.getSupportRequestId() != null && supportRequestRepository != null) {
@@ -3068,7 +3158,7 @@ public class StaffTaskService {
                                 "Bảo trì ô kho hoàn tất — Yêu cầu " + sr.getTicketCode(),
                                 "Cơ sở đã hoàn tất bảo trì kỹ thuật cho ô kho của bạn: " + workNote + ". Vui lòng kiểm tra và xác nhận trên hệ thống.",
                                 "SUPPORT",
-                                "/ho-tro"
+                                "/ho-tro?highlightTicketCode=" + sr.getTicketCode()
                         );
                     }
                 }
@@ -3145,21 +3235,71 @@ public class StaffTaskService {
         );
 
         if (notificationService != null) {
-            notificationService.notifyFacilityManagers(
-                    task.getFacilityId(),
-                    "Yêu cầu đổi kho từ " + taskTypeLabel + " — HĐ " + contract.getContractCode(),
-                    "Nhân viên " + actor.getFullName() + " gửi yêu cầu chuyển ô kho (Task #" + taskId + ") cho HĐ "
-                            + contract.getContractCode() + " (hiện ở ô " + unitCode + (inEmergency ? " — ô khẩn cấp tạm thời" : "")
-                            + ") sang ô tiêu chuẩn khác. Lý do: " + cleanReason,
-                    "TASK",
-                    "/manager/tasks/" + taskId,
-                    true
-            );
+            boolean byManager = "FACILITY_MANAGER".equals(role);
+            String title = "Yêu cầu đổi kho từ " + taskTypeLabel + " — HĐ " + contract.getContractCode();
+            String msg = (byManager ? "Quản lý " : "Nhân viên ") + actor.getFullName()
+                    + " gửi yêu cầu chuyển ô kho (Task #" + taskId + ") cho HĐ "
+                    + contract.getContractCode() + " (hiện ở ô " + unitCode + (inEmergency ? " — ô khẩn cấp tạm thời" : "")
+                    + ") sang ô tiêu chuẩn khác. Lý do: " + cleanReason;
+            if (!byManager) {
+                notificationService.notifyFacilityManagers(
+                        task.getFacilityId(), title, msg, "TASK", "/manager/tasks/" + taskId, true
+                );
+            } else {
+                if (task.getStaff() != null) {
+                    notificationService.notifyStaff(task.getStaff().getId(), title, msg, "TASK", "/staff/tasks/" + taskId, true);
+                } else {
+                    notificationService.notifyFacilityStaff(task.getFacilityId(), title, msg, "TASK", "/staff/tasks/" + taskId, true);
+                }
+            }
+            SupportRequest linkedSr = task.getSupportRequestId() != null && supportRequestRepository != null
+                    ? supportRequestRepository.findById(task.getSupportRequestId()).orElse(null)
+                    : null;
+            User cust = contract.getCustomer() != null ? contract.getCustomer() : (linkedSr != null ? linkedSr.getCustomer() : null);
+            if (cust != null) {
+                String custUrl = linkedSr != null
+                        ? "/ho-tro?highlightTicketCode=" + linkedSr.getTicketCode()
+                        : (contract.getReservation() != null ? "/kho-cua-toi/hop-dong/" + contract.getReservation().getId() : "/kho-cua-toi");
+                notificationService.notifyCustomer(
+                        cust.getId(),
+                        "Đề xuất chuyển ô kho mới cho HĐ " + contract.getContractCode(),
+                        "Cơ sở đã ghi nhận đề xuất chuyển ô kho cho HĐ " + contract.getContractCode() + " sang ô tiêu chuẩn khác để đảm bảo hàng hoá của bạn. Quản lý sẽ xử lý sớm nhất.",
+                        linkedSr != null ? "SUPPORT" : "CONTRACT",
+                        custUrl
+                );
+            }
         }
 
         entityManager.flush();
         entityManager.clear();
         return toDetailResponse(staffTaskRepository.findDetailById(taskId).orElseThrow());
+    }
+
+    /** Gửi thông báo cho 2 bên còn lại khi thao tác trên task SUPPORT (không tự báo lại cho người vừa bấm) */
+    private void notifySupportActionCounterparts(StaffTask task, SupportRequest sr, String actorRole, String title, String message) {
+        if (notificationService == null || task == null || sr == null) {
+            return;
+        }
+        if (sr.getCustomer() != null) {
+            notificationService.notifyCustomer(
+                    sr.getCustomer().getId(),
+                    title,
+                    message,
+                    "SUPPORT",
+                    "/ho-tro?highlightTicketCode=" + sr.getTicketCode()
+            );
+        }
+        if ("FACILITY_MANAGER".equals(actorRole)) {
+            if (task.getStaff() != null) {
+                notificationService.notifyStaff(task.getStaff().getId(), title, message, "SUPPORT", "/staff/tasks/" + task.getId());
+            } else {
+                notificationService.notifyFacilityStaff(task.getFacilityId(), title, message, "SUPPORT", "/staff/tasks/" + task.getId());
+            }
+        } else {
+            notificationService.notifyFacilityManagers(
+                    task.getFacilityId(), title, message, "SUPPORT", "/manager/tasks/" + task.getId()
+            );
+        }
     }
 
 

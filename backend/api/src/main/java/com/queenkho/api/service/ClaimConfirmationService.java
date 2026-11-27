@@ -209,7 +209,7 @@ public class ClaimConfirmationService {
     public int autoConfirmDueReceipts() {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(AUTO_CONFIRM_DAYS);
         List<Map<String, Object>> candidates = jdbcTemplate.queryForList(
-                "SELECT id, claim_code, customer_id, support_request_id " +
+                "SELECT id, claim_code, customer_id, support_request_id, facility_id " +
                 "FROM compensation_claims " +
                 "WHERE status = 'PAID' AND paid_at IS NOT NULL AND paid_at <= ?",
                 Timestamp.valueOf(cutoff));
@@ -225,6 +225,7 @@ public class ClaimConfirmationService {
             String claimCode = (String) row.get("claim_code");
             Integer customerId = row.get("customer_id") instanceof Number n ? n.intValue() : null;
             Integer ticketId = row.get("support_request_id") instanceof Number n ? n.intValue() : null;
+            Integer facilityId = row.get("facility_id") instanceof Number n ? n.intValue() : null;
 
             if (ticketId != null) {
                 jdbcTemplate.update(
@@ -238,11 +239,40 @@ public class ClaimConfirmationService {
                                 + " sau " + AUTO_CONFIRM_DAYS + " ngày khách không phản hồi",
                         "compensation_claims", String.valueOf(claimId));
             }
-            if (notificationService != null && customerId != null) {
-                notificationService.notifyCustomer(customerId,
-                        "Đã tự xác nhận nhận tiền bồi thường " + claimCode,
-                        "Quá " + AUTO_CONFIRM_DAYS + " ngày không có khiếu nại, hệ thống tự xác nhận bạn đã nhận đủ tiền bồi thường.",
-                        "REFUND", "/ho-tro");
+            if (notificationService != null) {
+                String staffAndFmMsg = "Quá " + AUTO_CONFIRM_DAYS + " ngày không có khiếu nại, hệ thống đã tự động xác nhận khách nhận đủ tiền bồi thường hồ sơ " + claimCode + ".";
+                if (customerId != null) {
+                    notificationService.notifyCustomer(customerId,
+                            "Đã tự xác nhận nhận tiền bồi thường " + claimCode,
+                            "Quá " + AUTO_CONFIRM_DAYS + " ngày không có khiếu nại, hệ thống tự xác nhận bạn đã nhận đủ tiền bồi thường.",
+                            "SUPPORT", "/ho-tro?highlightClaimCode=" + claimCode);
+                }
+                if (facilityId != null) {
+                    notificationService.notifyFacilityManagers(facilityId,
+                            "Hệ thống tự xác nhận nhận tiền — " + claimCode,
+                            staffAndFmMsg,
+                            "SUPPORT", "/manager/claims/" + claimId);
+                }
+                if (ticketId != null) {
+                    List<Map<String, Object>> taskRows = jdbcTemplate.queryForList(
+                            "SELECT TOP 1 id, staff_id FROM facility_tasks WHERE support_request_id = ? AND task_type = 'SUPPORT' ORDER BY id DESC",
+                            ticketId);
+                    if (!taskRows.isEmpty()) {
+                        Integer taskId = ((Number) taskRows.get(0).get("id")).intValue();
+                        Integer staffId = taskRows.get(0).get("staff_id") instanceof Number sn ? sn.intValue() : null;
+                        if (staffId != null) {
+                            notificationService.notifyStaff(staffId,
+                                    "Hệ thống tự xác nhận nhận tiền — " + claimCode,
+                                    staffAndFmMsg,
+                                    "SUPPORT", "/staff/tasks/" + taskId);
+                        } else if (facilityId != null) {
+                            notificationService.notifyFacilityStaff(facilityId,
+                                    "Hệ thống tự xác nhận nhận tiền — " + claimCode,
+                                    staffAndFmMsg,
+                                    "SUPPORT", "/staff/tasks/" + taskId);
+                        }
+                    }
+                }
             }
             count++;
         }

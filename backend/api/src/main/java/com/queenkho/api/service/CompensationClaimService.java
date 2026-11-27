@@ -8,12 +8,14 @@ import com.queenkho.api.dto.CreateSupportRequestDto;
 import com.queenkho.api.entity.CompensationClaim;
 import com.queenkho.api.entity.RentalContract;
 import com.queenkho.api.entity.Reservation;
+import com.queenkho.api.entity.StaffTask;
 import com.queenkho.api.entity.SupportRequest;
 import com.queenkho.api.entity.User;
 import com.queenkho.api.exception.StaffTaskException;
 import com.queenkho.api.repository.CompensationClaimRepository;
 import com.queenkho.api.repository.HandoverRecordRepository;
 import com.queenkho.api.repository.RentalContractRepository;
+import com.queenkho.api.repository.StaffTaskRepository;
 import com.queenkho.api.repository.SupportRequestRepository;
 import com.queenkho.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +57,9 @@ public class CompensationClaimService {
 
     @Autowired
     private SupportRequestRepository supportRequestRepository;
+
+    @Autowired(required = false)
+    private StaffTaskRepository staffTaskRepository;
 
     @Autowired
     private RentalContractRepository rentalContractRepository;
@@ -256,7 +261,7 @@ public class CompensationClaimService {
             notificationService.notifyCustomer(claim.getCustomer().getId(),
                     "Đã kiểm tra hiện trường hồ sơ " + claim.getClaimCode(),
                     "Nhân viên cơ sở đã kiểm tra ô và hàng của bạn. Vui lòng vào mục Hỗ trợ xác nhận đúng hiện trạng kiểm tra trước khi quản lý thẩm định.",
-                    "SUPPORT", "/ho-tro");
+                    "SUPPORT", "/ho-tro?highlightClaimCode=" + claim.getClaimCode());
         }
         return claim;
     }
@@ -392,10 +397,20 @@ public class CompensationClaimService {
                       + (q.penaltyAmount().signum() > 0 ? ", phạt vi phạm " + formatVnd(q.penaltyAmount()) : "")
                       + (q.rentRefundAmount().signum() > 0 ? ", hoàn tiền thuê " + formatVnd(q.rentRefundAmount()) : "")
                       + "). Vui lòng vào mục Hỗ trợ để xem bảng tính và xác nhận đồng ý phương án trước khi chi trả.";
+            String custTitle = rejected
+                    ? "Hồ sơ bồi thường " + claim.getClaimCode() + " không được chấp nhận"
+                    : "Hồ sơ bồi thường " + claim.getClaimCode() + " chờ bạn xác nhận phương án";
             notificationService.notifyCustomer(claim.getCustomer().getId(),
-                    (rejected ? "Hồ sơ bồi thường " + claim.getClaimCode() + " không được chấp nhận"
-                            : "Hồ sơ bồi thường " + claim.getClaimCode() + " chờ bạn xác nhận phương án"),
-                    body, "SUPPORT", "/ho-tro");
+                    custTitle,
+                    body, "SUPPORT", "/ho-tro?highlightClaimCode=" + claim.getClaimCode());
+            String staffTitle = rejected
+                    ? "FM đã từ chối bồi thường — " + claim.getClaimCode()
+                    : "FM đã chốt phương án bồi thường — " + claim.getClaimCode();
+            String staffBody = rejected
+                    ? "Quản lý " + manager.getFullName() + " đã từ chối bồi thường hồ sơ " + claim.getClaimCode() + ": " + claim.getDecisionNote()
+                    : "Quản lý " + manager.getFullName() + " đã chốt mức bồi thường " + formatVnd(q.totalCompensation())
+                      + " cho hồ sơ " + claim.getClaimCode() + " (đang chờ khách xác nhận).";
+            notifyClaimStaff(claim, staffTitle, staffBody, "SUPPORT", false);
         }
 
         // D-21 / PR-O19: hợp đồng đã nghiệm thu đang chờ chốt hồ sơ → tính lại bảng quyết toán
@@ -485,7 +500,12 @@ public class CompensationClaimService {
                         "Đã cập nhật chứng từ chi trả " + claim.getClaimCode(),
                         "Quản lý cơ sở đã kiểm tra lại giao dịch bồi thường " + formatVnd(claim.getTotalCompensation())
                                 + ". Vui lòng kiểm tra tài khoản và xác nhận trong mục Hỗ trợ.",
-                        "REFUND", "/ho-tro");
+                        "SUPPORT", "/ho-tro?highlightClaimCode=" + claim.getClaimCode());
+                notifyClaimStaff(claim,
+                        "FM đã cập nhật chứng từ chi trả — " + claim.getClaimCode(),
+                        "Quản lý cơ sở đã cập nhật chứng từ chi trả " + formatVnd(claim.getTotalCompensation())
+                                + " để xử lý khiếu nại của khách hàng.",
+                        "SUPPORT", false);
             }
             return toResponse(claim);
         }
@@ -566,6 +586,16 @@ public class CompensationClaimService {
         claimRepository.save(claim);
         activityLogService.log(customerId, "[CLAIM_PAYOUT_ACCOUNT] Khách cập nhật tài khoản nhận bồi thường hồ sơ "
                 + claim.getClaimCode() + ": " + bank + " · " + number, "compensation_claims", String.valueOf(claim.getId()));
+        if (notificationService != null) {
+            notificationService.notifyFacilityManagers(claim.getFacilityId(),
+                    "Khách cập nhật TK nhận bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng đã cập nhật thông tin tài khoản nhận bồi thường (" + bank + " · " + number + ").",
+                    "SUPPORT", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách cập nhật TK nhận bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng đã cập nhật thông tin tài khoản nhận bồi thường (" + bank + " · " + number + ").",
+                    "SUPPORT", false);
+        }
         return toResponse(claim);
     }
 
@@ -619,7 +649,12 @@ public class CompensationClaimService {
                     "Đã chi trả bồi thường hồ sơ " + claim.getClaimCode(),
                     "QueenKho đã chi trả " + formatVnd(claim.getTotalCompensation()) + how
                             + (claim.getSettlementId() == null ? ". Vui lòng xác nhận trong mục Hỗ trợ." : "."),
-                    "REFUND", "/ho-tro");
+                    "SUPPORT", "/ho-tro?highlightClaimCode=" + claim.getClaimCode());
+            notifyClaimStaff(claim,
+                    "FM đã chi trả bồi thường — " + claim.getClaimCode(),
+                    manager.getFullName() + " đã chi trả " + formatVnd(claim.getTotalCompensation()) + how
+                            + " cho hồ sơ " + claim.getClaimCode() + ".",
+                    "SUPPORT", false);
         }
     }
 
@@ -671,6 +706,10 @@ public class CompensationClaimService {
                     "Khách đã xác nhận hiện trường — " + claim.getClaimCode(),
                     "Khách hàng đã xác nhận đúng biên bản kiểm tra hiện trường. Quản lý cơ sở có thể tiến hành thẩm định và chốt bồi thường.",
                     "SUPPORT", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách xác nhận đúng hiện trường — " + claim.getClaimCode(),
+                    "Khách hàng đã xác nhận đúng biên bản kiểm tra hiện trường bạn lập cho hồ sơ " + claim.getClaimCode() + ".",
+                    "SUPPORT", false);
         }
         return toResponse(claim);
     }
@@ -736,6 +775,10 @@ public class CompensationClaimService {
                     "Khách hàng đã đồng ý phương án bồi thường " + formatVnd(claim.getTotalCompensation())
                             + ". Quản lý cơ sở có thể tiến hành chi trả ngay.",
                     "SUPPORT", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách đồng ý phương án bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng đã đồng ý phương án bồi thường " + formatVnd(claim.getTotalCompensation()) + ".",
+                    "SUPPORT", false);
         }
         return toResponse(claim);
     }
@@ -775,6 +818,10 @@ public class CompensationClaimService {
                     "Khách đề nghị thẩm định lại — " + claim.getClaimCode(),
                     "Khách chưa đồng ý phương án bồi thường: " + cleanReason + ". Vui lòng kiểm tra và chốt lại.",
                     "SUPPORT", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách đề nghị thẩm định lại — " + claim.getClaimCode(),
+                    "Khách chưa đồng ý phương án bồi thường: " + cleanReason + ".",
+                    "SUPPORT", false);
         }
         return toResponse(claim);
     }
@@ -809,6 +856,10 @@ public class CompensationClaimService {
                     "Khách đã nhận tiền bồi thường — " + claim.getClaimCode(),
                     "Khách hàng xác nhận đã nhận đủ " + formatVnd(claim.getTotalCompensation()) + " bồi thường.",
                     "REFUND", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách đã nhận tiền bồi thường — " + claim.getClaimCode(),
+                    "Khách hàng xác nhận đã nhận đủ " + formatVnd(claim.getTotalCompensation()) + " bồi thường.",
+                    "SUPPORT", false);
         }
         return toResponse(claim);
     }
@@ -848,6 +899,10 @@ public class CompensationClaimService {
                     "Khách báo chưa nhận được " + formatVnd(claim.getTotalCompensation()) + ": " + cleanReason
                             + ". Vui lòng kiểm tra mã FT / ủy nhiệm chi ngay.",
                     "REFUND", "/manager/claims/" + claim.getId());
+            notifyClaimStaff(claim,
+                    "Khách báo chưa nhận tiền bồi thường — " + claim.getClaimCode(),
+                    "Khách báo chưa nhận được " + formatVnd(claim.getTotalCompensation()) + ": " + cleanReason + ".",
+                    "SUPPORT", true);
         }
         return toResponse(claim);
     }
@@ -865,6 +920,26 @@ public class CompensationClaimService {
         claimConfirmationService.forceAutoConfirmForDemo(claim.getId());
         claim.setPaidAt(LocalDateTime.now().minusDays(ClaimConfirmationService.AUTO_CONFIRM_DAYS + 1));
         return toResponse(claim);
+    }
+
+    private void notifyClaimStaff(CompensationClaim claim, String title, String message, String type, boolean sendEmail) {
+        if (notificationService == null || claim == null || claim.getSupportRequest() == null || staffTaskRepository == null) {
+            return;
+        }
+        List<StaffTask> tasks = staffTaskRepository.findBySupportRequestIdInWithStaff(List.of(claim.getSupportRequest().getId()));
+        if (tasks.isEmpty()) {
+            return;
+        }
+        StaffTask targetTask = tasks.stream()
+                .filter(t -> !"CANCELLED".equals(t.getStatus()))
+                .findFirst()
+                .orElse(tasks.get(0));
+        String targetUrl = "/staff/tasks/" + targetTask.getId();
+        if (targetTask.getStaff() != null) {
+            notificationService.notifyStaff(targetTask.getStaff().getId(), title, message, type, targetUrl, sendEmail);
+        } else if (claim.getFacilityId() != null) {
+            notificationService.notifyFacilityStaff(claim.getFacilityId(), title, message, type, targetUrl, sendEmail);
+        }
     }
 
     private CompensationClaim requireOwnedClaim(Integer claimId, Integer customerId) {

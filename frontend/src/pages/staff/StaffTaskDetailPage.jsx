@@ -2083,18 +2083,22 @@ export default function StaffTaskDetailPage() {
                           {task.contractCode || parsedRefund?.isCheckout ? 'Tiền cọc giữ chỗ ban đầu:' : 'Tổng tiền khách đã đóng:'}
                         </span>
                         <span className="font-black text-[#2D3748]">
-                          {Number(task.depositHeldAmount) > 0 ? formatCurrency(task.depositHeldAmount) : parsedRefund?.originalTotal}
+                          {(task.contractCode || parsedRefund?.isCheckout)
+                            ? (Number(task.depositHeldAmount) > 0 ? formatCurrency(task.depositHeldAmount) : parsedRefund?.originalTotal)
+                            : (parsedRefund?.originalTotal || (Number(task.depositHeldAmount) > 0 ? formatCurrency(task.depositHeldAmount) : '—'))}
                         </span>
                       </div>
                     )}
 
                     {parsedRefund?.isPenalty50 ? (
-                      <div className="flex justify-between items-center py-0.5">
-                        <span className="font-bold text-[#718096] flex items-center gap-1">
-                          Khấu trừ tiền cọc:
-                          <span className="text-[10px] font-semibold text-[#E53E3E]">(hủy đơn trễ trong 24h trước thời điểm nhận kho)</span>
+                      <div className="flex justify-between items-center py-0.5 gap-2">
+                        <span className="font-bold text-[#718096] flex flex-wrap items-center gap-1">
+                          Khấu trừ theo chính sách hủy:
+                          {parsedRefund.policyApplied && (
+                            <span className="text-[10px] font-semibold text-[#E53E3E]">({parsedRefund.policyApplied})</span>
+                          )}
                         </span>
-                        <span className="font-black text-[#E53E3E]">
+                        <span className="font-black text-[#E53E3E] shrink-0">
                           - {parsedRefund.penaltyAmount}
                         </span>
                       </div>
@@ -2146,7 +2150,7 @@ export default function StaffTaskDetailPage() {
                           <div className="flex justify-between items-center py-0.5">
                             <span className="font-bold text-[#718096]">Chính sách áp dụng:</span>
                             <span className="font-black text-[#2F855A]">
-                              {parsedRefund?.policyApplied || (task.contractCode || parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Khách hủy đơn sớm trước 24h so với thời điểm nhận kho (hoàn 100%)')}
+                              {parsedRefund?.policyApplied || (task.contractCode || parsedRefund?.isCheckout ? 'Khoang bàn giao nguyên vẹn (Hoàn 100% cọc)' : 'Hủy trước giờ nhận kho từ 48 giờ trở lên (hoàn 100%)')}
                             </span>
                           </div>
                         )}
@@ -2166,7 +2170,7 @@ export default function StaffTaskDetailPage() {
                     <p className="text-[10px] text-[#A0AEC0] italic mt-0.5">
                       {parsedRefund?.footerNote || (task.contractCode || parsedRefund?.isCheckout
                         ? '* Tổng tiền hoàn trả kho = tiền cọc + tiền thuê chưa dùng (trả sớm: trừ thời gian đã dùng, phí phá hợp đồng nếu có — lỗi cơ sở / 3 ngày đầu tính theo ngày). Tiền đền bù (nếu có) chi riêng.'
-                        : '* Khách hủy đơn sớm trước 24h so với thời điểm nhận kho được hoàn trả 100% tiền cọc.')}
+                        : '* Chính sách hủy đơn: trong 30 phút sau thanh toán hoặc trước giờ hẹn ≥ 48h hoàn 100%; từ 24h đến dưới 48h giữ 50% cọc; dưới 24h giữ 100% cọc.')}
                     </p>
                   </div>
                 </div>

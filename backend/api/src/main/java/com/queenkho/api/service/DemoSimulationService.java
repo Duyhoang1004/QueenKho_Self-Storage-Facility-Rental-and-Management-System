@@ -85,8 +85,8 @@ public class DemoSimulationService {
         return enabled;
     }
 
-    // ---------- 1. Flow 2: khách tới nhận kho HÔM NAY ----------
-    // Dời ngày hẹn của đơn + ngày bắt đầu/kết thúc HĐ về hôm nay (giữ số tháng), task CHECK_IN hạn 21:00.
+    // ---------- 1. Flow 2: giả lập tới đúng ngày hẹn nhận kho ----------
+    // Chỉ mở task để demo ngay; giữ nguyên ngày hẹn và kỳ thuê của đơn/hợp đồng.
     @Transactional
     public Map<String, Object> arriveToday(Integer taskId, CurrentUser actor) {
         return shiftCheckInAppointment(taskId, 0, actor);
@@ -103,7 +103,7 @@ public class DemoSimulationService {
         return shiftCheckInAppointment(taskId, days, actor);
     }
 
-    // Dời lịch hẹn nhận kho của task CHECK_IN về hôm nay + days (đơn, hợp đồng, hạn task)
+    // days = 0: giữ lịch hẹn và kỳ thuê, mở task ngay; days > 0: dời lịch demo khung giao việc.
     private Map<String, Object> shiftCheckInAppointment(Integer taskId, int days, CurrentUser actor) {
         requireEnabled();
         Map<String, Object> task = row("SELECT id, task_type, status, contract_id, facility_id FROM facility_tasks WHERE id = ?",
@@ -115,36 +115,41 @@ public class DemoSimulationService {
         if (!List.of("OPEN", "IN_PROGRESS", "OVERDUE").contains(String.valueOf(task.get("status")))) {
             throw notApplicable("Task đã đóng, không cần giả lập");
         }
-        Map<String, Object> contract = row("SELECT id, contract_code, status, reservation_id FROM rental_contracts WHERE id = ?",
+        Map<String, Object> contract = row("SELECT rc.id, rc.contract_code, rc.status, rc.reservation_id, rc.start_date, " +
+                        "r.expected_appointment_time FROM rental_contracts rc JOIN reservations r ON r.id = rc.reservation_id WHERE rc.id = ?",
                 task.get("contract_id"), "Không tìm thấy hợp đồng của task");
         if (!"PENDING_CHECK_IN".equals(contract.get("status"))) {
             throw notApplicable("Hợp đồng không còn chờ check-in");
         }
-        int months = durationMonths(toInt(contract.get("reservation_id")));
-
         LocalDate today = LocalDate.now().plusDays(days);
         LocalDateTime now = LocalDateTime.now();
         // Góp ý test 26/11: demo buổi tối (sau 21:00) trước đây đẩy hạn sang 21:00 ngày mai → task bị khoá "chưa tới ngày hẹn".
         // Giả lập "hôm nay" giờ luôn cho làm ngay trong ngày: sau 21:00 hạn là 23:59 hôm nay.
         LocalDateTime dueAt = days > 0 ? today.atTime(CLOSING_TIME) : demoDueToday(today, now);
 
-        // PR-X4: lưu giờ hẹn gốc (lần giả lập đầu) — phí huỷ đơn không bị đẩy lên vì giả lập
-        jdbcTemplate.update("UPDATE reservations SET penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time), " +
-                        "start_date = ?, expected_appointment_time = ? WHERE id = ?",
-                today, today.atTime(APPOINTMENT_TIME), contract.get("reservation_id"));
-        jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
-                today, today.plusMonths(months), contract.get("id"));
-        refreshUnitOf(contract.get("id"));
+        LocalDate appointment = toLocalDate(contract.get("expected_appointment_time"));
+        if (appointment == null) appointment = toLocalDate(contract.get("start_date"));
+        if (days == 0 && appointment == null) throw notApplicable("Hợp đồng chưa có ngày hẹn nhận kho");
+        if (days > 0) {
+            int months = durationMonths(toInt(contract.get("reservation_id")));
+            // Khung giao việc 30 ngày vẫn là thao tác dời lịch demo riêng.
+            jdbcTemplate.update("UPDATE reservations SET penalty_anchor_time = COALESCE(penalty_anchor_time, expected_appointment_time), " +
+                            "start_date = ?, expected_appointment_time = ? WHERE id = ?",
+                    today, today.atTime(APPOINTMENT_TIME), contract.get("reservation_id"));
+            jdbcTemplate.update("UPDATE rental_contracts SET start_date = ?, end_date = ? WHERE id = ?",
+                    today, today.plusMonths(months), contract.get("id"));
+            refreshUnitOf(contract.get("id"));
+        }
         // Task đã bị job đánh quá hạn → mở lại: chưa ai nhận = OPEN, đã có người = IN_PROGRESS
         jdbcTemplate.update(
-                "UPDATE facility_tasks SET due_at = ?, status = CASE WHEN status = 'OVERDUE' " +
+                "UPDATE facility_tasks SET due_at = ?, simulated_checkout_date = ?, status = CASE WHEN status = 'OVERDUE' " +
                         "THEN (CASE WHEN staff_id IS NULL THEN 'OPEN' ELSE 'IN_PROGRESS' END) ELSE status END WHERE id = ?",
-                Timestamp.valueOf(dueAt), taskId);
+                Timestamp.valueOf(dueAt), days == 0 ? appointment : null, taskId);
 
         if (days == 0) {
-            log(actor, "Khách tới nhận kho hôm nay — HĐ " + contract.get("contract_code") + ", task #" + taskId,
+            log(actor, "Giả lập tới ngày hẹn nhận kho " + appointment + " — HĐ " + contract.get("contract_code") + ", task #" + taskId,
                     "facility_tasks", taskId);
-            return result("Đã dời lịch hẹn về hôm nay, có thể check-in ngay", "dueAt", dueAt);
+            return result("Đã giả lập tới đúng ngày hẹn " + appointment + "; có thể check-in ngay, kỳ thuê được giữ nguyên", "dueAt", dueAt);
         }
         log(actor, "Lịch hẹn nhận kho còn " + days + " ngày — HĐ " + contract.get("contract_code") + ", task #" + taskId,
                 "facility_tasks", taskId);
